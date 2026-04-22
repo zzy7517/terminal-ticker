@@ -3,7 +3,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from deskquotes.config import build_runtime_config, load_config, parse_config
+from terminal_ticker.config import build_runtime_config, load_config, parse_config
 
 
 class ConfigTests(unittest.TestCase):
@@ -28,7 +28,7 @@ class ConfigTests(unittest.TestCase):
             config_path.write_text(
                 textwrap.dedent(
                     """
-                    title = "Desk Quotes"
+                    title = "Terminal Ticker"
                     symbols = ["AAPL", "NVDA"]
 
                     [display]
@@ -38,7 +38,7 @@ class ConfigTests(unittest.TestCase):
             )
             config = load_config(config_path)
 
-        self.assertEqual(config.title, "Desk Quotes")
+        self.assertEqual(config.title, "Terminal Ticker")
         self.assertEqual(config.symbols, ("AAPL", "NVDA"))
         self.assertEqual(config.display.stale_after_seconds, 15)
 

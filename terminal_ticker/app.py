@@ -246,7 +246,7 @@ class PriceViewerApp(App[None]):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="deskquotes",
+        prog="terminal_ticker",
         description="Small terminal price viewer using yfinance WebSocket",
     )
     parser.add_argument(

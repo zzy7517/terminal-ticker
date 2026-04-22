@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from deskquotes.models import QuoteState
+from terminal_ticker.models import QuoteState
 
 
 class QuoteStateTests(unittest.TestCase):

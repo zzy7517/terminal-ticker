@@ -1,4 +1,4 @@
-title = "Desk Quotes"
+title = "Terminal Ticker"
 symbols = ["AAPL", "NVDA", "BTC-USD", "ETH-USD", "GC=F", "^GSPC"]
 
 [display]
