@@ -1,4 +1,4 @@
-# priceViewer
+# Desk Quotes
 
 A small terminal price viewer for macOS and Linux. It reads a local watchlist, loads an initial Yahoo Finance snapshot, then connects to `yfinance` WebSocket streaming and renders a compact live dashboard with Textual.
 
@@ -15,31 +15,31 @@ A small terminal price viewer for macOS and Linux. It reads a local watchlist, l
 Create and activate the project environment:
 
 ```bash
-cd /Users/zhongyuanzhang/priceViewer
+cd /path/to/desk-quotes
 source .venv/bin/activate
 ```
 
 Run the app with the default watchlist:
 
 ```bash
-python -m priceviewer
+python -m deskquotes
 ```
 
 Run with a custom config:
 
 ```bash
-python -m priceviewer --config my-watchlist.toml
+python -m deskquotes --config my-watchlist.toml
 ```
 
 Run with an ad hoc symbol list:
 
 ```bash
-python -m priceviewer --symbols AAPL NVDA BTC-USD GC=F ^GSPC
+python -m deskquotes --symbols AAPL NVDA BTC-USD GC=F ^GSPC
 ```
 
 ## Config format
 
-The default config file is [watchlist.toml](/Users/zhongyuanzhang/priceViewer/watchlist.toml).
+The default config file is [`watchlist.toml`](watchlist.toml).
 
 ```toml
 title = "Desk Quotes"

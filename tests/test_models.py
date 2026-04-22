@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from priceviewer.models import QuoteState
+from deskquotes.models import QuoteState
 
 
 class QuoteStateTests(unittest.TestCase):

@@ -3,7 +3,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from priceviewer.config import build_runtime_config, load_config, parse_config
+from deskquotes.config import build_runtime_config, load_config, parse_config
 
 
 class ConfigTests(unittest.TestCase):
