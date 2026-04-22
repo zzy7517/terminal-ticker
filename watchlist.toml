@@ -1,0 +1,7 @@
+title = "Desk Quotes"
+symbols = ["AAPL", "NVDA", "BTC-USD", "ETH-USD", "GC=F", "^GSPC"]
+
+[display]
+refresh_interval_ms = 1000
+stale_after_seconds = 20
+reconnect_delay_seconds = 3.0
