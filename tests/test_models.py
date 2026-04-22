@@ -50,6 +50,14 @@ class QuoteStateTests(unittest.TestCase):
         self.assertEqual(quote.price, 3300.5)
         self.assertEqual(quote.status, "snap")
 
+    def test_age_label_shows_milliseconds_for_recent_updates(self) -> None:
+        quote = QuoteState.placeholder("BTCUSDT")
+        quote.last_update_at = datetime.now(timezone.utc) - timedelta(milliseconds=420)
+
+        label = quote.age_label()
+
+        self.assertTrue(label.endswith("ms"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container
+from textual.css.query import NoMatches
 from textual.widgets import Footer, Header, Static
 
 from .bitget import BitgetPublicWebSocket, BitgetInstrument, fetch_snapshot_payloads, resolve_instruments
@@ -121,6 +122,7 @@ class PriceViewerApp(App[None]):
         self.stream_status = "idle"
         self.last_status_detail = "waiting to connect"
         self.last_message_at: datetime | None = None
+        self.message_count = 0
         self.stream_task: asyncio.Task[None] | None = None
         self.snapshot_task: asyncio.Task[None] | None = None
         self.refresh_timer = None
@@ -170,7 +172,13 @@ class PriceViewerApp(App[None]):
 
     def _refresh_clock(self) -> None:
         self._update_status_line()
-        self.query_one(PriceTable).refresh()
+        self._refresh_table()
+
+    def _refresh_table(self) -> None:
+        try:
+            self.query_one(PriceTable).refresh()
+        except NoMatches:
+            return
 
     async def _load_snapshot(self) -> None:
         try:
@@ -192,7 +200,7 @@ class PriceViewerApp(App[None]):
 
         if self.stream_status in {"idle", "connecting", "subscribed"}:
             self._set_stream_status("snapshot-ready", "loaded initial snapshot")
-        self.query_one(PriceTable).refresh()
+        self._refresh_table()
 
     def _set_stream_status(self, status: str, detail: str) -> None:
         self.stream_status = status
@@ -200,19 +208,29 @@ class PriceViewerApp(App[None]):
         self._update_status_line()
 
     def _update_status_line(self) -> None:
-        status_widget = self.query_one("#status", Static)
+        try:
+            status_widget = self.query_one("#status", Static)
+        except NoMatches:
+            return
         symbol_count = len(self.instruments)
         last_message = "never"
         if self.last_message_at is not None:
-            elapsed = int((datetime.now(timezone.utc) - self.last_message_at).total_seconds())
-            last_message = f"{elapsed}s ago"
+            elapsed_ms = int(
+                (datetime.now(timezone.utc) - self.last_message_at).total_seconds() * 1000
+            )
+            if elapsed_ms < 1000:
+                last_message = f"{elapsed_ms}ms ago"
+            elif elapsed_ms < 10_000:
+                last_message = f"{elapsed_ms / 1000:.1f}s ago"
+            else:
+                last_message = f"{elapsed_ms // 1000}s ago"
         config_label = (
             str(self.config.source_path)
             if self.config.source_path is not None
             else "cli symbols"
         )
         status_widget.update(
-            f"stream={self.stream_status}  symbols={symbol_count}  last={last_message}  "
+            f"stream={self.stream_status}  symbols={symbol_count}  ticks={self.message_count}  last={last_message}  "
             f"detail={self.last_status_detail}  config={config_label}"
         )
 
@@ -222,8 +240,9 @@ class PriceViewerApp(App[None]):
             return
         self.quotes[symbol].apply_payload(payload)
         self.last_message_at = datetime.now(timezone.utc)
+        self.message_count += 1
         self._set_stream_status("live", f"streaming {len(self.instruments)} symbols from Bitget")
-        self.query_one(PriceTable).refresh()
+        self._refresh_table()
 
     async def _stream_loop(self) -> None:
         while True:

@@ -65,7 +65,12 @@ def _age_label(last_update_at: datetime | None, *, now: datetime | None = None) 
         return "waiting"
     if now is None:
         now = datetime.now(timezone.utc)
-    elapsed = max(0, int((now - last_update_at).total_seconds()))
+    elapsed_ms = max(0, int((now - last_update_at).total_seconds() * 1000))
+    if elapsed_ms < 1000:
+        return f"{elapsed_ms}ms"
+    if elapsed_ms < 10_000:
+        return f"{elapsed_ms / 1000:.1f}s"
+    elapsed = elapsed_ms // 1000
     if elapsed < 60:
         return f"{elapsed}s"
     minutes, seconds = divmod(elapsed, 60)
