@@ -122,7 +122,6 @@ class PriceViewerApp(App[None]):
         self.stream_status = "idle"
         self.last_status_detail = "waiting to connect"
         self.last_message_at: datetime | None = None
-        self.message_count = 0
         self.stream_task: asyncio.Task[None] | None = None
         self.snapshot_task: asyncio.Task[None] | None = None
         self.refresh_timer = None
@@ -230,7 +229,7 @@ class PriceViewerApp(App[None]):
             else "cli symbols"
         )
         status_widget.update(
-            f"stream={self.stream_status}  symbols={symbol_count}  ticks={self.message_count}  last={last_message}  "
+            f"stream={self.stream_status}  symbols={symbol_count}  last={last_message}  "
             f"detail={self.last_status_detail}  config={config_label}"
         )
 
@@ -240,7 +239,6 @@ class PriceViewerApp(App[None]):
             return
         self.quotes[symbol].apply_payload(payload)
         self.last_message_at = datetime.now(timezone.utc)
-        self.message_count += 1
         self._set_stream_status("live", f"streaming {len(self.instruments)} symbols from Bitget")
         self._refresh_table()
 

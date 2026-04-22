@@ -1,11 +1,11 @@
 # Terminal Ticker
 
-A small terminal price viewer for macOS and Linux. It reads a local watchlist, loads an initial Bitget snapshot over REST, then connects to Bitget public WebSocket ticker channels and renders a compact live dashboard with Textual.
+A compact floating ticker for macOS and Linux. It reads a local watchlist, loads an initial Bitget snapshot over REST, then connects to Bitget public WebSocket ticker channels and renders a small always-on-top window. The old Textual terminal UI is still available as a fallback.
 
 ## Features
 
 - Live streaming quotes for a configured watchlist
-- Compact terminal UI designed for a small terminal window
+- Frameless always-on-top floating window designed for a small corner of your screen
 - Supports Bitget `USDT-FUTURES` instruments and can be extended to Spot if needed
 - Auto reconnects after stream failures
 - Local TOML config with no API key required
@@ -19,10 +19,16 @@ cd /path/to/terminal-ticker
 source .venv/bin/activate
 ```
 
-Run the app with the default watchlist:
+Run the floating window with the default watchlist:
 
 ```bash
 python -m terminal_ticker
+```
+
+Run the terminal fallback instead of the floating window:
+
+```bash
+python -m terminal_ticker --terminal
 ```
 
 Run with a custom config:
@@ -66,11 +72,11 @@ Notes:
 
 ## Keyboard
 
-- `q`: quit
-- `r`: reconnect the stream
+- Floating window: drag anywhere on the window to move it, click `×` to close
+- Terminal fallback: `q` to quit, `r` to reconnect
 
 ## Limitations
 
 - This is a personal-use market monitor, not a production market data terminal.
 - This app currently defaults to Bitget public USDT-Futures instruments. It does not yet connect to Bitget's separate CFD/MT5 stack.
-- The app uses the local terminal window. It is not a native always-on-top macOS window.
+- The floating window is native Qt, not a Swift/AppKit macOS app.

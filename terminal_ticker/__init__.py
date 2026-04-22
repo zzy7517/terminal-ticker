@@ -1,4 +1,4 @@
-"""Terminal live price viewer."""
+"""Floating Bitget ticker with optional terminal mode."""
 
 __all__ = ["__version__"]
 
