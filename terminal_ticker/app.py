@@ -11,11 +11,10 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container
 from textual.widgets import Footer, Header, Static
-from yfinance import AsyncWebSocket
 
+from .bitget import BitgetPublicWebSocket, BitgetInstrument, fetch_snapshot_payloads, resolve_instruments
 from .config import AppConfig, build_runtime_config, load_config
 from .models import QuoteState
-from .snapshot import fetch_snapshot_payloads
 
 
 class PriceTable(Static):
@@ -24,14 +23,14 @@ class PriceTable(Static):
         table = Table(expand=True, box=None, pad_edge=False)
         table.add_column("Symbol", ratio=2)
         table.add_column("Price", justify="right", ratio=2)
-        table.add_column("Chg", justify="right", ratio=2)
-        table.add_column("%", justify="right", ratio=2)
+        table.add_column("24h", justify="right", ratio=2)
+        table.add_column("24h %", justify="right", ratio=2)
         table.add_column("State", justify="center", ratio=1)
         table.add_column("Age", justify="right", ratio=1)
 
         now = datetime.now(timezone.utc)
-        for symbol in app.config.symbols:
-            quote = app.quotes[symbol]
+        for instrument in app.instruments:
+            quote = app.quotes[instrument.key]
             is_stale = quote.is_stale(app.config.display.stale_after_seconds, now=now)
             symbol_text = Text(quote.symbol, style="bold")
             if is_stale:
@@ -64,6 +63,10 @@ class PriceTable(Static):
                 status_text.stylize("yellow")
             elif quote.status == "post":
                 status_text.stylize("magenta")
+            elif quote.status == "spot":
+                status_text.stylize("cyan")
+            elif quote.status in {"perp", "futures"}:
+                status_text.stylize("green")
             elif quote.status == "snap":
                 status_text.stylize("cyan")
             elif quote.status == "waiting":
@@ -107,10 +110,14 @@ class PriceViewerApp(App[None]):
         Binding("r", "restart_stream", "Reconnect"),
     ]
 
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, instruments: tuple[BitgetInstrument, ...]) -> None:
         super().__init__()
         self.config = config
-        self.quotes = {symbol: QuoteState.placeholder(symbol) for symbol in config.symbols}
+        self.instruments = instruments
+        self.quotes = {
+            instrument.key: QuoteState.placeholder(instrument.label)
+            for instrument in instruments
+        }
         self.stream_status = "idle"
         self.last_status_detail = "waiting to connect"
         self.last_message_at: datetime | None = None
@@ -127,7 +134,7 @@ class PriceViewerApp(App[None]):
 
     def on_mount(self) -> None:
         self.title = self.config.title
-        self.sub_title = ", ".join(self.config.symbols)
+        self.sub_title = ", ".join(instrument.label for instrument in self.instruments)
         self._update_status_line()
         interval_seconds = max(0.2, self.config.display.refresh_interval_ms / 1000)
         self.refresh_timer = self.set_interval(interval_seconds, self._refresh_clock)
@@ -169,7 +176,7 @@ class PriceViewerApp(App[None]):
         try:
             payloads = await asyncio.to_thread(
                 fetch_snapshot_payloads,
-                list(self.config.symbols),
+                self.instruments,
             )
         except Exception as exc:
             detail = str(exc) or exc.__class__.__name__
@@ -177,9 +184,9 @@ class PriceViewerApp(App[None]):
                 self._set_stream_status("snapshot-failed", detail)
             return
 
-        for symbol, payload in payloads.items():
-            if symbol in self.quotes:
-                quote = self.quotes[symbol]
+        for key, payload in payloads.items():
+            if key in self.quotes:
+                quote = self.quotes[key]
                 if quote.update_count == 0:
                     quote.apply_snapshot(payload)
 
@@ -194,7 +201,7 @@ class PriceViewerApp(App[None]):
 
     def _update_status_line(self) -> None:
         status_widget = self.query_one("#status", Static)
-        symbol_count = len(self.config.symbols)
+        symbol_count = len(self.instruments)
         last_message = "never"
         if self.last_message_at is not None:
             elapsed = int((datetime.now(timezone.utc) - self.last_message_at).total_seconds())
@@ -215,16 +222,15 @@ class PriceViewerApp(App[None]):
             return
         self.quotes[symbol].apply_payload(payload)
         self.last_message_at = datetime.now(timezone.utc)
-        self._set_stream_status("live", f"streaming {len(self.config.symbols)} symbols")
+        self._set_stream_status("live", f"streaming {len(self.instruments)} symbols from Bitget")
         self.query_one(PriceTable).refresh()
 
     async def _stream_loop(self) -> None:
         while True:
-            socket = AsyncWebSocket(verbose=False)
+            socket = BitgetPublicWebSocket(self.instruments)
             try:
-                self._set_stream_status("connecting", "opening Yahoo Finance stream")
-                await socket.subscribe(list(self.config.symbols))
-                self._set_stream_status("subscribed", f"watching {len(self.config.symbols)} symbols")
+                self._set_stream_status("connecting", "opening Bitget public websocket")
+                self._set_stream_status("subscribed", f"watching {len(self.instruments)} Bitget instruments")
                 await socket.listen(self._handle_stream_message)
             except asyncio.CancelledError:
                 self._set_stream_status("stopped", "stream stopped")
@@ -247,7 +253,7 @@ class PriceViewerApp(App[None]):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="terminal_ticker",
-        description="Small terminal price viewer using yfinance WebSocket",
+        description="Small terminal price viewer using Bitget public market data",
     )
     parser.add_argument(
         "--config",
@@ -257,7 +263,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--symbols",
         nargs="+",
-        help="override the config and watch these Yahoo Finance symbols",
+        help="override the config and watch Bitget symbols, e.g. SPOT:BTCUSDT USDT-FUTURES:MUUSDT",
     )
     parser.add_argument(
         "--title",
@@ -285,5 +291,6 @@ def resolve_config(args: argparse.Namespace) -> AppConfig:
 def main() -> int:
     args = parse_args()
     config = resolve_config(args)
-    PriceViewerApp(config).run()
+    instruments = resolve_instruments(config.instruments)
+    PriceViewerApp(config, instruments).run()
     return 0

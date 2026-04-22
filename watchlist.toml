@@ -1,5 +1,11 @@
 title = "Terminal Ticker"
-symbols = ["AAPL", "NVDA", "BTC-USD", "ETH-USD", "GC=F", "^GSPC"]
+symbols = [
+  { symbol = "MUUSDT", inst_type = "USDT-FUTURES", label = "MU" },
+  { symbol = "MSFTUSDT", inst_type = "USDT-FUTURES", label = "MSFT" },
+  { symbol = "BTCUSDT", inst_type = "USDT-FUTURES", label = "BTC" },
+  { symbol = "ETHUSDT", inst_type = "USDT-FUTURES", label = "ETH" },
+  { symbol = "XAUUSDT", inst_type = "USDT-FUTURES", label = "XAU" },
+]
 
 [display]
 refresh_interval_ms = 1000

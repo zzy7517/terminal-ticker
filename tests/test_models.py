@@ -15,27 +15,27 @@ class QuoteStateTests(unittest.TestCase):
                 "change": 1.23,
                 "change_percent": 0.61,
                 "previous_close": 198.89,
-                "market_hours": 1,
-                "day_volume": "12000",
+                "status": "perp",
+                "day_volume": "12000.5",
             }
         )
 
         self.assertEqual(quote.display_name, "Apple")
         self.assertEqual(quote.price, 200.12)
         self.assertEqual(quote.change, 1.23)
-        self.assertEqual(quote.status, "open")
-        self.assertEqual(quote.volume, 12000)
+        self.assertEqual(quote.status, "perp")
+        self.assertEqual(quote.volume, 12000.5)
         self.assertEqual(quote.update_count, 1)
 
     def test_stale_detection(self) -> None:
-        quote = QuoteState.placeholder("BTC-USD")
+        quote = QuoteState.placeholder("BTCUSDT")
         quote.last_update_at = datetime.now(timezone.utc) - timedelta(seconds=25)
 
         self.assertTrue(quote.is_stale(20))
         self.assertFalse(quote.is_stale(30))
 
     def test_apply_snapshot_sets_snapshot_status(self) -> None:
-        quote = QuoteState.placeholder("GC=F")
+        quote = QuoteState.placeholder("XAUUSDT")
         quote.apply_snapshot(
             {
                 "display_name": "Gold",

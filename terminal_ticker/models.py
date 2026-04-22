@@ -82,7 +82,7 @@ class QuoteState:
     previous_close: float | None = None
     day_high: float | None = None
     day_low: float | None = None
-    volume: int | None = None
+    volume: float | None = None
     currency: str = ""
     exchange: str = ""
     status: str = "waiting"
@@ -106,12 +106,15 @@ class QuoteState:
         )
         self.day_high = _coalesce(_to_float(payload.get("day_high")), self.day_high)
         self.day_low = _coalesce(_to_float(payload.get("day_low")), self.day_low)
-        self.volume = _coalesce(_to_int(payload.get("day_volume")), self.volume)
+        self.volume = _coalesce(_to_float(payload.get("day_volume")), self.volume)
         self.currency = str(payload.get("currency") or self.currency or "")
         self.exchange = str(payload.get("exchange") or self.exchange or "")
-        self.status = _status_label(payload.get("market_hours"))
+        if isinstance(payload.get("status"), str) and payload.get("status"):
+            self.status = str(payload["status"]).lower()
+        else:
+            self.status = _status_label(payload.get("market_hours"))
         self.last_trade_epoch = _coalesce(
-            _to_int(payload.get("time")),
+            _to_int(payload.get("time") or payload.get("ts")),
             self.last_trade_epoch,
         )
         self.last_update_at = datetime.now(timezone.utc)
@@ -129,7 +132,7 @@ class QuoteState:
         )
         self.day_high = _coalesce(_to_float(payload.get("day_high")), self.day_high)
         self.day_low = _coalesce(_to_float(payload.get("day_low")), self.day_low)
-        self.volume = _coalesce(_to_int(payload.get("volume")), self.volume)
+        self.volume = _coalesce(_to_float(payload.get("volume")), self.volume)
         self.currency = str(payload.get("currency") or self.currency or "")
         self.exchange = str(payload.get("exchange") or self.exchange or "")
         self.status = "snap" if self.status == "waiting" else self.status
