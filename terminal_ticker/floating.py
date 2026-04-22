@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import queue
+import signal
 import sys
 import threading
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QPoint, QTimer, Qt
-from PySide6.QtGui import QColor, QFont, QFontDatabase
+from PySide6.QtGui import QColor, QCursor, QFont, QFontDatabase
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -23,7 +24,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .bitget import BitgetPublicWebSocket, BitgetInstrument, fetch_snapshot_payloads, resolve_instruments
+from .bitget import (
+    BitgetInstrument,
+    BitgetPublicWebSocket,
+    fetch_snapshot_payloads,
+    resolve_instruments,
+)
 from .config import AppConfig, build_runtime_config, load_config
 from .models import QuoteState
 
@@ -78,17 +84,12 @@ class FeedWorker(threading.Thread):
     async def _run(self) -> None:
         while not self.stop_event.is_set():
             try:
-                self.event_queue.put(FeedEvent("status", ("connecting", "opening Bitget public websocket")))
+                self.event_queue.put(FeedEvent("status", ("connecting", "opening Bitget websocket")))
                 snapshots = await asyncio.to_thread(fetch_snapshot_payloads, self.instruments)
                 self.event_queue.put(FeedEvent("snapshot", snapshots))
 
                 self.socket = BitgetPublicWebSocket(self.instruments)
-                self.event_queue.put(
-                    FeedEvent(
-                        "status",
-                        ("subscribed", f"watching {len(self.instruments)} Bitget instruments"),
-                    )
-                )
+                self.event_queue.put(FeedEvent("status", ("subscribed", "watching symbols")))
                 self.listen_task = asyncio.create_task(self.socket.listen(self._handle_message))
                 await self.listen_task
             except asyncio.CancelledError:
@@ -114,74 +115,69 @@ class FeedWorker(threading.Thread):
 
 
 class QuoteRow(QFrame):
-    def __init__(self, symbol: str) -> None:
+    def __init__(self, instrument: BitgetInstrument) -> None:
         super().__init__()
-        self.symbol = symbol
+        self.instrument = instrument
+        self.flash_until: datetime | None = None
+        self.flash_direction = 0
+
         self.setObjectName("quoteRow")
-        self.setFixedHeight(34)
+        self.setFixedHeight(24)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 4, 10, 4)
+        layout.setContentsMargins(8, 2, 8, 2)
         layout.setSpacing(8)
 
-        self.symbol_label = QLabel(symbol)
-        self.symbol_label.setObjectName("symbolLabel")
-        self.symbol_label.setMinimumWidth(44)
+        self.symbol_label = QLabel(instrument.label)
+        self.symbol_label.setMinimumWidth(48)
+        self.symbol_label.setStyleSheet(
+            "color: #eef4ff; font-size: 12px; font-weight: 700; letter-spacing: 0.5px;"
+        )
 
         self.price_label = QLabel("--")
-        self.price_label.setObjectName("priceLabel")
-        self.price_label.setMinimumWidth(78)
         self.price_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-        self.change_label = QLabel("--")
-        self.change_label.setObjectName("changeLabel")
-        self.change_label.setMinimumWidth(66)
-        self.change_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-        self.percent_label = QLabel("--")
-        self.percent_label.setObjectName("percentLabel")
-        self.percent_label.setMinimumWidth(58)
-        self.percent_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-        self.age_label = QLabel("waiting")
-        self.age_label.setObjectName("ageLabel")
-        self.age_label.setMinimumWidth(52)
-        self.age_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.price_label.setStyleSheet(
+            "color: #f7fbff; font-size: 14px; font-weight: 700;"
+        )
 
         layout.addWidget(self.symbol_label)
-        layout.addWidget(self.price_label, 1)
-        layout.addWidget(self.change_label)
-        layout.addWidget(self.percent_label)
-        layout.addWidget(self.age_label)
+        layout.addStretch(1)
+        layout.addWidget(self.price_label)
 
-    def update_quote(self, quote: QuoteState) -> None:
+        self._apply_background("rgba(11, 16, 28, 176)", "rgba(37, 49, 77, 90)")
+
+    def _apply_background(self, background: str, border: str) -> None:
+        self.setStyleSheet(
+            f"""
+            QFrame#quoteRow {{
+                background: {background};
+                border: 1px solid {border};
+                border-radius: 8px;
+            }}
+            """
+        )
+
+    def flash(self, direction: int) -> None:
+        self.flash_until = datetime.now(timezone.utc)
+        self.flash_direction = direction
+
+    def update_quote(self, quote: QuoteState, *, stale_after_seconds: int) -> None:
         self.symbol_label.setText(quote.symbol)
         self.price_label.setText(quote.price_label())
-        self.change_label.setText(quote.change_label())
-        self.percent_label.setText(quote.percent_label())
-        self.age_label.setText(quote.age_label())
 
-        positive = QColor("#8ad66f")
-        negative = QColor("#ff5c8a")
-        muted = QColor("#9aa4bf")
-
-        change_color = muted
-        if quote.change is not None:
-            if quote.change > 0:
-                change_color = positive
-            elif quote.change < 0:
-                change_color = negative
-
-        for label in (self.change_label, self.percent_label):
-            label.setStyleSheet(f"color: {change_color.name()};")
-
-        if quote.is_stale(20):
-            stale_color = "#7d8597"
-            self.price_label.setStyleSheet(f"color: {stale_color};")
-            self.age_label.setStyleSheet(f"color: {stale_color};")
+        if quote.is_stale(stale_after_seconds):
+            self.price_label.setStyleSheet("color: #7f8aa5; font-size: 14px; font-weight: 700;")
         else:
-            self.price_label.setStyleSheet("color: #f7f9ff;")
-            self.age_label.setStyleSheet("color: #8a93ab;")
+            self.price_label.setStyleSheet("color: #f7fbff; font-size: 14px; font-weight: 700;")
+
+        now = datetime.now(timezone.utc)
+        if self.flash_until is not None and (now - self.flash_until).total_seconds() < 0.45:
+            if self.flash_direction > 0:
+                self._apply_background("rgba(26, 56, 39, 218)", "rgba(118, 214, 150, 140)")
+            elif self.flash_direction < 0:
+                self._apply_background("rgba(74, 26, 38, 218)", "rgba(255, 108, 145, 135)")
+        else:
+            self._apply_background("rgba(11, 16, 28, 176)", "rgba(37, 49, 77, 90)")
 
 
 class FloatingTickerWindow(QWidget):
@@ -200,9 +196,10 @@ class FloatingTickerWindow(QWidget):
             event_queue=self.event_queue,
         )
         self.stream_status = "idle"
-        self.status_detail = "waiting to connect"
         self.last_message_at: datetime | None = None
         self.drag_origin: QPoint | None = None
+        self.positioned_once = False
+        self.rows: dict[str, QuoteRow] = {}
 
         self._build_window()
         self._start_timers()
@@ -210,171 +207,88 @@ class FloatingTickerWindow(QWidget):
 
     def _build_window(self) -> None:
         self.setWindowTitle(self.config.title)
-        self.setWindowFlags(
-            Qt.FramelessWindowHint
-            | Qt.WindowStaysOnTopHint
-            | Qt.Tool
-        )
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setMinimumWidth(430)
-        self.resize(450, 244)
+        self.setMinimumWidth(248)
+        self.resize(268, 176)
 
         shell = QFrame(self)
-        shell.setObjectName("shell")
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(26)
-        shadow.setOffset(0, 10)
-        shadow.setColor(QColor(0, 0, 0, 110))
+        shadow.setBlurRadius(18)
+        shadow.setOffset(0, 6)
+        shadow.setColor(QColor(0, 0, 0, 116))
         shell.setGraphicsEffect(shadow)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
+        root.setContentsMargins(8, 8, 8, 8)
         root.addWidget(shell)
 
         shell_layout = QVBoxLayout(shell)
         shell_layout.setContentsMargins(0, 0, 0, 0)
         shell_layout.setSpacing(0)
 
-        self.title_bar = QFrame()
-        self.title_bar.setObjectName("titleBar")
-        title_layout = QHBoxLayout(self.title_bar)
-        title_layout.setContentsMargins(12, 8, 10, 8)
-        title_layout.setSpacing(8)
+        title_bar = QFrame()
+        title_layout = QHBoxLayout(title_bar)
+        title_layout.setContentsMargins(8, 6, 8, 6)
+        title_layout.setSpacing(6)
 
         self.status_dot = QLabel("●")
-        self.status_dot.setObjectName("statusDot")
-        self.status_dot.setFixedWidth(12)
-
-        title_label = QLabel(self.config.title)
-        title_label.setObjectName("titleLabel")
+        self.status_dot.setStyleSheet("font-size: 10px; color: #ffb84d;")
 
         self.last_label = QLabel("waiting")
-        self.last_label.setObjectName("lastLabel")
+        self.last_label.setStyleSheet("color: #8d99b2; font-size: 9px;")
 
         close_button = QPushButton("×")
-        close_button.setObjectName("closeButton")
-        close_button.setFixedSize(20, 20)
+        close_button.setFixedSize(16, 16)
+        close_button.setStyleSheet(
+            """
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #a8b6d1;
+                font-size: 13px;
+            }
+            QPushButton:hover { color: #ffffff; }
+            """
+        )
         close_button.clicked.connect(self.close)
 
         title_layout.addWidget(self.status_dot)
-        title_layout.addWidget(title_label)
         title_layout.addStretch(1)
         title_layout.addWidget(self.last_label)
         title_layout.addWidget(close_button)
-        shell_layout.addWidget(self.title_bar)
+        shell_layout.addWidget(title_bar)
 
-        header = QFrame()
-        header.setObjectName("headerRow")
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(10, 6, 10, 6)
-        header_layout.setSpacing(8)
-        header_layout.addWidget(self._header_label("Asset", 44))
-        header_layout.addWidget(self._header_label("Price", 78, Qt.AlignRight))
-        header_layout.addWidget(self._header_label("24h", 66, Qt.AlignRight))
-        header_layout.addWidget(self._header_label("24h %", 58, Qt.AlignRight))
-        header_layout.addWidget(self._header_label("Age", 52, Qt.AlignRight))
-        shell_layout.addWidget(header)
+        body = QFrame()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(8, 6, 8, 8)
+        body_layout.setSpacing(4)
 
-        rows_container = QFrame()
-        rows_layout = QVBoxLayout(rows_container)
-        rows_layout.setContentsMargins(0, 0, 0, 0)
-        rows_layout.setSpacing(0)
-        self.rows: dict[str, QuoteRow] = {}
         for instrument in self.instruments:
-            row = QuoteRow(instrument.label)
-            rows_layout.addWidget(row)
+            row = QuoteRow(instrument)
             self.rows[instrument.key] = row
-        shell_layout.addWidget(rows_container)
+            body_layout.addWidget(row)
 
-        self.status_bar = QLabel("stream=idle")
-        self.status_bar.setObjectName("statusBar")
-        self.status_bar.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.status_bar.setContentsMargins(12, 8, 12, 10)
-        shell_layout.addWidget(self.status_bar)
+        shell_layout.addWidget(body)
+
+        shell.setStyleSheet(
+            """
+            QFrame {
+                background: rgba(7, 11, 18, 238);
+                border: 1px solid rgba(65, 78, 112, 145);
+                border-radius: 12px;
+            }
+            """
+        )
 
         mono = QFont("Menlo")
         if mono.family() != "Menlo":
             mono = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-        mono.setPointSize(11)
+        mono.setPointSize(10)
         self.setFont(mono)
 
-        self.setStyleSheet(
-            """
-            QWidget { color: #f7f9ff; }
-            #shell {
-                background: rgba(9, 12, 20, 235);
-                border: 1px solid rgba(87, 97, 129, 160);
-                border-radius: 18px;
-            }
-            #titleBar {
-                background: qlineargradient(
-                    x1: 0, y1: 0, x2: 1, y2: 0,
-                    stop: 0 rgba(24, 33, 84, 255),
-                    stop: 1 rgba(10, 16, 42, 255)
-                );
-                border-top-left-radius: 18px;
-                border-top-right-radius: 18px;
-                border-bottom: 1px solid rgba(77, 91, 145, 140);
-            }
-            #titleLabel {
-                font-size: 13px;
-                font-weight: 600;
-                letter-spacing: 0.6px;
-            }
-            #lastLabel {
-                color: #9da7c1;
-                font-size: 11px;
-            }
-            #closeButton {
-                background: transparent;
-                border: none;
-                color: #b8c0d9;
-                font-size: 16px;
-            }
-            #closeButton:hover { color: #ffffff; }
-            #headerRow {
-                background: rgba(16, 21, 38, 180);
-                border-bottom: 1px solid rgba(59, 68, 97, 110);
-            }
-            #headerCell {
-                color: #7f8aad;
-                font-size: 10px;
-                font-weight: 600;
-                letter-spacing: 0.8px;
-            }
-            #quoteRow {
-                background: transparent;
-                border-bottom: 1px solid rgba(41, 48, 68, 90);
-            }
-            #symbolLabel {
-                color: #e9ecf5;
-                font-weight: 700;
-                letter-spacing: 0.4px;
-            }
-            #priceLabel {
-                color: #f7f9ff;
-                font-weight: 600;
-            }
-            #ageLabel {
-                color: #8a93ab;
-            }
-            #statusBar {
-                color: #8a93ab;
-                background: rgba(12, 16, 29, 180);
-                border-bottom-left-radius: 18px;
-                border-bottom-right-radius: 18px;
-            }
-            """
-        )
-        self._update_status_ui()
         self._refresh_rows()
-
-    def _header_label(self, text: str, width: int, align: Qt.AlignmentFlag = Qt.AlignLeft) -> QLabel:
-        label = QLabel(text)
-        label.setObjectName("headerCell")
-        label.setMinimumWidth(width)
-        label.setAlignment(align | Qt.AlignVCenter)
-        return label
+        self._update_status_ui()
 
     def _start_timers(self) -> None:
         self.queue_timer = QTimer(self)
@@ -401,10 +315,15 @@ class FloatingTickerWindow(QWidget):
                 payload = event.payload
                 key = str(payload.get("id") or "")
                 if key in self.quotes:
-                    self.quotes[key].apply_payload(payload)
+                    quote = self.quotes[key]
+                    previous_price = quote.price
+                    quote.apply_payload(payload)
+                    if previous_price is not None and quote.price is not None:
+                        direction = 1 if quote.price > previous_price else -1 if quote.price < previous_price else 0
+                        if direction != 0:
+                            self.rows[key].flash(direction)
                     self.last_message_at = datetime.now(timezone.utc)
                     self.stream_status = "live"
-                    self.status_detail = "receiving Bitget ticks"
                     dirty = True
             elif event.kind == "snapshot":
                 for key, payload in event.payload.items():
@@ -412,14 +331,10 @@ class FloatingTickerWindow(QWidget):
                         self.quotes[key].apply_snapshot(payload)
                         dirty = True
             elif event.kind == "status":
-                self.stream_status, self.status_detail = event.payload
+                self.stream_status, _detail = event.payload
                 dirty = True
             elif event.kind == "error":
-                detail = str(event.payload)
                 self.stream_status = "retrying"
-                self.status_detail = detail
-                for quote in self.quotes.values():
-                    quote.mark_error(detail)
                 dirty = True
 
         if dirty:
@@ -428,7 +343,13 @@ class FloatingTickerWindow(QWidget):
 
     def _refresh_rows(self) -> None:
         for instrument in self.instruments:
-            self.rows[instrument.key].update_quote(self.quotes[instrument.key])
+            self.rows[instrument.key].update_quote(
+                self.quotes[instrument.key],
+                stale_after_seconds=self.config.display.stale_after_seconds,
+            )
+
+        target_height = 30 + len(self.instruments) * 28 + 16
+        self.resize(self.width(), max(92, min(target_height, 230)))
 
     def _update_status_ui(self) -> None:
         if self.last_message_at is None:
@@ -444,15 +365,12 @@ class FloatingTickerWindow(QWidget):
 
         dot_color = "#ffb84d"
         if self.stream_status == "live":
-            dot_color = "#8ad66f"
+            dot_color = "#7fffb7"
         elif self.stream_status in {"retrying", "snapshot-failed"}:
-            dot_color = "#ff5c8a"
-        self.status_dot.setStyleSheet(f"color: {dot_color};")
+            dot_color = "#ff6c91"
 
+        self.status_dot.setStyleSheet(f"font-size: 10px; color: {dot_color};")
         self.last_label.setText(last_text)
-        self.status_bar.setText(
-            f"stream={self.stream_status}  last={last_text}  detail={self.status_detail}"
-        )
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
@@ -472,6 +390,22 @@ class FloatingTickerWindow(QWidget):
         self.feed_worker.stop()
         self.feed_worker.join(timeout=2)
         super().closeEvent(event)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not self.positioned_once:
+            self.positioned_once = True
+            QTimer.singleShot(0, self._position_on_active_screen)
+
+    def _position_on_active_screen(self) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+        screen = app.screenAt(QCursor.pos()) or app.primaryScreen()
+        if screen is None:
+            return
+        area = screen.availableGeometry()
+        self.move(area.x() + area.width() - self.width() - 24, area.y() + 24)
 
 
 def parse_args() -> argparse.Namespace:
@@ -502,9 +436,7 @@ def resolve_config(args: argparse.Namespace) -> AppConfig:
     if config_path.exists():
         file_config = load_config(config_path)
     elif not args.symbols:
-        raise ValueError(
-            f"config file not found: {config_path}. Create it or pass --symbols."
-        )
+        raise ValueError(f"config file not found: {config_path}. Create it or pass --symbols.")
     return build_runtime_config(
         file_config,
         cli_symbols=args.symbols,
@@ -521,5 +453,15 @@ def main() -> int:
     app.setQuitOnLastWindowClosed(True)
 
     window = FloatingTickerWindow(config, instruments)
+
+    def _request_quit(*_args) -> None:
+        window.close()
+        app.quit()
+
+    signal.signal(signal.SIGINT, _request_quit)
+    signal.signal(signal.SIGTERM, _request_quit)
+
     window.show()
+    window.raise_()
+    window.activateWindow()
     return app.exec()

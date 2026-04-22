@@ -1,11 +1,12 @@
 # Terminal Ticker
 
-A compact floating ticker for macOS and Linux. It reads a local watchlist, loads an initial Bitget snapshot over REST, then connects to Bitget public WebSocket ticker channels and renders a small always-on-top window. The old Textual terminal UI is still available as a fallback.
+A compact floating ticker for macOS and Linux. It reads a local watchlist, loads an initial Bitget snapshot over REST, then connects to Bitget public WebSocket ticker channels and renders a small always-on-top window.
 
 ## Features
 
 - Live streaming quotes for a configured watchlist
 - Frameless always-on-top floating window designed for a small corner of your screen
+- Shows only symbol names and live prices in a very small floating window
 - Supports Bitget `USDT-FUTURES` instruments and can be extended to Spot if needed
 - Auto reconnects after stream failures
 - Local TOML config with no API key required
@@ -19,16 +20,10 @@ cd /path/to/terminal-ticker
 source .venv/bin/activate
 ```
 
-Run the floating window with the default watchlist:
+Run the app with the default watchlist:
 
 ```bash
 python -m terminal_ticker
-```
-
-Run the terminal fallback instead of the floating window:
-
-```bash
-python -m terminal_ticker --terminal
 ```
 
 Run with a custom config:
@@ -67,13 +62,13 @@ Notes:
 
 - This project now uses Bitget public market APIs only.
 - Use explicit `inst_type` when a symbol exists in both Spot and Futures, for example `BTCUSDT`.
-- The change columns are based on Bitget 24-hour ticker fields, not previous-session close.
 - `refresh_interval_ms` controls UI heartbeat updates for stale timers, not the exchange feed cadence.
+- The floating UI intentionally keeps only symbol and price. Everything else was removed to minimize footprint.
 
-## Keyboard
+## Interaction
 
-- Floating window: drag anywhere on the window to move it, click `×` to close
-- Terminal fallback: `q` to quit, `r` to reconnect
+- Drag anywhere on the window to move it
+- Click `×` to close
 
 ## Limitations
 
