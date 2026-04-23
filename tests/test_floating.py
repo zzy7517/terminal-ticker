@@ -1,11 +1,38 @@
+import os
 import unittest
 
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication
+
 from terminal_ticker.bitget import BitgetInstrument
-from terminal_ticker.floating import build_ticker_items
+from terminal_ticker.config import AppConfig, DisplayConfig
+from terminal_ticker.controller import DrainResult
+from terminal_ticker.floating import FloatingTickerWindow, build_ticker_items
 from terminal_ticker.models import QuoteState
 
 
+class FakeController:
+    def __init__(self, quotes) -> None:
+        self.quotes = quotes
+        self.stream_status = "idle"
+        self.last_message_at = None
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+    def drain_events(self) -> DrainResult:
+        return DrainResult(dirty=False, flash_directions={})
+
+
 class FloatingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
     def test_build_ticker_items_use_symbol_and_price_only(self) -> None:
         instruments = (
             BitgetInstrument("MUUSDT", "USDT-FUTURES", "MU", "MU", "USDT", "perp"),
@@ -31,6 +58,33 @@ class FloatingTests(unittest.TestCase):
         items = build_ticker_items(instruments, quotes)
 
         self.assertEqual(items, ["XAU -"])
+
+    def test_window_toggle_switches_between_body_and_ticker(self) -> None:
+        instruments = (
+            BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp"),
+        )
+        quotes = {
+            instruments[0].key: QuoteState(symbol="BTC", display_name="BTC", price=78001.5),
+        }
+        window = FloatingTickerWindow(
+            AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments,
+            controller=FakeController(quotes),
+            auto_start=False,
+        )
+
+        self.assertFalse(window.body.isHidden())
+        self.assertTrue(window.ticker_tape.isHidden())
+        self.assertFalse(window.info_label.isHidden())
+
+        window._toggle_collapsed()
+
+        self.assertTrue(window.body.isHidden())
+        self.assertFalse(window.ticker_tape.isHidden())
+        self.assertTrue(window.info_label.isHidden())
+        self.assertEqual(window.toggle_button.text(), "+")
+
+        window.close()
 
 
 if __name__ == "__main__":
