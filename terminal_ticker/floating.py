@@ -163,8 +163,6 @@ class TickerTape(QFrame):
         self.update()
 
     def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.LeftButton and self.on_activate is not None:
-            self.on_activate()
         super().mousePressEvent(event)
 
     def paintEvent(self, _event) -> None:

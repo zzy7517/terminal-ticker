@@ -3,6 +3,8 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from terminal_ticker.bitget import BitgetInstrument
@@ -82,6 +84,33 @@ class FloatingTests(unittest.TestCase):
         self.assertTrue(window.body.isHidden())
         self.assertFalse(window.ticker_tape.isHidden())
         self.assertTrue(window.info_label.isHidden())
+        self.assertEqual(window.toggle_button.text(), "+")
+
+        window.close()
+
+    def test_collapsed_window_does_not_expand_on_ticker_click(self) -> None:
+        instruments = (
+            BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp"),
+        )
+        quotes = {
+            instruments[0].key: QuoteState(symbol="BTC", display_name="BTC", price=78001.5),
+        }
+        window = FloatingTickerWindow(
+            AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments,
+            controller=FakeController(quotes),
+            auto_start=False,
+        )
+        window.show()
+        self.app.processEvents()
+
+        window._toggle_collapsed()
+        self.assertTrue(window.body.isHidden())
+
+        QTest.mouseClick(window.ticker_tape, Qt.LeftButton)
+        self.app.processEvents()
+
+        self.assertTrue(window.body.isHidden())
         self.assertEqual(window.toggle_button.text(), "+")
 
         window.close()
