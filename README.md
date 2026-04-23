@@ -7,6 +7,7 @@ A compact floating ticker for macOS and Linux. It reads a local watchlist, loads
 - Live streaming quotes for a configured watchlist
 - Frameless always-on-top floating window designed for a small corner of your screen
 - Shows only symbol names and live prices in a very small floating window
+- Collapse the panel into a thin scrolling ticker strip and expand it on demand
 - Supports Bitget `USDT-FUTURES` instruments and can be extended to Spot if needed
 - Auto reconnects after stream failures
 - Local TOML config with no API key required
@@ -67,6 +68,8 @@ Notes:
 ## Interaction
 
 - Drag anywhere on the window to move it
+- Click `–` to collapse the panel into a ticker strip
+- Click `+` or the ticker strip itself to expand it again
 - Click `×` to close
 
 ## Limitations
