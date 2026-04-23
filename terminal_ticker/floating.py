@@ -20,13 +20,84 @@ from .controller import TickerController
 from .models import QuoteState
 
 HEADER_HEIGHT = 30
-ROW_HEIGHT = 24
+ROW_HEIGHT = 28
 PANEL_WIDTH = 268
-PANEL_MAX_HEIGHT = 230
-MARQUEE_GAP = 28
-TICKER_TAPE_HEIGHT = 22
-TICKER_TEXT_VERTICAL_NUDGE = -2
-TICKER_SEPARATOR = "•"
+PANEL_MAX_HEIGHT = 248
+MARQUEE_GAP = 36
+TICKER_TAPE_HEIGHT = 24
+TICKER_TEXT_VERTICAL_NUDGE = -1
+TICKER_SEPARATOR = "·"
+SHELL_RADIUS = 14
+ROW_RADIUS = 10
+CONTROL_RADIUS = 9
+
+SHELL_BACKGROUND = "rgba(31, 26, 22, 246)"
+SHELL_BORDER = "rgba(173, 144, 116, 96)"
+HEADER_BACKGROUND = "rgba(54, 45, 38, 218)"
+HEADER_DIVIDER = "rgba(173, 144, 116, 54)"
+ROW_BACKGROUND = "rgba(86, 71, 58, 132)"
+ROW_BORDER = "rgba(177, 147, 118, 58)"
+ROW_FLASH_UP_BACKGROUND = "rgba(91, 100, 76, 210)"
+ROW_FLASH_UP_BORDER = "rgba(153, 169, 126, 126)"
+ROW_FLASH_DOWN_BACKGROUND = "rgba(112, 67, 52, 214)"
+ROW_FLASH_DOWN_BORDER = "rgba(201, 125, 95, 128)"
+TEXT_PRIMARY = "#f3ebdf"
+TEXT_SECONDARY = "#d3c1ad"
+TEXT_MUTED = "#b5a392"
+TEXT_STALE = "#8e7f72"
+TEXT_TICKER = "#eadfce"
+BUTTON_BACKGROUND = "rgba(246, 236, 224, 0.06)"
+BUTTON_BORDER = "rgba(214, 184, 154, 0.12)"
+BUTTON_BACKGROUND_HOVER = "rgba(201, 125, 95, 0.18)"
+BUTTON_BORDER_HOVER = "rgba(214, 184, 154, 0.2)"
+BUTTON_BACKGROUND_PRESSED = "rgba(201, 125, 95, 0.26)"
+STATUS_WAITING = "#d2a465"
+STATUS_LIVE = "#9fb08b"
+STATUS_ERROR = "#c87a63"
+
+UI_FONT_CANDIDATES = ("Avenir Next", "SF Pro Text", "Helvetica Neue", "Arial")
+PRICE_FONT_CANDIDATES = ("SF Mono", "Menlo", "Monaco")
+STATUS_LABELS = {
+    "idle": "Idle",
+    "live": "Live",
+    "retrying": "Reconnecting",
+    "snapshot-failed": "Sync issue",
+    "error": "Connection issue",
+}
+
+
+def _pick_font(
+    preferred: tuple[str, ...],
+    *,
+    size: int,
+    weight: int,
+    fixed: bool = False,
+) -> QFont:
+    available = set(QFontDatabase.families())
+    for family in preferred:
+        if family in available:
+            font = QFont(family)
+            break
+    else:
+        if fixed:
+            font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        else:
+            font = QFont()
+    font.setPointSize(size)
+    font.setWeight(weight)
+    return font
+
+
+def _build_ui_font(size: int, *, weight: int = QFont.Medium) -> QFont:
+    return _pick_font(UI_FONT_CANDIDATES, size=size, weight=weight)
+
+
+def _build_price_font(size: int, *, weight: int = QFont.DemiBold) -> QFont:
+    return _pick_font(PRICE_FONT_CANDIDATES, size=size, weight=weight, fixed=True)
+
+
+def _format_stream_status(status: str) -> str:
+    return STATUS_LABELS.get(status, status.replace("-", " ").title())
 
 
 def build_ticker_items(
@@ -44,9 +115,9 @@ class TickerTape(QFrame):
     def __init__(self, on_activate) -> None:
         super().__init__()
         self.on_activate = on_activate
-        self.items = ["waiting"]
+        self.items = ["Waiting for prices"]
         self.offset = 0.0
-        self.speed = 0.38
+        self.speed = 0.32
         self.item_widths: list[int] = []
         self.separator_width = 0
         self.setFixedHeight(TICKER_TAPE_HEIGHT)
@@ -65,7 +136,7 @@ class TickerTape(QFrame):
         return content_width + MARQUEE_GAP
 
     def set_items(self, items: list[str]) -> None:
-        normalized = items or ["waiting"]
+        normalized = items or ["Waiting for prices"]
         if normalized == self.items:
             return
         previous_cycle_width = self._cycle_width()
@@ -100,7 +171,7 @@ class TickerTape(QFrame):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.TextAntialiasing)
         painter.setFont(self.font())
-        painter.setPen(QColor("#dce7ff"))
+        painter.setPen(QColor(TEXT_TICKER))
 
         if not self.items:
             return
@@ -144,25 +215,24 @@ class QuoteRow(QFrame):
         self.setFixedHeight(ROW_HEIGHT)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(8)
+        layout.setContentsMargins(10, 4, 10, 4)
+        layout.setSpacing(10)
 
         self.symbol_label = QLabel(instrument.label)
         self.symbol_label.setMinimumWidth(48)
-        self.symbol_label.setStyleSheet(
-            "color: #eef4ff; font-size: 12px; font-weight: 700; letter-spacing: 0.5px;"
-        )
+        self.symbol_label.setFont(_build_ui_font(10, weight=QFont.DemiBold))
+        self.symbol_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
 
         self.price_label = QLabel("--")
+        self.price_label.setMinimumWidth(104)
         self.price_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.price_label.setStyleSheet(
-            "color: #f7fbff; font-size: 14px; font-weight: 700;"
-        )
+        self.price_label.setFont(_build_price_font(14, weight=QFont.Bold))
+        self.price_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
 
         layout.addWidget(self.symbol_label)
         layout.addStretch(1)
         layout.addWidget(self.price_label)
-        self._apply_background("rgba(11, 16, 28, 176)", "rgba(37, 49, 77, 90)")
+        self._apply_background(ROW_BACKGROUND, ROW_BORDER)
 
     def _apply_background(self, background: str, border: str) -> None:
         self.setStyleSheet(
@@ -170,7 +240,7 @@ class QuoteRow(QFrame):
             QFrame#quoteRow {{
                 background: {background};
                 border: 1px solid {border};
-                border-radius: 8px;
+                border-radius: {ROW_RADIUS}px;
             }}
             """
         )
@@ -184,18 +254,18 @@ class QuoteRow(QFrame):
         self.price_label.setText(quote.price_label())
 
         if quote.is_stale(stale_after_seconds):
-            self.price_label.setStyleSheet("color: #7f8aa5; font-size: 14px; font-weight: 700;")
+            self.price_label.setStyleSheet(f"color: {TEXT_STALE};")
         else:
-            self.price_label.setStyleSheet("color: #f7fbff; font-size: 14px; font-weight: 700;")
+            self.price_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
 
         if self.flash_frames_remaining > 0:
             if self.flash_direction > 0:
-                self._apply_background("rgba(26, 56, 39, 218)", "rgba(118, 214, 150, 140)")
+                self._apply_background(ROW_FLASH_UP_BACKGROUND, ROW_FLASH_UP_BORDER)
             elif self.flash_direction < 0:
-                self._apply_background("rgba(74, 26, 38, 218)", "rgba(255, 108, 145, 135)")
+                self._apply_background(ROW_FLASH_DOWN_BACKGROUND, ROW_FLASH_DOWN_BORDER)
             self.flash_frames_remaining -= 1
         else:
-            self._apply_background("rgba(11, 16, 28, 176)", "rgba(37, 49, 77, 90)")
+            self._apply_background(ROW_BACKGROUND, ROW_BORDER)
 
 
 class FloatingTickerWindow(QWidget):
@@ -231,6 +301,7 @@ class FloatingTickerWindow(QWidget):
         self.resize(PANEL_WIDTH, 176)
 
         shell = QFrame(self)
+        shell.setObjectName("shell")
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(18)
         shadow.setOffset(0, 6)
@@ -238,7 +309,7 @@ class FloatingTickerWindow(QWidget):
         shell.setGraphicsEffect(shadow)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
+        root.setContentsMargins(10, 10, 10, 10)
         root.addWidget(shell)
 
         shell_layout = QVBoxLayout(shell)
@@ -246,62 +317,52 @@ class FloatingTickerWindow(QWidget):
         shell_layout.setSpacing(0)
 
         self.header = QFrame()
+        self.header.setObjectName("headerBar")
+        self.header.setFixedHeight(HEADER_HEIGHT)
         header_layout = QHBoxLayout(self.header)
-        header_layout.setContentsMargins(6, 4, 6, 4)
-        header_layout.setSpacing(6)
+        header_layout.setContentsMargins(10, 5, 8, 5)
+        header_layout.setSpacing(8)
 
         self.status_dot = QLabel("●")
-        self.status_dot.setStyleSheet("font-size: 10px; color: #ffb84d;")
+        self.status_dot.setFixedWidth(12)
+        self.status_dot.setFont(_build_ui_font(11, weight=QFont.Bold))
+        self.status_dot.setStyleSheet(f"color: {STATUS_WAITING};")
 
         self.ticker_tape = TickerTape(self._expand)
         self.ticker_tape.setStyleSheet("background: transparent; border: none;")
+        self.ticker_tape.setFont(_build_ui_font(10, weight=QFont.Medium))
 
         self.info_label = QLabel("waiting")
-        self.info_label.setStyleSheet("color: #8d99b2; font-size: 9px;")
-        self.info_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.info_label.setObjectName("infoLabel")
+        self.info_label.setMinimumWidth(110)
+        self.info_label.setFont(_build_ui_font(9, weight=QFont.DemiBold))
+        self.info_label.setStyleSheet(f"color: {TEXT_MUTED};")
+        self.info_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.toggle_button = QPushButton("–")
-        self.toggle_button.setFixedSize(16, 16)
+        self.toggle_button.setObjectName("windowButton")
+        self.toggle_button.setFixedSize(18, 18)
+        self.toggle_button.setFont(_build_ui_font(11, weight=QFont.Bold))
         self.toggle_button.clicked.connect(self._toggle_collapsed)
-        self.toggle_button.setStyleSheet(
-            """
-            QPushButton {
-                background: transparent;
-                border: none;
-                color: #a8b6d1;
-                font-size: 13px;
-                font-weight: 700;
-            }
-            QPushButton:hover { color: #ffffff; }
-            """
-        )
 
         close_button = QPushButton("×")
-        close_button.setFixedSize(16, 16)
+        close_button.setObjectName("windowButton")
+        close_button.setFixedSize(18, 18)
+        close_button.setFont(_build_ui_font(11, weight=QFont.Medium))
         close_button.clicked.connect(self.close)
-        close_button.setStyleSheet(
-            """
-            QPushButton {
-                background: transparent;
-                border: none;
-                color: #a8b6d1;
-                font-size: 13px;
-            }
-            QPushButton:hover { color: #ffffff; }
-            """
-        )
 
         header_layout.addWidget(self.status_dot)
         header_layout.addWidget(self.ticker_tape, 1)
-        header_layout.addWidget(self.info_label, 1)
+        header_layout.addWidget(self.info_label)
         header_layout.addWidget(self.toggle_button)
         header_layout.addWidget(close_button)
         shell_layout.addWidget(self.header)
 
         self.body = QFrame()
+        self.body.setObjectName("bodyPanel")
         body_layout = QVBoxLayout(self.body)
-        body_layout.setContentsMargins(8, 6, 8, 8)
-        body_layout.setSpacing(4)
+        body_layout.setContentsMargins(10, 8, 10, 10)
+        body_layout.setSpacing(6)
 
         for instrument in self.instruments:
             row = QuoteRow(instrument)
@@ -311,21 +372,47 @@ class FloatingTickerWindow(QWidget):
         shell_layout.addWidget(self.body)
 
         shell.setStyleSheet(
-            """
-            QFrame {
-                background: rgba(7, 11, 18, 238);
-                border: 1px solid rgba(65, 78, 112, 145);
-                border-radius: 12px;
-            }
+            f"""
+            QFrame#shell {{
+                background: {SHELL_BACKGROUND};
+                border: 1px solid {SHELL_BORDER};
+                border-radius: {SHELL_RADIUS}px;
+            }}
+            QFrame#headerBar {{
+                background: {HEADER_BACKGROUND};
+                border: none;
+                border-top-left-radius: {SHELL_RADIUS}px;
+                border-top-right-radius: {SHELL_RADIUS}px;
+                border-bottom: 1px solid {HEADER_DIVIDER};
+            }}
+            QFrame#bodyPanel {{
+                background: transparent;
+                border: none;
+            }}
+            QLabel#infoLabel {{
+                color: {TEXT_MUTED};
+                background: transparent;
+                border: none;
+            }}
+            QPushButton#windowButton {{
+                background: {BUTTON_BACKGROUND};
+                border: 1px solid {BUTTON_BORDER};
+                border-radius: {CONTROL_RADIUS}px;
+                color: {TEXT_MUTED};
+                padding-bottom: 1px;
+            }}
+            QPushButton#windowButton:hover {{
+                background: {BUTTON_BACKGROUND_HOVER};
+                border-color: {BUTTON_BORDER_HOVER};
+                color: {TEXT_PRIMARY};
+            }}
+            QPushButton#windowButton:pressed {{
+                background: {BUTTON_BACKGROUND_PRESSED};
+            }}
             """
         )
 
-        mono = QFont("Menlo")
-        if mono.family() != "Menlo":
-            mono = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-        mono.setPointSize(10)
-        self.setFont(mono)
-        self.ticker_tape.setFont(mono)
+        self.setFont(_build_ui_font(10))
 
         self._refresh_rows()
         self._update_status_ui()
@@ -365,9 +452,9 @@ class FloatingTickerWindow(QWidget):
         self.ticker_tape.setVisible(self.collapsed)
         self.info_label.setVisible(not self.collapsed)
         if self.collapsed:
-            target_height = HEADER_HEIGHT + 12
+            target_height = HEADER_HEIGHT + 20
         else:
-            target_height = HEADER_HEIGHT + len(self.instruments) * (ROW_HEIGHT + 4) + 18
+            target_height = HEADER_HEIGHT + len(self.instruments) * (ROW_HEIGHT + 6) + 22
             target_height = max(92, min(target_height, PANEL_MAX_HEIGHT))
         self.setMinimumHeight(target_height)
         self.setMaximumHeight(target_height)
@@ -397,7 +484,7 @@ class FloatingTickerWindow(QWidget):
 
     def _update_status_ui(self) -> None:
         if self.controller.last_message_at is None:
-            age_text = "waiting"
+            age_text = "--"
         else:
             elapsed_ms = int(
                 (datetime.now(timezone.utc) - self.controller.last_message_at).total_seconds() * 1000
@@ -409,15 +496,16 @@ class FloatingTickerWindow(QWidget):
             else:
                 age_text = f"{elapsed_ms // 1000}s"
 
-        dot_color = "#ffb84d"
+        dot_color = STATUS_WAITING
         if self.controller.stream_status == "live":
-            dot_color = "#7fffb7"
+            dot_color = STATUS_LIVE
         elif self.controller.stream_status in {"retrying", "snapshot-failed", "error"}:
-            dot_color = "#ff6c91"
+            dot_color = STATUS_ERROR
 
-        self.status_dot.setStyleSheet(f"font-size: 10px; color: {dot_color};")
-        self.toggle_button.setToolTip(f"{self.controller.stream_status} · {age_text}")
-        self.info_label.setText(f"{self.controller.stream_status} · {age_text}")
+        status_text = _format_stream_status(self.controller.stream_status)
+        self.status_dot.setStyleSheet(f"color: {dot_color};")
+        self.toggle_button.setToolTip(f"{status_text} · {age_text}")
+        self.info_label.setText(f"{status_text} · {age_text}")
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
