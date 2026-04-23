@@ -1,172 +1,104 @@
-# Feature Specification: Price Alerts for Floating Ticker
+# 功能规格：价格提醒
 
 **Feature Branch**: `001-price-alerts`  
 **Created**: 2026-04-23  
 **Status**: Draft  
-**Input**: User description: "Add price alerts for floating ticker"
+**Input**: 用户需求："给悬浮行情窗加价格提醒"
 
-## User Scenarios & Testing *(mandatory)*
+## 用户场景与测试
 
-### User Story 1 - Threshold Crossing Alerts (Priority: P1)
+### 用户故事 1 - 阈值触发提醒（P1）
 
-As a user watching a small set of symbols in the floating ticker, I want to
-define simple price thresholds so that I am visually alerted when a tracked
-symbol crosses above or below a price I care about.
+用户可以给 watchlist 里的 symbol 配置阈值。当价格向上或向下穿过阈值时，
+悬浮窗里出现明确提醒。
 
-**Why this priority**: This is the minimum useful alerting workflow. Without a
-reliable threshold crossing alert, the feature does not deliver new monitoring
-value.
+**为什么是 P1**：这是提醒功能的最小闭环，没有它，这个 feature 就没有价值。
 
-**Independent Test**: Configure one tracked symbol with an upper or lower price
-threshold, feed the app fresh quotes that cross the threshold, and verify that a
-single clear alert appears while the ticker keeps running.
+**独立验证**：给一个 symbol 配置提醒，喂入新鲜行情并跨过阈值，确认只触发
+一次提醒，且 ticker 继续正常更新。
 
-**Acceptance Scenarios**:
+**验收场景**：
 
-1. **Given** a tracked symbol has an alert rule for crossing above a target
-   price and the current quote is still below that value, **When** a fresh quote
-   moves above the target, **Then** the app shows a visible alert for that
-   symbol and indicates which threshold was crossed.
-2. **Given** a tracked symbol has an alert rule for crossing below a target
-   price and the current quote is still above that value, **When** a fresh quote
-   moves below the target, **Then** the app shows a visible alert for that
-   symbol without interrupting live quote updates.
+1. 已配置“高于某价格提醒”，价格从阈值下方穿过阈值上方时，出现提醒。
+2. 已配置“低于某价格提醒”，价格从阈值上方穿过阈值下方时，出现提醒。
 
 ---
 
-### User Story 2 - Low-Noise Multi-Symbol Monitoring (Priority: P2)
+### 用户故事 2 - 提醒不能把界面搞乱（P2）
 
-As a user watching several symbols at once, I want alerts to stay compact and
-easy to understand so that I can notice the triggered symbol without turning the
-floating ticker into a noisy dashboard.
+提醒要尽量轻，不影响原本的小窗体验。展开和折叠状态下都能看见提醒，但不能
+强制展开，也不能遮住正常价格。
 
-**Why this priority**: The product's main constraint is minimal screen
-footprint. Alerting that bloats the UI would conflict with the project's core
-value.
+**为什么是 P2**：这个项目的核心就是“小而简洁”，提醒不能破坏这一点。
 
-**Independent Test**: Configure alerts on multiple tracked symbols, trigger one
-rule while the panel is expanded and another while it is collapsed, and verify
-that the app surfaces the active alert without forcing a mode change or hiding
-live prices.
+**独立验证**：多个 symbol 配置提醒，在展开和折叠状态分别触发，确认都能看见
+提醒，而且不会自动展开，不会刷屏。
 
-**Acceptance Scenarios**:
+**验收场景**：
 
-1. **Given** the ticker is expanded and only one symbol triggers, **When** the
-   alert appears, **Then** the alert highlights the triggered symbol without
-   obscuring unrelated symbols.
-2. **Given** the ticker is collapsed and an alert triggers, **When** the user is
-   viewing only the ticker strip, **Then** the app exposes a compact alert cue
-   without automatically expanding the panel.
-3. **Given** a rule has already triggered, **When** the same symbol remains on
-   the triggered side of the threshold, **Then** the app does not repeatedly
-   fire duplicate alerts for every subsequent quote.
+1. 展开状态下触发提醒，只突出当前 symbol，不挡住其他 symbol。
+2. 折叠状态下触发提醒，只给轻量提示，不自动展开面板。
+3. 同一个 symbol 一直停留在触发区间时，不要反复重复提醒。
 
 ---
 
-### User Story 3 - Safe Behavior on Stale Data (Priority: P3)
+### 用户故事 3 - 脏行情不能误报（P3）
 
-As a user relying on the floating ticker for quick decisions, I want alerts to
-respect stale or reconnecting feed conditions so that the app never alarms on
-misleading data.
+stale、placeholder、重连后的补行情都不能直接触发提醒，避免误报。
 
-**Why this priority**: Alerting is worse than useless if it triggers on stale,
-placeholder, or replayed data during reconnect scenarios.
+**为什么是 P3**：提醒一旦误报，体验会比没有提醒更差。
 
-**Independent Test**: Simulate stale quotes, missing prices, and reconnects
-around a configured threshold and verify that alerts fire only when a fresh
-crossing quote is observed.
+**独立验证**：模拟 stale、缺失价格、断线重连，确认只有真正观察到的新鲜穿越
+行情才会触发提醒。
 
-**Acceptance Scenarios**:
+**验收场景**：
 
-1. **Given** a quote is missing, placeholder-only, or older than the app's
-   freshness limit, **When** it appears to cross a configured threshold,
-   **Then** the system does not trigger an alert.
-2. **Given** the feed disconnects and later reconnects, **When** the first fresh
-   quote arrives on the triggered side of a threshold without an observed live
-   crossing, **Then** the system does not backfill an alert from the gap.
-3. **Given** a rule has triggered and the price later returns to the non-trigger
-   side, **When** the symbol crosses the threshold again on a later fresh quote,
-   **Then** the rule becomes eligible to trigger once more.
+1. stale / placeholder / 缺失价格不触发提醒。
+2. 重连后第一笔如果已经在阈值另一侧，也不补发提醒。
+3. 已触发的规则在价格回到另一侧后重新 arm，下次再次穿越可以再提醒。
 
 ---
 
-### Edge Cases
+### 边界情况
 
-- A symbol has multiple alert rules and more than one rule becomes true on the
-  same fresh quote.
-- The app starts while the current market price is already beyond a configured
-  threshold.
-- A user enters an invalid or contradictory alert rule for a tracked symbol.
-- The ticker is showing placeholder prices for one symbol while other symbols
-  continue streaming normally.
-- The alert cue is active while the user toggles between expanded and collapsed
-  modes.
+- 一个 symbol 配了多个提醒，同一笔行情同时命中多个规则。
+- 程序启动时，当前价格已经在阈值另一侧。
+- 用户配置了非法提醒规则。
+- 某个 symbol 是 placeholder，其他 symbol 正常更新。
+- 提醒显示时，用户切换展开/折叠状态。
 
-## Requirements *(mandatory)*
+## 功能要求
 
-### Functional Requirements
+### 功能要求列表
 
-- **FR-001**: The system MUST allow users to define one or more alert rules for
-  symbols that are already present in the tracked watchlist.
-- **FR-002**: Each alert rule MUST identify the tracked symbol, the threshold
-  value, and whether the rule watches for a crossing above or below that value.
-- **FR-003**: The system MUST evaluate alert rules against fresh live quotes and
-  trigger an alert only when the price crosses from the non-trigger side to the
-  trigger side of the threshold.
-- **FR-004**: The system MUST present a visible alert cue that identifies the
-  triggered symbol and makes the alert understandable from the floating ticker
-  experience.
-- **FR-005**: The system MUST avoid repeated duplicate alerts while the price
-  remains on the triggered side of the same threshold.
-- **FR-006**: The system MUST re-arm a triggered alert rule after the price
-  returns to the non-trigger side so that a later fresh recross can trigger a
-  new alert.
-- **FR-007**: The system MUST preserve live quote visibility when an alert is
-  active and MUST NOT automatically expand the ticker from collapsed mode solely
-  because an alert fired.
-- **FR-008**: The system MUST ignore stale, missing, placeholder, or otherwise
-  degraded quote data when evaluating whether to trigger alerts.
-- **FR-009**: The system MUST behave deterministically when the app starts with
-  the market already beyond a configured threshold; startup state alone must not
-  count as an observed crossing event.
-- **FR-010**: The system MUST surface invalid alert configuration in a way that
-  prevents silent misbehavior and makes the bad rule identifiable to the user.
-- **FR-011**: The system MUST continue supporting users who do not configure any
-  alerts, with the floating ticker behaving the same as it does today.
+- **FR-001**：用户可以给 watchlist 中的 symbol 配置一个或多个提醒规则。
+- **FR-002**：每条规则至少包含方向（高于/低于）和阈值价格。
+- **FR-003**：只有新鲜行情真实穿越阈值时才触发提醒。
+- **FR-004**：同一条规则在价格持续停留在触发区间时不能重复提醒。
+- **FR-005**：价格回到另一侧后，这条规则重新 arm，下次可再次提醒。
+- **FR-006**：提醒出现时不能影响正常价格显示，折叠状态下不能自动展开。
+- **FR-007**：stale、placeholder、缺失、重连后的补行情都不能触发提醒。
+- **FR-008**：没有配置提醒的用户，现有 ticker 行为保持不变。
+- **FR-009**：非法配置必须有明确报错，不能静默失败。
 
-### Key Entities *(include if feature involves data)*
+### 关键对象
 
-- **Alert Rule**: A user-defined condition tied to one tracked symbol, including
-  threshold direction, target price, and whether the rule is currently armed or
-  already triggered.
-- **Alert Event**: A user-visible alert occurrence produced when a fresh quote
-  crosses a rule's threshold.
-- **Quote Freshness State**: The system's understanding of whether a symbol's
-  current price is safe to use for alert evaluation.
+- **提醒规则**：属于某个 symbol 的价格阈值规则。
+- **提醒事件**：一次真实触发后的用户可见提醒。
+- **行情新鲜度状态**：当前价格能不能参与提醒判断。
 
-## Success Criteria *(mandatory)*
+## 成功标准
 
-### Measurable Outcomes
+### 可衡量结果
 
-- **SC-001**: In verification scenarios, a configured threshold crossing is
-  surfaced to the user within one normal UI refresh cycle after the first fresh
-  crossing quote is received.
-- **SC-002**: In verification scenarios, duplicate alerts do not occur while a
-  symbol remains continuously on the triggered side of a threshold.
-- **SC-003**: In degraded-data scenarios, stale, missing, placeholder, or
-  reconnect-gap quotes produce zero false alerts.
-- **SC-004**: Users can monitor at least 10 tracked symbols with alert rules
-  enabled and still identify both live prices and active alert cues without
-  losing the compact floating-window workflow.
+- **SC-001**：阈值被真实穿越后，提醒能在一次正常 UI 刷新周期内出现。
+- **SC-002**：同一规则在连续停留触发区间时不会重复提醒。
+- **SC-003**：stale / placeholder / reconnect gap 场景下误报数为 0。
+- **SC-004**：开启提醒后，小窗仍然能正常监控至少 10 个 symbol。
 
-## Assumptions
+## 默认假设
 
-- v1 alert rules are created through the existing local configuration workflow
-  rather than a new in-window editor.
-- v1 alert delivery is limited to the app's own visual surfaces; operating
-  system notifications, sound, and remote delivery are out of scope.
-- Alert rules apply only to symbols that are already part of the active
-  watchlist.
-- The existing quote freshness timeout remains the baseline definition of
-  whether data is safe to evaluate unless the implementation plan explicitly
-  tightens it.
+- v1 通过现有本地配置文件配置提醒，不做窗口内编辑器。
+- v1 只做窗口内视觉提醒，不做系统通知、声音、远程推送。
+- 提醒只对当前 watchlist 中的 symbol 生效。
+- 现有 stale 超时规则继续作为提醒判断基础。

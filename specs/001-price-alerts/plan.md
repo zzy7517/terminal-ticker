@@ -1,74 +1,47 @@
-# Implementation Plan: Price Alerts for Floating Ticker
+# 实现计划：价格提醒
 
 **Branch**: `001-price-alerts` | **Date**: 2026-04-23 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/001-price-alerts/spec.md`
+**Input**: `/specs/001-price-alerts/spec.md`
 
-## Summary
+## 目标
 
-Implement local price alerts by extending the existing watchlist configuration
-with per-symbol threshold rules, adding runtime alert evaluation state on top of
-current quote freshness handling, and surfacing compact alert cues in the
-floating window without disrupting the low-noise ticker workflow.
+在现有 watchlist 配置基础上加价格提醒。实现重点是三件事：
+- 配置里能定义提醒规则
+- 运行时能正确判断“是否真实触发”
+- UI 能轻量展示提醒，不破坏原有小窗体验
 
-## Technical Context
+## 技术上下文
 
-**Language/Version**: Python 3.13  
-**Primary Dependencies**: PySide6, websockets, Python standard library (`tomllib`, `dataclasses`)  
-**Storage**: Local TOML configuration plus in-memory runtime alert state  
-**Testing**: `python3 -m unittest discover -s tests`  
-**Target Platform**: macOS and Linux desktop  
-**Project Type**: Single-package desktop application  
-**Performance Goals**: Alert evaluation completes inside the existing quote/UI update cadence without introducing visible lag  
-**Constraints**: No backend service, no API keys, no forced panel expansion, no alerts on stale or reconnect-gap data  
-**Scale/Scope**: At least 10 tracked symbols with alert rules active in the same session
+**语言**: Python 3.13  
+**依赖**: PySide6, websockets, 标准库  
+**存储**: 本地 TOML + 内存状态  
+**测试**: `python3 -m unittest discover -s tests`  
+**平台**: macOS / Linux 桌面  
+**约束**: 不加后端、不加 API key、不自动展开、不允许 stale / reconnect gap 误报
 
-## Constitution Check
+## 设计结论
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+- 规则放到现有配置里，不新增独立配置系统。
+- 提醒状态优先放在 `models.py`，避免 UI 层自己判断业务规则。
+- UI 提醒放在 `floating.py`，但保持轻量。
+- stale / placeholder / reconnect gap 都视为“不能触发提醒”。
 
-- Pass: The feature stays inside the local desktop app and does not add a backend or remote dependency.
-- Pass: Alerting is designed as a compact visual enhancement rather than a new control-heavy dashboard.
-- Pass: The plan treats stale, missing, and reconnect-gap quotes as ineligible for alert firing.
-- Pass: Changes stay additive within `terminal_ticker/` and `tests/`; no runtime or framework swap is proposed.
-- Pass: Automated coverage is included for config parsing, runtime alert state, and floating-window behavior.
+## 改动范围
 
-## Project Structure
+主要只动这些文件：
+- `terminal_ticker/config.py`
+- `terminal_ticker/models.py`
+- `terminal_ticker/floating.py`
+- `tests/test_config.py`
+- `tests/test_models.py`
+- `tests/test_floating.py`
+- `README.md`
+- `watchlist.toml`
 
-### Documentation (this feature)
+## 验收重点
 
-```text
-specs/001-price-alerts/
-├── plan.md
-├── research.md
-├── data-model.md
-├── quickstart.md
-├── checklists/
-│   └── requirements.md
-└── tasks.md
-```
-
-### Source Code (repository root)
-
-```text
-terminal_ticker/
-├── __main__.py
-├── bitget.py
-├── config.py
-├── floating.py
-└── models.py
-
-tests/
-├── test_bitget.py
-├── test_config.py
-├── test_floating.py
-└── test_models.py
-```
-
-**Structure Decision**: Extend the current package in place. Alert rule parsing
-lives with config parsing, alert runtime state lives with quote state, and
-user-visible alert cues stay in the floating UI module. No new service boundary
-or standalone subsystem is needed for v1.
-
-## Complexity Tracking
-
-No constitution violations are expected for this feature.
+- 配置能正确解析提醒规则
+- 真实穿越阈值时只提醒一次
+- 回到另一侧后可再次提醒
+- stale / reconnect gap 不误报
+- 折叠状态不自动展开

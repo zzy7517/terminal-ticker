@@ -1,56 +1,51 @@
-# Data Model: Price Alerts for Floating Ticker
+# 数据模型：价格提醒
 
-## AlertRuleConfig
+## 1. AlertRuleConfig（提醒规则）
 
-- **Purpose**: Represents one user-defined threshold rule for a tracked symbol.
-- **Fields**:
-  - `symbol key`: identifies which tracked symbol owns the rule
-  - `direction`: whether the rule watches for a crossing above or below
-  - `target price`: the threshold value
-  - `label`: optional human-readable name for the rule
-- **Validation**:
-  - Target price must be a positive numeric value.
-  - Direction must be one of the supported crossing modes.
-  - Rules may only be defined for symbols already in the watchlist.
+- **作用**：描述某个 symbol 的一条提醒规则。
+- **核心字段**：
+  - `direction`: 高于 / 低于
+  - `price`: 阈值价格
+  - `label`: 可选名称
+- **校验**：
+  - `price` 必须是正数
+  - `direction` 必须合法
+  - 规则只能配在 watchlist 已有 symbol 上
 
-## AlertRuntimeState
+## 2. AlertRuntimeState（运行时状态）
 
-- **Purpose**: Tracks whether a rule is armed, triggered, or temporarily
-  ineligible based on the latest observed fresh quote.
-- **Fields**:
-  - `rule identifier`: stable reference to the owning rule
-  - `armed`: whether the rule can currently fire
-  - `last relation`: whether the latest fresh quote was above, below, or unknown
-  - `active event`: the currently visible alert event, if any
-- **State transitions**:
-  - `unknown -> armed`: once the app has a valid fresh baseline quote
-  - `armed -> triggered`: when a fresh quote crosses the threshold
-  - `triggered -> armed`: when the price returns to the non-trigger side
-  - `any state -> unknown`: when quote data becomes unusable for evaluation
+- **作用**：记录一条规则当前能不能触发、是否已经触发。
+- **核心状态**：
+  - `armed`
+  - `triggered`
+  - `unknown`
+- **状态流转**：
+  - `unknown -> armed`：有了可用基准价
+  - `armed -> triggered`：新鲜行情真实穿越阈值
+  - `triggered -> armed`：价格回到另一侧
+  - `* -> unknown`：行情变 stale / unusable
 
-## AlertEvent
+## 3. AlertEvent（提醒事件）
 
-- **Purpose**: Represents one user-visible alert occurrence.
-- **Fields**:
-  - `symbol label`
-  - `rule label or threshold description`
-  - `trigger price`
-  - `trigger time`
-  - `direction`
-- **Lifecycle**:
-  - Created when a rule transitions from armed to triggered on a fresh crossing
-  - Remains visible long enough for the user to notice the event
-  - Clears without affecting live quote rendering after the transient cue expires
+- **作用**：一次用户看得见的提醒。
+- **信息**：
+  - 哪个 symbol
+  - 哪条规则
+  - 触发价格
+  - 触发方向
+- **生命周期**：
+  - 触发时生成
+  - 短暂显示
+  - 消失后不影响正常价格展示
 
-## Quote Freshness State
+## 4. Quote Freshness State（行情新鲜度）
 
-- **Purpose**: Determines whether the latest price is safe to use for alert
-  evaluation.
-- **Inputs**:
-  - current price availability
-  - placeholder vs real quote status
-  - age relative to the configured stale timeout
-  - reconnect gap conditions
-- **Rules**:
-  - Alert evaluation is blocked whenever freshness is not trusted.
-  - Freshness recovers only after a valid live quote arrives.
+- **作用**：判断当前价格能不能参与提醒计算。
+- **判断因素**：
+  - 有没有 price
+  - 是不是真实 quote
+  - 有没有 stale
+  - 是否处于 reconnect gap
+- **规则**：
+  - 只要新鲜度不可信，就不能触发提醒
+  - 恢复后也要重新建立安全基线

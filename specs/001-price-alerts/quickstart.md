@@ -1,9 +1,8 @@
-# Quickstart: Price Alerts for Floating Ticker
+# 快速验证：价格提醒
 
-## 1. Add alert rules to the watchlist configuration
+## 1. 配置提醒规则
 
-After implementation, configure one or more alert rules on tracked symbols.
-Example intended shape:
+实现后，配置文件大致长这样：
 
 ```toml
 symbols = [
@@ -17,27 +16,26 @@ symbols = [
 ]
 ```
 
-## 2. Launch the ticker
+## 2. 启动程序
 
 ```bash
 python3 -m terminal_ticker --config watchlist.toml
 ```
 
-## 3. Verify threshold crossing behavior
+## 3. 验证基础提醒
 
-1. Start with a symbol whose live price is still on the non-trigger side of a configured threshold.
-2. Wait for a fresh quote to cross the threshold.
-3. Confirm that a visible alert cue appears for the triggered symbol.
-4. Confirm that live prices continue updating and the window does not auto-expand if it is collapsed.
+1. 先让价格在阈值未触发的一侧。
+2. 等待新鲜行情穿越阈值。
+3. 确认出现提醒。
+4. 确认价格仍正常更新，折叠状态也不会自动展开。
 
-## 4. Verify duplicate suppression and re-arm behavior
+## 4. 验证去重和重新 arm
 
-1. Keep the symbol on the triggered side and confirm duplicate quotes do not create repeated alerts.
-2. Wait for the price to move back across the threshold.
-3. Confirm that a later recross can trigger a new alert.
+1. 价格停留在触发区间时，不应连续重复提醒。
+2. 价格回到另一侧后，再次穿越时应能再次提醒。
 
-## 5. Verify stale-data protections
+## 5. 验证脏行情保护
 
-1. Simulate or force a disconnect/reconnect gap.
-2. Confirm that stale or placeholder prices do not trigger alerts.
-3. Confirm that the first fresh quote after reconnect establishes a safe baseline instead of backfilling a missed crossing alert.
+1. 模拟 stale 或断线重连。
+2. 确认 stale / placeholder 不触发提醒。
+3. 确认重连后的第一笔不会补发提醒。

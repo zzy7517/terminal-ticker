@@ -1,95 +1,66 @@
 <!--
-Sync Impact Report
-Version change: template -> 1.0.0
-Modified principles:
-- Template Principle 1 -> I. Local-First Desktop Scope
-- Template Principle 2 -> II. Minimal-Footprint UI
-- Template Principle 3 -> III. Feed Integrity Before Novelty
-- Template Principle 4 -> IV. Additive Evolution
-- Template Principle 5 -> V. Test-Backed Behavior
-Added sections:
-- Product Constraints
-- Workflow & Quality Gates
-Removed sections:
-- None
-Templates requiring updates:
-- ✅ .specify/templates/plan-template.md
-- ✅ .specify/templates/spec-template.md
-- ✅ .specify/templates/tasks-template.md
-Follow-up TODOs:
-- None
+同步说明
+版本变化: template -> 1.0.0
+原则更新:
+- 模板原则 1 -> I. 本地优先
+- 模板原则 2 -> II. 小窗低噪音
+- 模板原则 3 -> III. 行情可靠性优先
+- 模板原则 4 -> IV. 增量演进
+- 模板原则 5 -> V. 行为必须可验证
+新增章节:
+- 产品约束
+- 流程与质量门禁
+后续事项:
+- 无
 -->
-# priceViewer Constitution
+# priceViewer 开发宪法
 
 ## Core Principles
 
-### I. Local-First Desktop Scope
-The product MUST remain a self-contained desktop market monitor that runs from
-local configuration and public market data. Core user value MUST NOT depend on
-introducing a backend service, private credentials, or hosted control plane
-unless a later spec explicitly approves that expansion. This keeps the product
-easy to run, easy to reason about, and reversible if an experiment fails.
+### I. 本地优先
+产品必须继续是一个本地运行的桌面行情小工具。核心能力默认依赖本地配置和
+公开市场数据，不默认引入后端服务、账号体系或云端依赖。除非后续 spec 明确
+批准，否则不扩张这条边界。
 
-### II. Minimal-Footprint UI
-The default user experience MUST preserve a compact, low-noise floating window
-that is readable in a small corner of the screen. New information density,
-controls, and states MUST be transient, opt-in, or clearly justified in the
-feature spec. Features that add clutter without improving real monitoring value
-are out of bounds.
+### II. 小窗低噪音
+默认体验必须保持“小、稳、可一眼读懂”的悬浮窗风格。新增信息、按钮或状态
+只能是临时的、可选的，或者在 spec 里明确说明必要性。不能为了加功能把界面
+堆成面板。
 
-### III. Feed Integrity Before Novelty
-The application MUST treat stale, missing, reconnecting, or placeholder market
-data as degraded input and MUST NOT present it as fresh truth. Any feature that
-reacts to quotes, including alerting or derived states, MUST define safe
-behavior for stale data, reconnects, and partial snapshots before it is
-considered ready.
+### III. 行情可靠性优先
+陈旧、缺失、重连后补到的、占位性质的行情都不能被当成“新鲜真实数据”。
+任何依赖价格触发的功能，比如提醒、颜色变化、状态计算，都必须先定义好
+stale、reconnect、snapshot 不完整时的安全行为。
 
-### IV. Additive Evolution
-Changes MUST build on the existing `config.py -> bitget.py -> models.py ->
-floating.py` pipeline unless a spec explicitly justifies broader restructuring.
-Framework swaps, runtime changes, or cross-cutting refactors are disallowed by
-default; the repository should evolve through small, understandable increments
-that preserve current behavior while adding new capability.
+### IV. 增量演进
+默认沿着现有 `config.py -> bitget.py -> models.py -> floating.py` 这条链路
+加功能，不先做大重构。换框架、换运行时、跨模块大改，必须在 spec / plan 里
+单独论证。
 
-### V. Test-Backed Behavior
-Every user-visible behavior change, config rule, parser path, or quote-state
-transition MUST have automated verification. Bug fixes MUST add a regression
-test. Documentation-only or purely cosmetic wording updates may skip tests, but
-behavioral changes may not.
+### V. 行为必须可验证
+凡是用户可见行为、配置规则、解析逻辑、行情状态流转发生变化，都必须有对应
+的自动化验证。纯文档修改可以不补测试，行为改动不行。
 
-## Product Constraints
+## 产品约束
 
-- The approved runtime is the current Python desktop application built around
-  PySide6 and the existing `terminal_ticker/` package layout.
-- The supported market source is Bitget public market data unless a future spec
-  explicitly expands scope.
-- Core workflows MUST continue to work with local files and without API keys.
-- Features MUST preserve current macOS and Linux desktop expectations described
-  in the project README.
-- New persistence requirements SHOULD prefer local file-based configuration or
-  state unless a spec proves that something heavier is necessary.
+- 当前批准的运行形态是现有 Python + PySide6 桌面程序。
+- 默认市场数据源仍然是 Bitget 公共接口。
+- 核心流程必须继续支持本地文件配置、无 API key。
+- 新增持久化需求优先考虑本地文件，不默认上数据库。
 
-## Workflow & Quality Gates
+## 流程与质量门禁
 
-- Any non-trivial feature MUST start with a spec under `specs/` before
-  implementation work begins.
-- If a feature meaningfully changes behavior across more than one module, the
-  feature MUST produce a plan and task breakdown before code changes start.
-- Specs, plans, and tasks MUST explicitly call out how the feature protects
-  compact UI defaults and feed integrity under degraded data.
-- Reviews MUST reject work that introduces broad refactors without a written
-  justification in the feature plan's complexity tracking section.
-- Before merge, the branch MUST have the relevant automated tests run and the
-  results recorded in the implementation summary.
+- 非小修小补的功能，先写 `specs/` 下的 spec，再写代码。
+- 只要功能会影响多个模块，就先补 plan 和 tasks。
+- spec / plan / tasks 都要写清楚：怎么保持界面简洁，怎么处理脏行情。
+- 没有明确理由的大重构，review 直接拒绝。
+- 合并前必须跑完相关测试，并记录验证结果。
 
 ## Governance
 
-This constitution supersedes ad hoc workflow preferences for this repository.
-Every spec, plan, task list, review, and implementation summary MUST be checked
-against these principles. Amendments require either an explicit user request or
-a spec/plan that documents why the old rule no longer fits. Versioning follows
-semantic versioning: major for incompatible principle changes, minor for new or
-materially expanded governance, patch for clarifications. Compliance exceptions
-MUST be documented in the relevant feature plan before implementation begins.
+这份宪法高于临时口头约定。之后的 spec、plan、tasks、review、实现总结都
+要按它检查。修改规则需要用户明确要求，或者在新 spec / plan 里解释为什么旧
+规则不再适用。版本号按语义化版本管理：大改动升 major，新增原则升 minor，
+文字澄清升 patch。
 
 **Version**: 1.0.0 | **Ratified**: 2026-04-23 | **Last Amended**: 2026-04-23

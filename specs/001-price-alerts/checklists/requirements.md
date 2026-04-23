@@ -1,35 +1,32 @@
-# Specification Quality Checklist: Price Alerts for Floating Ticker
+# 规格检查清单：价格提醒
 
-**Purpose**: Validate specification completeness and quality before proceeding to planning
-**Created**: 2026-04-23
+**Purpose**: 在进入实现前，确认规格足够清楚  
+**Created**: 2026-04-23  
 **Feature**: [spec.md](../spec.md)
 
-## Content Quality
+## 内容质量
 
-- [x] No implementation details (languages, frameworks, APIs)
-- [x] Focused on user value and business needs
-- [x] Written for non-technical stakeholders
-- [x] All mandatory sections completed
+- [x] 没有混入具体实现代码细节
+- [x] 重点放在用户价值和行为边界
+- [x] 文档已经改成中文可直接阅读
+- [x] 必要章节已补齐
 
-## Requirement Completeness
+## 需求完整性
 
-- [x] No [NEEDS CLARIFICATION] markers remain
-- [x] Requirements are testable and unambiguous
-- [x] Success criteria are measurable
-- [x] Success criteria are technology-agnostic (no implementation details)
-- [x] All acceptance scenarios are defined
-- [x] Edge cases are identified
-- [x] Scope is clearly bounded
-- [x] Dependencies and assumptions identified
+- [x] 没有残留待澄清占位符
+- [x] 需求可测试、含义明确
+- [x] 成功标准可衡量
+- [x] 边界情况已列出
+- [x] 范围已经收敛
+- [x] 默认假设已写明
 
-## Feature Readiness
+## 可进入实现
 
-- [x] All functional requirements have clear acceptance criteria
-- [x] User scenarios cover primary flows
-- [x] Feature meets measurable outcomes defined in Success Criteria
-- [x] No implementation details leak into specification
+- [x] 功能范围够清楚，可以开始做
+- [x] tasks 已精简成可执行清单
+- [x] v1 边界明确：只做本地配置 + 窗口内提醒
 
-## Notes
+## 备注
 
-- Validated against the repository constitution on 2026-04-23.
-- Assumptions intentionally keep v1 inside the current local desktop workflow.
+- 已按仓库宪法检查。
+- 这版文档刻意压缩，方便直接执行。

@@ -1,46 +1,33 @@
-# Research: Price Alerts for Floating Ticker
+# 设计取舍：价格提醒
 
-## Decision 1: Reuse the existing local watchlist workflow for alert setup
+## 1. 提醒配置继续走现有 watchlist
 
-- **Decision**: Define alert rules as part of the existing per-symbol watchlist configuration.
-- **Rationale**: The project already relies on local TOML input and does not yet
-  have an editor surface. Reusing that workflow keeps the feature local-first
-  and avoids a second configuration path.
-- **Alternatives considered**:
-  - In-window alert editor: rejected for v1 because it would add significant UI
-    surface area and validation complexity.
-  - Separate alert file: rejected because it would duplicate symbol ownership
-    and make the small project harder to reason about.
+- **结论**：提醒规则直接放在每个 symbol 的配置里。
+- **原因**：现有项目已经依赖本地 TOML，没有必要再造第二套配置入口。
+- **不选方案**：
+  - 窗口内编辑器：v1 太重。
+  - 单独 alert 文件：会把配置拆散。
 
-## Decision 2: Use in-window visual alerts only in v1
+## 2. v1 只做窗口内视觉提醒
 
-- **Decision**: Deliver alert feedback through the floating ticker UI itself.
-- **Rationale**: This preserves the product's low-noise desktop monitor focus
-  and avoids platform-specific notification APIs during the first iteration.
-- **Alternatives considered**:
-  - System notifications: rejected for v1 because they introduce platform
-    branching and a different noise profile.
-  - Sound alerts: rejected for v1 because they are intrusive and harder to test.
+- **结论**：先只在悬浮窗内部提示。
+- **原因**：最轻，最符合当前产品定位。
+- **不选方案**：
+  - 系统通知：会引入平台差异。
+  - 声音提醒：噪音太大，也不利于测试。
 
-## Decision 3: Trigger alerts only on observed fresh crossings
+## 3. 只对“观察到的新鲜穿越”触发提醒
 
-- **Decision**: Fire an alert only when a fresh quote moves from the non-trigger
-  side of a threshold to the trigger side while the app is actively observing.
-- **Rationale**: This prevents false positives at startup, on stale data, and
-  after reconnect gaps where the actual crossing was not observed.
-- **Alternatives considered**:
-  - Trigger immediately if startup price is already beyond the threshold:
-    rejected because startup state is not an observed crossing.
-  - Trigger on the first post-reconnect quote beyond the threshold: rejected
-    because the crossing may have happened during the gap.
+- **结论**：只有价格从阈值一侧真实跨到另一侧，且这笔价格是新鲜行情，才提醒。
+- **原因**：这样可以避免启动误报和重连误报。
+- **不选方案**：
+  - 启动时只要已在阈值外就提醒：会误报。
+  - 重连后第一笔已在阈值外就提醒：也会误报。
 
-## Decision 4: Auto re-arm after price returns across the threshold
+## 4. 价格回到另一侧后自动重新 arm
 
-- **Decision**: A triggered rule becomes eligible again after the price returns
-  to the non-trigger side and later crosses back.
-- **Rationale**: This keeps the feature useful during long-running sessions
-  without requiring a separate acknowledgment workflow in v1.
-- **Alternatives considered**:
-  - One-shot rules that require manual reset: rejected for v1 because they add
-    state management and extra controls to the compact UI.
-  - Fire on every matching quote: rejected because it would spam the user.
+- **结论**：提醒触发一次后，如果价格回到另一侧，下次再穿越可以再次提醒。
+- **原因**：这样不需要做额外的“手动重置提醒”交互。
+- **不选方案**：
+  - 一次性规则：需要多做状态管理。
+  - 每笔都提醒：会刷屏。
