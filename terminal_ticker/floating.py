@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QPoint, QTimer, Qt
+from PySide6.QtCore import QPoint, QRect, QTimer, Qt
 from PySide6.QtGui import QColor, QCursor, QFont, QFontDatabase, QFontMetrics, QPainter
 from PySide6.QtWidgets import (
     QApplication,
@@ -38,6 +38,9 @@ ROW_HEIGHT = 24
 PANEL_WIDTH = 268
 PANEL_MAX_HEIGHT = 230
 MARQUEE_GAP = 28
+TICKER_TAPE_HEIGHT = 22
+TICKER_TEXT_VERTICAL_NUDGE = -2
+TICKER_SEPARATOR = "•"
 
 
 @dataclass(frozen=True)
@@ -46,15 +49,15 @@ class FeedEvent:
     payload: Any
 
 
-def build_ticker_text(
+def build_ticker_items(
     instruments: tuple[BitgetInstrument, ...],
     quotes: dict[str, QuoteState],
-) -> str:
+) -> list[str]:
     parts: list[str] = []
     for instrument in instruments:
         quote = quotes[instrument.key]
         parts.append(f"{instrument.label} {quote.price_label()}")
-    return "  •  ".join(parts)
+    return parts
 
 
 class FeedWorker(threading.Thread):
@@ -135,29 +138,49 @@ class TickerTape(QFrame):
     def __init__(self, on_activate) -> None:
         super().__init__()
         self.on_activate = on_activate
-        self.text = "waiting"
+        self.items = ["waiting"]
         self.offset = 0.0
         self.speed = 0.38
-        self.text_width = 0
-        self.setFixedHeight(HEADER_HEIGHT)
+        self.item_widths: list[int] = []
+        self.separator_width = 0
+        self.setFixedHeight(TICKER_TAPE_HEIGHT)
 
-    def set_text(self, text: str) -> None:
-        normalized = text or "waiting"
-        if normalized == self.text:
-            return
-        self.text = normalized
+    def _recalculate_metrics(self) -> None:
         metrics = QFontMetrics(self.font())
-        self.text_width = metrics.horizontalAdvance(self.text)
-        self.offset = 0.0
+        self.item_widths = [metrics.horizontalAdvance(item) for item in self.items]
+        self.separator_width = metrics.horizontalAdvance(f"  {TICKER_SEPARATOR}  ")
+
+    def _cycle_width(self) -> int:
+        if not self.item_widths:
+            return 0
+        content_width = sum(self.item_widths)
+        if len(self.item_widths) > 1:
+            content_width += self.separator_width * (len(self.item_widths) - 1)
+        return content_width + MARQUEE_GAP
+
+    def set_items(self, items: list[str]) -> None:
+        normalized = items or ["waiting"]
+        if normalized == self.items:
+            return
+        previous_cycle_width = self._cycle_width()
+        self.items = normalized
+        self._recalculate_metrics()
+        new_cycle_width = self._cycle_width()
+        if new_cycle_width <= self.width():
+            self.offset = 0.0
+        elif previous_cycle_width > 0:
+            self.offset = self.offset % new_cycle_width
+        else:
+            self.offset = 0.0
         self.update()
 
     def advance(self) -> None:
-        if self.text_width <= self.width():
+        cycle_width = self._cycle_width()
+        if cycle_width <= self.width():
             self.offset = 0
             self.update()
             return
         self.offset += self.speed
-        cycle_width = self.text_width + MARQUEE_GAP
         if self.offset >= cycle_width:
             self.offset = 0
         self.update()
@@ -173,17 +196,35 @@ class TickerTape(QFrame):
         painter.setFont(self.font())
         painter.setPen(QColor("#dce7ff"))
 
-        metrics = QFontMetrics(self.font())
-        baseline = (self.height() + metrics.ascent() - metrics.descent()) // 2
+        if not self.items:
+            return
 
-        if self.text_width <= self.width():
-            painter.drawText(8, baseline, self.text)
+        cycle_width = self._cycle_width()
+        if cycle_width <= self.width():
+            painter.drawText(
+                self.rect().adjusted(8, TICKER_TEXT_VERTICAL_NUDGE, -8, 0),
+                int(Qt.AlignLeft | Qt.AlignVCenter),
+                f"  {TICKER_SEPARATOR}  ".join(self.items),
+            )
             return
 
         x = -int(self.offset) + 8
-        cycle_width = self.text_width + MARQUEE_GAP
         while x < self.width():
-            painter.drawText(x, baseline, self.text)
+            draw_x = x
+            for index, item in enumerate(self.items):
+                painter.drawText(
+                    QRect(draw_x, TICKER_TEXT_VERTICAL_NUDGE, self.item_widths[index], self.height()),
+                    int(Qt.AlignLeft | Qt.AlignVCenter),
+                    item,
+                )
+                draw_x += self.item_widths[index]
+                if index < len(self.items) - 1:
+                    painter.drawText(
+                        QRect(draw_x, TICKER_TEXT_VERTICAL_NUDGE, self.separator_width, self.height()),
+                        int(Qt.AlignLeft | Qt.AlignVCenter),
+                        f"  {TICKER_SEPARATOR}  ",
+                    )
+                    draw_x += self.separator_width
             x += cycle_width
 
 
@@ -473,7 +514,7 @@ class FloatingTickerWindow(QWidget):
             )
 
     def _update_ticker_text(self) -> None:
-        self.ticker_tape.set_text(build_ticker_text(self.instruments, self.quotes))
+        self.ticker_tape.set_items(build_ticker_items(self.instruments, self.quotes))
 
     def _update_status_ui(self) -> None:
         if self.last_message_at is None:
