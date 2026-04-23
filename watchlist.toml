@@ -1,4 +1,3 @@
-title = "Terminal Ticker"
 symbols = [
   { symbol = "MUUSDT", inst_type = "USDT-FUTURES", label = "MU" },
   { symbol = "MSFTUSDT", inst_type = "USDT-FUTURES", label = "MSFT" },

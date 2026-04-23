@@ -28,7 +28,6 @@ class InstrumentConfig:
 
 @dataclass(frozen=True)
 class AppConfig:
-    title: str
     instruments: tuple[InstrumentConfig, ...]
     display: DisplayConfig
     source_path: Path | None = None
@@ -127,10 +126,6 @@ def _coerce_float(raw_value: Any, field_name: str, default: float) -> float:
 
 
 def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> AppConfig:
-    title = data.get("title", "Price Viewer")
-    if not isinstance(title, str) or not title.strip():
-        raise ValueError("title must be a non-empty string")
-
     raw_symbols = data.get("symbols")
     if not isinstance(raw_symbols, list):
         raise ValueError("symbols must be a list of Bitget symbol entries")
@@ -161,7 +156,6 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
     )
 
     return AppConfig(
-        title=title.strip(),
         instruments=instruments,
         display=display,
         source_path=source_path,
@@ -179,10 +173,8 @@ def build_runtime_config(
     file_config: AppConfig | None,
     *,
     cli_symbols: list[str] | None = None,
-    cli_title: str | None = None,
 ) -> AppConfig:
     base = file_config or AppConfig(
-        title="Price Viewer",
         instruments=tuple(),
         display=DisplayConfig(),
         source_path=None,
@@ -194,11 +186,7 @@ def build_runtime_config(
     if not instruments:
         raise ValueError("no symbols configured; use a config file or --symbols")
 
-    title = base.title
-    if cli_title and cli_title.strip():
-        title = cli_title.strip()
     return AppConfig(
-        title=title,
         instruments=instruments,
         display=base.display,
         source_path=base.source_path,

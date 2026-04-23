@@ -16,7 +16,6 @@ class ConfigTests(unittest.TestCase):
     def test_parse_config_normalizes_symbols(self) -> None:
         config = parse_config(
             {
-                "title": "Desk",
                 "symbols": [
                     "SPOT:btcusdt",
                     " SPOT:BTCUSDT ",
@@ -57,7 +56,6 @@ class ConfigTests(unittest.TestCase):
             config_path.write_text(
                 textwrap.dedent(
                     """
-                    title = "Terminal Ticker"
                     symbols = [
                       { symbol = "MSFTUSDT", inst_type = "USDT-FUTURES", label = "MSFT" },
                       { symbol = "BTCUSDT", inst_type = "SPOT", label = "BTC" },
@@ -70,7 +68,6 @@ class ConfigTests(unittest.TestCase):
             )
             config = load_config(config_path)
 
-        self.assertEqual(config.title, "Terminal Ticker")
         self.assertEqual(
             self._instrument_rows(config),
             (

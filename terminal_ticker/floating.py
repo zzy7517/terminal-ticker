@@ -206,7 +206,6 @@ class FloatingTickerWindow(QWidget):
         self.feed_worker.start()
 
     def _build_window(self) -> None:
-        self.setWindowTitle(self.config.title)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMinimumWidth(248)
@@ -423,10 +422,6 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         help="override the config and watch Bitget symbols, e.g. USDT-FUTURES:BTCUSDT",
     )
-    parser.add_argument(
-        "--title",
-        help="override the configured title",
-    )
     return parser.parse_args()
 
 
@@ -440,7 +435,6 @@ def resolve_config(args: argparse.Namespace) -> AppConfig:
     return build_runtime_config(
         file_config,
         cli_symbols=args.symbols,
-        cli_title=args.title,
     )
 
 

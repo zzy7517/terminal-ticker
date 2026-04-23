@@ -43,7 +43,6 @@ python -m terminal_ticker --symbols USDT-FUTURES:MUUSDT USDT-FUTURES:MSFTUSDT US
 The default config file is [`watchlist.toml`](watchlist.toml).
 
 ```toml
-title = "Terminal Ticker"
 symbols = [
   { symbol = "MUUSDT", inst_type = "USDT-FUTURES", label = "MU" },
   { symbol = "MSFTUSDT", inst_type = "USDT-FUTURES", label = "MSFT" },
