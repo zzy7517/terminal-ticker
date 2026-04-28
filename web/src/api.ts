@@ -1,4 +1,4 @@
-import type { MarketState, SecuritySearchResult } from './types';
+import type { AgentAnalysis, MarketState, SecuritySearchResult } from './types';
 
 export async function fetchState(): Promise<MarketState> {
   const response = await fetch('/api/state');
@@ -40,6 +40,16 @@ export async function removeLongbridgeSymbol(symbol: string): Promise<MarketStat
   }
   const payload = await response.json();
   return payload.state;
+}
+
+export async function analyzeInstrument(key: string): Promise<{ result: AgentAnalysis; state: MarketState }> {
+  const response = await fetch(`/api/agent/analyze/${encodeURIComponent(key)}`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error(`agent analysis failed: ${response.status}`);
+  }
+  return response.json();
 }
 
 export function connectStateSocket(onState: (state: MarketState) => void, onStatus: (status: string) => void) {

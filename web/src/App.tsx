@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   BarChart3,
+  Bot,
   Check,
+  Loader2,
   Minus,
   Plus,
   RefreshCw,
@@ -20,12 +22,20 @@ import {
 } from 'lightweight-charts';
 import {
   addLongbridgeSymbol,
+  analyzeInstrument,
   connectStateSocket,
   fetchState,
   removeLongbridgeSymbol,
   searchSecurities,
 } from './api';
-import type { CandlePoint, Instrument, MarketState, Quote, SecuritySearchResult } from './types';
+import type {
+  AgentAnalysis,
+  CandlePoint,
+  Instrument,
+  MarketState,
+  Quote,
+  SecuritySearchResult,
+} from './types';
 
 const GROUP_LABELS: Record<string, string> = {
   stocks: '美股',
@@ -60,9 +70,22 @@ function analysisTone(quote: Quote | undefined) {
   return 'neutral';
 }
 
+function agentTone(analysis: AgentAnalysis | undefined) {
+  const bias = analysis?.bias;
+  if (bias === 'bullish') return 'up';
+  if (bias === 'bearish') return 'down';
+  if (bias === 'mixed') return 'mixed';
+  return 'neutral';
+}
+
 function sourceLabel(instrument: Instrument | undefined) {
   if (!instrument) return '-';
   return instrument.source === 'longbridge' ? 'Longbridge' : instrument.source.toUpperCase();
+}
+
+function formatLevelPrice(price: number | null) {
+  if (price == null) return '-';
+  return price.toFixed(price > 1000 ? 1 : 2);
 }
 
 function ConnectionBadge({ socketStatus, streamStatus }: { socketStatus: string; streamStatus: string }) {
@@ -285,11 +308,67 @@ function SearchPanel({
   );
 }
 
+function AgentReadout({
+  analysis,
+  busy,
+  disabled,
+  onAnalyze,
+}: {
+  analysis: AgentAnalysis | undefined;
+  busy: boolean;
+  disabled: boolean;
+  onAnalyze: () => void;
+}) {
+  const tone = agentTone(analysis);
+  return (
+    <div className="agent-card agent-readout">
+      <div className="agent-card-head">
+        <span className="panel-label">Codex Read</span>
+        <span className={`agent-bias ${tone}`}>{analysis?.bias ?? 'idle'}</span>
+      </div>
+      <p>
+        {analysis?.available
+          ? analysis.summary
+          : analysis?.error || '把当前 quote、price action 和最近 OHLCV 交给 Codex provider 做一次结构化解读。'}
+      </p>
+      {analysis?.available && (
+        <>
+          <div className="agent-levels">
+            {analysis.keyLevels.slice(0, 3).map((level, index) => (
+              <div className="agent-level" key={`${level.label}-${index}`}>
+                <span>{level.label || 'Level'}</span>
+                <strong>{formatLevelPrice(level.price)}</strong>
+                <small>{level.reason}</small>
+              </div>
+            ))}
+          </div>
+          <div className="agent-plan">
+            {analysis.watchPlan.slice(0, 3).map((item, index) => (
+              <div key={`${item}-${index}`}>{item}</div>
+            ))}
+          </div>
+          {analysis.invalidation && (
+            <div className="agent-invalidation">
+              <span>Invalidation</span>
+              <strong>{analysis.invalidation}</strong>
+            </div>
+          )}
+        </>
+      )}
+      <button className="agent-action" type="button" onClick={onAnalyze} disabled={disabled || busy}>
+        {busy ? <Loader2 className="spin" size={16} /> : <Bot size={16} />}
+        {busy ? 'Analyzing' : 'Ask Codex'}
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const [state, setState] = useState<MarketState | null>(null);
   const [socketStatus, setSocketStatus] = useState('connecting');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  const [agentBusyKey, setAgentBusyKey] = useState<string | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -342,7 +421,47 @@ export default function App() {
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
   const selectedInstrument = state?.instruments.find((instrument) => instrument.key === selectedKey);
   const selectedQuote = selectedKey ? state?.quotes[selectedKey] : undefined;
+  const selectedAgent = selectedKey ? state?.agentAnalyses[selectedKey] : undefined;
   const tone = analysisTone(selectedQuote);
+
+  async function runAgentAnalysis() {
+    if (!selectedKey) return;
+    setAgentBusyKey(selectedKey);
+    try {
+      const payload = await analyzeInstrument(selectedKey);
+      setState(payload.state);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'agent analysis failed';
+      const fallback: AgentAnalysis = {
+        available: false,
+        provider: state?.config.agent.provider ?? 'codex',
+        model: state?.config.agent.model ?? '-',
+        updatedAt: new Date().toISOString(),
+        summary: '',
+        bias: 'neutral',
+        confidence: 0,
+        keyLevels: [],
+        watchPlan: [],
+        invalidation: '',
+        riskNotes: [],
+        error: message,
+        rawText: null,
+      };
+      setState((current) =>
+        current && selectedKey
+          ? {
+              ...current,
+              agentAnalyses: {
+                ...current.agentAnalyses,
+                [selectedKey]: fallback,
+              },
+            }
+          : current,
+      );
+    } finally {
+      setAgentBusyKey(null);
+    }
+  }
 
   return (
     <main className="app-shell">
@@ -441,6 +560,12 @@ export default function App() {
         </section>
 
         <aside className="agent-panel">
+          <AgentReadout
+            analysis={selectedAgent}
+            busy={agentBusyKey === selectedKey}
+            disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
+            onAnalyze={runAgentAnalysis}
+          />
           <div className="agent-card">
             <span className="panel-label">Agent State</span>
             <h3>{selectedQuote?.priceAction?.label ?? 'unavailable'}</h3>

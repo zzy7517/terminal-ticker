@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .agent import AgentAnalysisResult, build_agent_context, create_llm_provider
 from .config import AppConfig, LONGBRIDGE_SOURCE, load_config
 from .controller import TickerController
 from .longbridge_provider import (
@@ -124,6 +125,7 @@ def serialize_market_state(
     instruments: tuple[MarketInstrument, ...],
     quotes: dict[str, QuoteState],
     stream_status: str,
+    agent_analyses: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the complete browser state snapshot."""
     groups: dict[str, list[str]] = {}
@@ -140,6 +142,13 @@ def serialize_market_state(
                 "lookback": config.analysis.lookback,
                 "pollIntervalSeconds": config.analysis.poll_interval_seconds,
                 "staleAfterSeconds": config.analysis.stale_after_seconds,
+            },
+            "agent": {
+                "enabled": config.agent.enabled,
+                "provider": config.agent.provider,
+                "model": config.agent.model,
+                "maxCandles": config.agent.max_candles,
+                "reasoningEffort": config.agent.reasoning_effort,
             },
             "display": {
                 "refreshIntervalMs": config.display.refresh_interval_ms,
@@ -158,6 +167,7 @@ def serialize_market_state(
             )
             for key, quote in quotes.items()
         },
+        "agentAnalyses": agent_analyses or {},
     }
 
 
@@ -179,6 +189,7 @@ class MarketRuntime:
         self.clients: set[WebSocket] = set()
         self.pump_task: asyncio.Task[None] | None = None
         self.running = False
+        self.agent_analyses: dict[str, dict[str, Any]] = {}
 
     async def start(self) -> None:
         """Start the feed worker and websocket broadcast pump."""
@@ -209,6 +220,7 @@ class MarketRuntime:
             instruments=self.instruments,
             quotes=self.controller.quotes,
             stream_status=self.controller.stream_status,
+            agent_analyses=self.agent_analyses,
         )
 
     async def connect(self, websocket: WebSocket) -> None:
@@ -273,6 +285,44 @@ class MarketRuntime:
             await self.reload_from_source()
         return {"changed": changed, "state": self.snapshot()}
 
+    async def analyze_instrument(self, instrument_key: str) -> dict[str, Any]:
+        """Run one manual LLM analysis for an instrument."""
+        if not self.config.agent.enabled:
+            result = AgentAnalysisResult.unavailable(
+                provider=self.config.agent.provider,
+                model=self.config.agent.model,
+                error="Agent is disabled in config.",
+            )
+            return {"result": result.to_payload(), "state": self.snapshot()}
+
+        instrument = self._instrument_by_key(instrument_key)
+        quote = self.controller.quotes.get(instrument.key)
+        if quote is None:
+            raise HTTPException(status_code=404, detail="Quote is not available.")
+        if not quote.price_action_candles:
+            result = AgentAnalysisResult.unavailable(
+                provider=self.config.agent.provider,
+                model=self.config.agent.model,
+                error="No OHLCV candles are available for this instrument yet.",
+            )
+            payload = result.to_payload()
+            self.agent_analyses[instrument.key] = payload
+            await self.broadcast()
+            return {"result": payload, "state": self.snapshot()}
+
+        context = build_agent_context(
+            instrument=instrument,
+            quote=quote,
+            interval=self.config.analysis.interval,
+            max_candles=self.config.agent.max_candles,
+        )
+        provider = create_llm_provider(self.config.agent)
+        result = await provider.analyze(context)
+        payload = result.to_payload()
+        self.agent_analyses[instrument.key] = payload
+        await self.broadcast()
+        return {"result": payload, "state": self.snapshot()}
+
     async def reload_from_source(self) -> None:
         """Reload watchlist config and restart the feed controller."""
         if self.config.source_path is None:
@@ -283,6 +333,10 @@ class MarketRuntime:
         self.config = config
         self.instruments = instruments
         self.controller = self.controller_factory(config=config, instruments=instruments)
+        active_keys = {instrument.key for instrument in instruments}
+        self.agent_analyses = {
+            key: value for key, value in self.agent_analyses.items() if key in active_keys
+        }
         if self.running:
             self.controller.start()
         await self.broadcast()
@@ -292,6 +346,13 @@ class MarketRuntime:
         if self.config.source_path is None:
             raise HTTPException(status_code=409, detail="Cannot edit watchlist without a file.")
         return self.config.source_path
+
+    def _instrument_by_key(self, instrument_key: str) -> MarketInstrument:
+        """Find an active instrument by provider key."""
+        for instrument in self.instruments:
+            if instrument.key == instrument_key:
+                return instrument
+        raise HTTPException(status_code=404, detail="Instrument not found.")
 
     async def _pump(self) -> None:
         """Drain feed events and broadcast state updates."""
@@ -366,6 +427,10 @@ def create_app(
     @app.delete("/api/watchlist/longbridge/{symbol}")
     async def remove_longbridge_endpoint(symbol: str) -> dict[str, Any]:
         return await runtime.remove_longbridge(symbol)
+
+    @app.post("/api/agent/analyze/{instrument_key}")
+    async def analyze_instrument_endpoint(instrument_key: str) -> dict[str, Any]:
+        return await runtime.analyze_instrument(instrument_key)
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:

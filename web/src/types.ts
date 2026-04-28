@@ -21,6 +21,26 @@ export interface PriceAction {
   stale: boolean;
 }
 
+export interface AgentAnalysis {
+  available: boolean;
+  provider: string;
+  model: string;
+  updatedAt: string;
+  summary: string;
+  bias: 'bullish' | 'bearish' | 'neutral' | 'mixed';
+  confidence: number;
+  keyLevels: Array<{
+    label: string;
+    price: number | null;
+    reason: string;
+  }>;
+  watchPlan: string[];
+  invalidation: string;
+  riskNotes: string[];
+  error: string | null;
+  rawText: string | null;
+}
+
 export interface Quote {
   symbol: string;
   displayName: string;
@@ -66,6 +86,13 @@ export interface MarketState {
       pollIntervalSeconds: number;
       staleAfterSeconds: number;
     };
+    agent: {
+      enabled: boolean;
+      provider: string;
+      model: string;
+      maxCandles: number;
+      reasoningEffort: string;
+    };
     display: {
       refreshIntervalMs: number;
       staleAfterSeconds: number;
@@ -76,6 +103,7 @@ export interface MarketState {
   instruments: Instrument[];
   groups: Record<string, string[]>;
   quotes: Record<string, Quote>;
+  agentAnalyses: Record<string, AgentAnalysis>;
 }
 
 export interface SecuritySearchResult {

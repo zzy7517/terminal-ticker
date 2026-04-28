@@ -335,6 +335,10 @@ h3 {
   color: var(--text-secondary);
 }
 
+.mixed {
+  color: var(--amber);
+}
+
 .marker.up,
 .analysis-marker.up {
   background: rgba(159, 176, 139, 0.14);
@@ -542,6 +546,13 @@ h3 {
   padding: 14px;
 }
 
+.agent-card-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .agent-card p {
   font-size: 13px;
   line-height: 1.55;
@@ -566,12 +577,117 @@ h3 {
   padding-bottom: 0;
 }
 
+.agent-readout {
+  background: rgba(213, 168, 95, 0.045);
+}
+
+.agent-bias {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.agent-levels {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.agent-level {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  padding: 9px;
+}
+
+.agent-level span,
+.agent-level small,
+.agent-invalidation span {
+  color: var(--text-muted);
+  display: block;
+  font-size: 11px;
+}
+
+.agent-level strong {
+  display: block;
+  font-family: var(--mono);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0;
+}
+
+.agent-plan {
+  color: var(--text-secondary);
+  display: grid;
+  font-size: 12px;
+  gap: 6px;
+  line-height: 1.45;
+  margin-top: 12px;
+}
+
+.agent-plan div {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 6px;
+}
+
+.agent-invalidation {
+  background: rgba(200, 122, 99, 0.08);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px rgba(200, 122, 99, 0.15);
+  margin-top: 12px;
+  padding: 9px;
+}
+
+.agent-invalidation strong {
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.agent-action {
+  align-items: center;
+  background: rgba(213, 168, 95, 0.15);
+  border: 0;
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px rgba(213, 168, 95, 0.22);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 12px;
+  min-height: 40px;
+  width: 100%;
+}
+
+.agent-action:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.spin {
+  animation: spin 900ms linear infinite;
+}
+
 .refresh-button {
   align-items: center;
   display: inline-flex;
   gap: 8px;
   justify-content: center;
   width: 100%;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 button:focus-visible,

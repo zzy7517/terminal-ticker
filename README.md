@@ -8,6 +8,7 @@
 - 通过本地 WebSocket 推送实时 quote、K 线分析和状态更新。
 - 使用结构化 OHLCV 数据分析趋势、震荡、突破尝试和回调状态。
 - 展示选中标的的 K 线图、价格、涨跌幅、成交量和 price action 解释。
+- 提供 Codex provider 的 LLM 解读入口，把当前 K 线和本地分析结果转成结构化市场解读。
 - 美股页内搜索长桥标的，并写入本地 watchlist。
 - 长桥凭证只从环境变量读取，不写入配置文件。
 - 不包含 PySide/Qt 浮窗、折叠行情条或滚动 ticker。
@@ -35,6 +36,19 @@ export LONGBRIDGE_APP_KEY="你的 App Key"
 export LONGBRIDGE_APP_SECRET="你的 App Secret"
 export LONGBRIDGE_ACCESS_TOKEN="你的 Access Token"
 export LONGBRIDGE_REGION="cn"
+```
+
+Codex agent 解读默认读取本机 Codex CLI 登录态：
+
+```text
+$CODEX_HOME/auth.json，未设置 CODEX_HOME 时使用 ~/.codex/auth.json
+```
+
+也可以用环境变量覆盖：
+
+```bash
+export TERMINAL_TICKER_CODEX_API_KEY="你的 Codex access token"
+export TERMINAL_TICKER_CODEX_BASE_URL="https://chatgpt.com/backend-api/codex"
 ```
 
 开发模式需要两个终端。
@@ -106,6 +120,14 @@ interval = "5m"
 lookback = 40
 poll_interval_seconds = 30
 stale_after_seconds = 420
+
+[agent]
+enabled = true
+provider = "codex"
+model = "gpt-5.2-codex"
+timeout_seconds = 45
+max_candles = 40
+reasoning_effort = "medium"
 ```
 
 配置说明：
@@ -122,6 +144,10 @@ stale_after_seconds = 420
 - `analysis.lookback` 是每次分析使用的最近 K 线数量，最小值是 `10`。
 - `analysis.poll_interval_seconds` 控制 K 线分析刷新间隔。
 - `analysis.stale_after_seconds` 控制分析结果和最新 K 线多久后视为过期。
+- `[agent]` 控制 LLM 解读层。第一版只支持 `provider = "codex"`。
+- Codex provider 会直接读取 Codex CLI 的 `auth.json`，不会读取 Hermes 的 auth store，也不会导入 Hermes runtime。
+- `agent.max_candles` 控制每次发送给 LLM 的最近 K 线数量，最小值是 `10`。
+- `agent.reasoning_effort` 支持 `low`、`medium`、`high`、`xhigh`。
 - 旧配置里的 `show_collapsed` 会被解析以保持兼容，但 Web UI 不再使用折叠行情条。
 
 ## 价格行为分析
@@ -142,6 +168,17 @@ stale_after_seconds = 420
 - `PB+` / `PB-`：上涨或下跌背景里的回调
 
 这只是本地监控和解释层，不会下单、不会管理仓位，也不会给出买卖按钮。
+
+## Codex Agent 解读
+
+Web UI 右侧的 `Ask Codex` 会触发一次手动分析。后端发送给 Codex 的不是截图，而是当前标的的结构化上下文：
+
+- 标的信息和实时 quote。
+- deterministic price action 结果。
+- 最近 OHLCV K 线。
+- 本地计算出的近期高低点、最新实体、最新振幅、成交量均值等事实。
+
+Codex 必须返回结构化 JSON，Web UI 会展示摘要、方向、置信度、关键价位、观察计划和失效条件。没有 K 线、Codex 登录态缺失、token 过期或 provider 请求失败时，只会显示不可用状态，不影响行情和本地 price action。
 
 ## 添加和移除美股
 

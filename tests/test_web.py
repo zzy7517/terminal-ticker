@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from terminal_ticker.agent import AgentAnalysisResult
 from terminal_ticker.config import AppConfig, DisplayConfig
 from terminal_ticker.controller import DrainResult
 from terminal_ticker.longbridge_provider import LongbridgeInstrument, LongbridgeSecurity
@@ -72,6 +73,8 @@ class WebTests(unittest.TestCase):
         self.assertEqual(payload["quotes"][instrument.key]["priceLabel"], "201.25")
         self.assertEqual(payload["quotes"][instrument.key]["priceAction"]["marker"], "TR+")
         self.assertEqual(payload["quotes"][instrument.key]["candles"][0]["time"], 1776846000)
+        self.assertEqual(payload["config"]["agent"]["provider"], "codex")
+        self.assertEqual(payload["agentAnalyses"], {})
 
     def test_stale_analysis_is_not_marked_available(self) -> None:
         """Verify stale price action markers do not appear as active signals."""
@@ -136,6 +139,52 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["results"][0]["exists"])
+
+    def test_agent_analysis_endpoint_runs_provider_and_caches_result(self) -> None:
+        """Verify manual agent endpoint analyzes current candles."""
+        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+        quote = app.state.runtime.controller.quotes[instrument.key]
+        quote.apply_payload({"price": 201.25})
+        quote.apply_price_action(
+            PriceActionState(
+                label="trend",
+                bias="bullish",
+                marker="TR+",
+                reason="收盘持续上行",
+                strength=70,
+            ),
+            candles=(Candle("longbridge:AAPL.US", 1776846000000, 200, 202, 199, 201.25, 12345),),
+        )
+
+        class FakeProvider:
+            """Return a deterministic agent result."""
+
+            async def analyze(self, context):
+                self.context = context
+                return AgentAnalysisResult(
+                    available=True,
+                    provider="codex",
+                    model="fake",
+                    updated_at="2026-04-28T00:00:00+00:00",
+                    summary="AAPL is trending.",
+                    bias="bullish",
+                    confidence=70,
+                )
+
+        with patch("terminal_ticker.web.create_llm_provider", return_value=FakeProvider()):
+            with TestClient(app) as client:
+                response = client.post("/api/agent/analyze/longbridge:AAPL.US")
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["result"]["available"])
+        self.assertEqual(payload["state"]["agentAnalyses"][instrument.key]["summary"], "AAPL is trending.")
 
 
 if __name__ == "__main__":

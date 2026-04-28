@@ -112,6 +112,36 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.analysis.poll_interval_seconds, 45)
         self.assertEqual(config.analysis.stale_after_seconds, 180)
 
+    def test_parse_config_supports_agent_defaults_and_overrides(self) -> None:
+        """Verify parse config supports LLM agent settings."""
+        default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})
+        self.assertTrue(default_config.agent.enabled)
+        self.assertEqual(default_config.agent.provider, "codex")
+        self.assertEqual(default_config.agent.model, "gpt-5.2-codex")
+
+        config = parse_config(
+            {
+                "symbols": ["SPOT:BTCUSDT"],
+                "agent": {
+                    "enabled": False,
+                    "provider": "codex",
+                    "model": "gpt-5.4",
+                    "base_url": "https://example.test/codex",
+                    "timeout_seconds": 12,
+                    "max_candles": 24,
+                    "reasoning_effort": "high",
+                },
+            }
+        )
+
+        self.assertFalse(config.agent.enabled)
+        self.assertEqual(config.agent.provider, "codex")
+        self.assertEqual(config.agent.model, "gpt-5.4")
+        self.assertEqual(config.agent.base_url, "https://example.test/codex")
+        self.assertEqual(config.agent.timeout_seconds, 12)
+        self.assertEqual(config.agent.max_candles, 24)
+        self.assertEqual(config.agent.reasoning_effort, "high")
+
     def test_build_runtime_requires_symbols(self) -> None:
         """Verify build runtime requires symbols."""
         with self.assertRaises(ValueError):

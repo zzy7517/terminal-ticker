@@ -25,6 +25,8 @@ SUPPORTED_ANALYSIS_INTERVALS = {
     "1W",
     "1M",
 }
+SUPPORTED_AGENT_PROVIDERS = {"codex"}
+SUPPORTED_REASONING_EFFORTS = {"low", "medium", "high", "xhigh"}
 DEFAULT_GROUP = "other"
 GROUP_ALIASES = {
     "crypto": "crypto",
@@ -68,6 +70,18 @@ class AnalysisConfig:
 
 
 @dataclass(frozen=True)
+class AgentConfig:
+    """Hold LLM agent provider settings."""
+    enabled: bool = True
+    provider: str = "codex"
+    model: str = "gpt-5.2-codex"
+    base_url: str | None = None
+    timeout_seconds: float = 45.0
+    max_candles: int = 40
+    reasoning_effort: str = "medium"
+
+
+@dataclass(frozen=True)
 class InstrumentConfig:
     """Represent one normalized watchlist entry before provider resolution."""
     symbol: str
@@ -105,6 +119,7 @@ class AppConfig:
     display: DisplayConfig
     source_path: Path | None = None
     analysis: AnalysisConfig = AnalysisConfig()
+    agent: AgentConfig = AgentConfig()
 
 
 def _normalize_inst_type(raw_value: Any) -> str | None:
@@ -194,6 +209,48 @@ def _normalize_analysis_interval(raw_value: Any) -> str:
     if normalized not in SUPPORTED_ANALYSIS_INTERVALS:
         supported = ", ".join(sorted(SUPPORTED_ANALYSIS_INTERVALS))
         raise ValueError(f"analysis.interval must be one of: {supported}")
+    return normalized
+
+
+def _normalize_agent_provider(raw_value: Any) -> str:
+    """Normalize the configured LLM provider."""
+    if raw_value is None:
+        return "codex"
+    if not isinstance(raw_value, str):
+        raise ValueError("agent.provider must be a string")
+    provider = raw_value.strip().lower()
+    if not provider:
+        return "codex"
+    if provider not in SUPPORTED_AGENT_PROVIDERS:
+        supported = ", ".join(sorted(SUPPORTED_AGENT_PROVIDERS))
+        raise ValueError(f"agent.provider must be one of: {supported}")
+    return provider
+
+
+def _normalize_optional_string(raw_value: Any, field_name: str) -> str | None:
+    """Normalize an optional non-empty string field."""
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, str):
+        raise ValueError(f"{field_name} must be a string")
+    value = raw_value.strip()
+    return value or None
+
+
+def _normalize_reasoning_effort(raw_value: Any) -> str:
+    """Normalize the configured reasoning effort for Responses-style models."""
+    if raw_value is None:
+        return "medium"
+    if not isinstance(raw_value, str):
+        raise ValueError("agent.reasoning_effort must be a string")
+    effort = raw_value.strip().lower()
+    if not effort:
+        return "medium"
+    aliases = {"minimal": "low", "extra": "xhigh", "extra_high": "xhigh"}
+    normalized = aliases.get(effort, effort)
+    if normalized not in SUPPORTED_REASONING_EFFORTS:
+        supported = ", ".join(sorted(SUPPORTED_REASONING_EFFORTS))
+        raise ValueError(f"agent.reasoning_effort must be one of: {supported}")
     return normalized
 
 
@@ -354,10 +411,30 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         ),
     )
 
+    raw_agent = data.get("agent", {})
+    if raw_agent is None:
+        raw_agent = {}
+    if not isinstance(raw_agent, dict):
+        raise ValueError("agent must be a table")
+    agent = AgentConfig(
+        enabled=_normalize_bool(raw_agent.get("enabled"), "agent.enabled", True),
+        provider=_normalize_agent_provider(raw_agent.get("provider")),
+        model=_normalize_optional_string(raw_agent.get("model"), "agent.model") or "gpt-5.2-codex",
+        base_url=_normalize_optional_string(raw_agent.get("base_url"), "agent.base_url"),
+        timeout_seconds=_coerce_float(
+            raw_agent.get("timeout_seconds"),
+            "agent.timeout_seconds",
+            45.0,
+        ),
+        max_candles=_coerce_min_int(raw_agent.get("max_candles"), "agent.max_candles", 40, 10),
+        reasoning_effort=_normalize_reasoning_effort(raw_agent.get("reasoning_effort")),
+    )
+
     return AppConfig(
         instruments=instruments,
         display=display,
         analysis=analysis,
+        agent=agent,
         source_path=source_path,
     )
 
@@ -380,6 +457,7 @@ def build_runtime_config(
         instruments=tuple(),
         display=DisplayConfig(),
         analysis=AnalysisConfig(),
+        agent=AgentConfig(),
         source_path=None,
     )
 
@@ -393,5 +471,6 @@ def build_runtime_config(
         instruments=instruments,
         display=base.display,
         analysis=base.analysis,
+        agent=base.agent,
         source_path=base.source_path,
     )
