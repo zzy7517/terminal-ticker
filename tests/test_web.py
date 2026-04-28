@@ -76,6 +76,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(payload["quotes"][instrument.key]["priceLabel"], "201.25")
         self.assertEqual(payload["quotes"][instrument.key]["priceAction"]["marker"], "TR+")
         self.assertEqual(payload["quotes"][instrument.key]["candles"][0]["time"], 1776846000)
+        self.assertEqual(payload["instruments"][0]["analysisInterval"], "5m")
         self.assertEqual(payload["config"]["agent"]["provider"], "codex")
         self.assertEqual(payload["config"]["agent"]["baseUrl"], None)
         self.assertEqual(payload["agentAnalyses"], {})
@@ -288,6 +289,48 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["state"]["config"]["analysis"]["interval"], "15m")
         self.assertEqual(persisted.analysis.interval, "15m")
+
+    def test_instrument_interval_endpoint_only_updates_selected_symbol(self) -> None:
+        """Verify browser can switch the selected symbol's K-line interval."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
+                      { symbol = "SPY.US", source = "longbridge", label = "SPY" },
+                    ]
+                    """
+                ).strip()
+            )
+            config = load_config(config_path)
+            instruments = (
+                LongbridgeInstrument("AAPL.US", "AAPL"),
+                LongbridgeInstrument("SPY.US", "SPY"),
+            )
+            app = create_app(
+                config=config,
+                instruments=instruments,
+                controller_factory=DummyController,
+                auto_start=False,
+            )
+
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/instruments/longbridge%3AAAPL.US/analysis-interval",
+                    json={"interval": "15m"},
+                )
+
+            persisted = load_config(config_path)
+
+        self.assertEqual(response.status_code, 200)
+        state = response.json()["state"]
+        intervals = {item["key"]: item["analysisInterval"] for item in state["instruments"]}
+        self.assertEqual(intervals["longbridge:AAPL.US"], "15m")
+        self.assertEqual(intervals["longbridge:SPY.US"], "5m")
+        self.assertEqual(persisted.instruments[0].analysis_interval, "15m")
+        self.assertIsNone(persisted.instruments[1].analysis_interval)
 
 
 if __name__ == "__main__":

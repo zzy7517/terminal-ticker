@@ -160,10 +160,11 @@ class FeedWorker(threading.Thread):
                     break
                 candles = tuple()
                 try:
+                    interval = getattr(instrument, "analysis_interval", None) or self.config.analysis.interval
                     candles = await asyncio.to_thread(
                         self._fetch_candles,
                         instrument,
-                        interval=self.config.analysis.interval,
+                        interval=interval,
                         limit=self.config.analysis.lookback,
                     )
                     state = self._analyze_fresh_candles(candles)

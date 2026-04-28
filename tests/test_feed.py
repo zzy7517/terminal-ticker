@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from terminal_ticker.config import AppConfig, DisplayConfig
+from terminal_ticker.config import AnalysisConfig, AppConfig, DisplayConfig
 from terminal_ticker.feed import FeedWorker
 from terminal_ticker.bitget import BitgetInstrument
 from terminal_ticker.longbridge_provider import LongbridgeInstrument
@@ -129,6 +129,54 @@ class FeedWorkerTests(unittest.TestCase):
             self.assertEqual(event.payload["id"], "longbridge:AAPL.US")
             self.assertEqual(event.payload["state"].label, "trend")
             self.assertEqual(event.payload["candles"], candles)
+
+        asyncio.run(run_test())
+
+    def test_price_action_uses_per_instrument_interval_override(self) -> None:
+        """Verify one symbol interval override does not affect other symbols."""
+        async def run_test() -> None:
+            """Exercise run test behavior."""
+            event_queue = queue.Queue()
+            aapl = LongbridgeInstrument("AAPL.US", "AAPL", analysis_interval="15m")
+            spy = LongbridgeInstrument("SPY.US", "SPY")
+            base_open_ms = int(
+                (datetime.now(timezone.utc) - timedelta(minutes=11)).timestamp() * 1000
+            )
+            calls: list[tuple[str, str]] = []
+
+            def fake_fetch(instrument, *, interval, limit):
+                calls.append((instrument.key, interval))
+                return tuple(
+                    Candle(
+                        symbol_key=instrument.key,
+                        open_time_ms=base_open_ms + index * 60_000,
+                        open=100 + index,
+                        high=102 + index,
+                        low=99 + index,
+                        close=101 + index,
+                        volume=1000,
+                    )
+                    for index in range(12)
+                )
+
+            worker = FeedWorker(
+                config=AppConfig(
+                    instruments=tuple(),
+                    display=DisplayConfig(),
+                    analysis=AnalysisConfig(interval="5m"),
+                ),
+                instruments=(aapl, spy),
+                event_queue=event_queue,
+            )
+
+            with patch.object(FeedWorker, "_fetch_candles", side_effect=fake_fetch):
+                task = asyncio.create_task(worker._run_price_action())
+                await asyncio.sleep(0.05)
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+            self.assertIn(("longbridge:AAPL.US", "15m"), calls)
+            self.assertIn(("longbridge:SPY.US", "5m"), calls)
 
         asyncio.run(run_test())
 

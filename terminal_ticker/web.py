@@ -44,6 +44,7 @@ from .watchlist_store import (
     remove_longbridge_symbol_from_watchlist,
     update_agent_config_in_watchlist,
     update_analysis_config_in_watchlist,
+    update_instrument_analysis_interval_in_watchlist,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -55,7 +56,7 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _instrument_payload(instrument: MarketInstrument) -> dict[str, Any]:
+def _instrument_payload(instrument: MarketInstrument, *, default_interval: str) -> dict[str, Any]:
     """Serialize a resolved market instrument for the web UI."""
     return {
         "key": instrument.key,
@@ -63,6 +64,7 @@ def _instrument_payload(instrument: MarketInstrument) -> dict[str, Any]:
         "label": instrument.label,
         "source": instrument.source,
         "group": instrument.group,
+        "analysisInterval": instrument.analysis_interval or default_interval,
     }
 
 
@@ -177,7 +179,10 @@ def serialize_market_state(
             },
             "sourcePath": str(config.source_path) if config.source_path else None,
         },
-        "instruments": [_instrument_payload(instrument) for instrument in instruments],
+        "instruments": [
+            _instrument_payload(instrument, default_interval=config.analysis.interval)
+            for instrument in instruments
+        ],
         "groups": groups,
         "quotes": {
             key: _quote_payload(
@@ -356,6 +361,42 @@ class MarketRuntime:
             await self.broadcast()
         return {"changed": changed, "state": self.snapshot()}
 
+    async def update_instrument_analysis_interval(
+        self,
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist one instrument's K-line interval and reload runtime config."""
+        source_path = self._require_source_path()
+        instrument = self._instrument_by_key(instrument_key)
+        if "interval" not in payload:
+            raise HTTPException(status_code=400, detail="interval is required.")
+        try:
+            next_config = _analysis_config_from_payload(
+                self.config.analysis,
+                {"interval": payload["interval"]},
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        try:
+            changed = await asyncio.to_thread(
+                update_instrument_analysis_interval_in_watchlist,
+                source_path,
+                source=instrument.source,
+                symbol=instrument.symbol,
+                inst_type=getattr(instrument, "inst_type", None),
+                interval=next_config.interval,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        self.agent_analyses.pop(instrument.key, None)
+        if changed:
+            await self.reload_from_source(clear_price_action_keys={instrument.key})
+        else:
+            await self.broadcast()
+        return {"changed": changed, "state": self.snapshot()}
+
     async def analyze_instrument(self, instrument_key: str) -> dict[str, Any]:
         """Run one manual LLM analysis for an instrument."""
         if not self.config.agent.enabled:
@@ -384,7 +425,7 @@ class MarketRuntime:
         context = build_agent_context(
             instrument=instrument,
             quote=quote,
-            interval=self.config.analysis.interval,
+            interval=instrument.analysis_interval or self.config.analysis.interval,
             max_candles=self.config.agent.max_candles,
         )
         provider = create_llm_provider(self.config.agent)
@@ -394,17 +435,25 @@ class MarketRuntime:
         await self.broadcast()
         return {"result": payload, "state": self.snapshot()}
 
-    async def reload_from_source(self) -> None:
+    async def reload_from_source(self, *, clear_price_action_keys: set[str] | None = None) -> None:
         """Reload watchlist config and restart the feed controller."""
         if self.config.source_path is None:
             raise HTTPException(status_code=409, detail="No watchlist file is active.")
         config = await asyncio.to_thread(load_config, self.config.source_path)
         instruments = await asyncio.to_thread(resolve_instruments, config.instruments)
+        previous_quotes = self.controller.quotes
         self.controller.stop()
         self.config = config
         self.instruments = instruments
         self.controller = self.controller_factory(config=config, instruments=instruments)
         active_keys = {instrument.key for instrument in instruments}
+        for key in active_keys & previous_quotes.keys():
+            self.controller.quotes[key] = previous_quotes[key]
+        for key in clear_price_action_keys or set():
+            quote = self.controller.quotes.get(key)
+            if quote is not None:
+                quote.price_action = None
+                quote.price_action_candles = tuple()
         self.agent_analyses = {
             key: value for key, value in self.agent_analyses.items() if key in active_keys
         }
@@ -511,6 +560,13 @@ def create_app(
     @app.post("/api/analysis/config")
     async def update_analysis_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         return await runtime.update_analysis_config(payload)
+
+    @app.post("/api/instruments/{instrument_key}/analysis-interval")
+    async def update_instrument_analysis_interval_endpoint(
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return await runtime.update_instrument_analysis_interval(instrument_key, payload)
 
     @app.post("/api/agent/analyze/{instrument_key}")
     async def analyze_instrument_endpoint(instrument_key: str) -> dict[str, Any]:

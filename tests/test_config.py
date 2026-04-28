@@ -113,6 +113,20 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.analysis.poll_interval_seconds, 45)
         self.assertEqual(config.analysis.stale_after_seconds, 180)
 
+    def test_parse_config_supports_per_symbol_analysis_interval(self) -> None:
+        """Verify individual symbols can override the default K-line interval."""
+        config = parse_config(
+            {
+                "symbols": [
+                    {"symbol": "BTCUSDT", "inst_type": "USDT-FUTURES", "analysis_interval": "15m"},
+                    {"symbol": "ETHUSDT", "inst_type": "USDT-FUTURES"},
+                ],
+            }
+        )
+
+        self.assertEqual(config.instruments[0].analysis_interval, "15m")
+        self.assertIsNone(config.instruments[1].analysis_interval)
+
     def test_parse_config_supports_agent_defaults_and_overrides(self) -> None:
         """Verify parse config supports LLM agent settings."""
         default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})

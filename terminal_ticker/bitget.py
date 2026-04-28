@@ -32,6 +32,7 @@ class BitgetInstrument:
     show_collapsed: bool = True
     source: str = BITGET_SOURCE
     group: str = "crypto"
+    analysis_interval: str | None = None
 
     @property
     def key(self) -> str:
@@ -134,6 +135,7 @@ def resolve_instruments(configured: tuple[InstrumentConfig, ...]) -> tuple[Bitge
                 market_kind=instrument.market_kind,
                 show_collapsed=requested.show_collapsed,
                 group=requested.group,
+                analysis_interval=requested.analysis_interval,
             )
         )
 

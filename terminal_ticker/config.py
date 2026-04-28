@@ -97,6 +97,7 @@ class InstrumentConfig:
     label: str | None = None
     show_collapsed: bool = True
     group: str = DEFAULT_GROUP
+    analysis_interval: str | None = None
 
     @property
     def dedupe_key(self) -> tuple[str, str | None, str]:
@@ -219,6 +220,13 @@ def _normalize_analysis_interval(raw_value: Any) -> str:
     return normalized
 
 
+def _normalize_optional_analysis_interval(raw_value: Any) -> str | None:
+    """Normalize an optional per-instrument candle interval."""
+    if raw_value in (None, ""):
+        return None
+    return _normalize_analysis_interval(raw_value)
+
+
 def _normalize_agent_provider(raw_value: Any) -> str:
     """Normalize the configured LLM provider."""
     return normalize_provider(raw_value)
@@ -338,6 +346,9 @@ def _normalize_instruments(symbols: Iterable[Any]) -> tuple[InstrumentConfig, ..
                     True,
                 ),
                 group=_normalize_group(raw_symbol.get("group"), source=source),
+                analysis_interval=_normalize_optional_analysis_interval(
+                    raw_symbol.get("analysis_interval", raw_symbol.get("interval")),
+                ),
             )
         else:
             raise ValueError("symbols entries must be strings or tables")

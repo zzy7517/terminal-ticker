@@ -34,6 +34,7 @@ class LongbridgeInstrument:
     show_collapsed: bool = True
     source: str = LONGBRIDGE_SOURCE
     group: str = "stocks"
+    analysis_interval: str | None = None
 
     @property
     def key(self) -> str:
@@ -73,6 +74,7 @@ def resolve_instruments(
                 label=requested.label or requested.symbol,
                 show_collapsed=requested.show_collapsed,
                 group=requested.group,
+                analysis_interval=requested.analysis_interval,
             )
         )
     return tuple(resolved)

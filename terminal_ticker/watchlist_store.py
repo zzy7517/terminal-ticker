@@ -2,9 +2,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import tomllib
 
-from .config import AgentConfig, AnalysisConfig, GROUP_ALIASES, LONGBRIDGE_SOURCE, load_config
+from .config import (
+    AgentConfig,
+    AnalysisConfig,
+    BITGET_SOURCE,
+    GROUP_ALIASES,
+    LONGBRIDGE_SOURCE,
+    load_config,
+)
 
 
 def _toml_string(value: str) -> str:
@@ -76,6 +84,57 @@ def _is_longbridge_symbol_entry(line: str, symbol: str) -> bool:
     source = str(entry.get("source") or "").strip().lower()
     raw_symbol = str(entry.get("symbol") or "").strip().upper()
     return source == LONGBRIDGE_SOURCE and raw_symbol == symbol
+
+
+def _entry_source(entry: dict) -> str:
+    """Return the normalized source for a parsed symbol entry."""
+    return str(entry.get("source") or BITGET_SOURCE).strip().lower() or BITGET_SOURCE
+
+
+def _entry_inst_type(entry: dict) -> str | None:
+    """Return the normalized Bitget inst_type for a parsed symbol entry."""
+    raw_inst_type = str(entry.get("inst_type") or "").strip().upper()
+    return raw_inst_type or None
+
+
+def _is_symbol_entry(
+    line: str,
+    *,
+    source: str,
+    symbol: str,
+    inst_type: str | None,
+) -> bool:
+    """Return whether a TOML line is the exact provider symbol entry."""
+    entry = _parse_inline_symbol_entry(line)
+    if entry is None:
+        return False
+    raw_symbol = str(entry.get("symbol") or "").strip().upper()
+    return (
+        _entry_source(entry) == source
+        and raw_symbol == symbol
+        and _entry_inst_type(entry) == inst_type
+    )
+
+
+def _set_inline_analysis_interval(line: str, interval: str) -> str:
+    """Insert or replace analysis_interval in one inline TOML symbol entry."""
+    replacement = f"analysis_interval = {_toml_string(interval)}"
+    if _parse_inline_symbol_entry(line) is None:
+        raise ValueError("symbol entry is not an inline TOML table")
+    if "analysis_interval" in line:
+        return re.sub(r"analysis_interval\s*=\s*[^,}]+", replacement, line, count=1)
+
+    stripped = line.rstrip()
+    has_trailing_comma = stripped.endswith(",")
+    body = stripped[:-1].rstrip() if has_trailing_comma else stripped
+    close_index = body.rfind("}")
+    if close_index < 0:
+        raise ValueError("symbol entry is not an inline TOML table")
+    prefix = body[:close_index].rstrip()
+    suffix = body[close_index:]
+    separator = "" if prefix.endswith("{") else ","
+    updated = f"{prefix}{separator} {replacement} {suffix}"
+    return f"{updated}," if has_trailing_comma else updated
 
 
 def append_longbridge_symbol_to_watchlist(
@@ -153,6 +212,38 @@ def remove_longbridge_symbol_from_watchlist(
             return True
 
     raise ValueError(f"{normalized_symbol} exists but is not an inline longbridge symbol entry")
+
+
+def update_instrument_analysis_interval_in_watchlist(
+    path: str | Path,
+    *,
+    source: str,
+    symbol: str,
+    inst_type: str | None,
+    interval: str,
+) -> bool:
+    """Persist a per-instrument K-line interval override in the symbols array."""
+    source_path = Path(path).expanduser().resolve()
+    normalized_source = source.strip().lower()
+    normalized_symbol = symbol.strip().upper()
+    normalized_inst_type = inst_type.strip().upper() if inst_type else None
+
+    lines = source_path.read_text().splitlines()
+    for index, line in enumerate(lines):
+        if _is_symbol_entry(
+            line,
+            source=normalized_source,
+            symbol=normalized_symbol,
+            inst_type=normalized_inst_type,
+        ):
+            next_line = _set_inline_analysis_interval(line, interval)
+            if next_line == line:
+                return False
+            lines[index] = next_line
+            source_path.write_text("\n".join(lines) + "\n")
+            return True
+
+    raise ValueError(f"{normalized_source}:{normalized_symbol} exists but is not an inline symbol entry")
 
 
 def _format_agent_config(config: AgentConfig) -> list[str]:

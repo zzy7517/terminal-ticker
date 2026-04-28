@@ -32,7 +32,7 @@ import {
   fetchState,
   removeLongbridgeSymbol,
   saveAgentConfig,
-  saveAnalysisConfig,
+  saveInstrumentAnalysisInterval,
   searchSecurities,
 } from './api';
 import type {
@@ -514,7 +514,7 @@ function WorkspaceView({
 }) {
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
   const tone = analysisTone(selectedQuote);
-  const currentInterval = state?.config.analysis.interval ?? '5m';
+  const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
 
   return (
     <main className="app-shell">
@@ -529,7 +529,7 @@ function WorkspaceView({
             <Activity size={15} />
             <select
               className="interval-select"
-              disabled={!state || !state.config.sourcePath || analysisIntervalBusy}
+              disabled={!state || !state.config.sourcePath || !selectedKey || analysisIntervalBusy}
               onChange={(event) => updateAnalysisInterval(event.target.value)}
               value={currentInterval}
             >
@@ -1110,10 +1110,10 @@ export default function App() {
   const selectedAgent = selectedKey ? state?.agentAnalyses[selectedKey] : undefined;
 
   async function updateAnalysisInterval(interval: string) {
-    if (!state || interval === state.config.analysis.interval || analysisIntervalBusy) return;
+    if (!state || !selectedKey || interval === selectedInstrument?.analysisInterval || analysisIntervalBusy) return;
     setAnalysisIntervalBusy(true);
     try {
-      const nextState = await saveAnalysisConfig({ interval });
+      const nextState = await saveInstrumentAnalysisInterval(selectedKey, interval);
       setState(nextState);
     } catch (error) {
       console.error(error);

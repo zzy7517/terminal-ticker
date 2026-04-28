@@ -121,6 +121,7 @@ export interface Instrument {
   label: string;
   source: string;
   group: string;
+  analysisInterval: string;
 }
 
 export interface MarketState {

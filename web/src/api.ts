@@ -105,6 +105,19 @@ export async function saveAnalysisConfig(config: AnalysisConfigUpdate): Promise<
   return payload.state;
 }
 
+export async function saveInstrumentAnalysisInterval(key: string, interval: string): Promise<MarketState> {
+  const response = await fetch(`/api/instruments/${encodeURIComponent(key)}/analysis-interval`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ interval }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'instrument interval save failed');
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
 export function connectStateSocket(onState: (state: MarketState) => void, onStatus: (status: string) => void) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);

@@ -10,6 +10,7 @@ from terminal_ticker.watchlist_store import (
     remove_longbridge_symbol_from_watchlist,
     update_agent_config_in_watchlist,
     update_analysis_config_in_watchlist,
+    update_instrument_analysis_interval_in_watchlist,
 )
 
 
@@ -138,6 +139,34 @@ class WatchlistStoreTests(unittest.TestCase):
         self.assertTrue(replaced)
         self.assertEqual(config.analysis.interval, "1H")
         self.assertEqual(config.analysis.lookback, 40)
+
+    def test_update_instrument_analysis_interval_only_changes_matching_symbol(self) -> None:
+        """Verify per-symbol K-line interval persistence."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL", group = "stocks" },
+                      { symbol = "BTCUSDT", inst_type = "USDT-FUTURES", label = "BTC" },
+                    ]
+                    """
+                ).strip()
+            )
+
+            changed = update_instrument_analysis_interval_in_watchlist(
+                config_path,
+                source="longbridge",
+                symbol="AAPL.US",
+                inst_type=None,
+                interval="15m",
+            )
+            config = load_config(config_path)
+
+        self.assertTrue(changed)
+        self.assertEqual(config.instruments[0].analysis_interval, "15m")
+        self.assertIsNone(config.instruments[1].analysis_interval)
 
 
 if __name__ == "__main__":
