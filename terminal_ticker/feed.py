@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import queue
+import sqlite3
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
 from typing import Any
 
 from .bitget import (
@@ -14,6 +16,7 @@ from .bitget import (
     fetch_candles as fetch_bitget_candles,
     fetch_snapshot_payloads,
 )
+from .candle_cache import CandleCache, cached_fetch_candles
 from .config import AppConfig
 from .longbridge_provider import (
     LongbridgeInstrument,
@@ -22,6 +25,8 @@ from .longbridge_provider import (
 )
 from .price_action import PriceActionState, analyze_price_action
 from .providers import MarketInstrument
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,7 @@ class FeedWorker(threading.Thread):
         config: AppConfig,
         instruments: tuple[MarketInstrument, ...],
         event_queue: queue.Queue[FeedEvent],
+        candle_cache: CandleCache | None = None,
     ) -> None:
         """Split resolved instruments by provider and prepare async worker state."""
         super().__init__(daemon=True)
@@ -51,6 +57,9 @@ class FeedWorker(threading.Thread):
             instrument for instrument in instruments if isinstance(instrument, LongbridgeInstrument)
         )
         self.event_queue = event_queue
+        self.candle_cache = candle_cache
+        if self.candle_cache is None and self.config.cache.enabled:
+            self.candle_cache = CandleCache.from_config(self.config.cache)
         self.stop_event = threading.Event()
         self.loop: asyncio.AbstractEventLoop | None = None
         self.socket: BitgetPublicWebSocket | None = None
@@ -199,18 +208,50 @@ class FeedWorker(threading.Thread):
             return PriceActionState.unavailable("Candle data is stale.")
         return analyze_price_action(candles)
 
-    @staticmethod
     def _fetch_candles(
+        self,
         instrument: MarketInstrument,
         *,
         interval: str,
         limit: int,
     ):
         """Fetch recent candles for the instrument's provider."""
+        if self.candle_cache is not None:
+            try:
+                return cached_fetch_candles(
+                    cache=self.candle_cache,
+                    symbol_key=instrument.key,
+                    interval=interval,
+                    limit=limit,
+                    fetcher=lambda **kwargs: self._fetch_provider_candles(instrument, **kwargs),
+                )
+            except (OSError, sqlite3.Error) as exc:
+                LOGGER.warning("Candle cache unavailable for %s %s: %s", instrument.key, interval, exc)
+        return self._fetch_provider_candles(instrument, interval=interval, limit=limit)
+
+    @staticmethod
+    def _fetch_provider_candles(
+        instrument: MarketInstrument,
+        *,
+        interval: str,
+        limit: int,
+        after_open_time_ms: int | None = None,
+    ):
+        """Fetch recent candles directly from the instrument's provider."""
         if isinstance(instrument, BitgetInstrument):
-            return fetch_bitget_candles(instrument, interval=interval, limit=limit)
+            return fetch_bitget_candles(
+                instrument,
+                interval=interval,
+                limit=limit,
+                after_open_time_ms=after_open_time_ms,
+            )
         if isinstance(instrument, LongbridgeInstrument):
-            return fetch_longbridge_candles(instrument, interval=interval, limit=limit)
+            return fetch_longbridge_candles(
+                instrument,
+                interval=interval,
+                limit=limit,
+                after_open_time_ms=after_open_time_ms,
+            )
         raise ValueError(f"unsupported candle provider: {instrument!r}")
 
     def _handle_message(self, payload: dict[str, Any]) -> None:

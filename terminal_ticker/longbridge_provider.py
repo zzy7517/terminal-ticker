@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 import logging
 import os
@@ -427,17 +427,32 @@ def fetch_candles(
     interval: str,
     limit: int,
     quote_context: Any | None = None,
+    after_open_time_ms: int | None = None,
 ) -> tuple[Candle, ...]:
     """Fetch recent Longbridge candles for one instrument."""
     ctx = quote_context or _build_quote_context()
-    rows = ctx.candlesticks(
-        instrument.symbol,
-        _period_for_interval(interval),
-        min(limit, 1000),
-        _no_adjust_type(),
-        _all_trade_sessions(),
-    )
+    if after_open_time_ms is None:
+        rows = ctx.candlesticks(
+            instrument.symbol,
+            _period_for_interval(interval),
+            min(limit, 1000),
+            _no_adjust_type(),
+            _all_trade_sessions(),
+        )
+    else:
+        anchor = datetime.fromtimestamp(after_open_time_ms / 1000, tz=timezone.utc)
+        rows = ctx.history_candlesticks_by_offset(
+            instrument.symbol,
+            _period_for_interval(interval),
+            _no_adjust_type(),
+            False,
+            min(limit, 1000),
+            anchor,
+            _all_trade_sessions(),
+        )
     candles = tuple(_normalize_candle_payload(row, instrument) for row in rows)
+    if after_open_time_ms is not None:
+        candles = tuple(candle for candle in candles if candle.open_time_ms > after_open_time_ms)
     return tuple(sorted(candles, key=lambda candle: candle.open_time_ms))
 
 

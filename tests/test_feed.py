@@ -1,10 +1,13 @@
 """Test feed worker event production."""
 import asyncio
 import queue
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
+from terminal_ticker.candle_cache import CandleCache
 from terminal_ticker.config import AnalysisConfig, AppConfig, DisplayConfig
 from terminal_ticker.feed import FeedWorker
 from terminal_ticker.bitget import BitgetInstrument
@@ -179,6 +182,55 @@ class FeedWorkerTests(unittest.TestCase):
             self.assertIn(("longbridge:SPY.US", "5m"), calls)
 
         asyncio.run(run_test())
+
+    def test_fetch_candles_uses_cache_incremental_provider_fetch(self) -> None:
+        """Verify feed candle fetches use retained cache before provider calls."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache = CandleCache(Path(tmp_dir) / "candles.sqlite3")
+            instrument = BitgetInstrument(
+                "BTCUSDT",
+                "USDT-FUTURES",
+                "BTC",
+                "BTC",
+                "USDT",
+                "perp",
+            )
+            base_open_ms = int((datetime.now(timezone.utc) - timedelta(minutes=5)).timestamp() * 1000)
+            cached = Candle(
+                symbol_key=instrument.key,
+                open_time_ms=base_open_ms,
+                open=100,
+                high=102,
+                low=99,
+                close=101,
+                volume=1000,
+            )
+            fetched = Candle(
+                symbol_key=instrument.key,
+                open_time_ms=base_open_ms + 300_000,
+                open=101,
+                high=103,
+                low=100,
+                close=102,
+                volume=1200,
+            )
+            cache.upsert((cached,), interval="5m", fetched_at_ms=base_open_ms)
+            worker = FeedWorker(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                event_queue=queue.Queue(),
+                candle_cache=cache,
+            )
+
+            with patch.object(
+                FeedWorker,
+                "_fetch_provider_candles",
+                return_value=(fetched,),
+            ) as provider:
+                candles = worker._fetch_candles(instrument, interval="5m", limit=2)
+
+            self.assertEqual(candles, (cached, fetched))
+            self.assertEqual(provider.call_args.kwargs["after_open_time_ms"], base_open_ms)
 
     def test_stale_candles_return_unavailable_state(self) -> None:
         """Verify old candle timestamps do not produce fresh analysis."""

@@ -36,10 +36,25 @@ class FakeCandleContext:
         """Store fake candle rows."""
         self.candles = candles
         self.request = None
+        self.history_request = None
 
     def candlesticks(self, symbol, period, count, adjust_type, trade_sessions):
         """Return fake candles and record request arguments."""
         self.request = (symbol, period, count, adjust_type, trade_sessions)
+        return self.candles
+
+    def history_candlesticks_by_offset(
+        self,
+        symbol,
+        period,
+        adjust_type,
+        forward,
+        count,
+        time,
+        trade_sessions,
+    ):
+        """Return fake historical candles and record request arguments."""
+        self.history_request = (symbol, period, adjust_type, forward, count, time, trade_sessions)
         return self.candles
 
 
@@ -173,6 +188,45 @@ class LongbridgeProviderTests(unittest.TestCase):
         self.assertEqual(candles[0].low, 199.5)
         self.assertEqual(candles[0].close, 201.25)
         self.assertEqual(candles[0].volume, 12345)
+
+    def test_fetch_candles_after_uses_history_offset(self) -> None:
+        """Verify incremental Longbridge fetches request history after cached time."""
+        context = FakeCandleContext(
+            [
+                SimpleNamespace(
+                    timestamp=1776846000,
+                    open=Decimal("200.00"),
+                    high=Decimal("202.00"),
+                    low=Decimal("199.50"),
+                    close=Decimal("201.25"),
+                    volume=12345,
+                ),
+                SimpleNamespace(
+                    timestamp=1776846300,
+                    open=Decimal("201.25"),
+                    high=Decimal("203.00"),
+                    low=Decimal("201.00"),
+                    close=Decimal("202.50"),
+                    volume=23456,
+                ),
+            ]
+        )
+        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+
+        with patch("terminal_ticker.longbridge_provider._period_for_interval", return_value="5m"):
+            with patch("terminal_ticker.longbridge_provider._no_adjust_type", return_value="none"):
+                with patch("terminal_ticker.longbridge_provider._all_trade_sessions", return_value="all"):
+                    candles = fetch_candles(
+                        instrument,
+                        interval="5m",
+                        limit=40,
+                        quote_context=context,
+                        after_open_time_ms=1776846000000,
+                    )
+
+        self.assertIsNone(context.request)
+        self.assertEqual(context.history_request[:5], ("AAPL.US", "5m", "none", False, 40))
+        self.assertEqual([candle.open_time_ms for candle in candles], [1776846300000])
 
     def test_resolve_instruments_preserves_collapsed_default(self) -> None:
         """Verify resolve instruments preserves collapsed default."""

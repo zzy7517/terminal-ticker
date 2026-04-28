@@ -113,6 +113,28 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.analysis.poll_interval_seconds, 45)
         self.assertEqual(config.analysis.stale_after_seconds, 180)
 
+    def test_parse_config_supports_cache_defaults_and_overrides(self) -> None:
+        """Verify parse config supports local candle cache settings."""
+        default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})
+        self.assertTrue(default_config.cache.enabled)
+        self.assertEqual(default_config.cache.candle_retention_seconds, 86_400)
+        self.assertIsNone(default_config.cache.path)
+
+        config = parse_config(
+            {
+                "symbols": ["SPOT:BTCUSDT"],
+                "cache": {
+                    "enabled": False,
+                    "path": "~/tmp/terminal-ticker-cache.sqlite3",
+                    "candle_retention_seconds": 3_600,
+                },
+            }
+        )
+
+        self.assertFalse(config.cache.enabled)
+        self.assertEqual(config.cache.path, Path("~/tmp/terminal-ticker-cache.sqlite3").expanduser())
+        self.assertEqual(config.cache.candle_retention_seconds, 3_600)
+
     def test_parse_config_supports_per_symbol_analysis_interval(self) -> None:
         """Verify individual symbols can override the default K-line interval."""
         config = parse_config(

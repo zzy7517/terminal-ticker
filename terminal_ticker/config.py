@@ -76,6 +76,14 @@ class AnalysisConfig:
 
 
 @dataclass(frozen=True)
+class CacheConfig:
+    """Hold local candle cache settings."""
+    enabled: bool = True
+    path: Path | None = None
+    candle_retention_seconds: int = 86_400
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     """Hold LLM agent provider settings."""
     enabled: bool = True
@@ -127,6 +135,7 @@ class AppConfig:
     display: DisplayConfig
     source_path: Path | None = None
     analysis: AnalysisConfig = AnalysisConfig()
+    cache: CacheConfig = CacheConfig()
     agent: AgentConfig = AgentConfig()
 
 
@@ -293,6 +302,31 @@ def parse_analysis_config(raw_analysis: dict[str, Any] | None) -> AnalysisConfig
     )
 
 
+def parse_cache_config(raw_cache: dict[str, Any] | None) -> CacheConfig:
+    """Parse raw local cache settings into a normalized CacheConfig."""
+    if raw_cache is None:
+        raw_cache = {}
+    if not isinstance(raw_cache, dict):
+        raise ValueError("cache must be a table")
+
+    raw_path = raw_cache.get("path")
+    cache_path = None
+    if raw_path not in (None, ""):
+        if not isinstance(raw_path, str):
+            raise ValueError("cache.path must be a string")
+        cache_path = Path(raw_path).expanduser()
+
+    return CacheConfig(
+        enabled=_normalize_bool(raw_cache.get("enabled"), "cache.enabled", True),
+        path=cache_path,
+        candle_retention_seconds=_coerce_int(
+            raw_cache.get("candle_retention_seconds"),
+            "cache.candle_retention_seconds",
+            86_400,
+        ),
+    )
+
+
 def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> InstrumentConfig:
     """Parse legacy string symbol entries into instrument config rows."""
     candidate = raw_symbol.strip()
@@ -433,6 +467,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
     )
 
     analysis = parse_analysis_config(data.get("analysis", {}))
+    cache = parse_cache_config(data.get("cache", {}))
 
     agent = parse_agent_config(data.get("agent", {}))
 
@@ -440,6 +475,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         instruments=instruments,
         display=display,
         analysis=analysis,
+        cache=cache,
         agent=agent,
         source_path=source_path,
     )
@@ -463,6 +499,7 @@ def build_runtime_config(
         instruments=tuple(),
         display=DisplayConfig(),
         analysis=AnalysisConfig(),
+        cache=CacheConfig(),
         agent=AgentConfig(),
         source_path=None,
     )
@@ -477,6 +514,7 @@ def build_runtime_config(
         instruments=instruments,
         display=base.display,
         analysis=base.analysis,
+        cache=base.cache,
         agent=base.agent,
         source_path=base.source_path,
     )

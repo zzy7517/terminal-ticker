@@ -1,5 +1,6 @@
 """Test Bitget payload normalization."""
 import unittest
+from unittest.mock import patch
 
 from terminal_ticker.bitget import (
     SPOT,
@@ -7,6 +8,7 @@ from terminal_ticker.bitget import (
     _api_granularity,
     _normalize_candle_row,
     _normalize_ticker_payload,
+    fetch_candles,
 )
 
 
@@ -71,6 +73,36 @@ class BitgetTests(unittest.TestCase):
         self.assertEqual(_api_granularity(SPOT, "4H"), "4h")
         self.assertEqual(_api_granularity("USDT-FUTURES", "15m"), "15m")
         self.assertEqual(_api_granularity("USDT-FUTURES", "4H"), "4H")
+
+    def test_fetch_candles_after_includes_time_window(self) -> None:
+        """Verify incremental Bitget candle fetches include start and end time."""
+        instrument = BitgetInstrument(
+            symbol="BTCUSDT",
+            inst_type="USDT-FUTURES",
+            label="BTC",
+            base_asset="BTC",
+            quote_asset="USDT",
+            market_kind="perp",
+        )
+
+        with patch(
+            "terminal_ticker.bitget._fetch_json",
+            return_value={
+                "code": "00000",
+                "data": [["1695835800000", "1", "2", "0.5", "1.5", "10"]],
+            },
+        ) as fetch_json:
+            candles = fetch_candles(
+                instrument,
+                interval="5m",
+                limit=40,
+                after_open_time_ms=1695835500000,
+            )
+
+        params = fetch_json.call_args.args[1]
+        self.assertEqual(params["startTime"], "1695835500001")
+        self.assertIn("endTime", params)
+        self.assertEqual(candles[0].open_time_ms, 1695835800000)
 
 
 if __name__ == "__main__":

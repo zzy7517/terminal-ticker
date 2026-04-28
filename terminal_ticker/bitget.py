@@ -217,28 +217,36 @@ def fetch_candles(
     *,
     interval: str,
     limit: int,
+    after_open_time_ms: int | None = None,
 ) -> tuple[Candle, ...]:
     """Fetch recent Bitget candles for one instrument."""
     if instrument.inst_type == SPOT:
+        params = {
+            "symbol": instrument.symbol,
+            "granularity": _api_granularity(instrument.inst_type, interval),
+            "endTime": str(int(time.time() * 1000)),
+            "limit": str(min(limit, 200)),
+        }
+        if after_open_time_ms is not None:
+            params["startTime"] = str(after_open_time_ms + 1)
         payload = _fetch_json(
             "/api/v2/spot/market/history-candles",
-            {
-                "symbol": instrument.symbol,
-                "granularity": _api_granularity(instrument.inst_type, interval),
-                "endTime": str(int(time.time() * 1000)),
-                "limit": str(min(limit, 200)),
-            },
+            params,
         )
         context = "Bitget spot candles"
     else:
+        params = {
+            "symbol": instrument.symbol,
+            "productType": instrument.inst_type,
+            "granularity": _api_granularity(instrument.inst_type, interval),
+            "limit": str(min(limit, 1000)),
+        }
+        if after_open_time_ms is not None:
+            params["startTime"] = str(after_open_time_ms + 1)
+            params["endTime"] = str(int(time.time() * 1000))
         payload = _fetch_json(
             "/api/v2/mix/market/candles",
-            {
-                "symbol": instrument.symbol,
-                "productType": instrument.inst_type,
-                "granularity": _api_granularity(instrument.inst_type, interval),
-                "limit": str(min(limit, 1000)),
-            },
+            params,
         )
         context = "Bitget futures candles"
 
