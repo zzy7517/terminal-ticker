@@ -108,6 +108,7 @@ class QuoteState:
     last_error: str | None = None
     price_action: PriceActionState | None = None
     price_action_candles: tuple[Candle, ...] = tuple()
+    thumbnail_candles: tuple[Candle, ...] = tuple()
 
     @classmethod
     def placeholder(cls, symbol: str) -> "QuoteState":
@@ -170,10 +171,13 @@ class QuoteState:
         state: PriceActionState,
         *,
         candles: tuple[Candle, ...] = tuple(),
+        thumbnail_candles: tuple[Candle, ...] | None = None,
     ) -> None:
         """说明：把 price action 分析结果写入报价状态。"""
         self.price_action = state
         self.price_action_candles = candles
+        if thumbnail_candles is not None:
+            self.thumbnail_candles = thumbnail_candles
 
     def price_action_label(
         self,

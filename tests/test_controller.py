@@ -146,6 +146,33 @@ class ControllerTests(unittest.TestCase):
 
         self.assertEqual(self.controller.quotes[key].price_action_candles, candles)
 
+    def test_price_action_event_stores_thumbnail_candles(self) -> None:
+        """Verify price action events can update fixed thumbnail candles."""
+        key = self.instruments[0].key
+        thumbnail_candles = (
+            Candle(key, 1, 100, 101, 99, 100.5, 1000),
+        )
+        self.controller.event_queue.put(
+            FeedEvent(
+                "price_action",
+                {
+                    "id": key,
+                    "state": PriceActionState(
+                        label="range",
+                        bias="neutral",
+                        marker="RG",
+                        reason="K线重叠震荡",
+                        strength=42,
+                    ),
+                    "thumbnail_candles": thumbnail_candles,
+                },
+            )
+        )
+
+        self.controller.drain_events()
+
+        self.assertEqual(self.controller.quotes[key].thumbnail_candles, thumbnail_candles)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from terminal_ticker.candle_cache import CandleCache
 from terminal_ticker.config import AnalysisConfig, AppConfig, DisplayConfig
-from terminal_ticker.feed import FeedWorker
+from terminal_ticker.feed import FeedWorker, THUMBNAIL_CANDLE_LIMIT, THUMBNAIL_INTERVAL
 from terminal_ticker.bitget import BitgetInstrument
 from terminal_ticker.longbridge_provider import LongbridgeInstrument
 from terminal_ticker.price_action import Candle
@@ -147,7 +147,7 @@ class FeedWorkerTests(unittest.TestCase):
             )
             calls: list[tuple[str, str]] = []
 
-            def fake_fetch(instrument, *, interval, limit):
+            def fake_fetch(instrument, *, interval, limit, **_kwargs):
                 calls.append((instrument.key, interval))
                 return tuple(
                     Candle(
@@ -180,6 +180,71 @@ class FeedWorkerTests(unittest.TestCase):
 
             self.assertIn(("longbridge:AAPL.US", "15m"), calls)
             self.assertIn(("longbridge:SPY.US", "5m"), calls)
+
+        asyncio.run(run_test())
+
+    def test_price_action_fetches_fixed_hourly_thumbnail_candles(self) -> None:
+        """Verify watchlist thumbnails always use one-hour candles."""
+        async def run_test() -> None:
+            """Exercise run test behavior."""
+            event_queue = queue.Queue()
+            instrument = LongbridgeInstrument("AAPL.US", "AAPL", analysis_interval="15m")
+            base_open_ms = int(
+                (datetime.now(timezone.utc) - timedelta(minutes=11)).timestamp() * 1000
+            )
+            thumbnail_base_ms = int(
+                (datetime.now(timezone.utc) - timedelta(hours=THUMBNAIL_CANDLE_LIMIT - 1)).timestamp()
+                * 1000
+            )
+            calls: list[tuple[str, int]] = []
+
+            analysis_candles = tuple(
+                Candle(
+                    symbol_key=instrument.key,
+                    open_time_ms=base_open_ms + index * 60_000,
+                    open=100 + index,
+                    high=102 + index,
+                    low=99 + index,
+                    close=101 + index,
+                    volume=1000,
+                )
+                for index in range(12)
+            )
+            thumbnail_candles = tuple(
+                Candle(
+                    symbol_key=instrument.key,
+                    open_time_ms=thumbnail_base_ms + index * 3_600_000,
+                    open=200 + index,
+                    high=202 + index,
+                    low=199 + index,
+                    close=201 + index,
+                    volume=2000,
+                )
+                for index in range(THUMBNAIL_CANDLE_LIMIT)
+            )
+
+            def fake_fetch(_instrument, *, interval, limit, **_kwargs):
+                calls.append((interval, limit))
+                if interval == THUMBNAIL_INTERVAL:
+                    return thumbnail_candles
+                return analysis_candles
+
+            worker = FeedWorker(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                event_queue=event_queue,
+            )
+
+            with patch.object(FeedWorker, "_fetch_candles", side_effect=fake_fetch):
+                task = asyncio.create_task(worker._run_price_action())
+                await asyncio.sleep(0.05)
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+            event = event_queue.get_nowait()
+            self.assertIn((THUMBNAIL_INTERVAL, THUMBNAIL_CANDLE_LIMIT), calls)
+            self.assertEqual(event.payload["candles"], analysis_candles)
+            self.assertEqual(event.payload["thumbnail_candles"], thumbnail_candles)
 
         asyncio.run(run_test())
 

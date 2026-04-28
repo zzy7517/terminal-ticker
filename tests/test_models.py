@@ -110,6 +110,26 @@ class QuoteStateTests(unittest.TestCase):
 
         self.assertEqual(quote.price_action_candles, candles)
 
+    def test_apply_price_action_stores_thumbnail_candles(self) -> None:
+        """Verify thumbnail candles are tracked separately from chart candles."""
+        quote = QuoteState.placeholder("BTCUSDT")
+        thumbnail_candles = (
+            Candle("USDT-FUTURES:BTCUSDT", 1, 100, 101, 99, 100.5, 1000),
+        )
+
+        quote.apply_price_action(
+            PriceActionState(
+                label="range",
+                bias="neutral",
+                marker="RG",
+                reason="K线重叠震荡",
+                strength=42,
+            ),
+            thumbnail_candles=thumbnail_candles,
+        )
+
+        self.assertEqual(quote.thumbnail_candles, thumbnail_candles)
+
     def test_stale_price_action_marker_is_omitted(self) -> None:
         """Verify stale price action marker is omitted."""
         quote = QuoteState.placeholder("BTCUSDT")

@@ -113,6 +113,7 @@ export interface Quote {
   updateCount: number;
   priceAction: PriceAction | null;
   candles: CandlePoint[];
+  thumbnailCandles: CandlePoint[];
 }
 
 export interface Instrument {

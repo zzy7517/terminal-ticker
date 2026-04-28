@@ -114,6 +114,9 @@ class TickerController:
             self.quotes[key].apply_price_action(
                 payload["state"],
                 candles=tuple(payload.get("candles", tuple())),
+                thumbnail_candles=tuple(payload["thumbnail_candles"])
+                if "thumbnail_candles" in payload
+                else None,
             )
             return True
 

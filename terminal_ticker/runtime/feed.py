@@ -27,6 +27,9 @@ from ..domain.price_action import PriceActionState, analyze_price_action
 from ..market_data.router import MarketInstrument
 
 LOGGER = logging.getLogger(__name__)
+THUMBNAIL_INTERVAL = "1H"
+THUMBNAIL_CANDLE_LIMIT = 60
+THUMBNAIL_RETENTION_SECONDS = THUMBNAIL_CANDLE_LIMIT * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -168,6 +171,7 @@ class FeedWorker(threading.Thread):
                 if self.stop_event.is_set():
                     break
                 candles = tuple()
+                thumbnail_candles = None
                 try:
                     interval = getattr(instrument, "analysis_interval", None) or self.config.analysis.interval
                     candles = await asyncio.to_thread(
@@ -181,14 +185,31 @@ class FeedWorker(threading.Thread):
                     raise
                 except Exception as exc:
                     state = PriceActionState.unavailable(str(exc) or exc.__class__.__name__)
+                    interval = getattr(instrument, "analysis_interval", None) or self.config.analysis.interval
+
+                try:
+                    thumbnail_candles = await self._thumbnail_candles(instrument, candles, interval)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    LOGGER.debug(
+                        "Thumbnail candles unavailable for %s %s: %s",
+                        instrument.key,
+                        THUMBNAIL_INTERVAL,
+                        exc,
+                    )
+
+                payload = {
+                    "id": instrument.key,
+                    "state": state,
+                    "candles": candles if state.is_available() else tuple(),
+                }
+                if thumbnail_candles is not None:
+                    payload["thumbnail_candles"] = thumbnail_candles
                 self.event_queue.put(
                     FeedEvent(
                         "price_action",
-                        {
-                            "id": instrument.key,
-                            "state": state,
-                            "candles": candles if state.is_available() else tuple(),
-                        },
+                        payload,
                     )
                 )
 
@@ -214,6 +235,7 @@ class FeedWorker(threading.Thread):
         *,
         interval: str,
         limit: int,
+        minimum_retention_seconds: int | None = None,
     ):
         """说明：通过缓存或 provider 拉取近期 K 线。"""
         if self.candle_cache is not None:
@@ -224,10 +246,28 @@ class FeedWorker(threading.Thread):
                     interval=interval,
                     limit=limit,
                     fetcher=lambda **kwargs: self._fetch_provider_candles(instrument, **kwargs),
+                    minimum_retention_seconds=minimum_retention_seconds,
                 )
             except (OSError, sqlite3.Error) as exc:
                 LOGGER.warning("Candle cache unavailable for %s %s: %s", instrument.key, interval, exc)
         return self._fetch_provider_candles(instrument, interval=interval, limit=limit)
+
+    async def _thumbnail_candles(
+        self,
+        instrument: MarketInstrument,
+        analysis_candles: tuple,
+        analysis_interval: str,
+    ):
+        """说明：返回固定 1 小时级别的缩略图 K 线。"""
+        if analysis_interval == THUMBNAIL_INTERVAL and len(analysis_candles) >= THUMBNAIL_CANDLE_LIMIT:
+            return analysis_candles[-THUMBNAIL_CANDLE_LIMIT:]
+        return await asyncio.to_thread(
+            self._fetch_candles,
+            instrument,
+            interval=THUMBNAIL_INTERVAL,
+            limit=THUMBNAIL_CANDLE_LIMIT,
+            minimum_retention_seconds=THUMBNAIL_RETENTION_SECONDS,
+        )
 
     @staticmethod
     def _fetch_provider_candles(

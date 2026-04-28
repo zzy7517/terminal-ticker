@@ -49,6 +49,7 @@ from ..config.watchlist_store import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
+THUMBNAIL_CANDLE_LIMIT = 60
 
 
 def _utc_now_iso() -> str:
@@ -135,6 +136,10 @@ def _quote_payload(
             stale_after_seconds=analysis_stale_after_seconds,
         ),
         "candles": [_candle_payload(candle) for candle in quote.price_action_candles],
+        "thumbnailCandles": [
+            _candle_payload(candle)
+            for candle in quote.thumbnail_candles[-THUMBNAIL_CANDLE_LIMIT:]
+        ],
     }
 
 

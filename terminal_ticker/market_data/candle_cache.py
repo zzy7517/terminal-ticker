@@ -87,10 +87,15 @@ class CandleCache:
         )
         return connection
 
-    def prune(self, *, now_ms: int | None = None) -> int:
+    def prune(
+        self,
+        *,
+        now_ms: int | None = None,
+        retention_seconds: int | None = None,
+    ) -> int:
         """说明：删除超过保留期的 K 线缓存。"""
         current_ms = _now_ms() if now_ms is None else now_ms
-        cutoff_ms = current_ms - self.retention_seconds * 1000
+        cutoff_ms = current_ms - self._effective_retention(retention_seconds) * 1000
         with self._connect() as connection:
             cursor = connection.execute(
                 "DELETE FROM candles WHERE open_time_ms < ?",
@@ -149,10 +154,11 @@ class CandleCache:
         interval: str,
         *,
         now_ms: int | None = None,
+        retention_seconds: int | None = None,
     ) -> int | None:
         """说明：读取某个标的和周期最新的缓存 K 线开盘时间。"""
         current_ms = _now_ms() if now_ms is None else now_ms
-        cutoff_ms = current_ms - self.retention_seconds * 1000
+        cutoff_ms = current_ms - self._effective_retention(retention_seconds) * 1000
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -172,10 +178,11 @@ class CandleCache:
         *,
         limit: int,
         now_ms: int | None = None,
+        retention_seconds: int | None = None,
     ) -> tuple[Candle, ...]:
         """说明：读取某个标的和周期最近的缓存 K 线。"""
         current_ms = _now_ms() if now_ms is None else now_ms
-        cutoff_ms = current_ms - self.retention_seconds * 1000
+        cutoff_ms = current_ms - self._effective_retention(retention_seconds) * 1000
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -201,6 +208,12 @@ class CandleCache:
         )
         return candles
 
+    def _effective_retention(self, requested_seconds: int | None) -> int:
+        """说明：返回本次读取所需的缓存保留秒数。"""
+        if requested_seconds is None:
+            return self.retention_seconds
+        return max(self.retention_seconds, requested_seconds)
+
 
 def cached_fetch_candles(
     *,
@@ -210,11 +223,17 @@ def cached_fetch_candles(
     limit: int,
     fetcher: Callable[..., tuple[Candle, ...]],
     now_ms: int | None = None,
+    minimum_retention_seconds: int | None = None,
 ) -> tuple[Candle, ...]:
     """说明：通过 SQLite 缓存拉取 K 线，并只向 provider 请求缺失区间。"""
     current_ms = _now_ms() if now_ms is None else now_ms
-    cache.prune(now_ms=current_ms)
-    latest_open_ms = cache.latest_open_time_ms(symbol_key, interval, now_ms=current_ms)
+    cache.prune(now_ms=current_ms, retention_seconds=minimum_retention_seconds)
+    latest_open_ms = cache.latest_open_time_ms(
+        symbol_key,
+        interval,
+        now_ms=current_ms,
+        retention_seconds=minimum_retention_seconds,
+    )
     plan = _fetch_plan(latest_open_ms, interval=interval, limit=limit, now_ms=current_ms)
     try:
         fetched = fetcher(
@@ -223,14 +242,26 @@ def cached_fetch_candles(
             after_open_time_ms=plan.after_open_time_ms,
         )
     except Exception:
-        cached = cache.recent(symbol_key, interval, limit=limit, now_ms=current_ms)
+        cached = cache.recent(
+            symbol_key,
+            interval,
+            limit=limit,
+            now_ms=current_ms,
+            retention_seconds=minimum_retention_seconds,
+        )
         if cached:
             return cached
         raise
 
     if fetched:
         cache.upsert(fetched, interval=interval, fetched_at_ms=current_ms)
-    cached = cache.recent(symbol_key, interval, limit=limit, now_ms=current_ms)
+    cached = cache.recent(
+        symbol_key,
+        interval,
+        limit=limit,
+        now_ms=current_ms,
+        retention_seconds=minimum_retention_seconds,
+    )
     return cached or fetched[-limit:]
 
 

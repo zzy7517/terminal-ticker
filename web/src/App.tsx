@@ -344,7 +344,7 @@ function intervalOptions(currentInterval: string) {
 }
 
 function sparklinePoints(candles: CandlePoint[], width = 112, height = 34) {
-  const closes = candles.slice(-36).map((item) => item.close).filter(Number.isFinite);
+  const closes = candles.slice(-60).map((item) => item.close).filter(Number.isFinite);
   if (closes.length < 2) return '';
   const min = Math.min(...closes);
   const max = Math.max(...closes);
@@ -747,7 +747,7 @@ function WatchlistRow({
           <span className={changeClass(quote)}>{quote?.percentLabel ?? '-'}</span>
         </div>
       </div>
-      <Sparkline candles={quote?.candles ?? []} tone={changeClass(quote)} />
+      <Sparkline candles={quote?.thumbnailCandles ?? quote?.candles ?? []} tone={changeClass(quote)} />
       <div className="watch-meta">
         <span className={`marker ${tone}`}>{quote?.priceAction?.marker || '--'}</span>
         <span>{quote?.ageLabel ?? 'waiting'}</span>

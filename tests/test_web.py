@@ -54,6 +54,7 @@ class WebTests(unittest.TestCase):
         quote = QuoteState.placeholder("AAPL")
         quote.apply_payload({"short_name": "AAPL", "price": 201.25, "change_percent": 0.72})
         candle = Candle("longbridge:AAPL.US", 1776846000000, 200, 202, 199, 201.25, 12345)
+        thumbnail_candle = Candle("longbridge:AAPL.US", 1776849600000, 201, 203, 200, 202.25, 14000)
         quote.apply_price_action(
             PriceActionState(
                 label="trend",
@@ -63,6 +64,7 @@ class WebTests(unittest.TestCase):
                 strength=70,
             ),
             candles=(candle,),
+            thumbnail_candles=(thumbnail_candle,),
         )
 
         payload = serialize_market_state(
@@ -76,6 +78,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(payload["quotes"][instrument.key]["priceLabel"], "201.25")
         self.assertEqual(payload["quotes"][instrument.key]["priceAction"]["marker"], "TR+")
         self.assertEqual(payload["quotes"][instrument.key]["candles"][0]["time"], 1776846000)
+        self.assertEqual(payload["quotes"][instrument.key]["thumbnailCandles"][0]["time"], 1776849600)
         self.assertEqual(payload["instruments"][0]["analysisInterval"], "5m")
         self.assertEqual(payload["config"]["agent"]["provider"], "codex")
         self.assertEqual(payload["config"]["agent"]["baseUrl"], None)
