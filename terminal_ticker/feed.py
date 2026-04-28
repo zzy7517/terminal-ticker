@@ -5,11 +5,22 @@ import asyncio
 import queue
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
-from .bitget import BitgetInstrument, BitgetPublicWebSocket, fetch_snapshot_payloads
+from .bitget import (
+    BitgetInstrument,
+    BitgetPublicWebSocket,
+    fetch_candles as fetch_bitget_candles,
+    fetch_snapshot_payloads,
+)
 from .config import AppConfig
-from .longbridge_provider import LongbridgeInstrument, fetch_quote_payloads
+from .longbridge_provider import (
+    LongbridgeInstrument,
+    fetch_candles as fetch_longbridge_candles,
+    fetch_quote_payloads,
+)
+from .price_action import PriceActionState, analyze_price_action
 from .providers import MarketInstrument
 
 
@@ -80,6 +91,8 @@ class FeedWorker(threading.Thread):
         """Start provider tasks and emit a final stopped status."""
         if self.bitget_instruments:
             self.tasks.append(asyncio.create_task(self._run_bitget()))
+        if self.config.analysis.enabled and (self.bitget_instruments or self.longbridge_instruments):
+            self.tasks.append(asyncio.create_task(self._run_price_action()))
         if self.longbridge_instruments:
             self.tasks.append(asyncio.create_task(self._run_longbridge()))
 
@@ -138,6 +151,66 @@ class FeedWorker(threading.Thread):
                 await asyncio.sleep(self.config.display.longbridge_poll_interval_seconds)
             except asyncio.CancelledError:
                 break
+
+    async def _run_price_action(self) -> None:
+        """Poll provider candles and emit derived price action state."""
+        while not self.stop_event.is_set():
+            for instrument in self.bitget_instruments + self.longbridge_instruments:
+                if self.stop_event.is_set():
+                    break
+                candles = tuple()
+                try:
+                    candles = await asyncio.to_thread(
+                        self._fetch_candles,
+                        instrument,
+                        interval=self.config.analysis.interval,
+                        limit=self.config.analysis.lookback,
+                    )
+                    state = self._analyze_fresh_candles(candles)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    state = PriceActionState.unavailable(str(exc) or exc.__class__.__name__)
+                self.event_queue.put(
+                    FeedEvent(
+                        "price_action",
+                        {
+                            "id": instrument.key,
+                            "state": state,
+                            "candles": candles if state.is_available() else tuple(),
+                        },
+                    )
+                )
+
+            try:
+                await asyncio.sleep(self.config.analysis.poll_interval_seconds)
+            except asyncio.CancelledError:
+                break
+
+    def _analyze_fresh_candles(self, candles) -> PriceActionState:
+        """Analyze candles only when the latest candle itself is fresh."""
+        if not candles:
+            return PriceActionState.unavailable("No candles returned.")
+        latest_open_ms = max(candle.open_time_ms for candle in candles)
+        latest_open_at = datetime.fromtimestamp(latest_open_ms / 1000, tz=timezone.utc)
+        candle_age = (datetime.now(timezone.utc) - latest_open_at).total_seconds()
+        if candle_age > self.config.analysis.stale_after_seconds:
+            return PriceActionState.unavailable("Candle data is stale.")
+        return analyze_price_action(candles)
+
+    @staticmethod
+    def _fetch_candles(
+        instrument: MarketInstrument,
+        *,
+        interval: str,
+        limit: int,
+    ):
+        """Fetch recent candles for the instrument's provider."""
+        if isinstance(instrument, BitgetInstrument):
+            return fetch_bitget_candles(instrument, interval=interval, limit=limit)
+        if isinstance(instrument, LongbridgeInstrument):
+            return fetch_longbridge_candles(instrument, interval=interval, limit=limit)
+        raise ValueError(f"unsupported candle provider: {instrument!r}")
 
     def _handle_message(self, payload: dict[str, Any]) -> None:
         """Forward one Bitget websocket payload into the event queue."""

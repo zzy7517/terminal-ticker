@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
@@ -11,6 +12,7 @@ from urllib.request import Request, urlopen
 import websockets
 
 from .config import BITGET_SOURCE, InstrumentConfig
+from .price_action import Candle
 
 BITGET_API_BASE = "https://api.bitget.com"
 BITGET_WS_PUBLIC = "wss://ws.bitget.com/v2/ws/public"
@@ -48,7 +50,7 @@ def _fetch_json(path: str, params: dict[str, str] | None = None) -> dict[str, An
         return json.load(response)
 
 
-def _expect_success(payload: dict[str, Any], context: str) -> list[dict[str, Any]]:
+def _expect_success(payload: dict[str, Any], context: str) -> list[Any]:
     """Validate a Bitget API payload and return its data list."""
     if payload.get("code") != "00000":
         detail = payload.get("msg") or "unknown error"
@@ -156,6 +158,95 @@ def _as_int(raw_value: Any) -> int | None:
         return int(raw_value)
     except (TypeError, ValueError):
         return None
+
+
+def _expect_float(raw_value: Any, field_name: str) -> float:
+    """Convert a required numeric candle field."""
+    value = _as_float(raw_value)
+    if value is None:
+        raise RuntimeError(f"Bitget candle missing {field_name}")
+    return value
+
+
+def _expect_int(raw_value: Any, field_name: str) -> int:
+    """Convert a required integer candle field."""
+    value = _as_int(raw_value)
+    if value is None:
+        raise RuntimeError(f"Bitget candle missing {field_name}")
+    return value
+
+
+def _normalize_candle_row(symbol_key: str, row: list[Any]) -> Candle:
+    """Convert a Bitget candle row into a normalized candle."""
+    if len(row) < 6:
+        raise RuntimeError("Bitget candle returned unexpected payload")
+    return Candle(
+        symbol_key=symbol_key,
+        open_time_ms=_expect_int(row[0], "timestamp"),
+        open=_expect_float(row[1], "open"),
+        high=_expect_float(row[2], "high"),
+        low=_expect_float(row[3], "low"),
+        close=_expect_float(row[4], "close"),
+        volume=_expect_float(row[5], "volume"),
+    )
+
+
+def _api_granularity(inst_type: str, interval: str) -> str:
+    """Map the app interval to Bitget spot/futures granularity names."""
+    if inst_type == SPOT:
+        minute_aliases = {
+            "1m": "1min",
+            "3m": "3min",
+            "5m": "5min",
+            "15m": "15min",
+            "30m": "30min",
+        }
+        day_aliases = {"1D": "1day", "3D": "3day"}
+        larger_aliases = {"1W": "1week", "1M": "1M"}
+        return minute_aliases.get(
+            interval,
+            day_aliases.get(interval, larger_aliases.get(interval, interval.lower())),
+        )
+    return interval
+
+
+def fetch_candles(
+    instrument: BitgetInstrument,
+    *,
+    interval: str,
+    limit: int,
+) -> tuple[Candle, ...]:
+    """Fetch recent Bitget candles for one instrument."""
+    if instrument.inst_type == SPOT:
+        payload = _fetch_json(
+            "/api/v2/spot/market/history-candles",
+            {
+                "symbol": instrument.symbol,
+                "granularity": _api_granularity(instrument.inst_type, interval),
+                "endTime": str(int(time.time() * 1000)),
+                "limit": str(min(limit, 200)),
+            },
+        )
+        context = "Bitget spot candles"
+    else:
+        payload = _fetch_json(
+            "/api/v2/mix/market/candles",
+            {
+                "symbol": instrument.symbol,
+                "productType": instrument.inst_type,
+                "granularity": _api_granularity(instrument.inst_type, interval),
+                "limit": str(min(limit, 1000)),
+            },
+        )
+        context = "Bitget futures candles"
+
+    rows = _expect_success(payload, context)
+    candles = [
+        _normalize_candle_row(instrument.key, row)
+        for row in rows
+        if isinstance(row, list)
+    ]
+    return tuple(sorted(candles, key=lambda candle: candle.open_time_ms))
 
 
 def _normalize_ticker_payload(

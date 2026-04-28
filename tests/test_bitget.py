@@ -1,7 +1,7 @@
 """Test Bitget payload normalization."""
 import unittest
 
-from terminal_ticker.bitget import BitgetInstrument, _normalize_ticker_payload
+from terminal_ticker.bitget import BitgetInstrument, _normalize_candle_row, _normalize_ticker_payload
 
 
 class BitgetTests(unittest.TestCase):
@@ -35,6 +35,29 @@ class BitgetTests(unittest.TestCase):
         self.assertAlmostEqual(payload["change"], -31.74, places=2)
         self.assertAlmostEqual(payload["change_percent"], -0.663, places=3)
         self.assertEqual(payload["status"], "perp")
+
+    def test_normalize_candle_row(self) -> None:
+        """Verify normalize candle row."""
+        candle = _normalize_candle_row(
+            "USDT-FUTURES:XAUUSDT",
+            [
+                "1695835800000",
+                "26210.5",
+                "26220.0",
+                "26194.5",
+                "26200.0",
+                "26.26",
+                "687897.63",
+            ],
+        )
+
+        self.assertEqual(candle.symbol_key, "USDT-FUTURES:XAUUSDT")
+        self.assertEqual(candle.open_time_ms, 1695835800000)
+        self.assertEqual(candle.open, 26210.5)
+        self.assertEqual(candle.high, 26220.0)
+        self.assertEqual(candle.low, 26194.5)
+        self.assertEqual(candle.close, 26200.0)
+        self.assertEqual(candle.volume, 26.26)
 
 
 if __name__ == "__main__":

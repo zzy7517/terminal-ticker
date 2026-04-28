@@ -11,6 +11,8 @@
 - 折叠状态显示横向滚动行情，并可单独选择哪些标的出现。
 - 支持 Bitget `USDT-FUTURES` 和 `SPOT`。
 - 支持长桥 OpenAPI 美股和 ETF 行情。
+- 支持 Bitget 和长桥 OHLCV K 线的本地价格行为分析，显示趋势、震荡、突破尝试和回调状态。
+- 展开状态提供选中标的的 K 线缩略图和 price action 说明。
 - 折叠状态显示哪些标的由 `watchlist.toml` 里的 `show_collapsed` 控制。
 - Bitget 连接失败后会自动重连。
 - 长桥凭证只从环境变量读取，不写入配置文件。
@@ -70,6 +72,13 @@ refresh_interval_ms = 1000
 stale_after_seconds = 20
 reconnect_delay_seconds = 3.0
 longbridge_poll_interval_seconds = 2
+
+[analysis]
+enabled = true
+interval = "5m"
+lookback = 40
+poll_interval_seconds = 30
+stale_after_seconds = 420
 ```
 
 配置说明：
@@ -82,6 +91,32 @@ longbridge_poll_interval_seconds = 2
 - `show_collapsed` 控制折叠状态是否显示该标的。
 - `refresh_interval_ms` 控制 UI 心跳刷新，用于 stale 计时显示，不控制交易所推送频率。
 - `longbridge_poll_interval_seconds` 控制长桥 quote 拉取间隔。
+- `[analysis]` 控制本地价格行为分析。当前对 Bitget 和长桥标的拉取 OHLCV K 线并生成紧凑状态标记。
+- `analysis.interval` 是 K 线周期，默认 `5m`。
+- `analysis.lookback` 是每次分析使用的最近 K 线数量，最小值是 `10`。
+- `analysis.poll_interval_seconds` 控制 K 线分析刷新间隔。
+- `analysis.stale_after_seconds` 控制分析结果和最新 K 线多久后视为过期；默认值是 `420`，能覆盖一根 5 分钟 K 线的形成时间。过期分析不会在折叠行情条中显示。
+
+## 价格行为分析
+
+价格行为分析不识别屏幕截图里的 K 线图，而是直接读取交易所返回的 OHLCV 数据：
+
+- `O`：开盘价
+- `H`：最高价
+- `L`：最低价
+- `C`：收盘价
+- `V`：成交量
+
+当前状态标记：
+
+- `TR+` / `TR-`：上涨或下跌趋势
+- `RG`：震荡区间
+- `BO+` / `BO-`：向上或向下突破尝试
+- `PB+` / `PB-`：上涨或下跌背景里的回调
+
+这只是本地监控和解释层，不会下单、不会管理仓位，也不会给出买卖按钮。
+
+展开面板里点击任意标的行，会在下方详情区显示该标的的状态、说明和最近 K 线缩略图。收缩面板仍然保持低噪音，只显示价格和紧凑状态标记。
 
 ## 添加和移除美股
 
@@ -135,6 +170,7 @@ printenv LONGBRIDGE_ACCESS_TOKEN | cut -c1-8
 ## 限制
 
 - 这是个人行情监控工具，不是生产级行情终端。
-- 当前长桥 provider 只接美股和 ETF quote，不保留 Yahoo fallback。
-- 当前不做指数、MT5、商品期货或 K 线研究。
+- 当前长桥 provider 接美股和 ETF quote，并在长桥 OpenAPI 凭证和行情权限可用时拉取 K 线用于本地分析；不可用时会退回 quote-only。
+- 当前不做指数、MT5 或商品期货接入。
+- 当前不做自动交易、订单执行、仓位管理或风险控制。
 - 窗口基于 Qt，不是 Swift/AppKit 原生 macOS 应用。

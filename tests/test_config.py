@@ -86,6 +86,32 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.instruments[1].show_collapsed)
         self.assertEqual(config.display.longbridge_poll_interval_seconds, 2)
 
+    def test_parse_config_supports_analysis_defaults_and_overrides(self) -> None:
+        """Verify parse config supports analysis defaults and overrides."""
+        default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})
+        self.assertTrue(default_config.analysis.enabled)
+        self.assertEqual(default_config.analysis.interval, "5m")
+        self.assertEqual(default_config.analysis.lookback, 40)
+
+        config = parse_config(
+            {
+                "symbols": ["SPOT:BTCUSDT"],
+                "analysis": {
+                    "enabled": False,
+                    "interval": "15m",
+                    "lookback": 24,
+                    "poll_interval_seconds": 45,
+                    "stale_after_seconds": 180,
+                },
+            }
+        )
+
+        self.assertFalse(config.analysis.enabled)
+        self.assertEqual(config.analysis.interval, "15m")
+        self.assertEqual(config.analysis.lookback, 24)
+        self.assertEqual(config.analysis.poll_interval_seconds, 45)
+        self.assertEqual(config.analysis.stale_after_seconds, 180)
+
     def test_build_runtime_requires_symbols(self) -> None:
         """Verify build runtime requires symbols."""
         with self.assertRaises(ValueError):

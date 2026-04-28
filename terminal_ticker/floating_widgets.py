@@ -1,8 +1,8 @@
 """Define reusable Qt widgets and formatting helpers for the ticker UI."""
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QPainter, QPen
 from collections.abc import Callable
 
 from PySide6.QtWidgets import (
@@ -19,14 +19,16 @@ from PySide6.QtWidgets import (
 
 from .longbridge_provider import LongbridgeSecurity
 from .models import QuoteState
+from .price_action import Candle
 from .providers import MarketInstrument
 
 HEADER_HEIGHT = 30
 ROW_HEIGHT = 28
-PANEL_MIN_WIDTH = 320
-PANEL_MIN_HEIGHT = 154
-PANEL_GROUPED_WIDTH = 360
-PANEL_MAX_HEIGHT = 430
+PANEL_MIN_WIDTH = 280
+PANEL_MIN_HEIGHT = 220
+PANEL_GROUPED_WIDTH = 520
+PANEL_MAX_HEIGHT = 620
+DETAIL_PANEL_HEIGHT = 168
 MARQUEE_GAP = 36
 TICKER_TAPE_HEIGHT = 24
 TICKER_TEXT_VERTICAL_NUDGE = -1
@@ -45,6 +47,8 @@ ROW_FLASH_UP_BACKGROUND = "rgba(91, 100, 76, 210)"
 ROW_FLASH_UP_BORDER = "rgba(153, 169, 126, 126)"
 ROW_FLASH_DOWN_BACKGROUND = "rgba(112, 67, 52, 214)"
 ROW_FLASH_DOWN_BORDER = "rgba(201, 125, 95, 128)"
+DETAIL_BACKGROUND = "rgba(48, 40, 34, 150)"
+CHART_GRID = "#d6b89a"
 TEXT_PRIMARY = "#f3ebdf"
 TEXT_SECONDARY = "#d3c1ad"
 TEXT_MUTED = "#b5a392"
@@ -58,6 +62,8 @@ BUTTON_BACKGROUND_PRESSED = "rgba(201, 125, 95, 0.26)"
 STATUS_WAITING = "#d2a465"
 STATUS_LIVE = "#9fb08b"
 STATUS_ERROR = "#c87a63"
+CHART_UP = "#9fb08b"
+CHART_DOWN = "#c87a63"
 
 UI_FONT_CANDIDATES = ("Avenir Next", "SF Pro Text", "Helvetica Neue", "Arial")
 PRICE_FONT_CANDIDATES = ("SF Mono", "Menlo", "Monaco")
@@ -120,6 +126,8 @@ def format_stream_status(status: str) -> str:
 def build_ticker_items(
     instruments: tuple[MarketInstrument, ...],
     quotes: dict[str, QuoteState],
+    *,
+    analysis_stale_after_seconds: int | None = None,
 ) -> list[str]:
     """Build collapsed ticker tape labels from quote state."""
     parts: list[str] = []
@@ -127,7 +135,11 @@ def build_ticker_items(
         if not instrument.show_collapsed:
             continue
         quote = quotes[instrument.key]
-        parts.append(f"{instrument.label} {quote.price_label()}")
+        marker = quote.price_action_label(
+            stale_after_seconds=analysis_stale_after_seconds,
+        )
+        suffix = f" {marker}" if marker else ""
+        parts.append(f"{instrument.label} {quote.price_label()}{suffix}")
     return parts
 
 
@@ -253,10 +265,15 @@ class TickerTape(QFrame):
 
 class QuoteRow(QFrame):
     """Render one instrument row in the expanded ticker."""
-    def __init__(self, instrument: MarketInstrument) -> None:
+    def __init__(
+        self,
+        instrument: MarketInstrument,
+        on_select: Callable[[str], None] | None = None,
+    ) -> None:
         """Create labels and layout for one quote row."""
         super().__init__()
         self.instrument = instrument
+        self.on_select = on_select
         self.flash_direction = 0
         self.flash_frames_remaining = 0
         self.setObjectName("quoteRow")
@@ -264,23 +281,48 @@ class QuoteRow(QFrame):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 4, 10, 4)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         self.symbol_label = QLabel(instrument.label)
         self.symbol_label.setMinimumWidth(48)
         self.symbol_label.setFont(build_ui_font(10, weight=QFont.DemiBold))
         self.symbol_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
 
+        self.analysis_label = QLabel("")
+        self.analysis_label.setFixedWidth(32)
+        self.analysis_label.setAlignment(Qt.AlignCenter)
+        self.analysis_label.setFont(build_price_font(9, weight=QFont.Bold))
+        self.analysis_label.setStyleSheet(f"color: {TEXT_MUTED};")
+
+        self.analysis_reason_label = QLabel("")
+        self.analysis_reason_label.setFixedWidth(106)
+        self.analysis_reason_label.setFont(build_ui_font(8, weight=QFont.Medium))
+        self.analysis_reason_label.setStyleSheet(f"color: {TEXT_MUTED};")
+
         self.price_label = QLabel("--")
-        self.price_label.setMinimumWidth(104)
+        self.price_label.setMinimumWidth(88)
         self.price_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.price_label.setFont(build_price_font(14, weight=QFont.Bold))
         self.price_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
 
         layout.addWidget(self.symbol_label)
         layout.addStretch(1)
+        layout.addWidget(self.analysis_reason_label)
+        layout.addWidget(self.analysis_label)
         layout.addWidget(self.price_label)
         self._apply_background(ROW_BACKGROUND, ROW_BORDER)
+
+    def set_compact_width(self, width: int) -> None:
+        """Hide optional row text when the panel is very narrow."""
+        self.analysis_reason_label.setVisible(width >= 315 and bool(self.analysis_reason_label.text()))
+
+    def mousePressEvent(self, event) -> None:
+        """Select this row for the detail panel."""
+        if event.button() == Qt.LeftButton and self.on_select is not None:
+            self.on_select(self.instrument.key)
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
     def _apply_background(self, background: str, border: str) -> None:
         """Apply row background and border colors."""
@@ -299,10 +341,26 @@ class QuoteRow(QFrame):
         self.flash_direction = direction
         self.flash_frames_remaining = 5
 
-    def update_quote(self, quote: QuoteState, *, stale_after_seconds: int) -> None:
+    def update_quote(
+        self,
+        quote: QuoteState,
+        *,
+        stale_after_seconds: int,
+        analysis_stale_after_seconds: int | None = None,
+    ) -> None:
         """Render the latest quote values into row labels."""
         self.symbol_label.setText(quote.symbol)
         self.price_label.setText(quote.price_label())
+        marker = quote.price_action_label(
+            stale_after_seconds=analysis_stale_after_seconds,
+        )
+        reason = quote.price_action_reason(
+            stale_after_seconds=analysis_stale_after_seconds,
+        )
+        self.analysis_label.setText(marker)
+        self.analysis_reason_label.setText(reason)
+        self.analysis_label.setVisible(bool(marker))
+        self.analysis_reason_label.setVisible(self.width() >= 315 and bool(reason))
 
         if quote.is_stale(stale_after_seconds):
             self.price_label.setStyleSheet(f"color: {TEXT_STALE};")
@@ -317,6 +375,125 @@ class QuoteRow(QFrame):
             self.flash_frames_remaining -= 1
         else:
             self._apply_background(ROW_BACKGROUND, ROW_BORDER)
+
+
+class CandlestickChart(QWidget):
+    """Render a compact candlestick chart without extra dependencies."""
+    def __init__(self) -> None:
+        """Initialize chart data."""
+        super().__init__()
+        self.candles: tuple[Candle, ...] = tuple()
+        self.setMinimumHeight(96)
+
+    def set_candles(self, candles: tuple[Candle, ...]) -> None:
+        """Replace the chart candles."""
+        self.candles = tuple(sorted(candles, key=lambda candle: candle.open_time_ms))[-36:]
+        self.update()
+
+    def paintEvent(self, _event) -> None:
+        """Paint the current candle set."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect().adjusted(8, 8, -8, -8)
+        if rect.width() <= 12 or rect.height() <= 12:
+            return
+
+        grid_color = QColor(CHART_GRID)
+        grid_color.setAlpha(38)
+        painter.setPen(QPen(grid_color, 1))
+        for fraction in (0.25, 0.5, 0.75):
+            y = rect.top() + rect.height() * fraction
+            painter.drawLine(rect.left(), int(y), rect.right(), int(y))
+
+        if not self.candles:
+            painter.setPen(QColor(TEXT_STALE))
+            painter.setFont(build_ui_font(9, weight=QFont.Medium))
+            painter.drawText(rect, int(Qt.AlignCenter), "等待K线")
+            return
+
+        high = max(candle.high for candle in self.candles)
+        low = min(candle.low for candle in self.candles)
+        if high <= low:
+            high = low + 1
+
+        step = rect.width() / max(1, len(self.candles))
+        body_width = max(2.0, min(8.0, step * 0.58))
+
+        def y_for(price: float) -> float:
+            return rect.bottom() - ((price - low) / (high - low)) * rect.height()
+
+        for index, candle in enumerate(self.candles):
+            x = rect.left() + step * index + step / 2
+            color = QColor(CHART_UP if candle.close >= candle.open else CHART_DOWN)
+            painter.setPen(QPen(color, 1))
+            painter.drawLine(int(x), int(y_for(candle.high)), int(x), int(y_for(candle.low)))
+            top = min(y_for(candle.open), y_for(candle.close))
+            bottom = max(y_for(candle.open), y_for(candle.close))
+            height = max(1.5, bottom - top)
+            body = QRectF(x - body_width / 2, top, body_width, height)
+            painter.fillRect(body, color)
+
+
+class InstrumentDetailPanel(QFrame):
+    """Render the selected instrument's analysis and mini chart."""
+    def __init__(self) -> None:
+        """Build the detail panel widgets."""
+        super().__init__()
+        self.setObjectName("instrumentDetailPanel")
+        self.setMinimumHeight(DETAIL_PANEL_HEIGHT)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 10)
+        layout.setSpacing(6)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+
+        self.title_label = QLabel("选择标的")
+        self.title_label.setFont(build_ui_font(10, weight=QFont.DemiBold))
+        self.title_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
+
+        self.marker_label = QLabel("")
+        self.marker_label.setFixedWidth(36)
+        self.marker_label.setAlignment(Qt.AlignCenter)
+        self.marker_label.setFont(build_price_font(9, weight=QFont.Bold))
+        self.marker_label.setStyleSheet(f"color: {TEXT_MUTED};")
+
+        self.reason_label = QLabel("等待K线")
+        self.reason_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.reason_label.setFont(build_ui_font(8, weight=QFont.Medium))
+        self.reason_label.setStyleSheet(f"color: {TEXT_MUTED};")
+
+        header.addWidget(self.title_label)
+        header.addWidget(self.marker_label)
+        header.addWidget(self.reason_label, 1)
+        layout.addLayout(header)
+
+        self.chart = CandlestickChart()
+        layout.addWidget(self.chart, 1)
+
+    def update_detail(
+        self,
+        instrument: MarketInstrument | None,
+        quote: QuoteState | None,
+        *,
+        analysis_stale_after_seconds: int,
+    ) -> None:
+        """Render selected instrument state."""
+        if instrument is None or quote is None:
+            self.title_label.setText("选择标的")
+            self.marker_label.setText("")
+            self.reason_label.setText("等待K线")
+            self.chart.set_candles(tuple())
+            return
+
+        self.title_label.setText(f"{instrument.label} · {quote.price_label()}")
+        marker = quote.price_action_label(stale_after_seconds=analysis_stale_after_seconds)
+        reason = quote.price_action_reason(stale_after_seconds=analysis_stale_after_seconds)
+        self.marker_label.setText(marker)
+        self.reason_label.setText(reason or "等待K线")
+        self.chart.set_candles(quote.price_action_candles)
 
 
 class ResizeHandle(QFrame):

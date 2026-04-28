@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from .price_action import Candle, PriceActionState
+
 
 def _to_float(raw_value: Any) -> float | None:
     """Convert a raw quote value into a float when possible."""
@@ -104,6 +106,8 @@ class QuoteState:
     last_update_at: datetime | None = None
     update_count: int = 0
     last_error: str | None = None
+    price_action: PriceActionState | None = None
+    price_action_candles: tuple[Candle, ...] = tuple()
 
     @classmethod
     def placeholder(cls, symbol: str) -> "QuoteState":
@@ -160,6 +164,48 @@ class QuoteState:
     def mark_error(self, detail: str) -> None:
         """Record the latest quote error detail."""
         self.last_error = detail
+
+    def apply_price_action(
+        self,
+        state: PriceActionState,
+        *,
+        candles: tuple[Candle, ...] = tuple(),
+    ) -> None:
+        """Apply derived price action state."""
+        self.price_action = state
+        self.price_action_candles = candles
+
+    def price_action_label(
+        self,
+        *,
+        stale_after_seconds: int | None = None,
+        now: datetime | None = None,
+    ) -> str:
+        """Return a compact price action marker when analysis is fresh."""
+        if self.price_action is None or not self.price_action.is_available():
+            return ""
+        if stale_after_seconds is not None and self.price_action.is_stale(
+            stale_after_seconds,
+            now=now,
+        ):
+            return ""
+        return self.price_action.marker
+
+    def price_action_reason(
+        self,
+        *,
+        stale_after_seconds: int | None = None,
+        now: datetime | None = None,
+    ) -> str:
+        """Return a short analysis reason when analysis is fresh."""
+        if self.price_action is None or not self.price_action.is_available():
+            return ""
+        if stale_after_seconds is not None and self.price_action.is_stale(
+            stale_after_seconds,
+            now=now,
+        ):
+            return ""
+        return self.price_action.reason
 
     def is_stale(self, stale_after_seconds: int, *, now: datetime | None = None) -> bool:
         """Return whether the quote is older than the stale threshold."""

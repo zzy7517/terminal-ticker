@@ -3,6 +3,7 @@ import os
 import tempfile
 import textwrap
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -17,6 +18,7 @@ from terminal_ticker.controller import DrainResult
 from terminal_ticker.floating import FloatingTickerWindow, build_ticker_items, group_instruments
 from terminal_ticker.longbridge_provider import LongbridgeInstrument, LongbridgeSecurity
 from terminal_ticker.models import QuoteState
+from terminal_ticker.price_action import Candle, PriceActionState
 
 
 class FakeController:
@@ -99,6 +101,49 @@ class FloatingTests(unittest.TestCase):
 
         self.assertEqual(items, ["MU 478.91"])
 
+    def test_build_ticker_items_appends_fresh_price_action_marker(self) -> None:
+        """Verify build ticker items appends fresh price action marker."""
+        instruments = (
+            BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp"),
+        )
+        quote = QuoteState(symbol="BTC", display_name="BTC", price=78001.5)
+        quote.apply_price_action(
+            PriceActionState(
+                label="breakout",
+                bias="bullish",
+                marker="BO+",
+                reason="突破近期区间",
+                strength=82,
+            )
+        )
+        quotes = {"USDT-FUTURES:BTCUSDT": quote}
+
+        items = build_ticker_items(instruments, quotes)
+
+        self.assertEqual(items, ["BTC 78001.50 BO+"])
+
+    def test_build_ticker_items_omits_stale_price_action_marker(self) -> None:
+        """Verify build ticker items omits stale price action marker."""
+        instruments = (
+            BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp"),
+        )
+        quote = QuoteState(symbol="BTC", display_name="BTC", price=78001.5)
+        quote.apply_price_action(
+            PriceActionState(
+                label="breakout",
+                bias="bullish",
+                marker="BO+",
+                reason="突破近期区间",
+                strength=82,
+                updated_at=datetime.now(timezone.utc) - timedelta(seconds=180),
+            )
+        )
+        quotes = {"USDT-FUTURES:BTCUSDT": quote}
+
+        items = build_ticker_items(instruments, quotes, analysis_stale_after_seconds=120)
+
+        self.assertEqual(items, ["BTC 78001.50"])
+
     def test_group_instruments_orders_known_groups_first(self) -> None:
         """Verify group instruments orders known groups first."""
         stock = BitgetInstrument(
@@ -156,6 +201,37 @@ class FloatingTests(unittest.TestCase):
 
         window.close()
 
+    def test_quote_row_shows_price_action_state_and_reason(self) -> None:
+        """Verify quote row shows price action state and reason."""
+        instruments = (
+            BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp"),
+        )
+        quote = QuoteState(symbol="BTC", display_name="BTC", price=78001.5)
+        quote.apply_price_action(
+            PriceActionState(
+                label="breakout",
+                bias="bullish",
+                marker="BO+",
+                reason="突破近期区间",
+                strength=82,
+            )
+        )
+        quotes = {instruments[0].key: quote}
+        window = FloatingTickerWindow(
+            AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments,
+            controller=FakeController(quotes),
+            auto_start=False,
+        )
+
+        row = window.rows[instruments[0].key]
+        row.update_quote(quote, stale_after_seconds=20, analysis_stale_after_seconds=120)
+
+        self.assertEqual(row.analysis_label.text(), "BO+")
+        self.assertIn("突破", row.analysis_reason_label.text())
+
+        window.close()
+
     def test_stock_tab_uses_chinese_label_and_search_controls(self) -> None:
         """Verify stock tab uses chinese label and search controls."""
         instruments = (
@@ -194,6 +270,8 @@ class FloatingTests(unittest.TestCase):
 
         self.assertGreater(window.maximumHeight(), window.minimumHeight())
         self.assertFalse(window.resize_grip.isHidden())
+        self.assertEqual(window.minimumWidth(), 280)
+        self.assertEqual(window.minimumHeight(), 220)
 
         window.resize(420, 360)
         self.app.processEvents()
@@ -205,6 +283,80 @@ class FloatingTests(unittest.TestCase):
         self.assertEqual(window.width(), 420)
         self.assertEqual(window.height(), 360)
         self.assertGreater(window.maximumHeight(), window.minimumHeight())
+
+        window.close()
+
+    def test_narrow_panel_hides_optional_analysis_reason(self) -> None:
+        """Verify narrow panel hides optional analysis reason."""
+        instruments = (
+            BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp"),
+        )
+        quote = QuoteState(symbol="BTC", display_name="BTC", price=78001.5)
+        quote.apply_price_action(
+            PriceActionState(
+                label="breakout",
+                bias="bullish",
+                marker="BO+",
+                reason="突破近期区间",
+                strength=82,
+            )
+        )
+        quotes = {instruments[0].key: quote}
+        window = FloatingTickerWindow(
+            AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments,
+            controller=FakeController(quotes),
+            auto_start=False,
+        )
+
+        row = window.rows[instruments[0].key]
+        window.resize(280, 220)
+        self.app.processEvents()
+        row.update_quote(quote, stale_after_seconds=20, analysis_stale_after_seconds=420)
+
+        self.assertEqual(row.analysis_label.text(), "BO+")
+        self.assertFalse(row.analysis_reason_label.isVisible())
+
+        window.close()
+
+    def test_detail_panel_shows_selected_instrument_candles(self) -> None:
+        """Verify detail panel follows selected instrument candles."""
+        instruments = (
+            BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp"),
+            LongbridgeInstrument("AAPL.US", "AAPL"),
+        )
+        btc_quote = QuoteState(symbol="BTC", display_name="BTC", price=78001.5)
+        aapl_quote = QuoteState(symbol="AAPL", display_name="AAPL", price=201.5)
+        candles = (
+            Candle("longbridge:AAPL.US", 1, 200, 202, 199, 201, 1000),
+            Candle("longbridge:AAPL.US", 2, 201, 203, 200, 202, 1100),
+        )
+        aapl_quote.apply_price_action(
+            PriceActionState(
+                label="trend",
+                bias="bullish",
+                marker="TR+",
+                reason="收盘持续上行",
+                strength=70,
+            ),
+            candles=candles,
+        )
+        quotes = {
+            instruments[0].key: btc_quote,
+            instruments[1].key: aapl_quote,
+        }
+        window = FloatingTickerWindow(
+            AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments,
+            controller=FakeController(quotes),
+            auto_start=False,
+        )
+
+        window._select_instrument("longbridge:AAPL.US")
+
+        self.assertEqual(window.detail_panel.title_label.text(), "AAPL · 201.50")
+        self.assertEqual(window.detail_panel.marker_label.text(), "TR+")
+        self.assertEqual(window.detail_panel.chart.candles, candles)
 
         window.close()
 

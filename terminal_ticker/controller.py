@@ -106,6 +106,17 @@ class TickerController:
             self.stream_status = "retrying"
             return True
 
+        if event.kind == "price_action":
+            payload = event.payload
+            key = str(payload.get("id") or "")
+            if key not in self.quotes:
+                return False
+            self.quotes[key].apply_price_action(
+                payload["state"],
+                candles=tuple(payload.get("candles", tuple())),
+            )
+            return True
+
         return False
 
     @staticmethod

@@ -5,6 +5,7 @@ from terminal_ticker.bitget import BitgetInstrument
 from terminal_ticker.config import AppConfig, DisplayConfig
 from terminal_ticker.controller import TickerController
 from terminal_ticker.feed import FeedEvent
+from terminal_ticker.price_action import Candle, PriceActionState
 
 
 class DummyWorker:
@@ -92,6 +93,58 @@ class ControllerTests(unittest.TestCase):
 
         self.assertTrue(result.dirty)
         self.assertEqual(self.controller.stream_status, "retrying")
+
+    def test_price_action_event_updates_quote_without_flash(self) -> None:
+        """Verify price action event updates quote without price flash."""
+        key = self.instruments[0].key
+        self.controller.event_queue.put(
+            FeedEvent(
+                "price_action",
+                {
+                    "id": key,
+                    "state": PriceActionState(
+                        label="breakout",
+                        bias="bullish",
+                        marker="BO+",
+                        reason="突破近期区间",
+                        strength=82,
+                    ),
+                },
+            )
+        )
+
+        result = self.controller.drain_events()
+
+        self.assertTrue(result.dirty)
+        self.assertEqual(result.flash_directions, {})
+        self.assertEqual(self.controller.quotes[key].price_action.marker, "BO+")
+
+    def test_price_action_event_stores_candles(self) -> None:
+        """Verify price action event stores chart candles."""
+        key = self.instruments[0].key
+        candles = (
+            Candle(key, 1, 100, 101, 99, 100.5, 1000),
+        )
+        self.controller.event_queue.put(
+            FeedEvent(
+                "price_action",
+                {
+                    "id": key,
+                    "state": PriceActionState(
+                        label="range",
+                        bias="neutral",
+                        marker="RG",
+                        reason="K线重叠震荡",
+                        strength=42,
+                    ),
+                    "candles": candles,
+                },
+            )
+        )
+
+        self.controller.drain_events()
+
+        self.assertEqual(self.controller.quotes[key].price_action_candles, candles)
 
 
 if __name__ == "__main__":
