@@ -1,3 +1,4 @@
+"""Test watchlist configuration parsing."""
 import tempfile
 import textwrap
 import unittest
@@ -7,13 +8,22 @@ from terminal_ticker.config import build_runtime_config, load_config, parse_conf
 
 
 class ConfigTests(unittest.TestCase):
+    """Group tests for ConfigTests."""
     def _instrument_rows(self, config):
+        """Provide helper behavior for instrument rows."""
         return tuple(
-            (instrument.symbol, instrument.inst_type, instrument.label)
+            (
+                instrument.symbol,
+                instrument.source,
+                instrument.inst_type,
+                instrument.label,
+                instrument.group,
+            )
             for instrument in config.instruments
         )
 
     def test_parse_config_normalizes_symbols(self) -> None:
+        """Verify parse config normalizes symbols."""
         config = parse_config(
             {
                 "symbols": [
@@ -27,13 +37,14 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             self._instrument_rows(config),
             (
-                ("BTCUSDT", "SPOT", None),
-                ("MUUSDT", "USDT-FUTURES", "MU"),
+                ("BTCUSDT", "bitget", "SPOT", None, "crypto"),
+                ("MUUSDT", "bitget", "USDT-FUTURES", "MU", "crypto"),
             ),
         )
         self.assertEqual(config.display.refresh_interval_ms, 500)
 
     def test_build_runtime_parses_cli_prefix_syntax(self) -> None:
+        """Verify build runtime parses cli prefix syntax."""
         config = build_runtime_config(
             None,
             cli_symbols=["SPOT:BTCUSDT", "USDT-FUTURES:SPXUSDT"],
@@ -41,16 +52,47 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             self._instrument_rows(config),
             (
-                ("BTCUSDT", "SPOT", None),
-                ("SPXUSDT", "USDT-FUTURES", None),
+                ("BTCUSDT", "bitget", "SPOT", None, "crypto"),
+                ("SPXUSDT", "bitget", "USDT-FUTURES", None, "crypto"),
             ),
         )
 
+    def test_parse_config_supports_longbridge_source_and_collapsed_defaults(self) -> None:
+        """Verify parse config supports longbridge source and collapsed defaults."""
+        config = parse_config(
+            {
+                "symbols": [
+                    {"symbol": "aapl.us", "source": "longbridge", "label": "Apple"},
+                    {
+                        "symbol": "spy.us",
+                        "source": "longbridge",
+                        "label": "SPY",
+                        "show_collapsed": False,
+                        "group": "watchlist",
+                    },
+                ],
+                "display": {"longbridge_poll_interval_seconds": 2},
+            }
+        )
+
+        self.assertEqual(
+            self._instrument_rows(config),
+            (
+                ("AAPL.US", "longbridge", None, "Apple", "stocks"),
+                ("SPY.US", "longbridge", None, "SPY", "watchlist"),
+            ),
+        )
+        self.assertTrue(config.instruments[0].show_collapsed)
+        self.assertFalse(config.instruments[1].show_collapsed)
+        self.assertEqual(config.display.longbridge_poll_interval_seconds, 2)
+
     def test_build_runtime_requires_symbols(self) -> None:
+        """Verify build runtime requires symbols."""
         with self.assertRaises(ValueError):
             build_runtime_config(None)
 
     def test_load_config_from_file(self) -> None:
+        """Verify load config from file."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "watchlist.toml"
             config_path.write_text(
@@ -71,8 +113,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             self._instrument_rows(config),
             (
-                ("MSFTUSDT", "USDT-FUTURES", "MSFT"),
-                ("BTCUSDT", "SPOT", "BTC"),
+                ("MSFTUSDT", "bitget", "USDT-FUTURES", "MSFT", "crypto"),
+                ("BTCUSDT", "bitget", "SPOT", "BTC", "crypto"),
             ),
         )
         self.assertEqual(config.display.stale_after_seconds, 15)

@@ -1,280 +1,81 @@
+"""Build the floating Qt ticker window and wire user interactions."""
 from __future__ import annotations
 
+import queue
+import threading
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QPoint, QRect, QTimer, Qt
-from PySide6.QtGui import QColor, QCursor, QFont, QFontDatabase, QFontMetrics, QPainter
+from PySide6.QtCore import QPoint, QSize, QTimer, Qt
+from PySide6.QtGui import QColor, QCursor, QFont
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from .bitget import BitgetInstrument
-from .config import AppConfig
+from .config import AppConfig, InstrumentConfig, LONGBRIDGE_SOURCE
 from .controller import TickerController
-from .models import QuoteState
-
-HEADER_HEIGHT = 30
-ROW_HEIGHT = 28
-PANEL_WIDTH = 268
-PANEL_MAX_HEIGHT = 248
-MARQUEE_GAP = 36
-TICKER_TAPE_HEIGHT = 24
-TICKER_TEXT_VERTICAL_NUDGE = -1
-TICKER_SEPARATOR = "·"
-SHELL_RADIUS = 14
-ROW_RADIUS = 10
-CONTROL_RADIUS = 9
-
-SHELL_BACKGROUND = "rgba(31, 26, 22, 246)"
-SHELL_BORDER = "rgba(173, 144, 116, 96)"
-HEADER_BACKGROUND = "rgba(54, 45, 38, 218)"
-HEADER_DIVIDER = "rgba(173, 144, 116, 54)"
-ROW_BACKGROUND = "rgba(86, 71, 58, 132)"
-ROW_BORDER = "rgba(177, 147, 118, 58)"
-ROW_FLASH_UP_BACKGROUND = "rgba(91, 100, 76, 210)"
-ROW_FLASH_UP_BORDER = "rgba(153, 169, 126, 126)"
-ROW_FLASH_DOWN_BACKGROUND = "rgba(112, 67, 52, 214)"
-ROW_FLASH_DOWN_BORDER = "rgba(201, 125, 95, 128)"
-TEXT_PRIMARY = "#f3ebdf"
-TEXT_SECONDARY = "#d3c1ad"
-TEXT_MUTED = "#b5a392"
-TEXT_STALE = "#8e7f72"
-TEXT_TICKER = "#eadfce"
-BUTTON_BACKGROUND = "rgba(246, 236, 224, 0.06)"
-BUTTON_BORDER = "rgba(214, 184, 154, 0.12)"
-BUTTON_BACKGROUND_HOVER = "rgba(201, 125, 95, 0.18)"
-BUTTON_BORDER_HOVER = "rgba(214, 184, 154, 0.2)"
-BUTTON_BACKGROUND_PRESSED = "rgba(201, 125, 95, 0.26)"
-STATUS_WAITING = "#d2a465"
-STATUS_LIVE = "#9fb08b"
-STATUS_ERROR = "#c87a63"
-
-UI_FONT_CANDIDATES = ("Avenir Next", "SF Pro Text", "Helvetica Neue", "Arial")
-PRICE_FONT_CANDIDATES = ("SF Mono", "Menlo", "Monaco")
-STATUS_LABELS = {
-    "idle": "Idle",
-    "live": "Live",
-    "retrying": "Reconnecting",
-    "snapshot-failed": "Sync issue",
-    "error": "Connection issue",
-}
-
-
-def _pick_font(
-    preferred: tuple[str, ...],
-    *,
-    size: int,
-    weight: int,
-    fixed: bool = False,
-) -> QFont:
-    available = set(QFontDatabase.families())
-    for family in preferred:
-        if family in available:
-            font = QFont(family)
-            break
-    else:
-        if fixed:
-            font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-        else:
-            font = QFont()
-    font.setPointSize(size)
-    font.setWeight(weight)
-    return font
-
-
-def _build_ui_font(size: int, *, weight: int = QFont.Medium) -> QFont:
-    return _pick_font(UI_FONT_CANDIDATES, size=size, weight=weight)
-
-
-def _build_price_font(size: int, *, weight: int = QFont.DemiBold) -> QFont:
-    return _pick_font(PRICE_FONT_CANDIDATES, size=size, weight=weight, fixed=True)
-
-
-def _format_stream_status(status: str) -> str:
-    return STATUS_LABELS.get(status, status.replace("-", " ").title())
-
-
-def build_ticker_items(
-    instruments: tuple[BitgetInstrument, ...],
-    quotes: dict[str, QuoteState],
-) -> list[str]:
-    parts: list[str] = []
-    for instrument in instruments:
-        quote = quotes[instrument.key]
-        parts.append(f"{instrument.label} {quote.price_label()}")
-    return parts
-
-
-class TickerTape(QFrame):
-    def __init__(self, on_activate) -> None:
-        super().__init__()
-        self.on_activate = on_activate
-        self.items = ["Waiting for prices"]
-        self.offset = 0.0
-        self.speed = 0.32
-        self.item_widths: list[int] = []
-        self.separator_width = 0
-        self.setFixedHeight(TICKER_TAPE_HEIGHT)
-
-    def _recalculate_metrics(self) -> None:
-        metrics = QFontMetrics(self.font())
-        self.item_widths = [metrics.horizontalAdvance(item) for item in self.items]
-        self.separator_width = metrics.horizontalAdvance(f"  {TICKER_SEPARATOR}  ")
-
-    def _cycle_width(self) -> int:
-        if not self.item_widths:
-            return 0
-        content_width = sum(self.item_widths)
-        if len(self.item_widths) > 1:
-            content_width += self.separator_width * (len(self.item_widths) - 1)
-        return content_width + MARQUEE_GAP
-
-    def set_items(self, items: list[str]) -> None:
-        normalized = items or ["Waiting for prices"]
-        if normalized == self.items:
-            return
-        previous_cycle_width = self._cycle_width()
-        self.items = normalized
-        self._recalculate_metrics()
-        new_cycle_width = self._cycle_width()
-        if new_cycle_width <= self.width():
-            self.offset = 0.0
-        elif previous_cycle_width > 0:
-            self.offset = self.offset % new_cycle_width
-        else:
-            self.offset = 0.0
-        self.update()
-
-    def advance(self) -> None:
-        cycle_width = self._cycle_width()
-        if cycle_width <= self.width():
-            self.offset = 0
-            self.update()
-            return
-        self.offset += self.speed
-        if self.offset >= cycle_width:
-            self.offset = 0
-        self.update()
-
-    def mousePressEvent(self, event) -> None:
-        super().mousePressEvent(event)
-
-    def paintEvent(self, _event) -> None:
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.TextAntialiasing)
-        painter.setFont(self.font())
-        painter.setPen(QColor(TEXT_TICKER))
-
-        if not self.items:
-            return
-
-        cycle_width = self._cycle_width()
-        if cycle_width <= self.width():
-            painter.drawText(
-                self.rect().adjusted(8, TICKER_TEXT_VERTICAL_NUDGE, -8, 0),
-                int(Qt.AlignLeft | Qt.AlignVCenter),
-                f"  {TICKER_SEPARATOR}  ".join(self.items),
-            )
-            return
-
-        x = -int(self.offset) + 8
-        while x < self.width():
-            draw_x = x
-            for index, item in enumerate(self.items):
-                painter.drawText(
-                    QRect(draw_x, TICKER_TEXT_VERTICAL_NUDGE, self.item_widths[index], self.height()),
-                    int(Qt.AlignLeft | Qt.AlignVCenter),
-                    item,
-                )
-                draw_x += self.item_widths[index]
-                if index < len(self.items) - 1:
-                    painter.drawText(
-                        QRect(draw_x, TICKER_TEXT_VERTICAL_NUDGE, self.separator_width, self.height()),
-                        int(Qt.AlignLeft | Qt.AlignVCenter),
-                        f"  {TICKER_SEPARATOR}  ",
-                    )
-                    draw_x += self.separator_width
-            x += cycle_width
-
-
-class QuoteRow(QFrame):
-    def __init__(self, instrument: BitgetInstrument) -> None:
-        super().__init__()
-        self.instrument = instrument
-        self.flash_direction = 0
-        self.flash_frames_remaining = 0
-        self.setObjectName("quoteRow")
-        self.setFixedHeight(ROW_HEIGHT)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 4, 10, 4)
-        layout.setSpacing(10)
-
-        self.symbol_label = QLabel(instrument.label)
-        self.symbol_label.setMinimumWidth(48)
-        self.symbol_label.setFont(_build_ui_font(10, weight=QFont.DemiBold))
-        self.symbol_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
-
-        self.price_label = QLabel("--")
-        self.price_label.setMinimumWidth(104)
-        self.price_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.price_label.setFont(_build_price_font(14, weight=QFont.Bold))
-        self.price_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
-
-        layout.addWidget(self.symbol_label)
-        layout.addStretch(1)
-        layout.addWidget(self.price_label)
-        self._apply_background(ROW_BACKGROUND, ROW_BORDER)
-
-    def _apply_background(self, background: str, border: str) -> None:
-        self.setStyleSheet(
-            f"""
-            QFrame#quoteRow {{
-                background: {background};
-                border: 1px solid {border};
-                border-radius: {ROW_RADIUS}px;
-            }}
-            """
-        )
-
-    def flash(self, direction: int) -> None:
-        self.flash_direction = direction
-        self.flash_frames_remaining = 5
-
-    def update_quote(self, quote: QuoteState, *, stale_after_seconds: int) -> None:
-        self.symbol_label.setText(quote.symbol)
-        self.price_label.setText(quote.price_label())
-
-        if quote.is_stale(stale_after_seconds):
-            self.price_label.setStyleSheet(f"color: {TEXT_STALE};")
-        else:
-            self.price_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
-
-        if self.flash_frames_remaining > 0:
-            if self.flash_direction > 0:
-                self._apply_background(ROW_FLASH_UP_BACKGROUND, ROW_FLASH_UP_BORDER)
-            elif self.flash_direction < 0:
-                self._apply_background(ROW_FLASH_DOWN_BACKGROUND, ROW_FLASH_DOWN_BORDER)
-            self.flash_frames_remaining -= 1
-        else:
-            self._apply_background(ROW_BACKGROUND, ROW_BORDER)
+from .floating_widgets import (
+    BUTTON_BACKGROUND,
+    BUTTON_BACKGROUND_HOVER,
+    BUTTON_BACKGROUND_PRESSED,
+    BUTTON_BORDER,
+    BUTTON_BORDER_HOVER,
+    CONTROL_RADIUS,
+    GROUP_LABELS,
+    HEADER_BACKGROUND,
+    HEADER_DIVIDER,
+    HEADER_HEIGHT,
+    LongbridgeSearchPanel,
+    PANEL_GROUPED_WIDTH,
+    PANEL_MAX_HEIGHT,
+    PANEL_MIN_HEIGHT,
+    PANEL_MIN_WIDTH,
+    QuoteRow,
+    ResizeHandle,
+    ROW_HEIGHT,
+    SHELL_BACKGROUND,
+    SHELL_BORDER,
+    SHELL_RADIUS,
+    STATUS_ERROR,
+    STATUS_LIVE,
+    STATUS_WAITING,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    TEXT_STALE,
+    TickerTape,
+    build_ticker_items,
+    build_ui_font,
+    format_stream_status,
+    group_instruments,
+)
+from .longbridge_provider import LongbridgeSecurity, resolve_instruments as resolve_longbridge
+from .longbridge_provider import search_securities
+from .providers import MarketInstrument
+from .watchlist_store import (
+    append_longbridge_symbol_to_watchlist,
+    remove_longbridge_symbol_from_watchlist,
+)
 
 
 class FloatingTickerWindow(QWidget):
+    """Render the floating ticker window and coordinate UI actions."""
     def __init__(
         self,
         config: AppConfig,
-        instruments: tuple[BitgetInstrument, ...],
+        instruments: tuple[MarketInstrument, ...],
         *,
         controller: TickerController | None = None,
         auto_start: bool = True,
     ) -> None:
+        """Initialize window state, build widgets, timers, and optional data feed."""
         super().__init__()
         self.config = config
         self.instruments = instruments
@@ -283,9 +84,13 @@ class FloatingTickerWindow(QWidget):
             instruments=instruments,
         )
         self.drag_origin: QPoint | None = None
+        self.auto_start = auto_start
+        self.expanded_size: QSize | None = None
+        self.search_queue: queue.Queue[tuple[str, str, object]] = queue.Queue()
         self.positioned_once = False
         self.collapsed = False
         self.rows: dict[str, QuoteRow] = {}
+        self.grouped_instruments = group_instruments(instruments)
 
         self._build_window()
         self._start_timers()
@@ -293,10 +98,11 @@ class FloatingTickerWindow(QWidget):
             self.controller.start()
 
     def _build_window(self) -> None:
+        """Construct the Qt widget tree and stylesheet for the ticker shell."""
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setMinimumWidth(PANEL_WIDTH)
-        self.resize(PANEL_WIDTH, 176)
+        self.setMinimumWidth(PANEL_MIN_WIDTH)
+        self.resize(PANEL_GROUPED_WIDTH, 196)
 
         shell = QFrame(self)
         shell.setObjectName("shell")
@@ -323,30 +129,30 @@ class FloatingTickerWindow(QWidget):
 
         self.status_dot = QLabel("●")
         self.status_dot.setFixedWidth(12)
-        self.status_dot.setFont(_build_ui_font(11, weight=QFont.Bold))
+        self.status_dot.setFont(build_ui_font(11, weight=QFont.Bold))
         self.status_dot.setStyleSheet(f"color: {STATUS_WAITING};")
 
         self.ticker_tape = TickerTape(self._expand)
         self.ticker_tape.setStyleSheet("background: transparent; border: none;")
-        self.ticker_tape.setFont(_build_ui_font(10, weight=QFont.Medium))
+        self.ticker_tape.setFont(build_ui_font(10, weight=QFont.Medium))
 
         self.info_label = QLabel("waiting")
         self.info_label.setObjectName("infoLabel")
         self.info_label.setMinimumWidth(110)
-        self.info_label.setFont(_build_ui_font(9, weight=QFont.DemiBold))
+        self.info_label.setFont(build_ui_font(9, weight=QFont.DemiBold))
         self.info_label.setStyleSheet(f"color: {TEXT_MUTED};")
         self.info_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.toggle_button = QPushButton("–")
         self.toggle_button.setObjectName("windowButton")
         self.toggle_button.setFixedSize(18, 18)
-        self.toggle_button.setFont(_build_ui_font(11, weight=QFont.Bold))
+        self.toggle_button.setFont(build_ui_font(11, weight=QFont.Bold))
         self.toggle_button.clicked.connect(self._toggle_collapsed)
 
         close_button = QPushButton("×")
         close_button.setObjectName("windowButton")
         close_button.setFixedSize(18, 18)
-        close_button.setFont(_build_ui_font(11, weight=QFont.Medium))
+        close_button.setFont(build_ui_font(11, weight=QFont.Medium))
         close_button.clicked.connect(self.close)
 
         header_layout.addWidget(self.status_dot)
@@ -362,10 +168,19 @@ class FloatingTickerWindow(QWidget):
         body_layout.setContentsMargins(10, 8, 10, 10)
         body_layout.setSpacing(6)
 
-        for instrument in self.instruments:
-            row = QuoteRow(instrument)
-            self.rows[instrument.key] = row
-            body_layout.addWidget(row)
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("quoteTabs")
+        body_layout.addWidget(self.tabs)
+
+        self._rebuild_tabs()
+
+        grip_layout = QHBoxLayout()
+        grip_layout.setContentsMargins(0, 0, 0, 0)
+        grip_layout.setSpacing(0)
+        grip_layout.addStretch(1)
+        self.resize_grip = ResizeHandle(self)
+        grip_layout.addWidget(self.resize_grip)
+        body_layout.addLayout(grip_layout)
 
         shell_layout.addWidget(self.body)
 
@@ -387,37 +202,358 @@ class FloatingTickerWindow(QWidget):
                 background: transparent;
                 border: none;
             }}
+            QTabWidget#quoteTabs {{
+                background: transparent;
+                border: none;
+            }}
+            QTabWidget#quoteTabs::pane {{
+                background: transparent;
+                border: none;
+                top: -1px;
+            }}
+            QTabBar::tab {{
+                background: rgba(246, 236, 224, 0.05);
+                border: 1px solid rgba(214, 184, 154, 0.10);
+                border-radius: 8px;
+                color: {TEXT_MUTED};
+                min-width: 56px;
+                padding: 4px 8px;
+                margin-right: 5px;
+            }}
+            QTabBar::tab:selected {{
+                background: rgba(201, 125, 95, 0.20);
+                border-color: rgba(214, 184, 154, 0.24);
+                color: {TEXT_PRIMARY};
+            }}
+            QFrame#tabQuotePanel, QScrollArea#quoteScroll {{
+                background: transparent;
+                border: none;
+            }}
+            QFrame#resizeGrip {{
+                background: transparent;
+                border: none;
+            }}
+            QFrame#searchPanel {{
+                background: rgba(86, 71, 58, 0.38);
+                border: 1px solid rgba(177, 147, 118, 0.16);
+                border-radius: 10px;
+            }}
+            QLineEdit#securitySearchInput {{
+                background: rgba(246, 236, 224, 0.07);
+                border: 1px solid rgba(214, 184, 154, 0.16);
+                border-radius: 8px;
+                color: {TEXT_PRIMARY};
+                padding: 4px 8px;
+                selection-background-color: rgba(201, 125, 95, 0.35);
+            }}
+            QLineEdit#securitySearchInput::placeholder {{
+                color: {TEXT_STALE};
+            }}
+            QListWidget#securitySearchResults {{
+                background: rgba(31, 26, 22, 0.34);
+                border: 1px solid rgba(214, 184, 154, 0.12);
+                border-radius: 8px;
+                color: {TEXT_SECONDARY};
+                padding: 2px;
+            }}
+            QListWidget#securitySearchResults::item {{
+                min-height: 20px;
+                padding: 2px 6px;
+                border-radius: 5px;
+            }}
+            QListWidget#securitySearchResults::item:selected {{
+                background: rgba(201, 125, 95, 0.22);
+                color: {TEXT_PRIMARY};
+            }}
+            QLabel#searchStatusLabel {{
+                color: {TEXT_MUTED};
+                background: transparent;
+                border: none;
+            }}
             QLabel#infoLabel {{
                 color: {TEXT_MUTED};
                 background: transparent;
                 border: none;
             }}
-            QPushButton#windowButton {{
+            QPushButton#windowButton, QPushButton#searchButton {{
                 background: {BUTTON_BACKGROUND};
                 border: 1px solid {BUTTON_BORDER};
                 border-radius: {CONTROL_RADIUS}px;
                 color: {TEXT_MUTED};
                 padding-bottom: 1px;
             }}
-            QPushButton#windowButton:hover {{
+            QPushButton#searchButton {{
+                min-width: 42px;
+                padding-left: 8px;
+                padding-right: 8px;
+            }}
+            QPushButton#windowButton:hover, QPushButton#searchButton:hover {{
                 background: {BUTTON_BACKGROUND_HOVER};
                 border-color: {BUTTON_BORDER_HOVER};
                 color: {TEXT_PRIMARY};
             }}
-            QPushButton#windowButton:pressed {{
+            QPushButton#windowButton:pressed, QPushButton#searchButton:pressed {{
                 background: {BUTTON_BACKGROUND_PRESSED};
+            }}
+            QPushButton#searchButton:disabled {{
+                color: {TEXT_STALE};
+                background: rgba(246, 236, 224, 0.03);
             }}
             """
         )
 
-        self.setFont(_build_ui_font(10))
+        self.setFont(build_ui_font(10))
 
         self._refresh_rows()
         self._update_status_ui()
         self._update_ticker_text()
         self._apply_collapsed_state()
 
+    def _rebuild_tabs(self) -> None:
+        """Rebuild group tabs and quote rows from the current instruments."""
+        self.rows.clear()
+        self.grouped_instruments = group_instruments(self.instruments)
+        self.tabs.clear()
+        for group, group_instruments_ in self.grouped_instruments.items():
+            page = self._build_group_page(group, group_instruments_)
+            self.tabs.addTab(page, GROUP_LABELS.get(group, group.replace("_", " ").title()))
+
+    def _build_group_page(
+        self,
+        group: str,
+        instruments: tuple[MarketInstrument, ...],
+    ) -> QWidget:
+        """Create one tab page, including search controls for the stocks tab."""
+        if group != "stocks":
+            return self._build_quote_scroll_area(instruments)
+
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(6)
+        page_layout.addWidget(self._build_stock_search_panel())
+        page_layout.addWidget(self._build_quote_scroll_area(instruments), 1)
+        return page
+
+    def _build_stock_search_panel(self) -> QFrame:
+        """Create the Longbridge search panel and expose test-friendly handles."""
+        self.search_panel = LongbridgeSearchPanel(
+            on_search=self._start_longbridge_search,
+            on_action=self._apply_selected_search_result,
+        )
+        # Preserve stable attributes used by tests and small UI callbacks.
+        self.search_input = self.search_panel.search_input
+        self.search_button = self.search_panel.search_button
+        self.add_search_button = self.search_panel.add_button
+        self.search_results = self.search_panel.results_list
+        self.search_status_label = self.search_panel.status_label
+        return self.search_panel
+
+    def _build_quote_scroll_area(
+        self,
+        instruments: tuple[MarketInstrument, ...],
+    ) -> QScrollArea:
+        """Build a scrollable list of quote rows for one instrument group."""
+        panel = QFrame()
+        panel.setObjectName("tabQuotePanel")
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(0, 8, 0, 0)
+        panel_layout.setSpacing(6)
+
+        for instrument in instruments:
+            self._add_quote_row(panel_layout, instrument)
+        panel_layout.addStretch(1)
+
+        scroll_area = QScrollArea()
+        scroll_area.setObjectName("quoteScroll")
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setWidget(panel)
+        return scroll_area
+
+    def _add_quote_row(self, layout: QVBoxLayout, instrument: MarketInstrument) -> None:
+        """Create and register one quote row widget."""
+        row = QuoteRow(instrument)
+        self.rows[instrument.key] = row
+        layout.addWidget(row)
+
+    def _set_search_status(self, text: str) -> None:
+        """Update the search panel status label when it exists."""
+        panel = getattr(self, "search_panel", None)
+        if panel is not None:
+            panel.set_status(text)
+
+    def _start_longbridge_search(self) -> None:
+        """Launch a background Longbridge search for the current query."""
+        query = self.search_panel.query()
+        if not query:
+            self._set_search_status("输入代码或名称后搜索")
+            return
+
+        self.search_panel.set_busy()
+        thread = threading.Thread(
+            target=self._search_longbridge_worker,
+            args=(query,),
+            daemon=True,
+        )
+        thread.start()
+
+    def _search_longbridge_worker(self, query: str) -> None:
+        """Run Longbridge search off the UI thread and enqueue the result."""
+        try:
+            results = search_securities(query, limit=20)
+        except Exception as exc:
+            self.search_queue.put(("error", query, str(exc) or exc.__class__.__name__))
+        else:
+            self.search_queue.put(("results", query, results))
+
+    def _drain_search_results(self) -> None:
+        """Apply completed search results to the search panel."""
+        while True:
+            try:
+                kind, query, payload = self.search_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            if not hasattr(self, "search_results"):
+                continue
+            if kind == "error":
+                self.search_panel.show_error(str(payload))
+                continue
+
+            results = tuple(payload)
+            self.search_panel.show_results(
+                query=query,
+                results=results,
+                is_existing=self._has_longbridge_symbol,
+            )
+
+    def _apply_selected_search_result(self) -> None:
+        """Dispatch the selected search result to add or remove behavior."""
+        result = self.search_panel.selected_result()
+        if result is None:
+            return
+        if self.search_panel.selected_result_exists():
+            self._remove_selected_search_result(result)
+        else:
+            self._add_selected_search_result(result)
+
+    def _add_selected_search_result(self, result: LongbridgeSecurity) -> None:
+        """Persist and activate a selected Longbridge symbol."""
+        if self._has_longbridge_symbol(result.symbol):
+            self._set_search_status(f"{result.symbol} 已在 watchlist")
+            self.add_search_button.setText("移除")
+            self.add_search_button.setEnabled(True)
+            return
+        if self.config.source_path is None:
+            self._set_search_status("当前不是从 watchlist 文件启动，不能写入")
+            return
+
+        try:
+            inserted = append_longbridge_symbol_to_watchlist(
+                self.config.source_path,
+                symbol=result.symbol,
+                label=result.default_label,
+                group="stocks",
+                show_collapsed=True,
+            )
+        except Exception as exc:
+            self._set_search_status(f"写入失败：{exc}")
+            return
+        if not inserted:
+            self._set_search_status(f"{result.symbol} 已在 watchlist")
+            self.add_search_button.setText("移除")
+            self.add_search_button.setEnabled(True)
+            return
+
+        self._add_longbridge_symbol_to_runtime(result)
+        self._set_search_status(f"已添加 {result.symbol}")
+
+    def _remove_selected_search_result(self, result: LongbridgeSecurity) -> None:
+        """Persistently remove and deactivate a selected Longbridge symbol."""
+        if not self._has_longbridge_symbol(result.symbol):
+            self._set_search_status(f"{result.symbol} 不在 watchlist")
+            self.add_search_button.setText("添加")
+            self.add_search_button.setEnabled(True)
+            return
+        if self.config.source_path is None:
+            self._set_search_status("当前不是从 watchlist 文件启动，不能写入")
+            return
+
+        try:
+            removed = remove_longbridge_symbol_from_watchlist(
+                self.config.source_path,
+                symbol=result.symbol,
+            )
+        except Exception as exc:
+            self._set_search_status(f"移除失败：{exc}")
+            return
+        if not removed:
+            self._set_search_status(f"{result.symbol} 不在 watchlist")
+            self.add_search_button.setText("添加")
+            self.add_search_button.setEnabled(True)
+            return
+
+        self._remove_longbridge_symbol_from_runtime(result.symbol)
+        self._set_search_status(f"已移除 {result.symbol}")
+
+    def _has_longbridge_symbol(self, symbol: str) -> bool:
+        """Check whether a Longbridge symbol is active in the current watchlist."""
+        key = f"{LONGBRIDGE_SOURCE}:{symbol.upper()}"
+        return any(instrument.key == key for instrument in self.instruments)
+
+    def _add_longbridge_symbol_to_runtime(self, result: LongbridgeSecurity) -> None:
+        """Add a Longbridge result to runtime config and resolved instruments."""
+        config_entry = InstrumentConfig(
+            symbol=result.symbol,
+            source=LONGBRIDGE_SOURCE,
+            label=result.default_label,
+            show_collapsed=True,
+            group="stocks",
+        )
+        instrument = resolve_longbridge((config_entry,))[0]
+        self._replace_runtime_watchlist(
+            config_entries=self.config.instruments + (config_entry,),
+            instruments=self.instruments + (instrument,),
+        )
+
+    def _remove_longbridge_symbol_from_runtime(self, symbol: str) -> None:
+        """Remove a Longbridge symbol from runtime config and instruments."""
+        key = f"{LONGBRIDGE_SOURCE}:{symbol.upper()}"
+        config_entries = tuple(
+            entry
+            for entry in self.config.instruments
+            if not (entry.source == LONGBRIDGE_SOURCE and entry.symbol == symbol.upper())
+        )
+        instruments = tuple(instrument for instrument in self.instruments if instrument.key != key)
+        self._replace_runtime_watchlist(config_entries=config_entries, instruments=instruments)
+
+    def _replace_runtime_watchlist(
+        self,
+        *,
+        config_entries: tuple[InstrumentConfig, ...],
+        instruments: tuple[MarketInstrument, ...],
+    ) -> None:
+        """Swap watchlist state and rebuild the controller and visible tabs."""
+        self.controller.stop()
+        self.config = AppConfig(
+            instruments=config_entries,
+            display=self.config.display,
+            source_path=self.config.source_path,
+        )
+        self.instruments = instruments
+        self.controller = TickerController(config=self.config, instruments=self.instruments)
+        self._rebuild_tabs()
+        self._refresh_rows()
+        self._update_status_ui()
+        self._update_ticker_text()
+        self._apply_collapsed_state()
+        if self.auto_start:
+            self.controller.start()
+
     def _start_timers(self) -> None:
+        """Start UI timers for feed events, clock refresh, search results, and marquee motion."""
         self.queue_timer = QTimer(self)
         self.queue_timer.timeout.connect(self._drain_events)
         self.queue_timer.start(90)
@@ -426,39 +562,70 @@ class FloatingTickerWindow(QWidget):
         self.clock_timer.timeout.connect(self._tick_clock)
         self.clock_timer.start(max(150, self.config.display.refresh_interval_ms))
 
+        self.search_timer = QTimer(self)
+        self.search_timer.timeout.connect(self._drain_search_results)
+        self.search_timer.start(120)
+
         self.marquee_timer = QTimer(self)
         self.marquee_timer.timeout.connect(self.ticker_tape.advance)
         self.marquee_timer.start(28)
 
     def _tick_clock(self) -> None:
+        """Refresh row labels and status text on the UI heartbeat."""
         self._refresh_rows()
         self._update_status_ui()
         self._update_ticker_text()
 
     def _toggle_collapsed(self) -> None:
+        """Toggle between expanded panel and collapsed ticker tape states."""
+        if not self.collapsed:
+            self.expanded_size = self.size()
         self.collapsed = not self.collapsed
         self._apply_collapsed_state()
 
     def _expand(self) -> None:
+        """Expand the ticker when the explicit expand button is used."""
         if self.collapsed:
             self.collapsed = False
             self._apply_collapsed_state()
 
     def _apply_collapsed_state(self) -> None:
+        """Apply widget visibility and sizing for the current collapsed state."""
         self.body.setVisible(not self.collapsed)
+        self.resize_grip.setVisible(not self.collapsed)
         self.toggle_button.setText("+" if self.collapsed else "–")
         self.ticker_tape.setVisible(self.collapsed)
         self.info_label.setVisible(not self.collapsed)
         if self.collapsed:
             target_height = HEADER_HEIGHT + 20
+            self.setMinimumSize(PANEL_MIN_WIDTH, target_height)
+            self.setMaximumHeight(target_height)
+            self.resize(self.width(), target_height)
         else:
-            target_height = HEADER_HEIGHT + len(self.instruments) * (ROW_HEIGHT + 6) + 22
-            target_height = max(92, min(target_height, PANEL_MAX_HEIGHT))
-        self.setMinimumHeight(target_height)
-        self.setMaximumHeight(target_height)
-        self.resize(self.width(), target_height)
+            target_height = self._expanded_target_height()
+            self.setMinimumSize(PANEL_MIN_WIDTH, PANEL_MIN_HEIGHT)
+            self.setMaximumHeight(16_777_215)
+            if self.expanded_size is None:
+                self.resize(max(self.width(), PANEL_GROUPED_WIDTH), target_height)
+            else:
+                self.resize(
+                    max(self.expanded_size.width(), PANEL_MIN_WIDTH),
+                    max(self.expanded_size.height(), PANEL_MIN_HEIGHT),
+                )
+
+    def _expanded_target_height(self) -> int:
+        """Calculate a practical expanded height from visible group sizes."""
+        largest_group_size = max(
+            (len(group) for group in self.grouped_instruments.values()),
+            default=1,
+        )
+        visible_rows = max(2, min(largest_group_size, 8))
+        search_panel_height = 78 if "stocks" in self.grouped_instruments else 0
+        target_height = HEADER_HEIGHT + visible_rows * (ROW_HEIGHT + 6) + 78 + search_panel_height
+        return max(154, min(target_height, PANEL_MAX_HEIGHT))
 
     def _drain_events(self) -> None:
+        """Drain market data events and refresh rows that changed."""
         result = self.controller.drain_events()
         for key, direction in result.flash_directions.items():
             row = self.rows.get(key)
@@ -471,6 +638,7 @@ class FloatingTickerWindow(QWidget):
             self._update_ticker_text()
 
     def _refresh_rows(self) -> None:
+        """Update every quote row from the controller quote cache."""
         for instrument in self.instruments:
             self.rows[instrument.key].update_quote(
                 self.controller.quotes[instrument.key],
@@ -478,9 +646,12 @@ class FloatingTickerWindow(QWidget):
             )
 
     def _update_ticker_text(self) -> None:
-        self.ticker_tape.set_items(build_ticker_items(self.instruments, self.controller.quotes))
+        """Refresh the collapsed marquee items from visible collapsed symbols."""
+        items = build_ticker_items(self.instruments, self.controller.quotes)
+        self.ticker_tape.set_items(items or ["No collapsed symbols"])
 
     def _update_status_ui(self) -> None:
+        """Render stream status and age in the header controls."""
         if self.controller.last_message_at is None:
             age_text = "--"
         else:
@@ -500,36 +671,42 @@ class FloatingTickerWindow(QWidget):
         elif self.controller.stream_status in {"retrying", "snapshot-failed", "error"}:
             dot_color = STATUS_ERROR
 
-        status_text = _format_stream_status(self.controller.stream_status)
+        status_text = format_stream_status(self.controller.stream_status)
         self.status_dot.setStyleSheet(f"color: {dot_color};")
         self.toggle_button.setToolTip(f"{status_text} · {age_text}")
         self.info_label.setText(f"{status_text} · {age_text}")
 
     def mousePressEvent(self, event) -> None:
+        """Start dragging the frameless window with the left mouse button."""
         if event.button() == Qt.LeftButton:
             self.drag_origin = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event) -> None:
+        """Move the frameless window while dragging continues."""
         if self.drag_origin is not None and event.buttons() & Qt.LeftButton:
             self.move(event.globalPosition().toPoint() - self.drag_origin)
             event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
+        """Finish a window drag operation."""
         self.drag_origin = None
         event.accept()
 
     def closeEvent(self, event) -> None:
+        """Stop market data before the window closes."""
         self.controller.stop()
         super().closeEvent(event)
 
     def showEvent(self, event) -> None:
+        """Position the window once after it is first shown."""
         super().showEvent(event)
         if not self.positioned_once:
             self.positioned_once = True
             QTimer.singleShot(0, self._position_on_active_screen)
 
     def _position_on_active_screen(self) -> None:
+        """Place the window near the top right of the active screen."""
         from PySide6.QtWidgets import QApplication
 
         app = QApplication.instance()

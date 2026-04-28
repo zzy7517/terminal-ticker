@@ -1,3 +1,4 @@
+"""Store and format normalized quote state for display."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,6 +7,7 @@ from typing import Any
 
 
 def _to_float(raw_value: Any) -> float | None:
+    """Convert a raw quote value into a float when possible."""
     if raw_value in (None, ""):
         return None
     try:
@@ -15,6 +17,7 @@ def _to_float(raw_value: Any) -> float | None:
 
 
 def _to_int(raw_value: Any) -> int | None:
+    """Convert a raw quote value into an integer when possible."""
     if raw_value in (None, ""):
         return None
     try:
@@ -24,10 +27,12 @@ def _to_int(raw_value: Any) -> int | None:
 
 
 def _coalesce(new_value: Any, old_value: Any) -> Any:
+    """Keep the previous value when a new payload field is missing."""
     return old_value if new_value is None else new_value
 
 
 def _compact_number(value: float | int | None) -> str:
+    """Format large numbers with compact K, M, and B suffixes."""
     if value is None:
         return "-"
     number = float(value)
@@ -44,12 +49,14 @@ def _compact_number(value: float | int | None) -> str:
 
 
 def _format_signed(value: float | None, suffix: str = "") -> str:
+    """Format a signed numeric change label."""
     if value is None:
         return "-"
     return f"{value:+.2f}{suffix}"
 
 
 def _status_label(raw_market_hours: Any) -> str:
+    """Convert market-hours codes into short status labels."""
     market_hours = _to_int(raw_market_hours)
     if market_hours == 0:
         return "pre"
@@ -61,6 +68,7 @@ def _status_label(raw_market_hours: Any) -> str:
 
 
 def _age_label(last_update_at: datetime | None, *, now: datetime | None = None) -> str:
+    """Format the elapsed time since the last quote update."""
     if last_update_at is None:
         return "waiting"
     if now is None:
@@ -79,6 +87,7 @@ def _age_label(last_update_at: datetime | None, *, now: datetime | None = None) 
 
 @dataclass
 class QuoteState:
+    """Hold one instrument quote and expose UI-friendly labels."""
     symbol: str
     display_name: str
     price: float | None = None
@@ -98,9 +107,11 @@ class QuoteState:
 
     @classmethod
     def placeholder(cls, symbol: str) -> "QuoteState":
+        """Create a waiting quote state before data arrives."""
         return cls(symbol=symbol, display_name=symbol)
 
     def apply_payload(self, payload: dict[str, Any]) -> None:
+        """Apply a live quote payload to this quote state."""
         self.display_name = payload.get("short_name") or self.display_name or self.symbol
         self.price = _coalesce(_to_float(payload.get("price")), self.price)
         self.change = _to_float(payload.get("change"))
@@ -127,6 +138,7 @@ class QuoteState:
         self.last_error = None
 
     def apply_snapshot(self, payload: dict[str, Any]) -> None:
+        """Apply an initial snapshot payload without requiring live data."""
         self.display_name = payload.get("display_name") or self.display_name or self.symbol
         self.price = _coalesce(_to_float(payload.get("price")), self.price)
         self.change = _to_float(payload.get("change"))
@@ -146,9 +158,11 @@ class QuoteState:
         self.last_error = None
 
     def mark_error(self, detail: str) -> None:
+        """Record the latest quote error detail."""
         self.last_error = detail
 
     def is_stale(self, stale_after_seconds: int, *, now: datetime | None = None) -> bool:
+        """Return whether the quote is older than the stale threshold."""
         if self.last_update_at is None:
             return True
         if now is None:
@@ -156,16 +170,21 @@ class QuoteState:
         return (now - self.last_update_at).total_seconds() > stale_after_seconds
 
     def price_label(self) -> str:
+        """Format the current price for display."""
         return "-" if self.price is None else f"{self.price:.2f}"
 
     def change_label(self) -> str:
+        """Format the absolute price change for display."""
         return _format_signed(self.change)
 
     def percent_label(self) -> str:
+        """Format the percent price change for display."""
         return _format_signed(self.change_percent, "%")
 
     def volume_label(self) -> str:
+        """Format the volume for display."""
         return _compact_number(self.volume)
 
     def age_label(self, *, now: datetime | None = None) -> str:
+        """Format how long ago this quote was updated."""
         return _age_label(self.last_update_at, now=now)

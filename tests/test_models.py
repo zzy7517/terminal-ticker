@@ -1,3 +1,4 @@
+"""Test quote state formatting and updates."""
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -5,7 +6,9 @@ from terminal_ticker.models import QuoteState
 
 
 class QuoteStateTests(unittest.TestCase):
+    """Group tests for QuoteStateTests."""
     def test_apply_payload_updates_quote(self) -> None:
+        """Verify apply payload updates quote."""
         quote = QuoteState.placeholder("AAPL")
         quote.apply_payload(
             {
@@ -28,6 +31,7 @@ class QuoteStateTests(unittest.TestCase):
         self.assertEqual(quote.update_count, 1)
 
     def test_stale_detection(self) -> None:
+        """Verify stale detection."""
         quote = QuoteState.placeholder("BTCUSDT")
         quote.last_update_at = datetime.now(timezone.utc) - timedelta(seconds=25)
 
@@ -35,6 +39,7 @@ class QuoteStateTests(unittest.TestCase):
         self.assertFalse(quote.is_stale(30))
 
     def test_apply_snapshot_sets_snapshot_status(self) -> None:
+        """Verify apply snapshot sets snapshot status."""
         quote = QuoteState.placeholder("XAUUSDT")
         quote.apply_snapshot(
             {
@@ -51,6 +56,7 @@ class QuoteStateTests(unittest.TestCase):
         self.assertEqual(quote.status, "snap")
 
     def test_age_label_shows_milliseconds_for_recent_updates(self) -> None:
+        """Verify age label shows milliseconds for recent updates."""
         quote = QuoteState.placeholder("BTCUSDT")
         quote.last_update_at = datetime.now(timezone.utc) - timedelta(milliseconds=420)
 

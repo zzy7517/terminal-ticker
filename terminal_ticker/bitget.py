@@ -1,3 +1,4 @@
+"""Resolve Bitget instruments and normalize public market data."""
 from __future__ import annotations
 
 import asyncio
@@ -9,7 +10,7 @@ from urllib.request import Request, urlopen
 
 import websockets
 
-from .config import InstrumentConfig
+from .config import BITGET_SOURCE, InstrumentConfig
 
 BITGET_API_BASE = "https://api.bitget.com"
 BITGET_WS_PUBLIC = "wss://ws.bitget.com/v2/ws/public"
@@ -19,19 +20,25 @@ USDT_FUTURES = "USDT-FUTURES"
 
 @dataclass(frozen=True)
 class BitgetInstrument:
+    """Describe one resolved Bitget market instrument used by the app."""
     symbol: str
     inst_type: str
     label: str
     base_asset: str
     quote_asset: str
     market_kind: str
+    show_collapsed: bool = True
+    source: str = BITGET_SOURCE
+    group: str = "crypto"
 
     @property
     def key(self) -> str:
+        """Return the stable quote key used for Bitget rows and events."""
         return f"{self.inst_type}:{self.symbol}"
 
 
 def _fetch_json(path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
+    """Fetch a Bitget REST endpoint and decode its JSON response."""
     query = f"?{urlencode(params)}" if params else ""
     request = Request(
         f"{BITGET_API_BASE}{path}{query}",
@@ -42,6 +49,7 @@ def _fetch_json(path: str, params: dict[str, str] | None = None) -> dict[str, An
 
 
 def _expect_success(payload: dict[str, Any], context: str) -> list[dict[str, Any]]:
+    """Validate a Bitget API payload and return its data list."""
     if payload.get("code") != "00000":
         detail = payload.get("msg") or "unknown error"
         raise RuntimeError(f"{context} failed: {detail}")
@@ -52,6 +60,7 @@ def _expect_success(payload: dict[str, Any], context: str) -> list[dict[str, Any
 
 
 def load_instrument_catalog() -> dict[tuple[str, str], BitgetInstrument]:
+    """Load spot and USDT futures instruments from Bitget public metadata."""
     catalog: dict[tuple[str, str], BitgetInstrument] = {}
 
     spot_payload = _fetch_json("/api/v2/spot/public/symbols")
@@ -90,6 +99,7 @@ def load_instrument_catalog() -> dict[tuple[str, str], BitgetInstrument]:
 
 
 def resolve_instruments(configured: tuple[InstrumentConfig, ...]) -> tuple[BitgetInstrument, ...]:
+    """Map configured Bitget symbols onto concrete catalog instruments."""
     catalog = load_instrument_catalog()
     resolved: list[BitgetInstrument] = []
 
@@ -120,6 +130,8 @@ def resolve_instruments(configured: tuple[InstrumentConfig, ...]) -> tuple[Bitge
                 base_asset=instrument.base_asset,
                 quote_asset=instrument.quote_asset,
                 market_kind=instrument.market_kind,
+                show_collapsed=requested.show_collapsed,
+                group=requested.group,
             )
         )
 
@@ -127,6 +139,7 @@ def resolve_instruments(configured: tuple[InstrumentConfig, ...]) -> tuple[Bitge
 
 
 def _as_float(raw_value: Any) -> float | None:
+    """Convert a raw Bitget numeric field into a float when possible."""
     if raw_value in (None, ""):
         return None
     try:
@@ -136,6 +149,7 @@ def _as_float(raw_value: Any) -> float | None:
 
 
 def _as_int(raw_value: Any) -> int | None:
+    """Convert a raw Bitget integer field into an int when possible."""
     if raw_value in (None, ""):
         return None
     try:
@@ -148,6 +162,7 @@ def _normalize_ticker_payload(
     item: dict[str, Any],
     instrument: BitgetInstrument,
 ) -> dict[str, Any]:
+    """Convert a Bitget ticker item into the app quote payload shape."""
     price = _as_float(item.get("lastPr") or item.get("lastPrice"))
     reference = _as_float(item.get("open24h") or item.get("open") or item.get("openPrice24h"))
     change_percent = _as_float(item.get("change24h"))
@@ -182,6 +197,7 @@ def _normalize_ticker_payload(
 def fetch_snapshot_payloads(
     instruments: tuple[BitgetInstrument, ...],
 ) -> dict[str, dict[str, Any]]:
+    """Fetch one REST snapshot for the configured Bitget instruments."""
     payloads: dict[str, dict[str, Any]] = {}
     spot_symbols = {item.symbol for item in instruments if item.inst_type == SPOT}
     futures_symbols = {item.symbol for item in instruments if item.inst_type == USDT_FUTURES}
@@ -217,7 +233,9 @@ def fetch_snapshot_payloads(
 
 
 class BitgetPublicWebSocket:
+    """Manage the Bitget public websocket subscription for live tickers."""
     def __init__(self, instruments: tuple[BitgetInstrument, ...]) -> None:
+        """Initialize websocket state and lookup tables for Bitget instruments."""
         self.instruments = instruments
         self.lookup = {
             (instrument.inst_type, instrument.symbol): instrument
@@ -227,6 +245,7 @@ class BitgetPublicWebSocket:
         self.ping_task: asyncio.Task[None] | None = None
 
     async def _connect(self) -> None:
+        """Open the Bitget websocket if it is not already connected."""
         if self.websocket is not None:
             return
         self.websocket = await websockets.connect(
@@ -237,12 +256,14 @@ class BitgetPublicWebSocket:
         )
 
     async def _ping_loop(self) -> None:
+        """Send periodic websocket pings required by Bitget."""
         assert self.websocket is not None
         while True:
             await asyncio.sleep(25)
             await self.websocket.send("ping")
 
     async def subscribe(self) -> None:
+        """Subscribe the websocket to all configured ticker channels."""
         await self._connect()
         assert self.websocket is not None
         args = [
@@ -258,6 +279,7 @@ class BitgetPublicWebSocket:
             self.ping_task = asyncio.create_task(self._ping_loop())
 
     async def listen(self, message_handler) -> None:
+        """Read websocket messages and forward normalized ticker payloads."""
         await self.subscribe()
         assert self.websocket is not None
 
@@ -289,6 +311,7 @@ class BitgetPublicWebSocket:
                     message_handler(payload)
 
     async def close(self) -> None:
+        """Cancel background pinging and close the websocket connection."""
         if self.ping_task is not None:
             self.ping_task.cancel()
             try:

@@ -1,4 +1,4 @@
-"""Floating Bitget ticker."""
+"""Floating multi-provider market ticker."""
 
 __all__ = ["__version__"]
 

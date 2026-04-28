@@ -1,10 +1,13 @@
+"""Test Bitget payload normalization."""
 import unittest
 
 from terminal_ticker.bitget import BitgetInstrument, _normalize_ticker_payload
 
 
 class BitgetTests(unittest.TestCase):
+    """Group tests for BitgetTests."""
     def test_normalize_futures_ticker_payload(self) -> None:
+        """Verify normalize futures ticker payload."""
         instrument = BitgetInstrument(
             symbol="XAUUSDT",
             inst_type="USDT-FUTURES",

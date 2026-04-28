@@ -1,3 +1,4 @@
+"""Coordinate feed events and quote state for the UI."""
 from __future__ import annotations
 
 import queue
@@ -6,26 +7,29 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from .bitget import BitgetInstrument
 from .config import AppConfig
 from .feed import FeedEvent, FeedWorker
 from .models import QuoteState
+from .providers import MarketInstrument
 
 
 @dataclass(frozen=True)
 class DrainResult:
+    """Report whether drained feed events changed UI state."""
     dirty: bool
     flash_directions: dict[str, int]
 
 
 class TickerController:
+    """Own quote state and the background feed worker for a ticker window."""
     def __init__(
         self,
         *,
         config: AppConfig,
-        instruments: tuple[BitgetInstrument, ...],
+        instruments: tuple[MarketInstrument, ...],
         worker_factory: Callable[..., Any] = FeedWorker,
     ) -> None:
+        """Create placeholder quotes and the feed worker for resolved instruments."""
         self.config = config
         self.instruments = instruments
         self.quotes = {
@@ -42,9 +46,11 @@ class TickerController:
         )
 
     def start(self) -> None:
+        """Start the background market data worker."""
         self.feed_worker.start()
 
     def stop(self) -> None:
+        """Request the background worker to stop and wait briefly for it."""
         stop = getattr(self.feed_worker, "stop", None)
         if callable(stop):
             stop()
@@ -56,6 +62,7 @@ class TickerController:
                 pass
 
     def drain_events(self) -> DrainResult:
+        """Apply all queued feed events and collect row flash directions."""
         dirty = False
         flash_directions: dict[str, int] = {}
         while True:
@@ -67,6 +74,7 @@ class TickerController:
         return DrainResult(dirty=dirty, flash_directions=flash_directions)
 
     def _apply_event(self, event: FeedEvent, flash_directions: dict[str, int]) -> bool:
+        """Apply one feed event to quotes and stream status."""
         if event.kind == "quote":
             payload = event.payload
             key = str(payload.get("id") or "")
@@ -102,6 +110,7 @@ class TickerController:
 
     @staticmethod
     def _flash_direction(previous_price: float | None, current_price: float | None) -> int:
+        """Compare two prices and return the row flash direction."""
         if previous_price is None or current_price is None:
             return 0
         if current_price > previous_price:
