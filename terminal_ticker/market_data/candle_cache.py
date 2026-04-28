@@ -279,7 +279,11 @@ def _fetch_plan(
     missing = max(1, ((now_ms - latest_open_ms) // interval_ms) + 2)
     if missing > 1000:
         return CandleFetchPlan(after_open_time_ms=None, limit=min(max(limit, 1000), missing))
-    return CandleFetchPlan(after_open_time_ms=latest_open_ms, limit=max(limit, int(missing)))
+    overlapped_after_open_ms = max(0, latest_open_ms - interval_ms)
+    return CandleFetchPlan(
+        after_open_time_ms=overlapped_after_open_ms,
+        limit=max(limit, int(missing)),
+    )
 
 
 def _now_ms() -> int:

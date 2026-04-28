@@ -249,7 +249,7 @@ class FeedWorkerTests(unittest.TestCase):
         asyncio.run(run_test())
 
     def test_fetch_candles_uses_cache_incremental_provider_fetch(self) -> None:
-        """Verify feed candle fetches use retained cache before provider calls."""
+        """Verify feed candle fetches overlap the latest cached bar."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             cache = CandleCache(Path(tmp_dir) / "candles.sqlite3")
             instrument = BitgetInstrument(
@@ -295,7 +295,7 @@ class FeedWorkerTests(unittest.TestCase):
                 candles = worker._fetch_candles(instrument, interval="5m", limit=2)
 
             self.assertEqual(candles, (cached, fetched))
-            self.assertEqual(provider.call_args.kwargs["after_open_time_ms"], base_open_ms)
+            self.assertEqual(provider.call_args.kwargs["after_open_time_ms"], base_open_ms - 300_000)
 
     def test_stale_candles_return_unavailable_state(self) -> None:
         """Verify old candle timestamps do not produce fresh analysis."""

@@ -59,8 +59,8 @@ class CandleCacheTests(unittest.TestCase):
                 (updated,),
             )
 
-    def test_cached_fetch_requests_only_after_latest_cached_candle(self) -> None:
-        """Verify provider fetches are planned from the latest retained candle."""
+    def test_cached_fetch_requests_with_one_candle_overlap(self) -> None:
+        """Verify provider fetches re-request the latest cached candle."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             cache = CandleCache(Path(tmp_dir) / "candles.sqlite3")
             symbol_key = "longbridge:AAPL.US"
@@ -83,8 +83,30 @@ class CandleCacheTests(unittest.TestCase):
                 now_ms=1_300_000,
             )
 
-            self.assertEqual(calls[0][2], 1_000_000)
+            self.assertEqual(calls[0][2], 700_000)
             self.assertEqual(candles, (latest, fetched))
+
+    def test_cached_fetch_refreshes_latest_cached_candle(self) -> None:
+        """Verify unfinished cached candles can be overwritten by provider data."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache = CandleCache(Path(tmp_dir) / "candles.sqlite3")
+            symbol_key = "USDT-FUTURES:BTCUSDT"
+            cached = _candle(symbol_key, 1_000_000, close=101)
+            refreshed = _candle(symbol_key, 1_000_000, close=103)
+            next_candle = _candle(symbol_key, 1_300_000, close=104)
+
+            cache.upsert((cached,), interval="5m", fetched_at_ms=1_000_000)
+
+            candles = cached_fetch_candles(
+                cache=cache,
+                symbol_key=symbol_key,
+                interval="5m",
+                limit=2,
+                fetcher=lambda **kwargs: (refreshed, next_candle),
+                now_ms=1_300_000,
+            )
+
+            self.assertEqual(candles, (refreshed, next_candle))
 
     def test_cached_fetch_falls_back_to_cache_when_provider_fails(self) -> None:
         """Verify stale provider failures can still return retained candles."""
