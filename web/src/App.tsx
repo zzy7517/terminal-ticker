@@ -74,6 +74,8 @@ function navigateToRoute(route: AppRoute) {
   }
   if (window.location.hash) {
     history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    // replaceState does not emit hashchange, so notify the route listener explicitly.
+    window.dispatchEvent(new Event('hashchange'));
   }
 }
 
