@@ -4,10 +4,11 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from terminal_ticker.config import load_config
+from terminal_ticker.config import AgentConfig, load_config
 from terminal_ticker.watchlist_store import (
     append_longbridge_symbol_to_watchlist,
     remove_longbridge_symbol_from_watchlist,
+    update_agent_config_in_watchlist,
 )
 
 
@@ -71,6 +72,42 @@ class WatchlistStoreTests(unittest.TestCase):
         self.assertTrue(removed)
         self.assertFalse(missing)
         self.assertEqual([item.symbol for item in config.instruments], ["AAP.US", "AAPLUSDT"])
+
+    def test_update_agent_config_in_watchlist_inserts_and_replaces_table(self) -> None:
+        """Verify agent provider settings persist in TOML."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "BTCUSDT", inst_type = "USDT-FUTURES", label = "BTC" },
+                    ]
+                    """
+                ).strip()
+            )
+
+            inserted = update_agent_config_in_watchlist(
+                config_path,
+                AgentConfig(
+                    enabled=False,
+                    model="gpt-5.4",
+                    base_url="https://example.test/codex",
+                    max_candles=25,
+                    reasoning_effort="high",
+                ),
+            )
+            replaced = update_agent_config_in_watchlist(
+                config_path,
+                AgentConfig(enabled=True, model="gpt-5.4-mini", max_candles=40),
+            )
+            config = load_config(config_path)
+
+        self.assertTrue(inserted)
+        self.assertTrue(replaced)
+        self.assertTrue(config.agent.enabled)
+        self.assertEqual(config.agent.model, "gpt-5.4-mini")
+        self.assertIsNone(config.agent.base_url)
 
 
 if __name__ == "__main__":

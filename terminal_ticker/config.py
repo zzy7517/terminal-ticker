@@ -239,6 +239,29 @@ def _normalize_reasoning_effort(raw_value: Any) -> str:
     return normalize_reasoning_effort(raw_value)
 
 
+def parse_agent_config(raw_agent: dict[str, Any] | None) -> AgentConfig:
+    """Parse raw agent settings into a normalized AgentConfig."""
+    if raw_agent is None:
+        raw_agent = {}
+    if not isinstance(raw_agent, dict):
+        raise ValueError("agent must be a table")
+    agent_provider = _normalize_agent_provider(raw_agent.get("provider"))
+    return AgentConfig(
+        enabled=_normalize_bool(raw_agent.get("enabled"), "agent.enabled", True),
+        provider=agent_provider,
+        api_mode=normalize_api_mode(agent_provider, raw_agent.get("api_mode")),
+        model=normalize_model(agent_provider, raw_agent.get("model")),
+        base_url=_normalize_optional_string(raw_agent.get("base_url"), "agent.base_url"),
+        timeout_seconds=_coerce_float(
+            raw_agent.get("timeout_seconds"),
+            "agent.timeout_seconds",
+            45.0,
+        ),
+        max_candles=_coerce_min_int(raw_agent.get("max_candles"), "agent.max_candles", 40, 10),
+        reasoning_effort=_normalize_reasoning_effort(raw_agent.get("reasoning_effort")),
+    )
+
+
 def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> InstrumentConfig:
     """Parse legacy string symbol entries into instrument config rows."""
     candidate = raw_symbol.strip()
@@ -396,26 +419,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         ),
     )
 
-    raw_agent = data.get("agent", {})
-    if raw_agent is None:
-        raw_agent = {}
-    if not isinstance(raw_agent, dict):
-        raise ValueError("agent must be a table")
-    agent_provider = _normalize_agent_provider(raw_agent.get("provider"))
-    agent = AgentConfig(
-        enabled=_normalize_bool(raw_agent.get("enabled"), "agent.enabled", True),
-        provider=agent_provider,
-        api_mode=normalize_api_mode(agent_provider, raw_agent.get("api_mode")),
-        model=normalize_model(agent_provider, raw_agent.get("model")),
-        base_url=_normalize_optional_string(raw_agent.get("base_url"), "agent.base_url"),
-        timeout_seconds=_coerce_float(
-            raw_agent.get("timeout_seconds"),
-            "agent.timeout_seconds",
-            45.0,
-        ),
-        max_candles=_coerce_min_int(raw_agent.get("max_candles"), "agent.max_candles", 40, 10),
-        reasoning_effort=_normalize_reasoning_effort(raw_agent.get("reasoning_effort")),
-    )
+    agent = parse_agent_config(data.get("agent", {}))
 
     return AppConfig(
         instruments=instruments,

@@ -41,6 +41,47 @@ export interface AgentAnalysis {
   rawText: string | null;
 }
 
+export interface AgentConfig {
+  enabled: boolean;
+  provider: string;
+  apiMode: string;
+  model: string;
+  baseUrl: string | null;
+  timeoutSeconds: number;
+  maxCandles: number;
+  reasoningEffort: string;
+}
+
+export interface AgentConfigUpdate {
+  enabled: boolean;
+  provider: string;
+  apiMode: string;
+  model: string;
+  baseUrl: string | null;
+  timeoutSeconds: number;
+  maxCandles: number;
+  reasoningEffort: string;
+}
+
+export interface AgentModelOption {
+  slug: string;
+  displayName: string;
+  description: string;
+  visibility: string;
+  supportedInApi: boolean;
+  defaultReasoningEffort: string;
+  supportedReasoningEfforts: string[];
+  contextWindow: number | null;
+  preferWebsockets: boolean;
+}
+
+export interface AgentModelsResponse {
+  provider: string;
+  apiMode: string;
+  activeModel: string;
+  models: AgentModelOption[];
+}
+
 export interface Quote {
   symbol: string;
   displayName: string;
@@ -86,14 +127,7 @@ export interface MarketState {
       pollIntervalSeconds: number;
       staleAfterSeconds: number;
     };
-    agent: {
-      enabled: boolean;
-      provider: string;
-      apiMode: string;
-      model: string;
-      maxCandles: number;
-      reasoningEffort: string;
-    };
+    agent: AgentConfig;
     display: {
       refreshIntervalMs: number;
       staleAfterSeconds: number;

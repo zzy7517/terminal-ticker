@@ -7,7 +7,7 @@ from typing import Any
 CODEX_PROVIDER = "codex"
 CODEX_API_MODE = "codex_responses"
 DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
-DEFAULT_CODEX_MODEL = "gpt-5.2-codex"
+DEFAULT_CODEX_MODEL = "gpt-5.4-mini"
 
 SUPPORTED_AGENT_PROVIDERS = {CODEX_PROVIDER}
 SUPPORTED_API_MODES = {CODEX_API_MODE}
@@ -24,6 +24,7 @@ CODEX_KNOWN_MODELS = (
     "gpt-5.4-mini",
     "gpt-5.4",
     "gpt-5.3-codex",
+    "gpt-5.2",
     "gpt-5.2-codex",
     "gpt-5.1-codex-max",
     "gpt-5.1-codex-mini",

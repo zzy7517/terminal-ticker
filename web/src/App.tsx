@@ -8,7 +8,9 @@ import {
   Minus,
   Plus,
   RefreshCw,
+  Save,
   Search,
+  Settings,
   Wifi,
   WifiOff,
 } from 'lucide-react';
@@ -24,12 +26,16 @@ import {
   addLongbridgeSymbol,
   analyzeInstrument,
   connectStateSocket,
+  fetchAgentModels,
   fetchState,
   removeLongbridgeSymbol,
+  saveAgentConfig,
   searchSecurities,
 } from './api';
 import type {
+  AgentConfigUpdate,
   AgentAnalysis,
+  AgentModelOption,
   CandlePoint,
   Instrument,
   MarketState,
@@ -45,6 +51,8 @@ const GROUP_LABELS: Record<string, string> = {
   watchlist: 'Watchlist',
   other: 'Other',
 };
+
+const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
 
 function orderedGroups(state: MarketState | null) {
   if (!state) return [];
@@ -363,6 +371,213 @@ function AgentReadout({
   );
 }
 
+function AgentConfigPanel({
+  state,
+  onState,
+}: {
+  state: MarketState | null;
+  onState: (state: MarketState) => void;
+}) {
+  const config = state?.config.agent;
+  const configSignature = config ? JSON.stringify(config) : '';
+  const [draft, setDraft] = useState<AgentConfigUpdate | null>(null);
+  const [models, setModels] = useState<AgentModelOption[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState('not refreshed');
+
+  useEffect(() => {
+    if (!config) return;
+    setDraft({
+      enabled: config.enabled,
+      provider: config.provider,
+      apiMode: config.apiMode,
+      model: config.model,
+      baseUrl: config.baseUrl,
+      timeoutSeconds: config.timeoutSeconds,
+      maxCandles: config.maxCandles,
+      reasoningEffort: config.reasoningEffort,
+    });
+  }, [configSignature]);
+
+  async function refreshModels() {
+    setRefreshing(true);
+    setStatus('refreshing...');
+    try {
+      const payload = await fetchAgentModels();
+      const visible = payload.models.filter((model) => model.supportedInApi && model.visibility !== 'hide');
+      setModels(visible);
+      setStatus(`${visible.length} models`);
+      if (draft && !visible.some((model) => model.slug === draft.model) && visible[0]) {
+        setDraft({
+          ...draft,
+          model: visible[0].slug,
+          reasoningEffort: visible[0].defaultReasoningEffort || draft.reasoningEffort,
+        });
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'refresh failed');
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function persistConfig() {
+    if (!draft) return;
+    setSaving(true);
+    setStatus('saving...');
+    try {
+      const nextState = await saveAgentConfig(draft);
+      onState(nextState);
+      setStatus('saved');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!draft) {
+    return (
+      <div className="agent-card dense">
+        <span className="panel-label">Agent Config</span>
+        <p>loading</p>
+      </div>
+    );
+  }
+
+  const modelOptions = models.some((model) => model.slug === draft.model)
+    ? models
+    : [
+        {
+          slug: draft.model,
+          displayName: draft.model,
+          description: '',
+          visibility: 'active',
+          supportedInApi: true,
+          defaultReasoningEffort: draft.reasoningEffort,
+          supportedReasoningEfforts: REASONING_OPTIONS,
+          contextWindow: null,
+          preferWebsockets: true,
+        },
+        ...models,
+      ];
+  const selectedModel = models.find((model) => model.slug === draft.model);
+  const reasoningOptions = selectedModel?.supportedReasoningEfforts.length
+    ? selectedModel.supportedReasoningEfforts
+    : REASONING_OPTIONS;
+
+  return (
+    <div className="agent-card agent-config-card">
+      <div className="agent-card-head">
+        <span className="panel-label">Agent Config</span>
+        <Settings size={16} />
+      </div>
+      <div className="config-form">
+        <label className="toggle-row">
+          <input
+            checked={draft.enabled}
+            onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
+            type="checkbox"
+          />
+          <span>Enabled</span>
+        </label>
+        <label>
+          <span>Provider</span>
+          <select
+            value={draft.provider}
+            onChange={(event) => setDraft({ ...draft, provider: event.target.value, apiMode: 'codex_responses' })}
+          >
+            <option value="codex">Codex</option>
+          </select>
+        </label>
+        <label>
+          <span>Model</span>
+          <select
+            value={draft.model}
+            onChange={(event) => {
+              const model = models.find((item) => item.slug === event.target.value);
+              setDraft({
+                ...draft,
+                model: event.target.value,
+                reasoningEffort: model?.defaultReasoningEffort || draft.reasoningEffort,
+              });
+            }}
+          >
+            {modelOptions.map((model) => (
+              <option key={model.slug} value={model.slug}>
+                {model.displayName || model.slug}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="config-grid">
+          <label>
+            <span>Reasoning</span>
+            <select
+              value={draft.reasoningEffort}
+              onChange={(event) => setDraft({ ...draft, reasoningEffort: event.target.value })}
+            >
+              {reasoningOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Candles</span>
+            <input
+              min={10}
+              step={5}
+              type="number"
+              value={draft.maxCandles}
+              onChange={(event) =>
+                setDraft({ ...draft, maxCandles: Math.max(10, Number(event.target.value) || 10) })
+              }
+            />
+          </label>
+        </div>
+        <div className="config-grid">
+          <label>
+            <span>Timeout</span>
+            <input
+              min={5}
+              step={5}
+              type="number"
+              value={draft.timeoutSeconds}
+              onChange={(event) =>
+                setDraft({ ...draft, timeoutSeconds: Math.max(5, Number(event.target.value) || 5) })
+              }
+            />
+          </label>
+          <label>
+            <span>Mode</span>
+            <input readOnly value={draft.apiMode} />
+          </label>
+        </div>
+        <label>
+          <span>Base URL</span>
+          <input
+            value={draft.baseUrl ?? ''}
+            onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value.trim() || null })}
+            placeholder="default"
+          />
+        </label>
+      </div>
+      <div className="config-actions">
+        <button className="agent-action secondary" disabled={refreshing} onClick={refreshModels} type="button">
+          {refreshing ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+          Refresh models
+        </button>
+        <button className="agent-action" disabled={saving} onClick={persistConfig} type="button">
+          {saving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
+          Save
+        </button>
+      </div>
+      <div className="config-status">{status}</div>
+    </div>
+  );
+}
+
 export default function App() {
   const [state, setState] = useState<MarketState | null>(null);
   const [socketStatus, setSocketStatus] = useState('connecting');
@@ -590,6 +805,7 @@ export default function App() {
               <strong>{sourceLabel(selectedInstrument)}</strong>
             </div>
           </div>
+          <AgentConfigPanel state={state} onState={setState} />
           <div className="agent-card dense">
             <span className="panel-label">Boundary</span>
             <p>本地监控和解释层，不下单、不管理仓位、不生成买卖按钮。</p>

@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from terminal_ticker.config import build_runtime_config, load_config, parse_config
+from terminal_ticker.llm_models import DEFAULT_CODEX_MODEL
 
 
 class ConfigTests(unittest.TestCase):
@@ -118,7 +119,7 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(default_config.agent.enabled)
         self.assertEqual(default_config.agent.provider, "codex")
         self.assertEqual(default_config.agent.api_mode, "codex_responses")
-        self.assertEqual(default_config.agent.model, "gpt-5.2-codex")
+        self.assertEqual(default_config.agent.model, DEFAULT_CODEX_MODEL)
 
         config = parse_config(
             {
@@ -139,7 +140,7 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.agent.enabled)
         self.assertEqual(config.agent.provider, "codex")
         self.assertEqual(config.agent.api_mode, "codex_responses")
-        self.assertEqual(config.agent.model, "gpt-5.2-codex")
+        self.assertEqual(config.agent.model, DEFAULT_CODEX_MODEL)
         self.assertEqual(config.agent.base_url, "https://example.test/codex")
         self.assertEqual(config.agent.timeout_seconds, 12)
         self.assertEqual(config.agent.max_candles, 24)

@@ -125,7 +125,7 @@ stale_after_seconds = 420
 enabled = true
 provider = "codex"
 api_mode = "codex_responses"
-model = "gpt-5.2-codex"
+model = "gpt-5.4-mini"
 timeout_seconds = 45
 max_candles = 40
 reasoning_effort = "medium"
@@ -148,6 +148,7 @@ reasoning_effort = "medium"
 - `[agent]` 控制 LLM 解读层。第一版只支持 `provider = "codex"`。
 - `agent.api_mode` 当前固定为 `codex_responses`，这和 Hermes 把 `openai-codex` 映射到 Responses 风格 transport 的思路一致。
 - Codex provider 会直接读取 Codex CLI 的 `auth.json`，不会读取 Hermes 的 auth store，也不会导入 Hermes runtime。
+- Web UI 右侧 `Agent Config` 可以刷新当前 Codex 账号可用模型，选择模型后会写回配置文件。
 - `agent.max_candles` 控制每次发送给 LLM 的最近 K 线数量，最小值是 `10`。
 - `agent.reasoning_effort` 支持 `low`、`medium`、`high`、`xhigh`。
 - 旧配置里的 `show_collapsed` 会被解析以保持兼容，但 Web UI 不再使用折叠行情条。

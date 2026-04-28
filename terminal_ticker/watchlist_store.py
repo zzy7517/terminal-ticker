@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import tomllib
 
-from .config import GROUP_ALIASES, LONGBRIDGE_SOURCE, load_config
+from .config import AgentConfig, GROUP_ALIASES, LONGBRIDGE_SOURCE, load_config
 
 
 def _toml_string(value: str) -> str:
@@ -153,3 +153,58 @@ def remove_longbridge_symbol_from_watchlist(
             return True
 
     raise ValueError(f"{normalized_symbol} exists but is not an inline longbridge symbol entry")
+
+
+def _format_agent_config(config: AgentConfig) -> list[str]:
+    """Render the agent config as a top-level TOML table."""
+    lines = [
+        "[agent]",
+        f"enabled = {'true' if config.enabled else 'false'}",
+        f"provider = {_toml_string(config.provider)}",
+        f"api_mode = {_toml_string(config.api_mode)}",
+        f"model = {_toml_string(config.model)}",
+    ]
+    if config.base_url:
+        lines.append(f"base_url = {_toml_string(config.base_url)}")
+    lines.extend(
+        [
+            f"timeout_seconds = {config.timeout_seconds:g}",
+            f"max_candles = {config.max_candles}",
+            f"reasoning_effort = {_toml_string(config.reasoning_effort)}",
+        ]
+    )
+    return lines
+
+
+def update_agent_config_in_watchlist(path: str | Path, config: AgentConfig) -> bool:
+    """Insert or replace the top-level [agent] table in a watchlist file."""
+    source_path = Path(path).expanduser().resolve()
+    text = source_path.read_text()
+    lines = text.splitlines()
+    next_lines = _format_agent_config(config)
+
+    start_index: int | None = None
+    end_index: int | None = None
+    for index, line in enumerate(lines):
+        if line.strip() == "[agent]":
+            start_index = index
+            end_index = len(lines)
+            for next_index in range(index + 1, len(lines)):
+                stripped = lines[next_index].strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    end_index = next_index
+                    break
+            break
+
+    if start_index is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.extend(next_lines)
+    else:
+        lines[start_index:end_index] = next_lines
+
+    rendered = "\n".join(lines).rstrip() + "\n"
+    if rendered == text:
+        return False
+    source_path.write_text(rendered)
+    return True

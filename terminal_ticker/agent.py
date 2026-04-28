@@ -264,7 +264,7 @@ class CodexProvider:
         credentials: dict[str, str],
         context: dict[str, Any],
     ) -> dict[str, Any]:
-        """Call the Responses-style endpoint."""
+        """Call the Codex Responses-style streaming endpoint."""
         base_url = credentials["base_url"].rstrip("/")
         payload: dict[str, Any] = {
             "model": self.model,
@@ -281,6 +281,7 @@ class CodexProvider:
                 }
             ],
             "store": False,
+            "stream": True,
             "reasoning": {
                 "effort": self.profile.reasoning_effort,
                 "summary": "auto",
@@ -293,13 +294,129 @@ class CodexProvider:
         }
         timeout = httpx.Timeout(self.config.timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(f"{base_url}/responses", json=payload, headers=headers)
+            async with client.stream(
+                "POST",
+                f"{base_url}/responses",
+                json=payload,
+                headers=headers,
+            ) as response:
+                if response.status_code >= 400:
+                    body = (await response.aread()).decode(errors="replace")
+                    raise LLMProviderError(_response_error_message(response.status_code, body))
+                output_text = await _collect_response_stream_text(response)
+        return {"output_text": output_text}
+
+    async def list_models(self) -> list[dict[str, Any]]:
+        """Fetch Codex models visible to the current account."""
+        credentials = _resolve_codex_credentials(self.profile)
+        base_url = credentials["base_url"].rstrip("/")
+        headers = {
+            "Authorization": f"Bearer {credentials['api_key']}",
+            **_codex_request_headers(credentials["api_key"], credentials.get("account_id")),
+        }
+        timeout = httpx.Timeout(self.config.timeout_seconds)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(
+                f"{base_url}/models",
+                params={"client_version": "1.0.0"},
+                headers=headers,
+            )
         if response.status_code >= 400:
-            raise LLMProviderError(f"Codex request failed: HTTP {response.status_code}")
+            raise LLMProviderError(_response_error_message(response.status_code, response.text))
         data = response.json()
-        if not isinstance(data, dict):
-            raise LLMProviderError("Codex returned a non-object response.")
-        return data
+        if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+            raise LLMProviderError("Codex returned an invalid model list.")
+        return [_codex_model_option(item) for item in data["models"] if isinstance(item, dict)]
+
+
+async def list_available_agent_models(config: AgentConfig) -> list[dict[str, Any]]:
+    """List available models for the configured provider."""
+    profile = resolve_agent_model(config)
+    if profile.provider == CODEX_PROVIDER:
+        return await CodexProvider(config, profile).list_models()
+    raise LLMProviderUnavailable(f"Unsupported agent provider: {profile.provider}")
+
+
+async def _collect_response_stream_text(response: httpx.Response) -> str:
+    """Collect output_text from Codex Responses server-sent events."""
+    chunks: list[str] = []
+    done_text: str | None = None
+    async for line in response.aiter_lines():
+        if not line.startswith("data: "):
+            continue
+        raw_data = line.removeprefix("data: ").strip()
+        if not raw_data or raw_data == "[DONE]":
+            continue
+        try:
+            event = json.loads(raw_data)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("type")
+        if event_type == "response.output_text.delta":
+            delta = event.get("delta")
+            if isinstance(delta, str):
+                chunks.append(delta)
+        elif event_type == "response.output_text.done":
+            text = event.get("text")
+            if isinstance(text, str):
+                done_text = text
+        elif event_type in {"response.failed", "response.incomplete", "error"}:
+            raise LLMProviderError(_event_error_message(event))
+    text = "".join(chunks).strip()
+    if text:
+        return text
+    return (done_text or "").strip()
+
+
+def _response_error_message(status_code: int, body: str) -> str:
+    """Return a compact provider error without leaking credentials."""
+    detail = ""
+    try:
+        payload = json.loads(body)
+        if isinstance(payload, dict):
+            raw_detail = payload.get("detail") or payload.get("error") or payload.get("message")
+            if isinstance(raw_detail, dict):
+                detail = str(raw_detail.get("message") or raw_detail)
+            elif raw_detail is not None:
+                detail = str(raw_detail)
+    except json.JSONDecodeError:
+        detail = body.strip()
+    suffix = f": {detail.strip()}" if detail.strip() else ""
+    return f"Codex request failed: HTTP {status_code}{suffix}"
+
+
+def _event_error_message(event: dict[str, Any]) -> str:
+    """Normalize a Responses stream failure event."""
+    error = event.get("error")
+    if isinstance(error, dict):
+        message = error.get("message") or error.get("code") or error
+        return f"Codex request failed: {message}"
+    if isinstance(error, str):
+        return f"Codex request failed: {error}"
+    return f"Codex request failed: {event.get('type') or 'stream error'}"
+
+
+def _codex_model_option(item: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one Codex model object for the browser UI."""
+    levels = item.get("supported_reasoning_levels")
+    reasoning_efforts: list[str] = []
+    if isinstance(levels, list):
+        for level in levels:
+            if isinstance(level, dict) and isinstance(level.get("effort"), str):
+                reasoning_efforts.append(level["effort"])
+    return {
+        "slug": str(item.get("slug") or ""),
+        "displayName": str(item.get("display_name") or item.get("slug") or ""),
+        "description": str(item.get("description") or ""),
+        "visibility": str(item.get("visibility") or ""),
+        "supportedInApi": bool(item.get("supported_in_api", True)),
+        "defaultReasoningEffort": str(item.get("default_reasoning_level") or ""),
+        "supportedReasoningEfforts": reasoning_efforts,
+        "contextWindow": item.get("context_window") if isinstance(item.get("context_window"), int) else None,
+        "preferWebsockets": bool(item.get("prefer_websockets", False)),
+    }
 
 
 def _resolve_codex_credentials(profile: AgentModelProfile) -> dict[str, str]:

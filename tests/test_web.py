@@ -1,12 +1,15 @@
 """Test web state serialization and local API routes."""
+import tempfile
+import textwrap
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from terminal_ticker.agent import AgentAnalysisResult
-from terminal_ticker.config import AppConfig, DisplayConfig
+from terminal_ticker.config import AppConfig, DisplayConfig, load_config
 from terminal_ticker.controller import DrainResult
 from terminal_ticker.longbridge_provider import LongbridgeInstrument, LongbridgeSecurity
 from terminal_ticker.models import QuoteState
@@ -74,6 +77,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(payload["quotes"][instrument.key]["priceAction"]["marker"], "TR+")
         self.assertEqual(payload["quotes"][instrument.key]["candles"][0]["time"], 1776846000)
         self.assertEqual(payload["config"]["agent"]["provider"], "codex")
+        self.assertEqual(payload["config"]["agent"]["baseUrl"], None)
         self.assertEqual(payload["agentAnalyses"], {})
 
     def test_stale_analysis_is_not_marked_available(self) -> None:
@@ -185,6 +189,74 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(payload["result"]["available"])
         self.assertEqual(payload["state"]["agentAnalyses"][instrument.key]["summary"], "AAPL is trending.")
+
+    def test_agent_models_endpoint_returns_provider_models(self) -> None:
+        """Verify model discovery endpoint forwards provider model metadata."""
+        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with patch(
+            "terminal_ticker.web.list_available_agent_models",
+            return_value=[
+                {
+                    "slug": "gpt-5.4-mini",
+                    "displayName": "GPT-5.4-Mini",
+                    "supportedInApi": True,
+                }
+            ],
+        ):
+            with TestClient(app) as client:
+                response = client.get("/api/agent/models")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["models"][0]["slug"], "gpt-5.4-mini")
+
+    def test_agent_config_endpoint_persists_settings(self) -> None:
+        """Verify browser can save agent provider settings."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
+                    ]
+                    """
+                ).strip()
+            )
+            config = load_config(config_path)
+            instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+            app = create_app(
+                config=config,
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                auto_start=False,
+            )
+
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/agent/config",
+                    json={
+                        "enabled": False,
+                        "provider": "codex",
+                        "apiMode": "codex_responses",
+                        "model": "gpt-5.4",
+                        "maxCandles": 30,
+                        "reasoningEffort": "high",
+                    },
+                )
+
+            persisted = load_config(config_path)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["state"]["config"]["agent"]["enabled"])
+        self.assertEqual(persisted.agent.model, "gpt-5.4")
+        self.assertEqual(persisted.agent.max_candles, 30)
 
 
 if __name__ == "__main__":

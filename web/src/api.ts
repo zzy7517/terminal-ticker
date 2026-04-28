@@ -1,4 +1,22 @@
-import type { AgentAnalysis, MarketState, SecuritySearchResult } from './types';
+import type {
+  AgentAnalysis,
+  AgentConfigUpdate,
+  AgentModelsResponse,
+  MarketState,
+  SecuritySearchResult,
+} from './types';
+
+async function responseError(response: Response, prefix: string): Promise<Error> {
+  try {
+    const payload = await response.json();
+    if (payload && typeof payload.detail === 'string') {
+      return new Error(`${prefix}: ${payload.detail}`);
+    }
+  } catch {
+    // Keep the original status fallback when the body is not JSON.
+  }
+  return new Error(`${prefix}: ${response.status}`);
+}
 
 export async function fetchState(): Promise<MarketState> {
   const response = await fetch('/api/state');
@@ -50,6 +68,27 @@ export async function analyzeInstrument(key: string): Promise<{ result: AgentAna
     throw new Error(`agent analysis failed: ${response.status}`);
   }
   return response.json();
+}
+
+export async function fetchAgentModels(): Promise<AgentModelsResponse> {
+  const response = await fetch('/api/agent/models');
+  if (!response.ok) {
+    throw await responseError(response, 'model refresh failed');
+  }
+  return response.json();
+}
+
+export async function saveAgentConfig(config: AgentConfigUpdate): Promise<MarketState> {
+  const response = await fetch('/api/agent/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'agent config save failed');
+  }
+  const payload = await response.json();
+  return payload.state;
 }
 
 export function connectStateSocket(onState: (state: MarketState) => void, onStatus: (status: string) => void) {

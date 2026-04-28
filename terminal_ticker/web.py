@@ -13,8 +13,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .agent import AgentAnalysisResult, build_agent_context, create_llm_provider
-from .config import AppConfig, LONGBRIDGE_SOURCE, load_config
+from .agent import (
+    AgentAnalysisResult,
+    LLMProviderError,
+    LLMProviderUnavailable,
+    build_agent_context,
+    create_llm_provider,
+    list_available_agent_models,
+)
+from .config import AgentConfig, AppConfig, LONGBRIDGE_SOURCE, load_config, parse_agent_config
 from .controller import TickerController
 from .longbridge_provider import (
     LongbridgeSecurity,
@@ -27,6 +34,7 @@ from .providers import MarketInstrument, resolve_instruments
 from .watchlist_store import (
     append_longbridge_symbol_to_watchlist,
     remove_longbridge_symbol_from_watchlist,
+    update_agent_config_in_watchlist,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -148,6 +156,8 @@ def serialize_market_state(
                 "provider": config.agent.provider,
                 "apiMode": config.agent.api_mode,
                 "model": config.agent.model,
+                "baseUrl": config.agent.base_url,
+                "timeoutSeconds": config.agent.timeout_seconds,
                 "maxCandles": config.agent.max_candles,
                 "reasoningEffort": config.agent.reasoning_effort,
             },
@@ -284,6 +294,38 @@ class MarketRuntime:
         )
         if changed:
             await self.reload_from_source()
+        return {"changed": changed, "state": self.snapshot()}
+
+    async def list_agent_models(self) -> dict[str, Any]:
+        """Return models visible to the configured agent provider."""
+        try:
+            models = await list_available_agent_models(self.config.agent)
+        except (LLMProviderUnavailable, LLMProviderError) as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {
+            "provider": self.config.agent.provider,
+            "apiMode": self.config.agent.api_mode,
+            "activeModel": self.config.agent.model,
+            "models": models,
+        }
+
+    async def update_agent_config(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist agent configuration and reload runtime config."""
+        source_path = self._require_source_path()
+        try:
+            next_config = _agent_config_from_payload(self.config.agent, payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        changed = await asyncio.to_thread(
+            update_agent_config_in_watchlist,
+            source_path,
+            next_config,
+        )
+        self.agent_analyses = {}
+        if changed:
+            await self.reload_from_source()
+        else:
+            await self.broadcast()
         return {"changed": changed, "state": self.snapshot()}
 
     async def analyze_instrument(self, instrument_key: str) -> dict[str, Any]:
@@ -429,6 +471,14 @@ def create_app(
     async def remove_longbridge_endpoint(symbol: str) -> dict[str, Any]:
         return await runtime.remove_longbridge(symbol)
 
+    @app.get("/api/agent/models")
+    async def list_agent_models_endpoint() -> dict[str, Any]:
+        return await runtime.list_agent_models()
+
+    @app.post("/api/agent/config")
+    async def update_agent_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+        return await runtime.update_agent_config(payload)
+
     @app.post("/api/agent/analyze/{instrument_key}")
     async def analyze_instrument_endpoint(instrument_key: str) -> dict[str, Any]:
         return await runtime.analyze_instrument(instrument_key)
@@ -450,3 +500,36 @@ def create_app(
             return FileResponse(WEB_DIST / "index.html")
 
     return app
+
+
+def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) -> AgentConfig:
+    """Merge a browser payload with current settings and normalize it."""
+    raw: dict[str, Any] = {
+        "enabled": current.enabled,
+        "provider": current.provider,
+        "api_mode": current.api_mode,
+        "model": current.model,
+        "base_url": current.base_url,
+        "timeout_seconds": current.timeout_seconds,
+        "max_candles": current.max_candles,
+        "reasoning_effort": current.reasoning_effort,
+    }
+    field_map = {
+        "enabled": "enabled",
+        "provider": "provider",
+        "apiMode": "api_mode",
+        "api_mode": "api_mode",
+        "model": "model",
+        "baseUrl": "base_url",
+        "base_url": "base_url",
+        "timeoutSeconds": "timeout_seconds",
+        "timeout_seconds": "timeout_seconds",
+        "maxCandles": "max_candles",
+        "max_candles": "max_candles",
+        "reasoningEffort": "reasoning_effort",
+        "reasoning_effort": "reasoning_effort",
+    }
+    for incoming, normalized in field_map.items():
+        if incoming in payload:
+            raw[normalized] = payload[incoming]
+    return parse_agent_config(raw)
