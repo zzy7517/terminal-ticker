@@ -1,4 +1,4 @@
-"""Parse watchlist TOML and CLI overrides into runtime configuration."""
+"""文件用途：配置层，解析 watchlist TOML、CLI 覆盖和运行配置。"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Iterable
 import tomllib
 
-from .llm_models import (
+from .agent_models import (
     DEFAULT_CODEX_MODEL,
     normalize_api_mode,
     normalize_model,
@@ -58,7 +58,7 @@ GROUP_ALIASES = {
 
 @dataclass(frozen=True)
 class DisplayConfig:
-    """Hold display timing and provider polling settings."""
+    """说明：封装界面刷新、过期判断和 provider 轮询配置。"""
     refresh_interval_ms: int = 1000
     stale_after_seconds: int = 20
     reconnect_delay_seconds: float = 3.0
@@ -67,7 +67,7 @@ class DisplayConfig:
 
 @dataclass(frozen=True)
 class AnalysisConfig:
-    """Hold local price action analysis settings."""
+    """说明：封装本地 price action 分析的周期、窗口和刷新配置。"""
     enabled: bool = True
     interval: str = "5m"
     lookback: int = 40
@@ -77,7 +77,7 @@ class AnalysisConfig:
 
 @dataclass(frozen=True)
 class CacheConfig:
-    """Hold local candle cache settings."""
+    """说明：封装本地 K 线缓存的开关、路径和保留时间。"""
     enabled: bool = True
     path: Path | None = None
     candle_retention_seconds: int = 86_400
@@ -85,7 +85,7 @@ class CacheConfig:
 
 @dataclass(frozen=True)
 class AgentConfig:
-    """Hold LLM agent provider settings."""
+    """说明：封装 LLM Agent 的 provider、模型和请求参数。"""
     enabled: bool = True
     provider: str = "codex"
     api_mode: str = "codex_responses"
@@ -98,7 +98,7 @@ class AgentConfig:
 
 @dataclass(frozen=True)
 class InstrumentConfig:
-    """Represent one normalized watchlist entry before provider resolution."""
+    """说明：封装 watchlist 中尚未解析到 provider 的标的配置。"""
     symbol: str
     source: str = BITGET_SOURCE
     inst_type: str | None = None
@@ -109,12 +109,12 @@ class InstrumentConfig:
 
     @property
     def dedupe_key(self) -> tuple[str, str | None, str]:
-        """Return the provider-specific key used to drop duplicate config entries."""
+        """说明：返回用于配置去重的 provider 级键。"""
         return (self.source, self.inst_type, self.symbol)
 
 
 def _normalize_source(raw_value: Any) -> str:
-    """Normalize a raw provider source value and reject unsupported providers."""
+    """说明：规范化数据源名称并拒绝未知 provider。"""
     if raw_value is None:
         return BITGET_SOURCE
     if not isinstance(raw_value, str):
@@ -130,7 +130,7 @@ def _normalize_source(raw_value: Any) -> str:
 
 @dataclass(frozen=True)
 class AppConfig:
-    """Bundle normalized instruments, display settings, and the source config path."""
+    """说明：封装应用运行所需的全部配置。"""
     instruments: tuple[InstrumentConfig, ...]
     display: DisplayConfig
     source_path: Path | None = None
@@ -140,7 +140,7 @@ class AppConfig:
 
 
 def _normalize_inst_type(raw_value: Any) -> str | None:
-    """Normalize a Bitget instrument type and reject unsupported types."""
+    """说明：规范化 Bitget 合约类型。"""
     if raw_value is None:
         return None
     if not isinstance(raw_value, str):
@@ -155,7 +155,7 @@ def _normalize_inst_type(raw_value: Any) -> str | None:
 
 
 def _normalize_label(raw_value: Any) -> str | None:
-    """Normalize an optional display label from TOML."""
+    """说明：规范化可选展示标签。"""
     if raw_value is None:
         return None
     if not isinstance(raw_value, str):
@@ -165,7 +165,7 @@ def _normalize_label(raw_value: Any) -> str | None:
 
 
 def _default_group(source: str) -> str:
-    """Choose the default UI group for a provider source."""
+    """说明：根据数据源选择默认 UI 分组。"""
     if source == BITGET_SOURCE:
         return "crypto"
     if source == LONGBRIDGE_SOURCE:
@@ -174,7 +174,7 @@ def _default_group(source: str) -> str:
 
 
 def _normalize_group(raw_value: Any, *, source: str) -> str:
-    """Normalize a UI group name and apply known aliases."""
+    """说明：规范化 UI 分组并应用别名。"""
     if raw_value is None:
         return _default_group(source)
     if not isinstance(raw_value, str):
@@ -186,7 +186,7 @@ def _normalize_group(raw_value: Any, *, source: str) -> str:
 
 
 def _normalize_bool(raw_value: Any, field_name: str, default: bool) -> bool:
-    """Coerce a TOML boolean-like value into a Python bool."""
+    """说明：把 TOML 中的布尔类值转换成 bool。"""
     if raw_value is None:
         return default
     if isinstance(raw_value, bool):
@@ -201,7 +201,7 @@ def _normalize_bool(raw_value: Any, field_name: str, default: bool) -> bool:
 
 
 def _normalize_analysis_interval(raw_value: Any) -> str:
-    """Normalize a configured candle interval."""
+    """说明：规范化 K 线分析周期。"""
     if raw_value is None:
         return "5m"
     if not isinstance(raw_value, str):
@@ -230,19 +230,19 @@ def _normalize_analysis_interval(raw_value: Any) -> str:
 
 
 def _normalize_optional_analysis_interval(raw_value: Any) -> str | None:
-    """Normalize an optional per-instrument candle interval."""
+    """说明：规范化单个标的上的可选 K 线周期。"""
     if raw_value in (None, ""):
         return None
     return _normalize_analysis_interval(raw_value)
 
 
 def _normalize_agent_provider(raw_value: Any) -> str:
-    """Normalize the configured LLM provider."""
+    """说明：规范化 LLM provider 名称。"""
     return normalize_provider(raw_value)
 
 
 def _normalize_optional_string(raw_value: Any, field_name: str) -> str | None:
-    """Normalize an optional non-empty string field."""
+    """说明：规范化可选非空字符串。"""
     if raw_value is None:
         return None
     if not isinstance(raw_value, str):
@@ -252,12 +252,12 @@ def _normalize_optional_string(raw_value: Any, field_name: str) -> str | None:
 
 
 def _normalize_reasoning_effort(raw_value: Any) -> str:
-    """Normalize the configured reasoning effort for Responses-style models."""
+    """说明：规范化 Responses 风格模型的推理强度。"""
     return normalize_reasoning_effort(raw_value)
 
 
 def parse_agent_config(raw_agent: dict[str, Any] | None) -> AgentConfig:
-    """Parse raw agent settings into a normalized AgentConfig."""
+    """说明：把原始 Agent 配置解析为 AgentConfig。"""
     if raw_agent is None:
         raw_agent = {}
     if not isinstance(raw_agent, dict):
@@ -280,7 +280,7 @@ def parse_agent_config(raw_agent: dict[str, Any] | None) -> AgentConfig:
 
 
 def parse_analysis_config(raw_analysis: dict[str, Any] | None) -> AnalysisConfig:
-    """Parse raw price action analysis settings into a normalized AnalysisConfig."""
+    """说明：把原始分析配置解析为 AnalysisConfig。"""
     if raw_analysis is None:
         raw_analysis = {}
     if not isinstance(raw_analysis, dict):
@@ -303,7 +303,7 @@ def parse_analysis_config(raw_analysis: dict[str, Any] | None) -> AnalysisConfig
 
 
 def parse_cache_config(raw_cache: dict[str, Any] | None) -> CacheConfig:
-    """Parse raw local cache settings into a normalized CacheConfig."""
+    """说明：把原始缓存配置解析为 CacheConfig。"""
     if raw_cache is None:
         raw_cache = {}
     if not isinstance(raw_cache, dict):
@@ -328,7 +328,7 @@ def parse_cache_config(raw_cache: dict[str, Any] | None) -> CacheConfig:
 
 
 def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> InstrumentConfig:
-    """Parse legacy string symbol entries into instrument config rows."""
+    """说明：解析旧格式字符串标的配置。"""
     candidate = raw_symbol.strip()
     if not candidate:
         raise ValueError("symbol entries cannot be blank")
@@ -354,7 +354,7 @@ def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> Ins
 
 
 def _normalize_instruments(symbols: Iterable[Any]) -> tuple[InstrumentConfig, ...]:
-    """Normalize, validate, and deduplicate all configured symbols."""
+    """说明：规范化、校验并去重所有标的配置。"""
     normalized: list[InstrumentConfig] = []
     seen: set[tuple[str, str | None, str]] = set()
 
@@ -397,7 +397,7 @@ def _normalize_instruments(symbols: Iterable[Any]) -> tuple[InstrumentConfig, ..
 
 
 def _coerce_int(raw_value: Any, field_name: str, default: int) -> int:
-    """Coerce a positive integer display setting."""
+    """说明：把配置值转换成正整数。"""
     if raw_value is None:
         return default
     try:
@@ -410,7 +410,7 @@ def _coerce_int(raw_value: Any, field_name: str, default: int) -> int:
 
 
 def _coerce_min_int(raw_value: Any, field_name: str, default: int, minimum: int) -> int:
-    """Coerce an integer setting with a minimum accepted value."""
+    """说明：把配置值转换成带最小值限制的整数。"""
     value = _coerce_int(raw_value, field_name, default)
     if value < minimum:
         raise ValueError(f"{field_name} must be at least {minimum}")
@@ -418,7 +418,7 @@ def _coerce_min_int(raw_value: Any, field_name: str, default: int, minimum: int)
 
 
 def _coerce_float(raw_value: Any, field_name: str, default: float) -> float:
-    """Coerce a positive float display setting."""
+    """说明：把配置值转换成正浮点数。"""
     if raw_value is None:
         return default
     try:
@@ -431,7 +431,7 @@ def _coerce_float(raw_value: Any, field_name: str, default: float) -> float:
 
 
 def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> AppConfig:
-    """Parse raw TOML data into an application configuration."""
+    """说明：把原始 TOML 数据解析为应用配置。"""
     raw_symbols = data.get("symbols")
     if not isinstance(raw_symbols, list):
         raise ValueError("symbols must be a list of symbol entries")
@@ -482,7 +482,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
 
 
 def load_config(path: str | Path) -> AppConfig:
-    """Read a watchlist TOML file and parse it into AppConfig."""
+    """说明：读取 watchlist TOML 并解析为 AppConfig。"""
     source_path = Path(path).expanduser().resolve()
     with source_path.open("rb") as handle:
         data = tomllib.load(handle)
@@ -494,7 +494,7 @@ def build_runtime_config(
     *,
     cli_symbols: list[str] | None = None,
 ) -> AppConfig:
-    """Combine file config with optional CLI symbol overrides."""
+    """说明：合并文件配置和命令行标的覆盖。"""
     base = file_config or AppConfig(
         instruments=tuple(),
         display=DisplayConfig(),

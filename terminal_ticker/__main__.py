@@ -1,4 +1,4 @@
-"""Provide the command line entry point for the web price action app."""
+"""文件用途：命令行入口，解析配置并启动本地 Web 服务。"""
 from __future__ import annotations
 
 import argparse
@@ -9,14 +9,14 @@ import uvicorn
 
 from .config import AppConfig, build_runtime_config, load_config
 from .logging_config import DEFAULT_LOG_LEVEL, configure_logging
-from .providers import resolve_instruments
-from .web import create_app
+from .market_data.router import resolve_instruments
+from .api.app import create_app
 
 LOGGER = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI options for the watchlist path and web server."""
+    """说明：解析命令行参数。"""
     parser = argparse.ArgumentParser(
         prog="terminal_ticker",
         description="Local web UI for price action monitoring",
@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_config(args: argparse.Namespace) -> AppConfig:
-    """Load the TOML watchlist and apply any CLI symbol override."""
+    """说明：加载 watchlist 配置并合并命令行覆盖。"""
     file_config: AppConfig | None = None
     config_path = Path(args.config).expanduser()
     if config_path.exists():
@@ -57,7 +57,7 @@ def resolve_config(args: argparse.Namespace) -> AppConfig:
 
 
 def main() -> int:
-    """Resolve instruments and run the local web server."""
+    """说明：解析配置、解析标的，并启动本地 Web 服务。"""
     args = parse_args()
     configure_logging(args.log_level)
     config = resolve_config(args)

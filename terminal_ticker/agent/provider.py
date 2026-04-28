@@ -1,4 +1,4 @@
-"""LLM-backed market analysis agent framework."""
+"""文件用途：Agent 层，构造行情上下文、调用 LLM，并规范化模型输出。"""
 from __future__ import annotations
 
 import base64
@@ -12,17 +12,17 @@ from typing import Any, Protocol
 
 import httpx
 
-from .config import AgentConfig
-from .llm_models import (
+from ..config import AgentConfig
+from ..config.agent_models import (
     AgentModelProfile,
     CODEX_API_MODE,
     CODEX_PROVIDER,
     DEFAULT_CODEX_BASE_URL,
     resolve_agent_model,
 )
-from .models import QuoteState
-from .price_action import Candle
-from .providers import MarketInstrument
+from ..domain.quotes import QuoteState
+from ..domain.price_action import Candle
+from ..market_data.router import MarketInstrument
 
 CODEX_ENV_API_KEYS = ("TERMINAL_TICKER_CODEX_API_KEY", "CODEX_API_KEY")
 CODEX_ENV_BASE_URL = "TERMINAL_TICKER_CODEX_BASE_URL"
@@ -42,26 +42,26 @@ risk_notes: array of string
 
 
 class LLMProviderUnavailable(RuntimeError):
-    """Raised when a configured provider lacks credentials or runtime support."""
+    """说明：表示模型 provider 缺少凭证或运行环境不可用。"""
 
 
 class LLMProviderError(RuntimeError):
-    """Raised when a provider call fails after credentials are available."""
+    """说明：表示模型 provider 请求失败但配置本身可用。"""
 
 
 class LLMProvider(Protocol):
-    """Interface for an LLM-backed market analysis provider."""
+    """说明：定义所有 LLM 分析 provider 必须实现的接口。"""
 
     name: str
     model: str
 
     async def analyze(self, context: dict[str, Any]) -> "AgentAnalysisResult":
-        """Analyze one market context."""
+        """说明：分析一个结构化行情上下文。"""
 
 
 @dataclass(frozen=True)
 class AgentAnalysisResult:
-    """Normalized output from any LLM provider."""
+    """说明：封装任意 LLM provider 返回的标准化分析结果。"""
 
     available: bool
     provider: str
@@ -86,7 +86,7 @@ class AgentAnalysisResult:
         error: str,
         raw_text: str | None = None,
     ) -> "AgentAnalysisResult":
-        """Build a result for unavailable provider or invalid output."""
+        """说明：构造一个不可用的标准结果。"""
         return cls(
             available=False,
             provider=provider,
@@ -97,7 +97,7 @@ class AgentAnalysisResult:
         )
 
     def to_payload(self) -> dict[str, Any]:
-        """Serialize for FastAPI responses and the browser UI."""
+        """说明：把对象转换成 API 和前端可用的载荷。"""
         return {
             "available": self.available,
             "provider": self.provider,
@@ -116,12 +116,12 @@ class AgentAnalysisResult:
 
 
 def _utc_now_iso() -> str:
-    """Return current UTC time as ISO text."""
+    """说明：返回当前 UTC 时间的 ISO 字符串。"""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _short_candle(candle: Candle) -> dict[str, Any]:
-    """Serialize one candle into compact agent input."""
+    """说明：把一根 K 线压缩成 Agent 输入。"""
     return {
         "time": candle.open_time_ms // 1000,
         "open": candle.open,
@@ -133,7 +133,7 @@ def _short_candle(candle: Candle) -> dict[str, Any]:
 
 
 def _price_action_dict(quote: QuoteState) -> dict[str, Any] | None:
-    """Return the deterministic price action state for agent input."""
+    """说明：把确定性 price action 状态转换成 Agent 输入。"""
     state = quote.price_action
     if state is None:
         return None
@@ -150,7 +150,7 @@ def _price_action_dict(quote: QuoteState) -> dict[str, Any] | None:
 
 
 def _candle_facts(candles: tuple[Candle, ...]) -> dict[str, Any]:
-    """Derive deterministic facts that help the LLM avoid redoing boilerplate math."""
+    """说明：计算 LLM 上下文需要的近期 K 线事实。"""
     if not candles:
         return {}
     recent = candles[-min(10, len(candles)):]
@@ -178,7 +178,7 @@ def build_agent_context(
     interval: str,
     max_candles: int,
 ) -> dict[str, Any]:
-    """Build the structured context sent to the LLM provider."""
+    """说明：构造发送给 LLM provider 的结构化行情上下文。"""
     candles = tuple(quote.price_action_candles[-max_candles:])
     return {
         "instrument": {
@@ -213,7 +213,7 @@ def build_agent_context(
 
 
 def create_llm_provider(config: AgentConfig) -> LLMProvider:
-    """Create the configured LLM provider."""
+    """说明：根据配置创建 LLM provider。"""
     profile = resolve_agent_model(config)
     if profile.provider == CODEX_PROVIDER:
         return CodexProvider(config, profile)
@@ -221,12 +221,12 @@ def create_llm_provider(config: AgentConfig) -> LLMProvider:
 
 
 class CodexProvider:
-    """Codex provider backed by a Responses-style API call."""
+    """说明：封装通过 Codex Responses 风格接口完成分析的 provider。"""
 
     name = CODEX_PROVIDER
 
     def __init__(self, config: AgentConfig, profile: AgentModelProfile | None = None) -> None:
-        """Create a Codex provider from app config."""
+        """说明：初始化当前对象的运行状态。"""
         self.config = config
         self.profile = profile or resolve_agent_model(config)
         if self.profile.api_mode != CODEX_API_MODE:
@@ -234,7 +234,7 @@ class CodexProvider:
         self.model = self.profile.model
 
     async def analyze(self, context: dict[str, Any]) -> AgentAnalysisResult:
-        """Analyze one structured market context through Codex."""
+        """说明：分析一个结构化行情上下文。"""
         try:
             credentials = _resolve_codex_credentials(self.profile)
             response_data = await self._request_analysis(credentials, context)
@@ -264,7 +264,7 @@ class CodexProvider:
         credentials: dict[str, str],
         context: dict[str, Any],
     ) -> dict[str, Any]:
-        """Call the Codex Responses-style streaming endpoint."""
+        """说明：调用 Codex Responses 风格的流式分析接口。"""
         base_url = credentials["base_url"].rstrip("/")
         payload: dict[str, Any] = {
             "model": self.model,
@@ -307,7 +307,7 @@ class CodexProvider:
         return {"output_text": output_text}
 
     async def list_models(self) -> list[dict[str, Any]]:
-        """Fetch Codex models visible to the current account."""
+        """说明：拉取当前账号可见的 Codex 模型列表。"""
         credentials = _resolve_codex_credentials(self.profile)
         base_url = credentials["base_url"].rstrip("/")
         headers = {
@@ -330,7 +330,7 @@ class CodexProvider:
 
 
 async def list_available_agent_models(config: AgentConfig) -> list[dict[str, Any]]:
-    """List available models for the configured provider."""
+    """说明：列出当前 Agent provider 可用的模型。"""
     profile = resolve_agent_model(config)
     if profile.provider == CODEX_PROVIDER:
         return await CodexProvider(config, profile).list_models()
@@ -338,7 +338,7 @@ async def list_available_agent_models(config: AgentConfig) -> list[dict[str, Any
 
 
 async def _collect_response_stream_text(response: httpx.Response) -> str:
-    """Collect output_text from Codex Responses server-sent events."""
+    """说明：收集响应流文本。"""
     chunks: list[str] = []
     done_text: str | None = None
     async for line in response.aiter_lines():
@@ -371,7 +371,7 @@ async def _collect_response_stream_text(response: httpx.Response) -> str:
 
 
 def _response_error_message(status_code: int, body: str) -> str:
-    """Return a compact provider error without leaking credentials."""
+    """说明：生成不泄露凭证的 provider 错误信息。"""
     detail = ""
     try:
         payload = json.loads(body)
@@ -388,7 +388,7 @@ def _response_error_message(status_code: int, body: str) -> str:
 
 
 def _event_error_message(event: dict[str, Any]) -> str:
-    """Normalize a Responses stream failure event."""
+    """说明：规范化 Responses 流式事件中的错误信息。"""
     error = event.get("error")
     if isinstance(error, dict):
         message = error.get("message") or error.get("code") or error
@@ -399,7 +399,7 @@ def _event_error_message(event: dict[str, Any]) -> str:
 
 
 def _codex_model_option(item: dict[str, Any]) -> dict[str, Any]:
-    """Normalize one Codex model object for the browser UI."""
+    """说明：把 Codex 模型对象规范化成前端选项。"""
     levels = item.get("supported_reasoning_levels")
     reasoning_efforts: list[str] = []
     if isinstance(levels, list):
@@ -420,7 +420,7 @@ def _codex_model_option(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _resolve_codex_credentials(profile: AgentModelProfile) -> dict[str, str]:
-    """Resolve Codex credentials from env or the local Codex CLI auth store."""
+    """说明：从环境变量或 Codex CLI 登录文件解析凭证。"""
     api_key = _first_env(CODEX_ENV_API_KEYS)
     env_base_url = os.getenv(CODEX_ENV_BASE_URL, "").strip()
     base_url = (
@@ -448,7 +448,7 @@ def _resolve_codex_credentials(profile: AgentModelProfile) -> dict[str, str]:
 
 
 def _first_env(names: tuple[str, ...]) -> str | None:
-    """Return the first non-empty environment variable value."""
+    """说明：返回第一项非空环境变量。"""
     for name in names:
         value = os.getenv(name, "").strip()
         if value:
@@ -457,7 +457,7 @@ def _first_env(names: tuple[str, ...]) -> str | None:
 
 
 def _codex_auth_path() -> Path:
-    """Return the Codex CLI auth file path."""
+    """说明：返回 Codex CLI 的 auth.json 路径。"""
     codex_home = os.getenv("CODEX_HOME", "").strip()
     if not codex_home:
         codex_home = str(Path.home() / ".codex")
@@ -465,7 +465,7 @@ def _codex_auth_path() -> Path:
 
 
 def _read_codex_cli_credentials() -> dict[str, str] | None:
-    """Read Codex CLI ChatGPT tokens without importing or mutating Hermes."""
+    """说明：读取 Codex CLI 本地登录凭证。"""
     auth_path = _codex_auth_path()
     if not auth_path.is_file():
         return None
@@ -497,7 +497,7 @@ def _read_codex_cli_credentials() -> dict[str, str] | None:
 
 
 def _access_token_is_expiring(access_token: str, *, skew_seconds: int) -> bool:
-    """Return whether a JWT access token is expired or about to expire."""
+    """说明：判断 JWT access token 是否已经过期。"""
     claims = _jwt_claims(access_token)
     exp = claims.get("exp")
     if not isinstance(exp, (int, float)):
@@ -506,7 +506,7 @@ def _access_token_is_expiring(access_token: str, *, skew_seconds: int) -> bool:
 
 
 def _jwt_claims(token: str) -> dict[str, Any]:
-    """Decode JWT claims without verifying signature for local metadata use."""
+    """说明：解析 JWT claims 供本地元数据使用。"""
     try:
         parts = token.split(".")
         if len(parts) < 2:
@@ -519,7 +519,7 @@ def _jwt_claims(token: str) -> dict[str, Any]:
 
 
 def _codex_request_headers(access_token: str, account_id: str | None = None) -> dict[str, str]:
-    """Mirror the Codex CLI-shaped headers used by Hermes for chatgpt.com."""
+    """说明：构造 Codex CLI 风格的请求头。"""
     headers = {
         "User-Agent": "codex_cli_rs/0.0.0 (Terminal Ticker)",
         "originator": "codex_cli_rs",
@@ -538,7 +538,7 @@ def _codex_request_headers(access_token: str, account_id: str | None = None) -> 
 
 
 def _extract_response_text(data: dict[str, Any]) -> str:
-    """Extract output text from common Responses API response shapes."""
+    """说明：从 Responses API 常见响应结构中提取文本。"""
     output_text = data.get("output_text")
     if isinstance(output_text, str) and output_text.strip():
         return output_text.strip()
@@ -562,7 +562,7 @@ def _extract_response_text(data: dict[str, Any]) -> str:
 
 
 def _result_from_text(text: str, *, provider: str, model: str) -> AgentAnalysisResult:
-    """Parse and normalize the JSON-only model response."""
+    """说明：把模型返回的 JSON 文本转换成标准分析结果。"""
     try:
         payload = _load_json_object(text)
     except ValueError as exc:
@@ -590,7 +590,7 @@ def _result_from_text(text: str, *, provider: str, model: str) -> AgentAnalysisR
 
 
 def _load_json_object(text: str) -> dict[str, Any]:
-    """Load the first JSON object from model text."""
+    """说明：从模型输出中读取第一个 JSON object。"""
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
@@ -608,7 +608,7 @@ def _load_json_object(text: str) -> dict[str, Any]:
 
 
 def _coerce_text(value: Any) -> str:
-    """Coerce a scalar into display text."""
+    """说明：把任意标量转换成展示文本。"""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -617,7 +617,7 @@ def _coerce_text(value: Any) -> str:
 
 
 def _normalize_bias(value: Any) -> str:
-    """Normalize provider bias labels."""
+    """说明：规范化模型返回的方向标签。"""
     bias = _coerce_text(value).lower()
     if bias in {"bullish", "bearish", "neutral", "mixed"}:
         return bias
@@ -625,7 +625,7 @@ def _normalize_bias(value: Any) -> str:
 
 
 def _normalize_confidence(value: Any) -> int:
-    """Normalize confidence to 0-100."""
+    """说明：把置信度限制在 0 到 100。"""
     try:
         confidence = int(value)
     except (TypeError, ValueError):
@@ -634,7 +634,7 @@ def _normalize_confidence(value: Any) -> int:
 
 
 def _normalize_text_list(value: Any) -> tuple[str, ...]:
-    """Normalize a list of short text strings."""
+    """说明：规范化短文本列表。"""
     if not isinstance(value, list):
         return tuple()
     items = tuple(_coerce_text(item) for item in value)
@@ -642,7 +642,7 @@ def _normalize_text_list(value: Any) -> tuple[str, ...]:
 
 
 def _normalize_key_levels(value: Any) -> tuple[dict[str, Any], ...]:
-    """Normalize key level rows."""
+    """说明：规范化关键价位列表。"""
     if not isinstance(value, list):
         return tuple()
     rows: list[dict[str, Any]] = []

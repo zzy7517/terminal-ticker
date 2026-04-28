@@ -1,4 +1,4 @@
-"""Configure application logging."""
+"""文件用途：日志配置，统一初始化后端日志级别和格式。"""
 from __future__ import annotations
 
 import logging
@@ -8,7 +8,7 @@ DEFAULT_LOG_LEVEL = "INFO"
 
 
 def configure_logging(level: str = DEFAULT_LOG_LEVEL) -> int:
-    """Configure root logging and return the normalized numeric level."""
+    """说明：初始化根日志配置并返回标准化日志级别。"""
     normalized = level.strip().upper()
     numeric_level = getattr(logging, normalized, None)
     if not isinstance(numeric_level, int):
