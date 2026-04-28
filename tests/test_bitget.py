@@ -1,7 +1,13 @@
 """Test Bitget payload normalization."""
 import unittest
 
-from terminal_ticker.bitget import BitgetInstrument, _normalize_candle_row, _normalize_ticker_payload
+from terminal_ticker.bitget import (
+    SPOT,
+    BitgetInstrument,
+    _api_granularity,
+    _normalize_candle_row,
+    _normalize_ticker_payload,
+)
 
 
 class BitgetTests(unittest.TestCase):
@@ -58,6 +64,13 @@ class BitgetTests(unittest.TestCase):
         self.assertEqual(candle.low, 26194.5)
         self.assertEqual(candle.close, 26200.0)
         self.assertEqual(candle.volume, 26.26)
+
+    def test_api_granularity_maps_non_default_intervals(self) -> None:
+        """Verify Bitget candle intervals map beyond the 5m default."""
+        self.assertEqual(_api_granularity(SPOT, "15m"), "15min")
+        self.assertEqual(_api_granularity(SPOT, "4H"), "4h")
+        self.assertEqual(_api_granularity("USDT-FUTURES", "15m"), "15m")
+        self.assertEqual(_api_granularity("USDT-FUTURES", "4H"), "4H")
 
 
 if __name__ == "__main__":

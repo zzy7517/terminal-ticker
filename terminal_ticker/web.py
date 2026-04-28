@@ -21,7 +21,15 @@ from .agent import (
     create_llm_provider,
     list_available_agent_models,
 )
-from .config import AgentConfig, AppConfig, LONGBRIDGE_SOURCE, load_config, parse_agent_config
+from .config import (
+    AgentConfig,
+    AnalysisConfig,
+    AppConfig,
+    LONGBRIDGE_SOURCE,
+    load_config,
+    parse_agent_config,
+    parse_analysis_config,
+)
 from .controller import TickerController
 from .longbridge_provider import (
     LongbridgeSecurity,
@@ -35,6 +43,7 @@ from .watchlist_store import (
     append_longbridge_symbol_to_watchlist,
     remove_longbridge_symbol_from_watchlist,
     update_agent_config_in_watchlist,
+    update_analysis_config_in_watchlist,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -328,6 +337,25 @@ class MarketRuntime:
             await self.broadcast()
         return {"changed": changed, "state": self.snapshot()}
 
+    async def update_analysis_config(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist price action interval settings and reload runtime config."""
+        source_path = self._require_source_path()
+        try:
+            next_config = _analysis_config_from_payload(self.config.analysis, payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        changed = await asyncio.to_thread(
+            update_analysis_config_in_watchlist,
+            source_path,
+            next_config,
+        )
+        self.agent_analyses = {}
+        if changed:
+            await self.reload_from_source()
+        else:
+            await self.broadcast()
+        return {"changed": changed, "state": self.snapshot()}
+
     async def analyze_instrument(self, instrument_key: str) -> dict[str, Any]:
         """Run one manual LLM analysis for an instrument."""
         if not self.config.agent.enabled:
@@ -405,7 +433,8 @@ class MarketRuntime:
             if result.dirty:
                 await self.broadcast()
             await asyncio.sleep(refresh_seconds)
-            await self.broadcast()
+            if not result.dirty:
+                await self.broadcast()
 
     async def broadcast(self) -> None:
         """Send a fresh state snapshot to all websocket clients."""
@@ -479,6 +508,10 @@ def create_app(
     async def update_agent_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         return await runtime.update_agent_config(payload)
 
+    @app.post("/api/analysis/config")
+    async def update_analysis_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+        return await runtime.update_analysis_config(payload)
+
     @app.post("/api/agent/analyze/{instrument_key}")
     async def analyze_instrument_endpoint(instrument_key: str) -> dict[str, Any]:
         return await runtime.analyze_instrument(instrument_key)
@@ -533,3 +566,27 @@ def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) ->
         if incoming in payload:
             raw[normalized] = payload[incoming]
     return parse_agent_config(raw)
+
+
+def _analysis_config_from_payload(current: AnalysisConfig, payload: dict[str, Any]) -> AnalysisConfig:
+    """Merge a browser payload with current analysis settings and normalize it."""
+    raw: dict[str, Any] = {
+        "enabled": current.enabled,
+        "interval": current.interval,
+        "lookback": current.lookback,
+        "poll_interval_seconds": current.poll_interval_seconds,
+        "stale_after_seconds": current.stale_after_seconds,
+    }
+    field_map = {
+        "enabled": "enabled",
+        "interval": "interval",
+        "lookback": "lookback",
+        "pollIntervalSeconds": "poll_interval_seconds",
+        "poll_interval_seconds": "poll_interval_seconds",
+        "staleAfterSeconds": "stale_after_seconds",
+        "stale_after_seconds": "stale_after_seconds",
+    }
+    for incoming, normalized in field_map.items():
+        if incoming in payload:
+            raw[normalized] = payload[incoming]
+    return parse_analysis_config(raw)

@@ -2,6 +2,7 @@ import type {
   AgentAnalysis,
   AgentConfigUpdate,
   AgentModelsResponse,
+  AnalysisConfigUpdate,
   MarketState,
   SecuritySearchResult,
 } from './types';
@@ -86,6 +87,19 @@ export async function saveAgentConfig(config: AgentConfigUpdate): Promise<Market
   });
   if (!response.ok) {
     throw await responseError(response, 'agent config save failed');
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
+export async function saveAnalysisConfig(config: AnalysisConfigUpdate): Promise<MarketState> {
+  const response = await fetch('/api/analysis/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'analysis config save failed');
   }
   const payload = await response.json();
   return payload.state;

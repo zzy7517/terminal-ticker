@@ -141,6 +141,31 @@ h3 {
   color: var(--down);
 }
 
+.interval-control {
+  padding-right: 8px;
+}
+
+.interval-select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: 700;
+  min-width: 58px;
+  outline: 0;
+}
+
+.interval-select:disabled {
+  color: var(--text-muted);
+  cursor: wait;
+}
+
+.interval-select option {
+  background: #0a0b0a;
+  color: var(--text-primary);
+}
+
 .shell-button {
   align-items: center;
   border: 0;

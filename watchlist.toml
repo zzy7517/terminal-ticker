@@ -5,6 +5,7 @@ symbols = [
   { symbol = "ETHUSDT", inst_type = "USDT-FUTURES", label = "ETH", group = "crypto" },
   { symbol = "XAUUSDT", inst_type = "USDT-FUTURES", label = "XAU", group = "crypto" },
   { symbol = "MSFT.US", source = "longbridge", label = "MSFT", group = "stocks", show_collapsed = true },
+  { symbol = "AMD.US", source = "longbridge", label = "AMD", group = "stocks", show_collapsed = true },
 ]
 
 [display]
@@ -12,3 +13,19 @@ refresh_interval_ms = 1000
 stale_after_seconds = 20
 reconnect_delay_seconds = 3.0
 longbridge_poll_interval_seconds = 2
+
+[agent]
+enabled = true
+provider = "codex"
+api_mode = "codex_responses"
+model = "gpt-5.4"
+timeout_seconds = 45
+max_candles = 40
+reasoning_effort = "medium"
+
+[analysis]
+enabled = true
+interval = "5m"
+lookback = 40
+poll_interval_seconds = 30
+stale_after_seconds = 420

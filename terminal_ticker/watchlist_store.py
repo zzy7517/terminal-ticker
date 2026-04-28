@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import tomllib
 
-from .config import AgentConfig, GROUP_ALIASES, LONGBRIDGE_SOURCE, load_config
+from .config import AgentConfig, AnalysisConfig, GROUP_ALIASES, LONGBRIDGE_SOURCE, load_config
 
 
 def _toml_string(value: str) -> str:
@@ -176,17 +176,14 @@ def _format_agent_config(config: AgentConfig) -> list[str]:
     return lines
 
 
-def update_agent_config_in_watchlist(path: str | Path, config: AgentConfig) -> bool:
-    """Insert or replace the top-level [agent] table in a watchlist file."""
-    source_path = Path(path).expanduser().resolve()
-    text = source_path.read_text()
+def _replace_top_level_table(text: str, table_name: str, next_lines: list[str]) -> str:
+    """Insert or replace one top-level TOML table."""
     lines = text.splitlines()
-    next_lines = _format_agent_config(config)
-
     start_index: int | None = None
     end_index: int | None = None
+    header = f"[{table_name}]"
     for index, line in enumerate(lines):
-        if line.strip() == "[agent]":
+        if line.strip() == header:
             start_index = index
             end_index = len(lines)
             for next_index in range(index + 1, len(lines)):
@@ -203,7 +200,37 @@ def update_agent_config_in_watchlist(path: str | Path, config: AgentConfig) -> b
     else:
         lines[start_index:end_index] = next_lines
 
-    rendered = "\n".join(lines).rstrip() + "\n"
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def update_agent_config_in_watchlist(path: str | Path, config: AgentConfig) -> bool:
+    """Insert or replace the top-level [agent] table in a watchlist file."""
+    source_path = Path(path).expanduser().resolve()
+    text = source_path.read_text()
+    rendered = _replace_top_level_table(text, "agent", _format_agent_config(config))
+    if rendered == text:
+        return False
+    source_path.write_text(rendered)
+    return True
+
+
+def _format_analysis_config(config: AnalysisConfig) -> list[str]:
+    """Render the analysis config as a top-level TOML table."""
+    return [
+        "[analysis]",
+        f"enabled = {'true' if config.enabled else 'false'}",
+        f"interval = {_toml_string(config.interval)}",
+        f"lookback = {config.lookback}",
+        f"poll_interval_seconds = {config.poll_interval_seconds}",
+        f"stale_after_seconds = {config.stale_after_seconds}",
+    ]
+
+
+def update_analysis_config_in_watchlist(path: str | Path, config: AnalysisConfig) -> bool:
+    """Insert or replace the top-level [analysis] table in a watchlist file."""
+    source_path = Path(path).expanduser().resolve()
+    text = source_path.read_text()
+    rendered = _replace_top_level_table(text, "analysis", _format_analysis_config(config))
     if rendered == text:
         return False
     source_path.write_text(rendered)

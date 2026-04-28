@@ -19,6 +19,7 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  type CandlestickData,
   type IChartApi,
   type ISeriesApi,
   type UTCTimestamp,
@@ -31,6 +32,7 @@ import {
   fetchState,
   removeLongbridgeSymbol,
   saveAgentConfig,
+  saveAnalysisConfig,
   searchSecurities,
 } from './api';
 import type {
@@ -55,6 +57,7 @@ const GROUP_LABELS: Record<string, string> = {
 
 const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
 const SETTINGS_HASH = '#/settings/providers';
+const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
 
 type AppRoute =
   | { view: 'workspace' }
@@ -137,10 +140,66 @@ function ConnectionBadge({ socketStatus, streamStatus }: { socketStatus: string;
   );
 }
 
-function CandlestickPane({ candles }: { candles: CandlePoint[] }) {
+type ChartCandle = CandlestickData<UTCTimestamp>;
+
+function toChartCandles(candles: CandlePoint[]): ChartCandle[] {
+  return candles.map((item) => ({
+    time: item.time as UTCTimestamp,
+    open: item.open,
+    high: item.high,
+    low: item.low,
+    close: item.close,
+  }));
+}
+
+function sameChartCandle(left: ChartCandle, right: ChartCandle) {
+  return (
+    left.time === right.time &&
+    left.open === right.open &&
+    left.high === right.high &&
+    left.low === right.low &&
+    left.close === right.close
+  );
+}
+
+function canUpdateLatestCandle(previous: ChartCandle[], next: ChartCandle[]) {
+  if (previous.length === 0 || next.length === 0) return false;
+  if (next.length === previous.length) {
+    for (let index = 0; index < previous.length - 1; index += 1) {
+      if (!sameChartCandle(previous[index], next[index])) return false;
+    }
+    return next[next.length - 1].time >= previous[previous.length - 1].time;
+  }
+  if (next.length === previous.length + 1) {
+    for (let index = 0; index < previous.length; index += 1) {
+      if (!sameChartCandle(previous[index], next[index])) return false;
+    }
+    return next[next.length - 1].time > previous[previous.length - 1].time;
+  }
+  return false;
+}
+
+function candleSignature(data: ChartCandle[]) {
+  if (data.length === 0) return 'empty';
+  return data
+    .map((item) => [item.time, item.open, item.high, item.low, item.close].join(':'))
+    .join('|');
+}
+
+function intervalOptions(currentInterval: string) {
+  if (ANALYSIS_INTERVAL_OPTIONS.includes(currentInterval)) {
+    return ANALYSIS_INTERVAL_OPTIONS;
+  }
+  return [currentInterval, ...ANALYSIS_INTERVAL_OPTIONS];
+}
+
+function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartKey: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const dataRef = useRef<ChartCandle[]>([]);
+  const signatureRef = useRef('');
+  const chartKeyRef = useRef('');
 
   useEffect(() => {
     const container = containerRef.current;
@@ -193,18 +252,34 @@ function CandlestickPane({ candles }: { candles: CandlePoint[] }) {
   }, []);
 
   useEffect(() => {
-    const data = candles.map((item) => ({
-      time: item.time as UTCTimestamp,
-      open: item.open,
-      high: item.high,
-      low: item.low,
-      close: item.close,
-    }));
-    seriesRef.current?.setData(data);
-    if (data.length > 0) {
-      chartRef.current?.timeScale().fitContent();
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    if (!chart || !series) return;
+
+    const data = toChartCandles(candles);
+    const nextSignature = `${chartKey}:${candleSignature(data)}`;
+    if (nextSignature === signatureRef.current) return;
+
+    const previous = dataRef.current;
+    const resetSeries = chartKeyRef.current !== chartKey;
+    const wasFollowingRealtime = previous.length === 0 || Math.abs(chart.timeScale().scrollPosition()) < 2;
+
+    if (resetSeries || data.length === 0 || !canUpdateLatestCandle(previous, data)) {
+      series.setData(data);
+      if (data.length > 0 && (resetSeries || previous.length === 0)) {
+        chart.timeScale().fitContent();
+      }
+    } else {
+      series.update(data[data.length - 1]);
+      if (wasFollowingRealtime) {
+        chart.timeScale().scrollToRealTime();
+      }
     }
-  }, [candles]);
+
+    dataRef.current = data;
+    signatureRef.current = nextSignature;
+    chartKeyRef.current = chartKey;
+  }, [candles, chartKey]);
 
   return (
     <div className="chart-shell">
@@ -412,9 +487,11 @@ function WorkspaceView({
   selectedQuote,
   selectedAgent,
   agentBusyKey,
+  analysisIntervalBusy,
   setActiveGroup,
   setSelectedKey,
   setState,
+  updateAnalysisInterval,
   runAgentAnalysis,
   openSettings,
 }: {
@@ -427,14 +504,17 @@ function WorkspaceView({
   selectedQuote: Quote | undefined;
   selectedAgent: AgentAnalysis | undefined;
   agentBusyKey: string | null;
+  analysisIntervalBusy: boolean;
   setActiveGroup: (value: string) => void;
   setSelectedKey: (value: string) => void;
   setState: (state: MarketState) => void;
+  updateAnalysisInterval: (value: string) => void;
   runAgentAnalysis: () => Promise<void>;
   openSettings: () => void;
 }) {
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
   const tone = analysisTone(selectedQuote);
+  const currentInterval = state?.config.analysis.interval ?? '5m';
 
   return (
     <main className="app-shell">
@@ -445,10 +525,21 @@ function WorkspaceView({
         </div>
         <div className="topbar-right">
           <ConnectionBadge socketStatus={socketStatus} streamStatus={state?.streamStatus ?? 'idle'} />
-          <div className="interval-pill">
+          <label className="interval-pill interval-control">
             <Activity size={15} />
-            {state?.config.analysis.interval ?? '5m'}
-          </div>
+            <select
+              className="interval-select"
+              disabled={!state || !state.config.sourcePath || analysisIntervalBusy}
+              onChange={(event) => updateAnalysisInterval(event.target.value)}
+              value={currentInterval}
+            >
+              {intervalOptions(currentInterval).map((interval) => (
+                <option key={interval} value={interval}>
+                  {interval}
+                </option>
+              ))}
+            </select>
+          </label>
           <button className="shell-button" type="button" onClick={openSettings}>
             <Settings size={16} />
             Settings
@@ -526,7 +617,10 @@ function WorkspaceView({
             {selectedQuote?.priceAction?.available && <Check className="analysis-check" size={18} />}
           </div>
 
-          <CandlestickPane candles={selectedQuote?.candles ?? []} />
+          <CandlestickPane
+            candles={selectedQuote?.candles ?? []}
+            chartKey={`${selectedKey ?? 'none'}:${currentInterval}`}
+          />
 
           <div className="stat-grid">
             <StatTile label="High" value={selectedQuote?.dayHigh?.toFixed(2) ?? '-'} />
@@ -954,6 +1048,7 @@ export default function App() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [agentBusyKey, setAgentBusyKey] = useState<string | null>(null);
+  const [analysisIntervalBusy, setAnalysisIntervalBusy] = useState(false);
 
   useEffect(() => {
     const syncRoute = () => setRoute(readRouteFromHash());
@@ -1013,6 +1108,19 @@ export default function App() {
   const selectedInstrument = state?.instruments.find((instrument) => instrument.key === selectedKey);
   const selectedQuote = selectedKey ? state?.quotes[selectedKey] : undefined;
   const selectedAgent = selectedKey ? state?.agentAnalyses[selectedKey] : undefined;
+
+  async function updateAnalysisInterval(interval: string) {
+    if (!state || interval === state.config.analysis.interval || analysisIntervalBusy) return;
+    setAnalysisIntervalBusy(true);
+    try {
+      const nextState = await saveAnalysisConfig({ interval });
+      setState(nextState);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setAnalysisIntervalBusy(false);
+    }
+  }
 
   async function runAgentAnalysis() {
     if (!selectedKey) return;
@@ -1074,9 +1182,11 @@ export default function App() {
       selectedQuote={selectedQuote}
       selectedAgent={selectedAgent}
       agentBusyKey={agentBusyKey}
+      analysisIntervalBusy={analysisIntervalBusy}
       setActiveGroup={setActiveGroup}
       setSelectedKey={setSelectedKey}
       setState={setState}
+      updateAnalysisInterval={updateAnalysisInterval}
       runAgentAnalysis={runAgentAnalysis}
       openSettings={() => navigateToRoute({ view: 'settings', section: 'providers' })}
     />

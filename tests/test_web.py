@@ -258,6 +258,37 @@ class WebTests(unittest.TestCase):
         self.assertEqual(persisted.agent.model, "gpt-5.4")
         self.assertEqual(persisted.agent.max_candles, 30)
 
+    def test_analysis_config_endpoint_persists_interval(self) -> None:
+        """Verify browser can switch K-line intervals through the runtime."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
+                    ]
+                    """
+                ).strip()
+            )
+            config = load_config(config_path)
+            instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+            app = create_app(
+                config=config,
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                auto_start=False,
+            )
+
+            with TestClient(app) as client:
+                response = client.post("/api/analysis/config", json={"interval": "15m"})
+
+            persisted = load_config(config_path)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["state"]["config"]["analysis"]["interval"], "15m")
+        self.assertEqual(persisted.analysis.interval, "15m")
+
 
 if __name__ == "__main__":
     unittest.main()

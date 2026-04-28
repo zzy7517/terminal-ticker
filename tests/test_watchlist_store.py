@@ -4,11 +4,12 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from terminal_ticker.config import AgentConfig, load_config
+from terminal_ticker.config import AgentConfig, AnalysisConfig, load_config
 from terminal_ticker.watchlist_store import (
     append_longbridge_symbol_to_watchlist,
     remove_longbridge_symbol_from_watchlist,
     update_agent_config_in_watchlist,
+    update_analysis_config_in_watchlist,
 )
 
 
@@ -108,6 +109,35 @@ class WatchlistStoreTests(unittest.TestCase):
         self.assertTrue(config.agent.enabled)
         self.assertEqual(config.agent.model, "gpt-5.4-mini")
         self.assertIsNone(config.agent.base_url)
+
+    def test_update_analysis_config_in_watchlist_inserts_and_replaces_table(self) -> None:
+        """Verify K-line analysis settings persist in TOML."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "BTCUSDT", inst_type = "USDT-FUTURES", label = "BTC" },
+                    ]
+                    """
+                ).strip()
+            )
+
+            inserted = update_analysis_config_in_watchlist(
+                config_path,
+                AnalysisConfig(interval="15m", lookback=60, poll_interval_seconds=20),
+            )
+            replaced = update_analysis_config_in_watchlist(
+                config_path,
+                AnalysisConfig(interval="1H", lookback=40, poll_interval_seconds=30),
+            )
+            config = load_config(config_path)
+
+        self.assertTrue(inserted)
+        self.assertTrue(replaced)
+        self.assertEqual(config.analysis.interval, "1H")
+        self.assertEqual(config.analysis.lookback, 40)
 
 
 if __name__ == "__main__":

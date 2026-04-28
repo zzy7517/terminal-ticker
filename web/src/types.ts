@@ -63,6 +63,14 @@ export interface AgentConfigUpdate {
   reasoningEffort: string;
 }
 
+export interface AnalysisConfigUpdate {
+  enabled?: boolean;
+  interval?: string;
+  lookback?: number;
+  pollIntervalSeconds?: number;
+  staleAfterSeconds?: number;
+}
+
 export interface AgentModelOption {
   slug: string;
   displayName: string;

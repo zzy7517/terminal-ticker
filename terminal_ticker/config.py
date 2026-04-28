@@ -262,6 +262,29 @@ def parse_agent_config(raw_agent: dict[str, Any] | None) -> AgentConfig:
     )
 
 
+def parse_analysis_config(raw_analysis: dict[str, Any] | None) -> AnalysisConfig:
+    """Parse raw price action analysis settings into a normalized AnalysisConfig."""
+    if raw_analysis is None:
+        raw_analysis = {}
+    if not isinstance(raw_analysis, dict):
+        raise ValueError("analysis must be a table")
+    return AnalysisConfig(
+        enabled=_normalize_bool(raw_analysis.get("enabled"), "analysis.enabled", True),
+        interval=_normalize_analysis_interval(raw_analysis.get("interval")),
+        lookback=_coerce_min_int(raw_analysis.get("lookback"), "analysis.lookback", 40, 10),
+        poll_interval_seconds=_coerce_int(
+            raw_analysis.get("poll_interval_seconds"),
+            "analysis.poll_interval_seconds",
+            30,
+        ),
+        stale_after_seconds=_coerce_int(
+            raw_analysis.get("stale_after_seconds"),
+            "analysis.stale_after_seconds",
+            420,
+        ),
+    )
+
+
 def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> InstrumentConfig:
     """Parse legacy string symbol entries into instrument config rows."""
     candidate = raw_symbol.strip()
@@ -398,26 +421,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         ),
     )
 
-    raw_analysis = data.get("analysis", {})
-    if raw_analysis is None:
-        raw_analysis = {}
-    if not isinstance(raw_analysis, dict):
-        raise ValueError("analysis must be a table")
-    analysis = AnalysisConfig(
-        enabled=_normalize_bool(raw_analysis.get("enabled"), "analysis.enabled", True),
-        interval=_normalize_analysis_interval(raw_analysis.get("interval")),
-        lookback=_coerce_min_int(raw_analysis.get("lookback"), "analysis.lookback", 40, 10),
-        poll_interval_seconds=_coerce_int(
-            raw_analysis.get("poll_interval_seconds"),
-            "analysis.poll_interval_seconds",
-            30,
-        ),
-        stale_after_seconds=_coerce_int(
-            raw_analysis.get("stale_after_seconds"),
-            "analysis.stale_after_seconds",
-            420,
-        ),
-    )
+    analysis = parse_analysis_config(data.get("analysis", {}))
 
     agent = parse_agent_config(data.get("agent", {}))
 
