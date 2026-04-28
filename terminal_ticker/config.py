@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Any, Iterable
 import tomllib
 
+from .llm_models import (
+    DEFAULT_CODEX_MODEL,
+    normalize_api_mode,
+    normalize_model,
+    normalize_provider,
+    normalize_reasoning_effort,
+)
+
 BITGET_SOURCE = "bitget"
 LONGBRIDGE_SOURCE = "longbridge"
 SUPPORTED_SOURCES = {BITGET_SOURCE, LONGBRIDGE_SOURCE}
@@ -25,8 +33,6 @@ SUPPORTED_ANALYSIS_INTERVALS = {
     "1W",
     "1M",
 }
-SUPPORTED_AGENT_PROVIDERS = {"codex"}
-SUPPORTED_REASONING_EFFORTS = {"low", "medium", "high", "xhigh"}
 DEFAULT_GROUP = "other"
 GROUP_ALIASES = {
     "crypto": "crypto",
@@ -74,7 +80,8 @@ class AgentConfig:
     """Hold LLM agent provider settings."""
     enabled: bool = True
     provider: str = "codex"
-    model: str = "gpt-5.2-codex"
+    api_mode: str = "codex_responses"
+    model: str = DEFAULT_CODEX_MODEL
     base_url: str | None = None
     timeout_seconds: float = 45.0
     max_candles: int = 40
@@ -214,17 +221,7 @@ def _normalize_analysis_interval(raw_value: Any) -> str:
 
 def _normalize_agent_provider(raw_value: Any) -> str:
     """Normalize the configured LLM provider."""
-    if raw_value is None:
-        return "codex"
-    if not isinstance(raw_value, str):
-        raise ValueError("agent.provider must be a string")
-    provider = raw_value.strip().lower()
-    if not provider:
-        return "codex"
-    if provider not in SUPPORTED_AGENT_PROVIDERS:
-        supported = ", ".join(sorted(SUPPORTED_AGENT_PROVIDERS))
-        raise ValueError(f"agent.provider must be one of: {supported}")
-    return provider
+    return normalize_provider(raw_value)
 
 
 def _normalize_optional_string(raw_value: Any, field_name: str) -> str | None:
@@ -239,19 +236,7 @@ def _normalize_optional_string(raw_value: Any, field_name: str) -> str | None:
 
 def _normalize_reasoning_effort(raw_value: Any) -> str:
     """Normalize the configured reasoning effort for Responses-style models."""
-    if raw_value is None:
-        return "medium"
-    if not isinstance(raw_value, str):
-        raise ValueError("agent.reasoning_effort must be a string")
-    effort = raw_value.strip().lower()
-    if not effort:
-        return "medium"
-    aliases = {"minimal": "low", "extra": "xhigh", "extra_high": "xhigh"}
-    normalized = aliases.get(effort, effort)
-    if normalized not in SUPPORTED_REASONING_EFFORTS:
-        supported = ", ".join(sorted(SUPPORTED_REASONING_EFFORTS))
-        raise ValueError(f"agent.reasoning_effort must be one of: {supported}")
-    return normalized
+    return normalize_reasoning_effort(raw_value)
 
 
 def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> InstrumentConfig:
@@ -416,10 +401,12 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         raw_agent = {}
     if not isinstance(raw_agent, dict):
         raise ValueError("agent must be a table")
+    agent_provider = _normalize_agent_provider(raw_agent.get("provider"))
     agent = AgentConfig(
         enabled=_normalize_bool(raw_agent.get("enabled"), "agent.enabled", True),
-        provider=_normalize_agent_provider(raw_agent.get("provider")),
-        model=_normalize_optional_string(raw_agent.get("model"), "agent.model") or "gpt-5.2-codex",
+        provider=agent_provider,
+        api_mode=normalize_api_mode(agent_provider, raw_agent.get("api_mode")),
+        model=normalize_model(agent_provider, raw_agent.get("model")),
         base_url=_normalize_optional_string(raw_agent.get("base_url"), "agent.base_url"),
         timeout_seconds=_coerce_float(
             raw_agent.get("timeout_seconds"),

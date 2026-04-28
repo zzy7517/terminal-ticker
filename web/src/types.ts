@@ -89,6 +89,7 @@ export interface MarketState {
     agent: {
       enabled: boolean;
       provider: string;
+      apiMode: string;
       model: string;
       maxCandles: number;
       reasoningEffort: string;

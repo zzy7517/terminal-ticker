@@ -13,11 +13,17 @@ from typing import Any, Protocol
 import httpx
 
 from .config import AgentConfig
+from .llm_models import (
+    AgentModelProfile,
+    CODEX_API_MODE,
+    CODEX_PROVIDER,
+    DEFAULT_CODEX_BASE_URL,
+    resolve_agent_model,
+)
 from .models import QuoteState
 from .price_action import Candle
 from .providers import MarketInstrument
 
-DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 CODEX_ENV_API_KEYS = ("TERMINAL_TICKER_CODEX_API_KEY", "CODEX_API_KEY")
 CODEX_ENV_BASE_URL = "TERMINAL_TICKER_CODEX_BASE_URL"
 
@@ -208,25 +214,29 @@ def build_agent_context(
 
 def create_llm_provider(config: AgentConfig) -> LLMProvider:
     """Create the configured LLM provider."""
-    if config.provider == "codex":
-        return CodexProvider(config)
-    raise LLMProviderUnavailable(f"Unsupported agent provider: {config.provider}")
+    profile = resolve_agent_model(config)
+    if profile.provider == CODEX_PROVIDER:
+        return CodexProvider(config, profile)
+    raise LLMProviderUnavailable(f"Unsupported agent provider: {profile.provider}")
 
 
 class CodexProvider:
     """Codex provider backed by a Responses-style API call."""
 
-    name = "codex"
+    name = CODEX_PROVIDER
 
-    def __init__(self, config: AgentConfig) -> None:
+    def __init__(self, config: AgentConfig, profile: AgentModelProfile | None = None) -> None:
         """Create a Codex provider from app config."""
         self.config = config
-        self.model = config.model
+        self.profile = profile or resolve_agent_model(config)
+        if self.profile.api_mode != CODEX_API_MODE:
+            raise LLMProviderUnavailable(f"Unsupported Codex api_mode: {self.profile.api_mode}")
+        self.model = self.profile.model
 
     async def analyze(self, context: dict[str, Any]) -> AgentAnalysisResult:
         """Analyze one structured market context through Codex."""
         try:
-            credentials = _resolve_codex_credentials(self.config)
+            credentials = _resolve_codex_credentials(self.profile)
             response_data = await self._request_analysis(credentials, context)
             text = _extract_response_text(response_data)
             if not text:
@@ -272,7 +282,7 @@ class CodexProvider:
             ],
             "store": False,
             "reasoning": {
-                "effort": self.config.reasoning_effort,
+                "effort": self.profile.reasoning_effort,
                 "summary": "auto",
             },
         }
@@ -292,12 +302,15 @@ class CodexProvider:
         return data
 
 
-def _resolve_codex_credentials(config: AgentConfig) -> dict[str, str]:
+def _resolve_codex_credentials(profile: AgentModelProfile) -> dict[str, str]:
     """Resolve Codex credentials from env or the local Codex CLI auth store."""
     api_key = _first_env(CODEX_ENV_API_KEYS)
+    env_base_url = os.getenv(CODEX_ENV_BASE_URL, "").strip()
     base_url = (
-        config.base_url
-        or os.getenv(CODEX_ENV_BASE_URL, "").strip()
+        profile.base_url
+        if profile.base_url_configured
+        else env_base_url
+        or profile.base_url
         or DEFAULT_CODEX_BASE_URL
     )
     if api_key:

@@ -146,6 +146,7 @@ def serialize_market_state(
             "agent": {
                 "enabled": config.agent.enabled,
                 "provider": config.agent.provider,
+                "apiMode": config.agent.api_mode,
                 "model": config.agent.model,
                 "maxCandles": config.agent.max_candles,
                 "reasoningEffort": config.agent.reasoning_effort,

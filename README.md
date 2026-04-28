@@ -124,6 +124,7 @@ stale_after_seconds = 420
 [agent]
 enabled = true
 provider = "codex"
+api_mode = "codex_responses"
 model = "gpt-5.2-codex"
 timeout_seconds = 45
 max_candles = 40
@@ -145,6 +146,7 @@ reasoning_effort = "medium"
 - `analysis.poll_interval_seconds` 控制 K 线分析刷新间隔。
 - `analysis.stale_after_seconds` 控制分析结果和最新 K 线多久后视为过期。
 - `[agent]` 控制 LLM 解读层。第一版只支持 `provider = "codex"`。
+- `agent.api_mode` 当前固定为 `codex_responses`，这和 Hermes 把 `openai-codex` 映射到 Responses 风格 transport 的思路一致。
 - Codex provider 会直接读取 Codex CLI 的 `auth.json`，不会读取 Hermes 的 auth store，也不会导入 Hermes runtime。
 - `agent.max_candles` 控制每次发送给 LLM 的最近 K 线数量，最小值是 `10`。
 - `agent.reasoning_effort` 支持 `low`、`medium`、`high`、`xhigh`。

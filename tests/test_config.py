@@ -117,6 +117,7 @@ class ConfigTests(unittest.TestCase):
         default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})
         self.assertTrue(default_config.agent.enabled)
         self.assertEqual(default_config.agent.provider, "codex")
+        self.assertEqual(default_config.agent.api_mode, "codex_responses")
         self.assertEqual(default_config.agent.model, "gpt-5.2-codex")
 
         config = parse_config(
@@ -125,7 +126,8 @@ class ConfigTests(unittest.TestCase):
                 "agent": {
                     "enabled": False,
                     "provider": "codex",
-                    "model": "gpt-5.4",
+                    "api_mode": "codex_responses",
+                    "model": "default",
                     "base_url": "https://example.test/codex",
                     "timeout_seconds": 12,
                     "max_candles": 24,
@@ -136,7 +138,8 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.agent.enabled)
         self.assertEqual(config.agent.provider, "codex")
-        self.assertEqual(config.agent.model, "gpt-5.4")
+        self.assertEqual(config.agent.api_mode, "codex_responses")
+        self.assertEqual(config.agent.model, "gpt-5.2-codex")
         self.assertEqual(config.agent.base_url, "https://example.test/codex")
         self.assertEqual(config.agent.timeout_seconds, 12)
         self.assertEqual(config.agent.max_candles, 24)
