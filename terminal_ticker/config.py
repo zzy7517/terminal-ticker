@@ -10,6 +10,21 @@ BITGET_SOURCE = "bitget"
 LONGBRIDGE_SOURCE = "longbridge"
 SUPPORTED_SOURCES = {BITGET_SOURCE, LONGBRIDGE_SOURCE}
 SUPPORTED_INST_TYPES = {"SPOT", "USDT-FUTURES"}
+SUPPORTED_ANALYSIS_INTERVALS = {
+    "1m",
+    "3m",
+    "5m",
+    "15m",
+    "30m",
+    "1H",
+    "4H",
+    "6H",
+    "12H",
+    "1D",
+    "3D",
+    "1W",
+    "1M",
+}
 DEFAULT_GROUP = "other"
 GROUP_ALIASES = {
     "crypto": "crypto",
@@ -40,6 +55,16 @@ class DisplayConfig:
     stale_after_seconds: int = 20
     reconnect_delay_seconds: float = 3.0
     longbridge_poll_interval_seconds: int = 2
+
+
+@dataclass(frozen=True)
+class AnalysisConfig:
+    """Hold local price action analysis settings."""
+    enabled: bool = True
+    interval: str = "5m"
+    lookback: int = 40
+    poll_interval_seconds: int = 30
+    stale_after_seconds: int = 420
 
 
 @dataclass(frozen=True)
@@ -79,6 +104,7 @@ class AppConfig:
     instruments: tuple[InstrumentConfig, ...]
     display: DisplayConfig
     source_path: Path | None = None
+    analysis: AnalysisConfig = AnalysisConfig()
 
 
 def _normalize_inst_type(raw_value: Any) -> str | None:
@@ -140,6 +166,35 @@ def _normalize_bool(raw_value: Any, field_name: str, default: bool) -> bool:
         if normalized in {"0", "false", "no", "off"}:
             return False
     raise ValueError(f"{field_name} must be a boolean")
+
+
+def _normalize_analysis_interval(raw_value: Any) -> str:
+    """Normalize a configured candle interval."""
+    if raw_value is None:
+        return "5m"
+    if not isinstance(raw_value, str):
+        raise ValueError("analysis.interval must be a string")
+    value = raw_value.strip()
+    aliases = {
+        "1min": "1m",
+        "3min": "3m",
+        "5min": "5m",
+        "15min": "15m",
+        "30min": "30m",
+        "1h": "1H",
+        "4h": "4H",
+        "6h": "6H",
+        "12h": "12H",
+        "1d": "1D",
+        "3d": "3D",
+        "1w": "1W",
+        "1month": "1M",
+    }
+    normalized = aliases.get(value.lower(), value)
+    if normalized not in SUPPORTED_ANALYSIS_INTERVALS:
+        supported = ", ".join(sorted(SUPPORTED_ANALYSIS_INTERVALS))
+        raise ValueError(f"analysis.interval must be one of: {supported}")
+    return normalized
 
 
 def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> InstrumentConfig:
@@ -221,6 +276,14 @@ def _coerce_int(raw_value: Any, field_name: str, default: int) -> int:
     return value
 
 
+def _coerce_min_int(raw_value: Any, field_name: str, default: int, minimum: int) -> int:
+    """Coerce an integer setting with a minimum accepted value."""
+    value = _coerce_int(raw_value, field_name, default)
+    if value < minimum:
+        raise ValueError(f"{field_name} must be at least {minimum}")
+    return value
+
+
 def _coerce_float(raw_value: Any, field_name: str, default: float) -> float:
     """Coerce a positive float display setting."""
     if raw_value is None:
@@ -270,9 +333,31 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         ),
     )
 
+    raw_analysis = data.get("analysis", {})
+    if raw_analysis is None:
+        raw_analysis = {}
+    if not isinstance(raw_analysis, dict):
+        raise ValueError("analysis must be a table")
+    analysis = AnalysisConfig(
+        enabled=_normalize_bool(raw_analysis.get("enabled"), "analysis.enabled", True),
+        interval=_normalize_analysis_interval(raw_analysis.get("interval")),
+        lookback=_coerce_min_int(raw_analysis.get("lookback"), "analysis.lookback", 40, 10),
+        poll_interval_seconds=_coerce_int(
+            raw_analysis.get("poll_interval_seconds"),
+            "analysis.poll_interval_seconds",
+            30,
+        ),
+        stale_after_seconds=_coerce_int(
+            raw_analysis.get("stale_after_seconds"),
+            "analysis.stale_after_seconds",
+            420,
+        ),
+    )
+
     return AppConfig(
         instruments=instruments,
         display=display,
+        analysis=analysis,
         source_path=source_path,
     )
 
@@ -294,6 +379,7 @@ def build_runtime_config(
     base = file_config or AppConfig(
         instruments=tuple(),
         display=DisplayConfig(),
+        analysis=AnalysisConfig(),
         source_path=None,
     )
 
@@ -306,5 +392,6 @@ def build_runtime_config(
     return AppConfig(
         instruments=instruments,
         display=base.display,
+        analysis=base.analysis,
         source_path=base.source_path,
     )

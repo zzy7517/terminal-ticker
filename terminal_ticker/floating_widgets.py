@@ -23,8 +23,8 @@ from .providers import MarketInstrument
 
 HEADER_HEIGHT = 30
 ROW_HEIGHT = 28
-PANEL_MIN_WIDTH = 320
-PANEL_MIN_HEIGHT = 154
+PANEL_MIN_WIDTH = 240
+PANEL_MIN_HEIGHT = 96
 PANEL_GROUPED_WIDTH = 360
 PANEL_MAX_HEIGHT = 430
 MARQUEE_GAP = 36
@@ -120,6 +120,8 @@ def format_stream_status(status: str) -> str:
 def build_ticker_items(
     instruments: tuple[MarketInstrument, ...],
     quotes: dict[str, QuoteState],
+    *,
+    analysis_stale_after_seconds: int | None = None,
 ) -> list[str]:
     """Build collapsed ticker tape labels from quote state."""
     parts: list[str] = []
@@ -127,7 +129,11 @@ def build_ticker_items(
         if not instrument.show_collapsed:
             continue
         quote = quotes[instrument.key]
-        parts.append(f"{instrument.label} {quote.price_label()}")
+        marker = quote.price_action_label(
+            stale_after_seconds=analysis_stale_after_seconds,
+        )
+        suffix = f" {marker}" if marker else ""
+        parts.append(f"{instrument.label} {quote.price_label()}{suffix}")
     return parts
 
 
@@ -264,23 +270,40 @@ class QuoteRow(QFrame):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 4, 10, 4)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         self.symbol_label = QLabel(instrument.label)
         self.symbol_label.setMinimumWidth(48)
         self.symbol_label.setFont(build_ui_font(10, weight=QFont.DemiBold))
         self.symbol_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
 
+        self.analysis_label = QLabel("")
+        self.analysis_label.setFixedWidth(32)
+        self.analysis_label.setAlignment(Qt.AlignCenter)
+        self.analysis_label.setFont(build_price_font(9, weight=QFont.Bold))
+        self.analysis_label.setStyleSheet(f"color: {TEXT_MUTED};")
+
+        self.analysis_reason_label = QLabel("")
+        self.analysis_reason_label.setFixedWidth(106)
+        self.analysis_reason_label.setFont(build_ui_font(8, weight=QFont.Medium))
+        self.analysis_reason_label.setStyleSheet(f"color: {TEXT_MUTED};")
+
         self.price_label = QLabel("--")
-        self.price_label.setMinimumWidth(104)
+        self.price_label.setMinimumWidth(88)
         self.price_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.price_label.setFont(build_price_font(14, weight=QFont.Bold))
         self.price_label.setStyleSheet(f"color: {TEXT_PRIMARY};")
 
         layout.addWidget(self.symbol_label)
         layout.addStretch(1)
+        layout.addWidget(self.analysis_reason_label)
+        layout.addWidget(self.analysis_label)
         layout.addWidget(self.price_label)
         self._apply_background(ROW_BACKGROUND, ROW_BORDER)
+
+    def set_compact_width(self, width: int) -> None:
+        """Hide optional row text when the panel is very narrow."""
+        self.analysis_reason_label.setVisible(width >= 315 and bool(self.analysis_reason_label.text()))
 
     def _apply_background(self, background: str, border: str) -> None:
         """Apply row background and border colors."""
@@ -299,10 +322,26 @@ class QuoteRow(QFrame):
         self.flash_direction = direction
         self.flash_frames_remaining = 5
 
-    def update_quote(self, quote: QuoteState, *, stale_after_seconds: int) -> None:
+    def update_quote(
+        self,
+        quote: QuoteState,
+        *,
+        stale_after_seconds: int,
+        analysis_stale_after_seconds: int | None = None,
+    ) -> None:
         """Render the latest quote values into row labels."""
         self.symbol_label.setText(quote.symbol)
         self.price_label.setText(quote.price_label())
+        marker = quote.price_action_label(
+            stale_after_seconds=analysis_stale_after_seconds,
+        )
+        reason = quote.price_action_reason(
+            stale_after_seconds=analysis_stale_after_seconds,
+        )
+        self.analysis_label.setText(marker)
+        self.analysis_reason_label.setText(reason)
+        self.analysis_label.setVisible(bool(marker))
+        self.analysis_reason_label.setVisible(self.width() >= 315 and bool(reason))
 
         if quote.is_stale(stale_after_seconds):
             self.price_label.setStyleSheet(f"color: {TEXT_STALE};")

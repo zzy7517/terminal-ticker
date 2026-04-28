@@ -103,7 +103,7 @@ class FloatingTickerWindow(QWidget):
         """Construct the Qt widget tree and stylesheet for the ticker shell."""
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setMinimumWidth(PANEL_MIN_WIDTH)
+        self.setMinimumSize(PANEL_MIN_WIDTH, PANEL_MIN_HEIGHT)
         self.resize(PANEL_GROUPED_WIDTH, 196)
 
         shell = QFrame(self)
@@ -544,6 +544,7 @@ class FloatingTickerWindow(QWidget):
         self.config = AppConfig(
             instruments=config_entries,
             display=self.config.display,
+            analysis=self.config.analysis,
             source_path=self.config.source_path,
         )
         self.instruments = instruments
@@ -556,6 +557,12 @@ class FloatingTickerWindow(QWidget):
         self._apply_collapsed_state()
         if self.auto_start:
             self.controller.start()
+
+    def resizeEvent(self, event) -> None:
+        """Keep optional row details readable as the panel is resized."""
+        super().resizeEvent(event)
+        for row in self.rows.values():
+            row.set_compact_width(self.width())
 
     def _restore_search_results(self) -> None:
         """Restore the last search result list after rebuilding the stocks tab."""
@@ -638,7 +645,7 @@ class FloatingTickerWindow(QWidget):
         visible_rows = max(2, min(largest_group_size, 8))
         search_panel_height = 78 if "stocks" in self.grouped_instruments else 0
         target_height = HEADER_HEIGHT + visible_rows * (ROW_HEIGHT + 6) + 78 + search_panel_height
-        return max(154, min(target_height, PANEL_MAX_HEIGHT))
+        return max(PANEL_MIN_HEIGHT, min(target_height, PANEL_MAX_HEIGHT))
 
     def _drain_events(self) -> None:
         """Drain market data events and refresh rows that changed."""
@@ -659,11 +666,16 @@ class FloatingTickerWindow(QWidget):
             self.rows[instrument.key].update_quote(
                 self.controller.quotes[instrument.key],
                 stale_after_seconds=self.config.display.stale_after_seconds,
+                analysis_stale_after_seconds=self.config.analysis.stale_after_seconds,
             )
 
     def _update_ticker_text(self) -> None:
         """Refresh the collapsed marquee items from visible collapsed symbols."""
-        items = build_ticker_items(self.instruments, self.controller.quotes)
+        items = build_ticker_items(
+            self.instruments,
+            self.controller.quotes,
+            analysis_stale_after_seconds=self.config.analysis.stale_after_seconds,
+        )
         self.ticker_tape.set_items(items or ["No collapsed symbols"])
 
     def _update_status_ui(self) -> None:
