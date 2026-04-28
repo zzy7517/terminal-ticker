@@ -425,27 +425,27 @@ function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartK
     const chart = createChart(container, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: '#060806' },
-        textColor: 'rgba(237, 229, 217, 0.66)',
+        background: { type: ColorType.Solid, color: '#fbfcfb' },
+        textColor: 'rgba(39, 49, 49, 0.64)',
         fontFamily: 'Aptos, "Avenir Next", "Segoe UI", sans-serif',
       },
       grid: {
-        vertLines: { color: 'rgba(214, 184, 154, 0.055)' },
-        horzLines: { color: 'rgba(214, 184, 154, 0.075)' },
+        vertLines: { color: 'rgba(42, 66, 70, 0.07)' },
+        horzLines: { color: 'rgba(42, 66, 70, 0.09)' },
       },
       rightPriceScale: {
         autoScale: true,
-        borderColor: 'rgba(214, 184, 154, 0.13)',
+        borderColor: 'rgba(42, 66, 70, 0.14)',
         scaleMargins: { top: 0.12, bottom: 0.14 },
       },
       timeScale: {
-        borderColor: 'rgba(214, 184, 154, 0.13)',
+        borderColor: 'rgba(42, 66, 70, 0.14)',
         timeVisible: true,
         secondsVisible: false,
       },
       crosshair: {
-        vertLine: { color: 'rgba(213, 168, 95, 0.34)' },
-        horzLine: { color: 'rgba(213, 168, 95, 0.34)' },
+        vertLine: { color: 'rgba(15, 124, 144, 0.38)' },
+        horzLine: { color: 'rgba(15, 124, 144, 0.38)' },
       },
       localization: {
         priceFormatter: (price: number) => price.toFixed(price > 1000 ? 1 : 2),
@@ -465,10 +465,10 @@ function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartK
     });
 
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: '#a7c887',
-      downColor: '#d06f5d',
-      wickUpColor: '#b5d895',
-      wickDownColor: '#dc806f',
+      upColor: '#2e9a66',
+      downColor: '#c65047',
+      wickUpColor: '#25885b',
+      wickDownColor: '#b3433d',
       borderVisible: false,
     });
     chartRef.current = chart;
