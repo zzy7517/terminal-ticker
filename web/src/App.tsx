@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -7,20 +7,15 @@ import {
   Check,
   CircleDot,
   Cpu,
-  Gauge,
-  LineChart,
   Loader2,
   Minus,
   MousePointer2,
   Plus,
   Radar,
-  Radio,
   RefreshCw,
   Save,
-  ScanLine,
   Search,
   Settings,
-  ShieldCheck,
   Sparkles,
   Trash2,
   TrendingUp,
@@ -188,81 +183,6 @@ function ConnectionBadge({ socketStatus, streamStatus }: { socketStatus: string;
       {connected ? <Wifi size={15} /> : <WifiOff size={15} />}
       <span>{connected ? streamStatus : socketStatus}</span>
     </div>
-  );
-}
-
-function PulseMetric({
-  icon,
-  label,
-  value,
-  tone = 'neutral',
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  tone?: 'neutral' | 'up' | 'down' | 'mixed';
-}) {
-  return (
-    <div className={`pulse-metric ${tone}`}>
-      <div className="pulse-icon">{icon}</div>
-      <div>
-        <span>{label}</span>
-        <strong>{value}</strong>
-      </div>
-    </div>
-  );
-}
-
-function MarketRail({
-  state,
-  socketStatus,
-  selectedQuote,
-}: {
-  state: MarketState | null;
-  socketStatus: string;
-  selectedQuote: Quote | undefined;
-}) {
-  const pulse = marketPulse(state);
-  const live = socketStatus === 'connected';
-  const selectedDelta = selectedQuote?.changePercent ?? null;
-  return (
-    <section className="market-rail" aria-label="Market pulse">
-      <PulseMetric
-        icon={<Radio size={18} />}
-        label="Feed"
-        value={live ? 'Live' : socketStatus}
-        tone={live ? 'up' : 'down'}
-      />
-      <PulseMetric
-        icon={<LineChart size={18} />}
-        label="Symbols"
-        value={`${pulse.total}`}
-      />
-      <PulseMetric
-        icon={<ScanLine size={18} />}
-        label="Signals"
-        value={`${pulse.signals}/${pulse.total || 0}`}
-        tone="mixed"
-      />
-      <PulseMetric
-        icon={<TrendingUp size={18} />}
-        label="Advance / Decline"
-        value={`${pulse.up} / ${pulse.down}`}
-        tone={pulse.up >= pulse.down ? 'up' : 'down'}
-      />
-      <PulseMetric
-        icon={<Gauge size={18} />}
-        label="Selected Move"
-        value={selectedDelta == null ? '-' : `${formatSignedNumber(selectedDelta)}%`}
-        tone={selectedDelta == null ? 'neutral' : selectedDelta > 0 ? 'up' : selectedDelta < 0 ? 'down' : 'neutral'}
-      />
-      <PulseMetric
-        icon={<ShieldCheck size={18} />}
-        label="Stale"
-        value={`${pulse.stale}`}
-        tone={pulse.stale > 0 ? 'down' : 'neutral'}
-      />
-    </section>
   );
 }
 
@@ -1016,8 +936,6 @@ function WorkspaceView({
           </button>
         </div>
       </header>
-
-      <MarketRail state={state} socketStatus={socketStatus} selectedQuote={selectedQuote} />
 
       <section className="workspace">
         <aside className="sidebar">

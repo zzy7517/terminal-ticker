@@ -47,7 +47,7 @@ from ..config.watchlist_store import (
     update_instrument_analysis_interval_in_watchlist,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
 THUMBNAIL_CANDLE_LIMIT = 60
 

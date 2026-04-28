@@ -14,7 +14,7 @@ from terminal_ticker.controller import DrainResult
 from terminal_ticker.longbridge_provider import LongbridgeInstrument, LongbridgeSecurity
 from terminal_ticker.models import QuoteState
 from terminal_ticker.price_action import Candle, PriceActionState
-from terminal_ticker.web import create_app, serialize_market_state
+from terminal_ticker.web import PROJECT_ROOT, WEB_DIST, create_app, serialize_market_state
 
 
 class DummyController:
@@ -46,6 +46,11 @@ class DummyController:
 
 class WebTests(unittest.TestCase):
     """Group tests for the web app."""
+
+    def test_web_dist_points_to_vite_output_directory(self) -> None:
+        """Verify the backend serves the Vite build output after package refactors."""
+        self.assertTrue((PROJECT_ROOT / "vite.config.ts").is_file())
+        self.assertEqual(WEB_DIST, PROJECT_ROOT / "web" / "dist")
 
     def test_serialize_market_state_includes_analysis_and_candles(self) -> None:
         """Verify browser state contains quote, analysis, and chart data."""
