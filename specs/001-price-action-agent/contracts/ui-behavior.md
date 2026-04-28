@@ -1,38 +1,32 @@
-# UI Behavior Contract: Price Action Agent
+# UI Behavior Contract: Price Action Web UI
 
-## Collapsed Ticker
+## Application Shell
 
-For each collapsed-visible symbol:
+- The first screen is the working trading surface, not a landing page.
+- Layout uses three zones on desktop: watchlist/search, chart workspace, and agent context.
+- On narrower screens the zones stack vertically without introducing a collapsed ticker.
+- There is no PySide floating window, minimize button, plus/minus expand control, or scrolling ticker tape.
 
-- If price exists and fresh analysis exists, show `LABEL PRICE MARKER`.
-- If price exists but analysis is unavailable, show `LABEL PRICE`.
-- If price is missing, preserve existing placeholder behavior.
+## Watchlist
 
-Examples:
+- Instruments are grouped by `group` from `watchlist.toml`.
+- Selecting a row changes the chart and agent panel.
+- Rows show label, source, price, percent change, compact marker, and freshness age.
+- Stale or unavailable analysis shows a quiet placeholder instead of alert styling.
 
-- `BTC 78001.50 BO+`
-- `ETH 3560.20 RG`
-- `XAU -`
+## Chart Workspace
 
-## Expanded Row
+- The selected symbol renders recent OHLCV candles with Lightweight Charts.
+- Empty candle data shows a quiet placeholder.
+- Price, change, high, low, volume, and age are visible near the chart.
+- Chart interactions are browser-native and must not resize surrounding layout unpredictably.
 
-Each quote row remains fixed height.
+## Agent Panel
 
-- Left side: symbol label.
-- Right side: price label.
-- Secondary line or compact label area: state marker plus short reason.
-- Stale quote styling remains controlled by quote freshness.
-- Stale or unavailable analysis must not use alert styling.
+- The agent panel explains the selected symbol's state, reason, feed status, and non-execution boundary.
+- The UI must not show buy/sell commands, position sizing, order placement, account status, or broker/trade controls.
 
-## Expanded Detail Area
+## Watchlist Editing
 
-When the window is expanded and tall enough:
-
-- Clicking a quote row selects that instrument.
-- The detail area shows the selected label, compact state marker, concise reason, and recent K-line preview.
-- If candles are missing or stale, the chart area shows a quiet placeholder instead of inferring from quotes.
-- The detail area is hidden in collapsed mode and in very short resized windows.
-
-## Non-Execution Boundary
-
-The UI must not show buy/sell commands, position sizing, order placement, account status, or broker/trade controls in v1.
+- Longbridge search uses local API endpoints.
+- Add/remove actions update both runtime state and the active `watchlist.toml` when a config file is active.

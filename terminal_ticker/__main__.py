@@ -1,23 +1,21 @@
-"""Provide the command line entry point for the floating ticker app."""
+"""Provide the command line entry point for the web price action app."""
 from __future__ import annotations
 
 import argparse
-import signal
-import sys
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+import uvicorn
 
 from .config import AppConfig, build_runtime_config, load_config
-from .floating import FloatingTickerWindow
 from .providers import resolve_instruments
+from .web import create_app
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse CLI options for the watchlist path and optional symbol override."""
+    """Parse CLI options for the watchlist path and web server."""
     parser = argparse.ArgumentParser(
         prog="terminal_ticker",
-        description="Compact floating market ticker window",
+        description="Local web UI for price action monitoring",
     )
     parser.add_argument(
         "--config",
@@ -29,6 +27,8 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         help="override the config and watch Bitget symbols, e.g. USDT-FUTURES:BTCUSDT",
     )
+    parser.add_argument("--host", default="127.0.0.1", help="server host")
+    parser.add_argument("--port", default=8765, type=int, help="server port")
     return parser.parse_args()
 
 
@@ -47,28 +47,13 @@ def resolve_config(args: argparse.Namespace) -> AppConfig:
 
 
 def main() -> int:
-    """Create the Qt application, resolve instruments, and show the ticker window."""
+    """Resolve instruments and run the local web server."""
     args = parse_args()
     config = resolve_config(args)
     instruments = resolve_instruments(config.instruments)
-
-    app = QApplication(sys.argv)
-    app.setQuitOnLastWindowClosed(True)
-
-    window = FloatingTickerWindow(config, instruments)
-
-    def _request_quit(*_args) -> None:
-        """Close the window cleanly when the process receives a quit signal."""
-        window.close()
-        app.quit()
-
-    signal.signal(signal.SIGINT, _request_quit)
-    signal.signal(signal.SIGTERM, _request_quit)
-
-    window.show()
-    window.raise_()
-    window.activateWindow()
-    return app.exec()
+    app = create_app(config=config, instruments=instruments)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    return 0
 
 
 if __name__ == "__main__":

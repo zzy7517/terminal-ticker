@@ -1,4 +1,4 @@
-"""Floating multi-provider market ticker."""
+"""Web-based multi-provider price action monitor."""
 
 __all__ = ["__version__"]
 

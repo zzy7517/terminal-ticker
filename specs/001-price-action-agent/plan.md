@@ -1,92 +1,81 @@
-# Implementation Plan: Price Action Agent
+# Implementation Plan: Price Action Web UI
 
-**Branch**: `001-price-action-agent` | **Date**: 2026-04-28 | **Spec**: [spec.md](spec.md)  
-**Input**: Feature specification from `/specs/001-price-action-agent/spec.md`
+**Branch**: `main` | **Date**: 2026-04-28 | **Spec**: [spec.md](spec.md)
+**Input**: User request: remove all PySide, collapsed ticker, and scrolling ticker logic; rebuild the product as a Web UI.
 
 ## Summary
 
-Build a local-first price action layer for Bitget and Longbridge symbols by fetching provider OHLCV candles, deriving deterministic trend/range/breakout/pullback states, and presenting compact non-execution context in the floating ticker UI. Expanded mode includes a selected-symbol K-line preview; collapsed mode stays compact. The agent will not read chart screenshots or place trades.
+Replace the PySide floating desktop UI with a local Web UI. Python remains responsible for Bitget/Longbridge market data, OHLCV candle normalization, and deterministic price action analysis. A FastAPI app exposes current state over REST and pushes live snapshots over WebSocket. A Vite/React frontend renders a dense trading workspace with watchlist, K-line chart, and agent explanation panel.
 
 ## Technical Context
 
-**Language/Version**: Python 3.x in the existing virtual environment  
-**Primary Dependencies**: PySide6, websockets, longbridge, Python standard library urllib/json/dataclasses  
-**Storage**: Local runtime memory and existing TOML config only  
-**Testing**: `unittest` via `.venv/bin/python -m unittest discover -s tests`  
-**Target Platform**: macOS/Linux desktop  
-**Project Type**: local desktop app  
-**Performance Goals**: Candle polling must not block UI; analysis should run in the existing feed worker path and update rows on timer-driven drain.  
-**Constraints**: No backend service, no new credential requirement, no automatic trading, no screenshot chart recognition.  
+**Language/Version**: Python 3.x in the existing virtual environment; TypeScript/React through Vite
+**Primary Dependencies**: FastAPI, uvicorn, websockets, longbridge, React, Lightweight Charts, lucide-react
+**Storage**: Local runtime memory and existing TOML config only
+**Testing**: `unittest` via `.venv/bin/python -m unittest discover -s tests`; frontend build via `npm run build`
+**Target Platform**: Local browser UI served from the Python process, with Vite dev server during development
+**Project Type**: local web app
+**Performance Goals**: Provider feeds must not block HTTP/WebSocket handling; WebSocket snapshots stay watchlist-sized; chart rendering is delegated to Lightweight Charts.
+**Constraints**: No backend cloud service, no new market data credential requirement, no automatic trading, no screenshot chart recognition, no PySide/Qt runtime.
 **Scale/Scope**: Existing watchlist-sized local monitoring for Bitget instruments and configured Longbridge instruments.
 
 ## Constitution Check
 
-- Preserve local-first desktop scope: PASS. Uses provider candle APIs and local runtime state.
-- Preserve minimal-footprint UI: PASS. Keeps collapsed mode compact and adds richer detail only to expanded mode.
+- Preserve local-first scope: PASS. Runs as a local FastAPI server and browser UI.
+- Improve UI surface for chart work: PASS. Uses a real Web charting library instead of custom Qt painting.
 - Protect feed integrity: PASS. Missing, too few, failed, or stale candles map to unavailable analysis.
-- Prefer additive evolution inside `terminal_ticker/` and `tests/`: PASS. Adds focused modules and extends feed/controller/model/UI.
-- Define automated verification: PASS. Adds analyzer, Bitget candle normalization, controller, ticker, and row tests.
+- Remove obsolete desktop behavior: PASS. PySide, collapsed ticker, and scrolling ticker UI are removed.
+- Define automated verification: PASS. Python unit suite and frontend production build are required.
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/001-price-action-agent/
-├── plan.md
-├── research.md
-├── data-model.md
-├── quickstart.md
-├── contracts/
-│   └── ui-behavior.md
-└── tasks.md
-```
-
-### Source Code (repository root)
+### Source Code
 
 ```text
 terminal_ticker/
-├── bitget.py              # Public candle fetch and normalization
-├── config.py              # Add analysis settings
-├── controller.py          # Apply analysis events to quote state
-├── feed.py                # Poll candles independently from quotes
-├── floating.py            # Coordinate selected-symbol detail panel
-├── floating_widgets.py    # Render compact markers, rows, and K-line preview
-├── longbridge_provider.py # Longbridge quote/search and candle normalization
-├── models.py              # Store derived price action state
-└── price_action.py        # New deterministic analyzer
+├── bitget.py              # Bitget quote/candle fetch and normalization
+├── config.py              # Watchlist and analysis settings
+├── controller.py          # Applies feed events to quote state
+├── feed.py                # Provider background workers
+├── longbridge_provider.py # Longbridge quote/search/candle integration
+├── models.py              # Quote state and display labels
+├── price_action.py        # Provider-neutral deterministic analyzer
+├── web.py                 # FastAPI app, REST, WebSocket, runtime state
+└── __main__.py            # Web server CLI entry point
+
+web/
+├── index.html
+├── tsconfig.json
+└── src/
+    ├── App.tsx
+    ├── api.ts
+    ├── main.tsx
+    ├── styles.css
+    └── types.ts
 
 tests/
+├── test_web.py
 ├── test_bitget.py
 ├── test_config.py
 ├── test_controller.py
-├── test_floating.py
 ├── test_feed.py
 ├── test_longbridge_provider.py
 ├── test_models.py
-└── test_price_action.py
+├── test_price_action.py
+└── test_watchlist_store.py
 ```
 
-**Structure Decision**: Keep `price_action.py` as the provider-neutral candle analysis module. Keep provider fetch and normalization in `bitget.py` and `longbridge_provider.py`, with feed-level dispatch and existing UI widgets extended for compact markers plus expanded details.
+**Structure Decision**: Keep market data and analysis logic in Python, because those modules are already tested and provider-aware. Move all presentation and chart interaction to the browser, where mature charting and layout tools are available.
 
 ## Complexity Tracking
 
-No constitution violations.
+This is a product-shape migration touching more than eight files and introducing one local web service surface plus a frontend package. It is still reversible because no persistent data format changes are required.
 
-## Phase 0: Research
+## Implementation Approach
 
-Completed in [research.md](research.md).
-
-## Phase 1: Design
-
-Completed in [data-model.md](data-model.md), [contracts/ui-behavior.md](contracts/ui-behavior.md), and [quickstart.md](quickstart.md).
-
-## Phase 2: Implementation Approach
-
-1. Add tests first for candle parsing and deterministic analyzer states.
-2. Add `PriceActionState` storage to quote state.
-3. Add Bitget and Longbridge candle fetch for configured instruments.
-4. Extend feed events with `price_action` updates and recent candles without blocking quote flow.
-5. Render compact markers in collapsed ticker and expanded rows.
-6. Add expanded-mode selected-symbol K-line detail preview.
-7. Verify full unit suite with the project virtual environment.
+1. Remove PySide runtime files, Qt dependencies, and Qt widget tests.
+2. Add `terminal_ticker.web` with FastAPI REST, WebSocket broadcast, state serialization, and Longbridge watchlist search/add/remove endpoints.
+3. Replace the CLI entry point with a local web server runner.
+4. Add Vite/React frontend using Lightweight Charts for K-line rendering.
+5. Update README and feature docs to describe Web UI behavior instead of floating/collapsed desktop behavior.
+6. Verify with Python unit tests, frontend build, and browser smoke testing.
