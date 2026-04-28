@@ -87,6 +87,8 @@ class FloatingTickerWindow(QWidget):
         self.auto_start = auto_start
         self.expanded_size: QSize | None = None
         self.search_queue: queue.Queue[tuple[str, str, object]] = queue.Queue()
+        self.last_search_query = ""
+        self.last_search_results: tuple[LongbridgeSecurity, ...] = tuple()
         self.positioned_once = False
         self.collapsed = False
         self.rows: dict[str, QuoteRow] = {}
@@ -423,6 +425,8 @@ class FloatingTickerWindow(QWidget):
                 continue
 
             results = tuple(payload)
+            self.last_search_query = query
+            self.last_search_results = results
             self.search_panel.show_results(
                 query=query,
                 results=results,
@@ -545,12 +549,24 @@ class FloatingTickerWindow(QWidget):
         self.instruments = instruments
         self.controller = TickerController(config=self.config, instruments=self.instruments)
         self._rebuild_tabs()
+        self._restore_search_results()
         self._refresh_rows()
         self._update_status_ui()
         self._update_ticker_text()
         self._apply_collapsed_state()
         if self.auto_start:
             self.controller.start()
+
+    def _restore_search_results(self) -> None:
+        """Restore the last search result list after rebuilding the stocks tab."""
+        if not self.last_search_results or not hasattr(self, "search_panel"):
+            return
+        self.search_input.setText(self.last_search_query)
+        self.search_panel.show_results(
+            query=self.last_search_query,
+            results=self.last_search_results,
+            is_existing=self._has_longbridge_symbol,
+        )
 
     def _start_timers(self) -> None:
         """Start UI timers for feed events, clock refresh, search results, and marquee motion."""

@@ -231,7 +231,6 @@ class FloatingTests(unittest.TestCase):
             )
         )
         window._drain_search_results()
-        window.search_results.setCurrentRow(0)
 
         self.assertEqual(window.search_results.count(), 1)
         self.assertTrue(window.add_search_button.isEnabled())
@@ -300,6 +299,9 @@ class FloatingTests(unittest.TestCase):
 
             self.assertEqual([item.key for item in window.instruments], ["USDT-FUTURES:BTCUSDT"])
             self.assertEqual([item.symbol for item in config.instruments], ["BTCUSDT"])
+            self.assertEqual(window.search_results.count(), 1)
+            self.assertEqual(window.add_search_button.text(), "添加")
+            self.assertTrue(window.add_search_button.isEnabled())
 
             window.close()
 

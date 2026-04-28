@@ -470,8 +470,11 @@ class LongbridgeSearchPanel(QFrame):
                 item.setText(f"{result.display_text()}  已添加")
             self.results_list.addItem(item)
         self.results_list.setVisible(bool(results))
-        self.add_button.setText("添加")
-        self.add_button.setEnabled(False)
+        if results:
+            self.results_list.setCurrentRow(0)
+        else:
+            self.add_button.setText("添加")
+            self.add_button.setEnabled(False)
         self.set_status(f"{query}: {len(results)} 个结果" if results else "没有匹配结果")
 
     def selected_result(self) -> LongbridgeSecurity | None:
