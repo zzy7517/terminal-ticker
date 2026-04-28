@@ -1,22 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Activity,
   ArrowLeft,
   BarChart3,
   Bot,
   Check,
+  CircleDot,
+  Cpu,
+  Gauge,
+  LineChart,
   Loader2,
   Minus,
   MousePointer2,
   Plus,
+  Radar,
+  Radio,
   RefreshCw,
   Save,
+  ScanLine,
   Search,
   Settings,
+  ShieldCheck,
+  Sparkles,
   Trash2,
   TrendingUp,
   Wifi,
   WifiOff,
+  Zap,
 } from 'lucide-react';
 import {
   CandlestickSeries,
@@ -134,6 +144,43 @@ function formatContextWindow(size: number | null) {
   return String(size);
 }
 
+function formatSignedNumber(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return '-';
+  const prefix = value > 0 ? '+' : '';
+  return `${prefix}${value.toFixed(2)}`;
+}
+
+function candleRangeLabel(candles: CandlePoint[]) {
+  if (candles.length === 0) return '-';
+  const low = Math.min(...candles.map((item) => item.low));
+  const high = Math.max(...candles.map((item) => item.high));
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return '-';
+  return `${formatLevelPrice(low)} / ${formatLevelPrice(high)}`;
+}
+
+function closeDeltaPercent(candles: CandlePoint[]) {
+  if (candles.length < 2) return null;
+  const first = candles[0].close;
+  const last = candles[candles.length - 1].close;
+  if (!Number.isFinite(first) || first === 0 || !Number.isFinite(last)) return null;
+  return ((last - first) / Math.abs(first)) * 100;
+}
+
+function marketPulse(state: MarketState | null) {
+  const quotes = state ? Object.values(state.quotes) : [];
+  return quotes.reduce(
+    (acc, quote) => {
+      acc.total += 1;
+      if (quote.stale || quote.status === 'stale') acc.stale += 1;
+      if ((quote.changePercent ?? 0) > 0) acc.up += 1;
+      if ((quote.changePercent ?? 0) < 0) acc.down += 1;
+      if (quote.priceAction?.available) acc.signals += 1;
+      return acc;
+    },
+    { total: 0, up: 0, down: 0, stale: 0, signals: 0 },
+  );
+}
+
 function ConnectionBadge({ socketStatus, streamStatus }: { socketStatus: string; streamStatus: string }) {
   const connected = socketStatus === 'connected';
   return (
@@ -141,6 +188,81 @@ function ConnectionBadge({ socketStatus, streamStatus }: { socketStatus: string;
       {connected ? <Wifi size={15} /> : <WifiOff size={15} />}
       <span>{connected ? streamStatus : socketStatus}</span>
     </div>
+  );
+}
+
+function PulseMetric({
+  icon,
+  label,
+  value,
+  tone = 'neutral',
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  tone?: 'neutral' | 'up' | 'down' | 'mixed';
+}) {
+  return (
+    <div className={`pulse-metric ${tone}`}>
+      <div className="pulse-icon">{icon}</div>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </div>
+    </div>
+  );
+}
+
+function MarketRail({
+  state,
+  socketStatus,
+  selectedQuote,
+}: {
+  state: MarketState | null;
+  socketStatus: string;
+  selectedQuote: Quote | undefined;
+}) {
+  const pulse = marketPulse(state);
+  const live = socketStatus === 'connected';
+  const selectedDelta = selectedQuote?.changePercent ?? null;
+  return (
+    <section className="market-rail" aria-label="Market pulse">
+      <PulseMetric
+        icon={<Radio size={18} />}
+        label="Feed"
+        value={live ? 'Live' : socketStatus}
+        tone={live ? 'up' : 'down'}
+      />
+      <PulseMetric
+        icon={<LineChart size={18} />}
+        label="Symbols"
+        value={`${pulse.total}`}
+      />
+      <PulseMetric
+        icon={<ScanLine size={18} />}
+        label="Signals"
+        value={`${pulse.signals}/${pulse.total || 0}`}
+        tone="mixed"
+      />
+      <PulseMetric
+        icon={<TrendingUp size={18} />}
+        label="Advance / Decline"
+        value={`${pulse.up} / ${pulse.down}`}
+        tone={pulse.up >= pulse.down ? 'up' : 'down'}
+      />
+      <PulseMetric
+        icon={<Gauge size={18} />}
+        label="Selected Move"
+        value={selectedDelta == null ? '-' : `${formatSignedNumber(selectedDelta)}%`}
+        tone={selectedDelta == null ? 'neutral' : selectedDelta > 0 ? 'up' : selectedDelta < 0 ? 'down' : 'neutral'}
+      />
+      <PulseMetric
+        icon={<ShieldCheck size={18} />}
+        label="Stale"
+        value={`${pulse.stale}`}
+        tone={pulse.stale > 0 ? 'down' : 'neutral'}
+      />
+    </section>
   );
 }
 
@@ -221,6 +343,21 @@ function intervalOptions(currentInterval: string) {
   return [currentInterval, ...ANALYSIS_INTERVAL_OPTIONS];
 }
 
+function sparklinePoints(candles: CandlePoint[], width = 112, height = 34) {
+  const closes = candles.slice(-36).map((item) => item.close).filter(Number.isFinite);
+  if (closes.length < 2) return '';
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const range = Math.max(max - min, Math.abs(max) * 0.002, 0.0001);
+  return closes
+    .map((close, index) => {
+      const x = (index / (closes.length - 1)) * width;
+      const y = height - ((close - min) / range) * height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+}
+
 function svgPoint(
   point: DrawingPoint,
   chart: IChartApi | null,
@@ -288,27 +425,27 @@ function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartK
     const chart = createChart(container, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: '#0a0b0a' },
-        textColor: 'rgba(237, 229, 217, 0.62)',
+        background: { type: ColorType.Solid, color: '#060806' },
+        textColor: 'rgba(237, 229, 217, 0.66)',
         fontFamily: 'Aptos, "Avenir Next", "Segoe UI", sans-serif',
       },
       grid: {
-        vertLines: { color: 'rgba(214, 184, 154, 0.06)' },
-        horzLines: { color: 'rgba(214, 184, 154, 0.08)' },
+        vertLines: { color: 'rgba(214, 184, 154, 0.055)' },
+        horzLines: { color: 'rgba(214, 184, 154, 0.075)' },
       },
       rightPriceScale: {
         autoScale: true,
-        borderColor: 'rgba(214, 184, 154, 0.10)',
+        borderColor: 'rgba(214, 184, 154, 0.13)',
         scaleMargins: { top: 0.12, bottom: 0.14 },
       },
       timeScale: {
-        borderColor: 'rgba(214, 184, 154, 0.10)',
+        borderColor: 'rgba(214, 184, 154, 0.13)',
         timeVisible: true,
         secondsVisible: false,
       },
       crosshair: {
-        vertLine: { color: 'rgba(226, 198, 162, 0.26)' },
-        horzLine: { color: 'rgba(226, 198, 162, 0.26)' },
+        vertLine: { color: 'rgba(213, 168, 95, 0.34)' },
+        horzLine: { color: 'rgba(213, 168, 95, 0.34)' },
       },
       localization: {
         priceFormatter: (price: number) => price.toFixed(price > 1000 ? 1 : 2),
@@ -328,10 +465,10 @@ function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartK
     });
 
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: '#9fb08b',
-      downColor: '#c87a63',
-      wickUpColor: '#9fb08b',
-      wickDownColor: '#c87a63',
+      upColor: '#a7c887',
+      downColor: '#d06f5d',
+      wickUpColor: '#b5d895',
+      wickDownColor: '#dc806f',
       borderVisible: false,
     });
     chartRef.current = chart;
@@ -567,6 +704,22 @@ function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartK
   );
 }
 
+function Sparkline({ candles, tone }: { candles: CandlePoint[]; tone: string }) {
+  const points = sparklinePoints(candles);
+  return (
+    <svg className={`sparkline ${tone}`} viewBox="0 0 112 34" aria-hidden="true">
+      {points ? (
+        <>
+          <polygon className="sparkline-area" points={`0,34 ${points} 112,34`} />
+          <polyline className="sparkline-line" points={points} />
+        </>
+      ) : (
+        <line className="sparkline-empty-line" x1="8" x2="104" y1="17" y2="17" />
+      )}
+    </svg>
+  );
+}
+
 function WatchlistRow({
   instrument,
   quote,
@@ -594,11 +747,31 @@ function WatchlistRow({
           <span className={changeClass(quote)}>{quote?.percentLabel ?? '-'}</span>
         </div>
       </div>
+      <Sparkline candles={quote?.candles ?? []} tone={changeClass(quote)} />
       <div className="watch-meta">
         <span className={`marker ${tone}`}>{quote?.priceAction?.marker || '--'}</span>
         <span>{quote?.ageLabel ?? 'waiting'}</span>
       </div>
     </button>
+  );
+}
+
+function SidebarCompass({ state }: { state: MarketState | null }) {
+  const pulse = marketPulse(state);
+  const total = pulse.total || 1;
+  return (
+    <div className="sidebar-compass">
+      <div
+        className="compass-ring"
+        style={{ '--share': `${(pulse.up / total) * 100}%` } as CSSProperties}
+        aria-hidden="true"
+      />
+      <div>
+        <span className="panel-label">Market Bias</span>
+        <strong>{pulse.up >= pulse.down ? 'Risk-on scan' : 'Defensive scan'}</strong>
+        <small>{pulse.up} advancing · {pulse.down} declining</small>
+      </div>
+    </div>
   );
 }
 
@@ -707,10 +880,11 @@ function AgentReadout({
   onAnalyze: () => void;
 }) {
   const tone = agentTone(analysis);
+  const confidence = analysis?.available ? Math.round(analysis.confidence * 100) : 0;
   return (
     <div className="agent-card agent-readout">
       <div className="agent-card-head">
-        <span className="panel-label">Codex Read</span>
+        <span className="panel-label with-icon"><Sparkles size={14} /> Codex Read</span>
         <span className={`agent-bias ${tone}`}>{analysis?.bias ?? 'idle'}</span>
       </div>
       <p>
@@ -720,6 +894,15 @@ function AgentReadout({
       </p>
       {analysis?.available && (
         <>
+          <div className="confidence-meter">
+            <div>
+              <span>Confidence</span>
+              <strong>{confidence}%</strong>
+            </div>
+            <div className="confidence-track">
+              <span style={{ width: `${Math.max(4, Math.min(100, confidence))}%` }} />
+            </div>
+          </div>
           <div className="agent-levels">
             {analysis.keyLevels.slice(0, 3).map((level, index) => (
               <div className="agent-level" key={`${level.label}-${index}`}>
@@ -740,11 +923,19 @@ function AgentReadout({
               <strong>{analysis.invalidation}</strong>
             </div>
           )}
+          {analysis.riskNotes.length > 0 && (
+            <div className="risk-notes">
+              <span>Risk notes</span>
+              {analysis.riskNotes.slice(0, 2).map((item, index) => (
+                <small key={`${item}-${index}`}>{item}</small>
+              ))}
+            </div>
+          )}
         </>
       )}
       <button className="agent-action" type="button" onClick={onAnalyze} disabled={disabled || busy}>
         {busy ? <Loader2 className="spin" size={16} /> : <Bot size={16} />}
-        {busy ? 'Analyzing' : 'Ask Codex'}
+        {busy ? 'Analyzing' : 'Run Codex Read'}
       </button>
     </div>
   );
@@ -788,13 +979,19 @@ function WorkspaceView({
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
   const tone = analysisTone(selectedQuote);
   const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
+  const candleDelta = closeDeltaPercent(selectedQuote?.candles ?? []);
 
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
-          <div className="eyebrow">Local Price Action Agent</div>
-          <h1>Terminal Ticker</h1>
+        <div className="brand-lockup">
+          <div className="brand-mark" aria-hidden="true">
+            <Zap size={21} />
+          </div>
+          <div>
+            <div className="eyebrow">Local Price Action Agent</div>
+            <h1>Terminal Ticker</h1>
+          </div>
         </div>
         <div className="topbar-right">
           <ConnectionBadge socketStatus={socketStatus} streamStatus={state?.streamStatus ?? 'idle'} />
@@ -820,12 +1017,18 @@ function WorkspaceView({
         </div>
       </header>
 
+      <MarketRail state={state} socketStatus={socketStatus} selectedQuote={selectedQuote} />
+
       <section className="workspace">
         <aside className="sidebar">
           <div className="sidebar-head">
-            <span>Watchlist</span>
-            <small>{state?.instruments.length ?? 0} symbols</small>
+            <div>
+              <span>Watchlist</span>
+              <small>{state?.instruments.length ?? 0} symbols under watch</small>
+            </div>
+            <CircleDot size={17} />
           </div>
+          <SidebarCompass state={state} />
           <div className="group-tabs">
             {groups.map((group) => (
               <button
@@ -860,10 +1063,20 @@ function WorkspaceView({
         <section className="chart-panel">
           <div className="chart-header">
             <div>
-              <div className="instrument-kicker">{sourceLabel(selectedInstrument)}</div>
+              <div className="instrument-kicker">
+                <span>{sourceLabel(selectedInstrument)}</span>
+                <span>{selectedInstrument?.symbol ?? '-'}</span>
+                <span>{currentInterval}</span>
+              </div>
               <h2>{selectedInstrument?.label ?? '选择标的'}</h2>
+              <div className="instrument-meta-row">
+                <span>{selectedQuote?.exchange || selectedQuote?.currency || 'local feed'}</span>
+                <span>{selectedQuote?.candles.length ?? 0} candles</span>
+                <span>{selectedQuote?.status ?? 'waiting'}</span>
+              </div>
             </div>
             <div className="price-readout">
+              <span className="readout-label">Last</span>
               <strong>{selectedQuote?.priceLabel ?? '-'}</strong>
               <span className={changeClass(selectedQuote)}>
                 {selectedQuote?.changeLabel ?? '-'} · {selectedQuote?.percentLabel ?? '-'}
@@ -887,7 +1100,11 @@ function WorkspaceView({
                   : '缺少新鲜 K 线时不会展示信号'}
               </span>
             </div>
-            {selectedQuote?.priceAction?.available && <Check className="analysis-check" size={18} />}
+            {selectedQuote?.priceAction?.available ? (
+              <Check className="analysis-check" size={18} />
+            ) : (
+              <Radar className="analysis-waiting" size={18} />
+            )}
           </div>
 
           <CandlestickPane
@@ -899,6 +1116,8 @@ function WorkspaceView({
             <StatTile label="High" value={selectedQuote?.dayHigh?.toFixed(2) ?? '-'} />
             <StatTile label="Low" value={selectedQuote?.dayLow?.toFixed(2) ?? '-'} />
             <StatTile label="Volume" value={selectedQuote?.volumeLabel ?? '-'} />
+            <StatTile label="Range" value={candleRangeLabel(selectedQuote?.candles ?? [])} />
+            <StatTile label="Window" value={candleDelta == null ? '-' : `${formatSignedNumber(candleDelta)}%`} />
             <StatTile label="Age" value={selectedQuote?.ageLabel ?? 'waiting'} />
           </div>
         </section>
@@ -911,7 +1130,7 @@ function WorkspaceView({
             onAnalyze={runAgentAnalysis}
           />
           <div className="agent-card">
-            <span className="panel-label">Agent State</span>
+            <span className="panel-label with-icon"><Cpu size={14} /> Agent State</span>
             <h3>{selectedQuote?.priceAction?.label ?? 'unavailable'}</h3>
             <p>
               {selectedQuote?.priceAction?.available
