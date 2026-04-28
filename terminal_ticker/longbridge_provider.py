@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+import logging
 import os
 import re
 import time
@@ -18,8 +19,10 @@ LONGBRIDGE_ENV_VARS = (
     "LONGBRIDGE_ACCESS_TOKEN",
 )
 DEFAULT_LONGBRIDGE_REGION = "cn"
+DEFAULT_PRINT_QUOTE_PACKAGES = "false"
 SECURITY_LIST_CACHE_TTL_SECONDS = 15 * 60
 US_SYMBOL_QUERY_RE = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,15}$")
+LOGGER = logging.getLogger(__name__)
 _security_list_cache: tuple[float, tuple["LongbridgeSecurity", ...]] | None = None
 
 
@@ -91,7 +94,11 @@ def _build_quote_context() -> Any:
     # The CN endpoint is materially faster for this user's setup; callers can
     # still override it with their own LONGBRIDGE_REGION before launching.
     os.environ.setdefault("LONGBRIDGE_REGION", DEFAULT_LONGBRIDGE_REGION)
+    # The SDK prints an account quote-package table on connect by default.
+    # Keep that opt-in because it is noisy in the live polling loop.
+    os.environ.setdefault("LONGBRIDGE_PRINT_QUOTE_PACKAGES", DEFAULT_PRINT_QUOTE_PACKAGES)
     config_factory = getattr(Config, "from_apikey_env", None) or getattr(Config, "from_env")
+    LOGGER.debug("Creating Longbridge quote context")
     return QuoteContext(config_factory())
 
 

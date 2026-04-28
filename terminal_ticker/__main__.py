@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 import uvicorn
 
 from .config import AppConfig, build_runtime_config, load_config
+from .logging_config import DEFAULT_LOG_LEVEL, configure_logging
 from .providers import resolve_instruments
 from .web import create_app
+
+LOGGER = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,6 +33,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--host", default="127.0.0.1", help="server host")
     parser.add_argument("--port", default=8765, type=int, help="server port")
+    parser.add_argument(
+        "--log-level",
+        default=DEFAULT_LOG_LEVEL,
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        help=f"application log level (default: {DEFAULT_LOG_LEVEL})",
+    )
     return parser.parse_args()
 
 
@@ -49,10 +59,12 @@ def resolve_config(args: argparse.Namespace) -> AppConfig:
 def main() -> int:
     """Resolve instruments and run the local web server."""
     args = parse_args()
+    configure_logging(args.log_level)
     config = resolve_config(args)
     instruments = resolve_instruments(config.instruments)
     app = create_app(config=config, instruments=instruments)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    LOGGER.info("Starting terminal_ticker on %s:%s with %s instruments", args.host, args.port, len(instruments))
+    uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level.lower())
     return 0
 
 

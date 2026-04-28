@@ -201,6 +201,7 @@ class LongbridgeProviderTests(unittest.TestCase):
             ):
                 context = _build_quote_context()
             self.assertEqual(os.environ["LONGBRIDGE_REGION"], "cn")
+            self.assertEqual(os.environ["LONGBRIDGE_PRINT_QUOTE_PACKAGES"], "false")
             self.assertEqual(context.config, "fake-config")
 
         with patch.dict(os.environ, {"LONGBRIDGE_REGION": "hk"}, clear=True):
@@ -210,6 +211,14 @@ class LongbridgeProviderTests(unittest.TestCase):
             ):
                 _build_quote_context()
             self.assertEqual(os.environ["LONGBRIDGE_REGION"], "hk")
+
+        with patch.dict(os.environ, {"LONGBRIDGE_PRINT_QUOTE_PACKAGES": "true"}, clear=True):
+            with patch(
+                "terminal_ticker.longbridge_provider._openapi",
+                return_value=(FakeConfig, FakeQuoteContextFactory),
+            ):
+                _build_quote_context()
+            self.assertEqual(os.environ["LONGBRIDGE_PRINT_QUOTE_PACKAGES"], "true")
 
     def test_search_securities_filters_local_security_list(self) -> None:
         """Verify search securities filters local security list."""
