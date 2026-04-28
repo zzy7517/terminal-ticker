@@ -28,10 +28,12 @@ from .floating_widgets import (
     BUTTON_BORDER,
     BUTTON_BORDER_HOVER,
     CONTROL_RADIUS,
+    DETAIL_BACKGROUND,
     GROUP_LABELS,
     HEADER_BACKGROUND,
     HEADER_DIVIDER,
     HEADER_HEIGHT,
+    InstrumentDetailPanel,
     LongbridgeSearchPanel,
     PANEL_GROUPED_WIDTH,
     PANEL_MAX_HEIGHT,
@@ -93,6 +95,7 @@ class FloatingTickerWindow(QWidget):
         self.collapsed = False
         self.rows: dict[str, QuoteRow] = {}
         self.grouped_instruments = group_instruments(instruments)
+        self.selected_instrument_key = instruments[0].key if instruments else None
 
         self._build_window()
         self._start_timers()
@@ -172,9 +175,12 @@ class FloatingTickerWindow(QWidget):
 
         self.tabs = QTabWidget()
         self.tabs.setObjectName("quoteTabs")
-        body_layout.addWidget(self.tabs)
+        body_layout.addWidget(self.tabs, 1)
 
         self._rebuild_tabs()
+
+        self.detail_panel = InstrumentDetailPanel()
+        body_layout.addWidget(self.detail_panel)
 
         grip_layout = QHBoxLayout()
         grip_layout.setContentsMargins(0, 0, 0, 0)
@@ -238,6 +244,11 @@ class FloatingTickerWindow(QWidget):
             QFrame#searchPanel {{
                 background: rgba(86, 71, 58, 0.38);
                 border: 1px solid rgba(177, 147, 118, 0.16);
+                border-radius: 10px;
+            }}
+            QFrame#instrumentDetailPanel {{
+                background: {DETAIL_BACKGROUND};
+                border: 1px solid rgba(177, 147, 118, 0.18);
                 border-radius: 10px;
             }}
             QLineEdit#securitySearchInput {{
@@ -307,6 +318,7 @@ class FloatingTickerWindow(QWidget):
         self.setFont(build_ui_font(10))
 
         self._refresh_rows()
+        self._update_detail_panel()
         self._update_status_ui()
         self._update_ticker_text()
         self._apply_collapsed_state()
@@ -376,9 +388,16 @@ class FloatingTickerWindow(QWidget):
 
     def _add_quote_row(self, layout: QVBoxLayout, instrument: MarketInstrument) -> None:
         """Create and register one quote row widget."""
-        row = QuoteRow(instrument)
+        row = QuoteRow(instrument, on_select=self._select_instrument)
         self.rows[instrument.key] = row
         layout.addWidget(row)
+
+    def _select_instrument(self, key: str) -> None:
+        """Select one instrument for detail analysis."""
+        if key == self.selected_instrument_key:
+            return
+        self.selected_instrument_key = key
+        self._update_detail_panel()
 
     def _set_search_status(self, text: str) -> None:
         """Update the search panel status label when it exists."""
@@ -548,10 +567,13 @@ class FloatingTickerWindow(QWidget):
             source_path=self.config.source_path,
         )
         self.instruments = instruments
+        if self.selected_instrument_key not in {instrument.key for instrument in instruments}:
+            self.selected_instrument_key = instruments[0].key if instruments else None
         self.controller = TickerController(config=self.config, instruments=self.instruments)
         self._rebuild_tabs()
         self._restore_search_results()
         self._refresh_rows()
+        self._update_detail_panel()
         self._update_status_ui()
         self._update_ticker_text()
         self._apply_collapsed_state()
@@ -563,6 +585,8 @@ class FloatingTickerWindow(QWidget):
         super().resizeEvent(event)
         for row in self.rows.values():
             row.set_compact_width(self.width())
+        if hasattr(self, "detail_panel"):
+            self.detail_panel.setVisible(not self.collapsed and self.height() >= 300)
 
     def _restore_search_results(self) -> None:
         """Restore the last search result list after rebuilding the stocks tab."""
@@ -596,6 +620,7 @@ class FloatingTickerWindow(QWidget):
     def _tick_clock(self) -> None:
         """Refresh row labels and status text on the UI heartbeat."""
         self._refresh_rows()
+        self._update_detail_panel()
         self._update_status_ui()
         self._update_ticker_text()
 
@@ -619,6 +644,7 @@ class FloatingTickerWindow(QWidget):
         self.toggle_button.setText("+" if self.collapsed else "–")
         self.ticker_tape.setVisible(self.collapsed)
         self.info_label.setVisible(not self.collapsed)
+        self.detail_panel.setVisible(not self.collapsed and self.height() >= 300)
         if self.collapsed:
             target_height = HEADER_HEIGHT + 20
             self.setMinimumSize(PANEL_MIN_WIDTH, target_height)
@@ -644,7 +670,7 @@ class FloatingTickerWindow(QWidget):
         )
         visible_rows = max(2, min(largest_group_size, 8))
         search_panel_height = 78 if "stocks" in self.grouped_instruments else 0
-        target_height = HEADER_HEIGHT + visible_rows * (ROW_HEIGHT + 6) + 78 + search_panel_height
+        target_height = HEADER_HEIGHT + visible_rows * (ROW_HEIGHT + 6) + 260 + search_panel_height
         return max(PANEL_MIN_HEIGHT, min(target_height, PANEL_MAX_HEIGHT))
 
     def _drain_events(self) -> None:
@@ -657,6 +683,7 @@ class FloatingTickerWindow(QWidget):
 
         if result.dirty:
             self._refresh_rows()
+            self._update_detail_panel()
             self._update_status_ui()
             self._update_ticker_text()
 
@@ -668,6 +695,20 @@ class FloatingTickerWindow(QWidget):
                 stale_after_seconds=self.config.display.stale_after_seconds,
                 analysis_stale_after_seconds=self.config.analysis.stale_after_seconds,
             )
+
+    def _update_detail_panel(self) -> None:
+        """Refresh the selected instrument detail panel."""
+        selected = None
+        for instrument in self.instruments:
+            if instrument.key == self.selected_instrument_key:
+                selected = instrument
+                break
+        quote = self.controller.quotes.get(selected.key) if selected is not None else None
+        self.detail_panel.update_detail(
+            selected,
+            quote,
+            analysis_stale_after_seconds=self.config.analysis.stale_after_seconds,
+        )
 
     def _update_ticker_text(self) -> None:
         """Refresh the collapsed marquee items from visible collapsed symbols."""

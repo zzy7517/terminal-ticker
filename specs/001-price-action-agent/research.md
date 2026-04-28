@@ -9,14 +9,14 @@
 - Screenshot recognition: rejected for live monitoring because visual scaling, theme colors, chart drawings, and missing axis metadata make it fragile.
 - LLM-only natural-language chart interpretation: rejected for v1 because it is harder to test deterministically and would add dependency cost.
 
-## Decision: First version supports Bitget candles only
+## Decision: Use provider-owned candles for Bitget and Longbridge
 
-**Rationale**: Bitget is already a public, no-key provider in this app. Keeping v1 to Bitget preserves the local-first and no-new-credential constraints.
+**Rationale**: Bitget is already a public, no-key provider in this app, and Longbridge is already the configured credential-backed provider for US equities and ETFs. Using each provider's structured candle endpoint keeps the analysis deterministic while avoiding screenshot recognition.
 
 **Alternatives considered**:
 
-- Longbridge candles: deferred because current Longbridge integration is quote/search focused and credential-backed.
-- Multi-provider candle abstraction first: rejected as too much structure before one provider proves the analysis shape.
+- Screenshot recognition for Longbridge charts: rejected for the same reasons as chart screenshot recognition generally.
+- A separate market-data backend: rejected because the app is local-first and watchlist-sized.
 
 ## Decision: Use simple deterministic price action rules first
 
@@ -27,11 +27,11 @@
 - Machine-learning model: rejected for v1 because it needs training data, evaluation, model packaging, and confidence calibration.
 - Full strategy engine: rejected because the user asked for a trading agent direction, but the project is still a small local monitor.
 
-## Decision: Display compact state in existing ticker and rows
+## Decision: Display compact state in ticker/rows and richer details only in expanded mode
 
-**Rationale**: The constitution requires the app to stay low-noise. Adding one compact marker and one short row reason gives value without turning the window into a dashboard.
+**Rationale**: Collapsed mode must remain low-noise, but the user now has a resizable expanded panel and expects the normal state to carry more analysis. A selected-symbol K-line preview gives price action context without changing collapsed behavior.
 
 **Alternatives considered**:
 
-- New analysis panel: rejected for v1 because it increases UI footprint.
-- Modal detail view: deferred until the signals are useful enough to justify a larger surface.
+- Full dashboard layout: rejected because it would make the floating utility too heavy.
+- Modal detail view: rejected because selecting a row should update context in place.

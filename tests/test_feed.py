@@ -78,7 +78,7 @@ class FeedWorkerTests(unittest.TestCase):
                 event_queue=event_queue,
             )
 
-            with patch("terminal_ticker.feed.fetch_candles", side_effect=RuntimeError("boom")):
+            with patch.object(FeedWorker, "_fetch_candles", side_effect=RuntimeError("boom")):
                 task = asyncio.create_task(worker._run_price_action())
                 await asyncio.sleep(0.05)
                 task.cancel()
@@ -88,6 +88,47 @@ class FeedWorkerTests(unittest.TestCase):
             self.assertEqual(event.kind, "price_action")
             self.assertEqual(event.payload["id"], instrument.key)
             self.assertEqual(event.payload["state"].label, "unavailable")
+
+        asyncio.run(run_test())
+
+    def test_longbridge_instruments_are_analyzed_with_candles(self) -> None:
+        """Verify longbridge instruments enter the price action pipeline."""
+        async def run_test() -> None:
+            """Exercise run test behavior."""
+            event_queue = queue.Queue()
+            instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+            base_open_ms = int(
+                (datetime.now(timezone.utc) - timedelta(minutes=11)).timestamp() * 1000
+            )
+            candles = tuple(
+                Candle(
+                    symbol_key=instrument.key,
+                    open_time_ms=base_open_ms + index * 60_000,
+                    open=100 + index,
+                    high=102 + index,
+                    low=99 + index,
+                    close=101 + index,
+                    volume=1000,
+                )
+                for index in range(12)
+            )
+            worker = FeedWorker(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                event_queue=event_queue,
+            )
+
+            with patch.object(FeedWorker, "_fetch_candles", return_value=candles):
+                task = asyncio.create_task(worker._run_price_action())
+                await asyncio.sleep(0.05)
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+            event = event_queue.get_nowait()
+            self.assertEqual(event.kind, "price_action")
+            self.assertEqual(event.payload["id"], "longbridge:AAPL.US")
+            self.assertEqual(event.payload["state"].label, "trend")
+            self.assertEqual(event.payload["candles"], candles)
 
         asyncio.run(run_test())
 

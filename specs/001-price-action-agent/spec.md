@@ -13,7 +13,7 @@
 
 ### User Story 1 - See Price Action State (Priority: P1)
 
-As a user watching the floating ticker, I want each supported Bitget symbol to show a compact price action state derived from recent candles, so I can see whether the market is trending, ranging, breaking out, or pulling back without reading a full chart.
+As a user watching the floating ticker, I want each supported Bitget or Longbridge symbol to show a compact price action state derived from recent candles, so I can see whether the market is trending, ranging, breaking out, or pulling back without reading a full chart.
 
 **Why this priority**: This is the smallest useful agent behavior. It answers the original K-line recognition question by using structured candle data instead of image recognition.
 
@@ -21,7 +21,7 @@ As a user watching the floating ticker, I want each supported Bitget symbol to s
 
 **Acceptance Scenarios**:
 
-1. **Given** a configured Bitget symbol with enough recent candles, **When** the candle feed is analyzed, **Then** the quote state includes a price action label, bias, and one-sentence reason.
+1. **Given** a configured supported symbol with enough recent candles, **When** the candle feed is analyzed, **Then** the quote state includes a price action label, bias, and one-sentence reason.
 2. **Given** a strong close above the recent candle range, **When** the analyzer runs, **Then** the symbol is marked as a breakout attempt with bullish bias.
 3. **Given** overlapping recent candles with small progress, **When** the analyzer runs, **Then** the symbol is marked as range behavior with neutral bias.
 
@@ -62,7 +62,7 @@ As a user relying on the agent for context, I want stale, missing, or incomplete
 - Latest quote is fresh but candles are missing: show quote normally and omit the agent state.
 - Candle fetch succeeds for one symbol and fails for another: update only the successful symbol.
 - Reconnect returns snapshots before candle analysis: do not infer a price action state from quote snapshots alone.
-- Longbridge symbols are present: keep them as quote-only in v1.
+- Longbridge candle access is unavailable or unauthorized: keep raw Longbridge quotes working and omit stale or missing analysis.
 - Very small collapsed window: prefer compact markers such as `BO`, `PB`, `TR`, `RG` over full explanations.
 
 ## Requirements *(mandatory)*
@@ -70,12 +70,12 @@ As a user relying on the agent for context, I want stale, missing, or incomplete
 ### Functional Requirements
 
 - **FR-001**: System MUST derive price action state from structured OHLCV candle data, not from screenshot or rendered chart image recognition.
-- **FR-002**: System MUST support Bitget symbols in the first version and MUST leave non-Bitget symbols quote-only.
+- **FR-002**: System MUST support Bitget public candles and Longbridge candles for configured Longbridge symbols when credentials and market data permission are available.
 - **FR-003**: System MUST classify at least these states: trend, range, breakout attempt, pullback, and unavailable.
 - **FR-004**: System MUST attach a directional bias to available states: bullish, bearish, or neutral.
 - **FR-005**: System MUST provide a concise human-readable reason for each available state.
 - **FR-006**: System MUST show compact state markers in the collapsed ticker when fresh analysis is available.
-- **FR-007**: System MUST show state and reason in expanded quote rows without adding a new large panel.
+- **FR-007**: System MUST show state and reason in expanded quote rows and provide a selected-symbol detail area with a compact K-line preview in normal expanded mode.
 - **FR-008**: System MUST treat too few, missing, failed, or stale candles as unavailable and MUST NOT present them as fresh signals.
 - **FR-009**: System MUST remain local-first with no backend service and no new credential requirement for core Bitget behavior.
 - **FR-010**: System MUST NOT place trades, send orders, manage positions, or claim financial advice in v1.
@@ -92,13 +92,13 @@ As a user relying on the agent for context, I want stale, missing, or incomplete
 
 - **SC-001**: Given deterministic candle fixtures, the app classifies trend, range, breakout, pullback, and unavailable states with passing automated tests.
 - **SC-002**: Collapsed ticker items remain one line per symbol and include no more than one compact agent marker per symbol.
-- **SC-003**: Expanded quote rows remain fixed height while showing price action state and reason.
+- **SC-003**: Expanded quote rows remain scannable while showing price action state, and the selected-symbol detail area can show recent K-lines without affecting collapsed mode.
 - **SC-004**: If candle fetching fails for all symbols, existing quote display and reconnect behavior continue to work.
 - **SC-005**: The relevant automated test suite passes using `.venv/bin/python -m unittest discover -s tests`.
 
 ## Assumptions
 
-- The first version analyzes Bitget public candle data for configured Bitget instruments only.
+- The first version analyzes Bitget public candle data and Longbridge candle data for configured instruments when provider access is available.
 - The agent is a monitoring and explanation layer, not an automated trading system.
 - OHLCV recognition is the product path; screenshot/chart-image interpretation is deferred to a separate future review tool.
 - Existing quote freshness and reconnect behavior remain the baseline for raw quote display.

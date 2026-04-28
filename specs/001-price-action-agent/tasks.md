@@ -29,7 +29,7 @@
 
 ## Phase 3: User Story 1 - See Price Action State (Priority: P1) MVP
 
-**Goal**: Bitget symbols receive derived trend/range/breakout/pullback state from OHLCV candles.
+**Goal**: Supported symbols receive derived trend/range/breakout/pullback state from OHLCV candles.
 
 **Independent Test**: Feed analysis events into the controller and verify quote state stores the expected marker, bias, and reason.
 
@@ -43,6 +43,7 @@
 - [x] T011 [US1] Store price action state on `QuoteState` in `terminal_ticker/models.py`
 - [x] T012 [US1] Apply `price_action` feed events in `terminal_ticker/controller.py`
 - [x] T013 [US1] Poll and analyze Bitget candles in `terminal_ticker/feed.py`
+- [x] T025 [US1] Poll and analyze Longbridge candles in `terminal_ticker/feed.py` and `terminal_ticker/longbridge_provider.py`
 
 **Checkpoint**: User Story 1 works without UI changes by inspecting quote state.
 
@@ -50,7 +51,7 @@
 
 ## Phase 4: User Story 2 - Keep Alerts Low Noise (Priority: P2)
 
-**Goal**: Existing ticker and rows display compact analysis without adding a large panel.
+**Goal**: Collapsed ticker and rows display compact analysis while expanded mode offers richer selected-symbol context.
 
 **Independent Test**: Build ticker items and row widgets from quote states with and without analysis and verify layout-compatible labels.
 
@@ -63,8 +64,9 @@
 
 - [x] T016 [US2] Append compact analysis markers in `terminal_ticker/floating_widgets.py`
 - [x] T017 [US2] Render expanded row analysis labels in `terminal_ticker/floating_widgets.py`
+- [x] T026 [US2] Add selected-symbol K-line detail panel in `terminal_ticker/floating.py` and `terminal_ticker/floating_widgets.py`
 
-**Checkpoint**: User Story 2 is visible in existing UI surfaces only.
+**Checkpoint**: User Story 2 is compact in collapsed mode and richer in normal expanded mode.
 
 ---
 
@@ -91,8 +93,9 @@
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 - [x] T022 [P] Document analysis config and non-execution boundary in `README.md`
-- [x] T023 Run `.venv/bin/python -m unittest discover -s tests`
-- [x] T024 Review `git diff` to ensure `watchlist.toml` user changes were not touched
+- [x] T023 Update feature docs for Longbridge analysis and expanded detail behavior
+- [x] T024 Run `.venv/bin/python -m unittest discover -s tests`
+- [x] T027 Review `git diff` to ensure `watchlist.toml` user changes were not touched
 
 Note: `watchlist.toml` still contains the pre-existing local `AMD.US` user change. It is not part of this feature implementation.
 

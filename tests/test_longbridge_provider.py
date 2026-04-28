@@ -10,6 +10,7 @@ from terminal_ticker.longbridge_provider import (
     _build_quote_context,
     clear_security_list_cache,
     LongbridgeInstrument,
+    fetch_candles,
     fetch_quote_payloads,
     resolve_instruments,
     search_securities,
@@ -27,6 +28,19 @@ class FakeQuoteContext:
         """Return fake quote rows and record requested symbols."""
         self.requested_symbols = symbols
         return self.quotes
+
+
+class FakeCandleContext:
+    """Provide candle responses without calling Longbridge."""
+    def __init__(self, candles) -> None:
+        """Store fake candle rows."""
+        self.candles = candles
+        self.request = None
+
+    def candlesticks(self, symbol, period, count, adjust_type):
+        """Return fake candles and record request arguments."""
+        self.request = (symbol, period, count, adjust_type)
+        return self.candles
 
 
 class FakeSecurityContext:
@@ -124,6 +138,40 @@ class LongbridgeProviderTests(unittest.TestCase):
     def test_fetch_quote_payloads_handles_empty_input_without_context(self) -> None:
         """Verify fetch quote payloads handles empty input without context."""
         self.assertEqual(fetch_quote_payloads(tuple(), quote_context=FakeQuoteContext([])), {})
+
+    def test_fetch_candles_normalizes_longbridge_candles(self) -> None:
+        """Verify fetch candles normalizes longbridge candles."""
+        context = FakeCandleContext(
+            [
+                SimpleNamespace(
+                    timestamp=1776846000,
+                    open=Decimal("200.00"),
+                    high=Decimal("202.00"),
+                    low=Decimal("199.50"),
+                    close=Decimal("201.25"),
+                    volume=12345,
+                )
+            ]
+        )
+        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+
+        with patch("terminal_ticker.longbridge_provider._period_for_interval", return_value="5m"):
+            with patch("terminal_ticker.longbridge_provider._no_adjust_type", return_value="none"):
+                candles = fetch_candles(
+                    instrument,
+                    interval="5m",
+                    limit=40,
+                    quote_context=context,
+                )
+
+        self.assertEqual(context.request, ("AAPL.US", "5m", 40, "none"))
+        self.assertEqual(candles[0].symbol_key, "longbridge:AAPL.US")
+        self.assertEqual(candles[0].open_time_ms, 1776846000000)
+        self.assertEqual(candles[0].open, 200.0)
+        self.assertEqual(candles[0].high, 202.0)
+        self.assertEqual(candles[0].low, 199.5)
+        self.assertEqual(candles[0].close, 201.25)
+        self.assertEqual(candles[0].volume, 12345)
 
     def test_resolve_instruments_preserves_collapsed_default(self) -> None:
         """Verify resolve instruments preserves collapsed default."""

@@ -111,7 +111,10 @@ class TickerController:
             key = str(payload.get("id") or "")
             if key not in self.quotes:
                 return False
-            self.quotes[key].apply_price_action(payload["state"])
+            self.quotes[key].apply_price_action(
+                payload["state"],
+                candles=tuple(payload.get("candles", tuple())),
+            )
             return True
 
         return False

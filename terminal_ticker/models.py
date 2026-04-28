@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from .price_action import PriceActionState
+from .price_action import Candle, PriceActionState
 
 
 def _to_float(raw_value: Any) -> float | None:
@@ -107,6 +107,7 @@ class QuoteState:
     update_count: int = 0
     last_error: str | None = None
     price_action: PriceActionState | None = None
+    price_action_candles: tuple[Candle, ...] = tuple()
 
     @classmethod
     def placeholder(cls, symbol: str) -> "QuoteState":
@@ -164,9 +165,15 @@ class QuoteState:
         """Record the latest quote error detail."""
         self.last_error = detail
 
-    def apply_price_action(self, state: PriceActionState) -> None:
+    def apply_price_action(
+        self,
+        state: PriceActionState,
+        *,
+        candles: tuple[Candle, ...] = tuple(),
+    ) -> None:
         """Apply derived price action state."""
         self.price_action = state
+        self.price_action_candles = candles
 
     def price_action_label(
         self,

@@ -24,6 +24,15 @@ Each quote row remains fixed height.
 - Stale quote styling remains controlled by quote freshness.
 - Stale or unavailable analysis must not use alert styling.
 
+## Expanded Detail Area
+
+When the window is expanded and tall enough:
+
+- Clicking a quote row selects that instrument.
+- The detail area shows the selected label, compact state marker, concise reason, and recent K-line preview.
+- If candles are missing or stale, the chart area shows a quiet placeholder instead of inferring from quotes.
+- The detail area is hidden in collapsed mode and in very short resized windows.
+
 ## Non-Execution Boundary
 
 The UI must not show buy/sell commands, position sizing, order placement, account status, or broker/trade controls in v1.

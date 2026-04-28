@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 import os
 import re
@@ -9,6 +10,7 @@ import time
 from typing import Any
 
 from .config import InstrumentConfig, LONGBRIDGE_SOURCE
+from .price_action import Candle
 
 LONGBRIDGE_ENV_VARS = (
     "LONGBRIDGE_APP_KEY",
@@ -135,11 +137,58 @@ def _as_int(raw_value: Any) -> int | None:
         return None
 
 
+def _timestamp_to_ms(raw_value: Any) -> int | None:
+    """Convert SDK candle timestamps into epoch milliseconds."""
+    if raw_value in (None, ""):
+        return None
+    if isinstance(raw_value, datetime):
+        return int(raw_value.timestamp() * 1000)
+    value = _as_int(raw_value)
+    if value is None:
+        return None
+    if value > 10_000_000_000:
+        return value
+    return value * 1000
+
+
 def _field(quote: Any, name: str) -> Any:
     """Read a field from either a dict or SDK object."""
     if isinstance(quote, dict):
         return quote.get(name)
     return getattr(quote, name, None)
+
+
+def _period_for_interval(interval: str) -> Any:
+    """Map app intervals onto Longbridge SDK Period values."""
+    try:
+        from longbridge.openapi import Period
+    except ImportError as exc:
+        raise RuntimeError("longbridge package is required for Longbridge symbols") from exc
+    mapping = {
+        "1m": Period.Min_1,
+        "3m": Period.Min_3,
+        "5m": Period.Min_5,
+        "15m": Period.Min_15,
+        "30m": Period.Min_30,
+        "1H": Period.Min_60,
+        "4H": Period.Min_240,
+        "1D": Period.Day,
+        "1W": Period.Week,
+        "1M": Period.Month,
+    }
+    period = mapping.get(interval)
+    if period is None:
+        raise ValueError(f"Longbridge candles do not support interval: {interval}")
+    return period
+
+
+def _no_adjust_type() -> Any:
+    """Return the Longbridge no-adjust candle setting."""
+    try:
+        from longbridge.openapi import AdjustType
+    except ImportError as exc:
+        raise RuntimeError("longbridge package is required for Longbridge symbols") from exc
+    return AdjustType.NoAdjust
 
 
 def _as_text(raw_value: Any) -> str:
@@ -328,6 +377,49 @@ def _normalize_quote_payload(
         "status": str(_field(quote, "trade_status") or "longbridge").lower(),
         "time": _as_int(_field(quote, "timestamp")),
     }
+
+
+def _normalize_candle_payload(
+    candle: Any,
+    instrument: LongbridgeInstrument,
+) -> Candle:
+    """Convert one Longbridge candle object into the app candle shape."""
+    open_time_ms = _timestamp_to_ms(_field(candle, "timestamp"))
+    open_ = _as_float(_field(candle, "open"))
+    high = _as_float(_field(candle, "high"))
+    low = _as_float(_field(candle, "low"))
+    close = _as_float(_field(candle, "close"))
+    volume = _as_float(_field(candle, "volume"))
+    if None in (open_time_ms, open_, high, low, close, volume):
+        raise RuntimeError("Longbridge candle returned unexpected payload")
+    return Candle(
+        symbol_key=instrument.key,
+        open_time_ms=open_time_ms,
+        open=open_,
+        high=high,
+        low=low,
+        close=close,
+        volume=volume,
+    )
+
+
+def fetch_candles(
+    instrument: LongbridgeInstrument,
+    *,
+    interval: str,
+    limit: int,
+    quote_context: Any | None = None,
+) -> tuple[Candle, ...]:
+    """Fetch recent Longbridge candles for one instrument."""
+    ctx = quote_context or _build_quote_context()
+    rows = ctx.candlesticks(
+        instrument.symbol,
+        _period_for_interval(interval),
+        min(limit, 1000),
+        _no_adjust_type(),
+    )
+    candles = tuple(_normalize_candle_payload(row, instrument) for row in rows)
+    return tuple(sorted(candles, key=lambda candle: candle.open_time_ms))
 
 
 def fetch_quote_payloads(

@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from terminal_ticker.models import QuoteState
-from terminal_ticker.price_action import PriceActionState
+from terminal_ticker.price_action import Candle, PriceActionState
 
 
 class QuoteStateTests(unittest.TestCase):
@@ -81,6 +81,34 @@ class QuoteStateTests(unittest.TestCase):
         self.assertEqual(quote.price_action.marker, "BO+")
         self.assertEqual(quote.price_action_label(), "BO+")
         self.assertEqual(quote.price_action_reason(), "突破近期区间")
+
+    def test_apply_price_action_stores_candles(self) -> None:
+        """Verify apply price action stores recent candles for charting."""
+        quote = QuoteState.placeholder("BTCUSDT")
+        candles = (
+            Candle(
+                symbol_key="USDT-FUTURES:BTCUSDT",
+                open_time_ms=1,
+                open=100,
+                high=101,
+                low=99,
+                close=100.5,
+                volume=1000,
+            ),
+        )
+
+        quote.apply_price_action(
+            PriceActionState(
+                label="range",
+                bias="neutral",
+                marker="RG",
+                reason="K线重叠震荡",
+                strength=42,
+            ),
+            candles=candles,
+        )
+
+        self.assertEqual(quote.price_action_candles, candles)
 
     def test_stale_price_action_marker_is_omitted(self) -> None:
         """Verify stale price action marker is omitted."""

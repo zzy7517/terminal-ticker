@@ -19,6 +19,7 @@ cd /Users/zhongyuanzhang/priceViewer
 Expected behavior:
 
 - Bitget symbols continue to show live prices.
-- Supported Bitget symbols show compact price action markers after candle analysis is available.
-- Longbridge symbols remain quote-only.
+- Supported Bitget and Longbridge symbols show compact price action markers after candle analysis is available.
+- Clicking a row in expanded mode shows the selected symbol's state, reason, and recent K-line preview.
+- Longbridge symbols fall back to quote-only if credentials, market data permission, or candle access are unavailable.
 - If candle fetch fails, quote display remains usable and analysis is omitted or marked unavailable.

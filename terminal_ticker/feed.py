@@ -8,9 +8,18 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from .bitget import BitgetInstrument, BitgetPublicWebSocket, fetch_candles, fetch_snapshot_payloads
+from .bitget import (
+    BitgetInstrument,
+    BitgetPublicWebSocket,
+    fetch_candles as fetch_bitget_candles,
+    fetch_snapshot_payloads,
+)
 from .config import AppConfig
-from .longbridge_provider import LongbridgeInstrument, fetch_quote_payloads
+from .longbridge_provider import (
+    LongbridgeInstrument,
+    fetch_candles as fetch_longbridge_candles,
+    fetch_quote_payloads,
+)
 from .price_action import PriceActionState, analyze_price_action
 from .providers import MarketInstrument
 
@@ -82,7 +91,7 @@ class FeedWorker(threading.Thread):
         """Start provider tasks and emit a final stopped status."""
         if self.bitget_instruments:
             self.tasks.append(asyncio.create_task(self._run_bitget()))
-        if self.bitget_instruments and self.config.analysis.enabled:
+        if self.config.analysis.enabled and (self.bitget_instruments or self.longbridge_instruments):
             self.tasks.append(asyncio.create_task(self._run_price_action()))
         if self.longbridge_instruments:
             self.tasks.append(asyncio.create_task(self._run_longbridge()))
@@ -144,14 +153,15 @@ class FeedWorker(threading.Thread):
                 break
 
     async def _run_price_action(self) -> None:
-        """Poll Bitget candles and emit derived price action state."""
+        """Poll provider candles and emit derived price action state."""
         while not self.stop_event.is_set():
-            for instrument in self.bitget_instruments:
+            for instrument in self.bitget_instruments + self.longbridge_instruments:
                 if self.stop_event.is_set():
                     break
+                candles = tuple()
                 try:
                     candles = await asyncio.to_thread(
-                        fetch_candles,
+                        self._fetch_candles,
                         instrument,
                         interval=self.config.analysis.interval,
                         limit=self.config.analysis.lookback,
@@ -167,6 +177,7 @@ class FeedWorker(threading.Thread):
                         {
                             "id": instrument.key,
                             "state": state,
+                            "candles": candles if state.is_available() else tuple(),
                         },
                     )
                 )
@@ -186,6 +197,20 @@ class FeedWorker(threading.Thread):
         if candle_age > self.config.analysis.stale_after_seconds:
             return PriceActionState.unavailable("Candle data is stale.")
         return analyze_price_action(candles)
+
+    @staticmethod
+    def _fetch_candles(
+        instrument: MarketInstrument,
+        *,
+        interval: str,
+        limit: int,
+    ):
+        """Fetch recent candles for the instrument's provider."""
+        if isinstance(instrument, BitgetInstrument):
+            return fetch_bitget_candles(instrument, interval=interval, limit=limit)
+        if isinstance(instrument, LongbridgeInstrument):
+            return fetch_longbridge_candles(instrument, interval=interval, limit=limit)
+        raise ValueError(f"unsupported candle provider: {instrument!r}")
 
     def _handle_message(self, payload: dict[str, Any]) -> None:
         """Forward one Bitget websocket payload into the event queue."""

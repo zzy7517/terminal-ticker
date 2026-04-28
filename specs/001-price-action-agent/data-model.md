@@ -4,7 +4,7 @@
 
 Represents one OHLCV bar.
 
-- `symbol_key`: stable provider symbol key, such as `USDT-FUTURES:BTCUSDT`
+- `symbol_key`: stable provider symbol key, such as `USDT-FUTURES:BTCUSDT` or `longbridge:AAPL.US`
 - `open_time_ms`: candle open timestamp in milliseconds
 - `open`: opening price
 - `high`: highest traded price during the candle
@@ -39,7 +39,7 @@ Validation:
 
 Controls local analysis behavior.
 
-- `enabled`: whether to fetch and analyze Bitget candles
+- `enabled`: whether to fetch and analyze supported provider candles
 - `interval`: candle interval, default `5m`
 - `lookback`: number of candles to request and analyze, default `40`
 - `poll_interval_seconds`: candle refresh interval, default `30`
