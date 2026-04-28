@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
+  ArrowLeft,
   BarChart3,
   Bot,
   Check,
@@ -33,8 +34,8 @@ import {
   searchSecurities,
 } from './api';
 import type {
-  AgentConfigUpdate,
   AgentAnalysis,
+  AgentConfigUpdate,
   AgentModelOption,
   CandlePoint,
   Instrument,
@@ -53,6 +54,28 @@ const GROUP_LABELS: Record<string, string> = {
 };
 
 const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
+const SETTINGS_HASH = '#/settings/providers';
+
+type AppRoute =
+  | { view: 'workspace' }
+  | { view: 'settings'; section: 'providers' };
+
+function readRouteFromHash(): AppRoute {
+  if (window.location.hash.startsWith(SETTINGS_HASH)) {
+    return { view: 'settings', section: 'providers' };
+  }
+  return { view: 'workspace' };
+}
+
+function navigateToRoute(route: AppRoute) {
+  if (route.view === 'settings') {
+    window.location.hash = SETTINGS_HASH;
+    return;
+  }
+  if (window.location.hash) {
+    history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+  }
+}
 
 function orderedGroups(state: MarketState | null) {
   if (!state) return [];
@@ -94,6 +117,12 @@ function sourceLabel(instrument: Instrument | undefined) {
 function formatLevelPrice(price: number | null) {
   if (price == null) return '-';
   return price.toFixed(price > 1000 ? 1 : 2);
+}
+
+function formatContextWindow(size: number | null) {
+  if (size == null) return '-';
+  if (size >= 1000) return `${Math.round(size / 1000)}K`;
+  return String(size);
 }
 
 function ConnectionBadge({ socketStatus, streamStatus }: { socketStatus: string; streamStatus: string }) {
@@ -371,312 +400,39 @@ function AgentReadout({
   );
 }
 
-function AgentConfigPanel({
+function WorkspaceView({
   state,
-  onState,
+  socketStatus,
+  groups,
+  activeGroup,
+  selectedKey,
+  selectedInstrument,
+  selectedQuote,
+  selectedAgent,
+  agentBusyKey,
+  setActiveGroup,
+  setSelectedKey,
+  setState,
+  runAgentAnalysis,
+  openSettings,
 }: {
   state: MarketState | null;
-  onState: (state: MarketState) => void;
+  socketStatus: string;
+  groups: string[];
+  activeGroup: string | null;
+  selectedKey: string | null;
+  selectedInstrument: Instrument | undefined;
+  selectedQuote: Quote | undefined;
+  selectedAgent: AgentAnalysis | undefined;
+  agentBusyKey: string | null;
+  setActiveGroup: (value: string) => void;
+  setSelectedKey: (value: string) => void;
+  setState: (state: MarketState) => void;
+  runAgentAnalysis: () => Promise<void>;
+  openSettings: () => void;
 }) {
-  const config = state?.config.agent;
-  const configSignature = config ? JSON.stringify(config) : '';
-  const [draft, setDraft] = useState<AgentConfigUpdate | null>(null);
-  const [models, setModels] = useState<AgentModelOption[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState('not refreshed');
-
-  useEffect(() => {
-    if (!config) return;
-    setDraft({
-      enabled: config.enabled,
-      provider: config.provider,
-      apiMode: config.apiMode,
-      model: config.model,
-      baseUrl: config.baseUrl,
-      timeoutSeconds: config.timeoutSeconds,
-      maxCandles: config.maxCandles,
-      reasoningEffort: config.reasoningEffort,
-    });
-  }, [configSignature]);
-
-  async function refreshModels() {
-    setRefreshing(true);
-    setStatus('refreshing...');
-    try {
-      const payload = await fetchAgentModels();
-      const visible = payload.models.filter((model) => model.supportedInApi && model.visibility !== 'hide');
-      setModels(visible);
-      setStatus(`${visible.length} models`);
-      if (draft && !visible.some((model) => model.slug === draft.model) && visible[0]) {
-        setDraft({
-          ...draft,
-          model: visible[0].slug,
-          reasoningEffort: visible[0].defaultReasoningEffort || draft.reasoningEffort,
-        });
-      }
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'refresh failed');
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  async function persistConfig() {
-    if (!draft) return;
-    setSaving(true);
-    setStatus('saving...');
-    try {
-      const nextState = await saveAgentConfig(draft);
-      onState(nextState);
-      setStatus('saved');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'save failed');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (!draft) {
-    return (
-      <div className="agent-card dense">
-        <span className="panel-label">Agent Config</span>
-        <p>loading</p>
-      </div>
-    );
-  }
-
-  const modelOptions = models.some((model) => model.slug === draft.model)
-    ? models
-    : [
-        {
-          slug: draft.model,
-          displayName: draft.model,
-          description: '',
-          visibility: 'active',
-          supportedInApi: true,
-          defaultReasoningEffort: draft.reasoningEffort,
-          supportedReasoningEfforts: REASONING_OPTIONS,
-          contextWindow: null,
-          preferWebsockets: true,
-        },
-        ...models,
-      ];
-  const selectedModel = models.find((model) => model.slug === draft.model);
-  const reasoningOptions = selectedModel?.supportedReasoningEfforts.length
-    ? selectedModel.supportedReasoningEfforts
-    : REASONING_OPTIONS;
-
-  return (
-    <div className="agent-card agent-config-card">
-      <div className="agent-card-head">
-        <span className="panel-label">Agent Config</span>
-        <Settings size={16} />
-      </div>
-      <div className="config-form">
-        <label className="toggle-row">
-          <input
-            checked={draft.enabled}
-            onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
-            type="checkbox"
-          />
-          <span>Enabled</span>
-        </label>
-        <label>
-          <span>Provider</span>
-          <select
-            value={draft.provider}
-            onChange={(event) => setDraft({ ...draft, provider: event.target.value, apiMode: 'codex_responses' })}
-          >
-            <option value="codex">Codex</option>
-          </select>
-        </label>
-        <label>
-          <span>Model</span>
-          <select
-            value={draft.model}
-            onChange={(event) => {
-              const model = models.find((item) => item.slug === event.target.value);
-              setDraft({
-                ...draft,
-                model: event.target.value,
-                reasoningEffort: model?.defaultReasoningEffort || draft.reasoningEffort,
-              });
-            }}
-          >
-            {modelOptions.map((model) => (
-              <option key={model.slug} value={model.slug}>
-                {model.displayName || model.slug}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="config-grid">
-          <label>
-            <span>Reasoning</span>
-            <select
-              value={draft.reasoningEffort}
-              onChange={(event) => setDraft({ ...draft, reasoningEffort: event.target.value })}
-            >
-              {reasoningOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Candles</span>
-            <input
-              min={10}
-              step={5}
-              type="number"
-              value={draft.maxCandles}
-              onChange={(event) =>
-                setDraft({ ...draft, maxCandles: Math.max(10, Number(event.target.value) || 10) })
-              }
-            />
-          </label>
-        </div>
-        <div className="config-grid">
-          <label>
-            <span>Timeout</span>
-            <input
-              min={5}
-              step={5}
-              type="number"
-              value={draft.timeoutSeconds}
-              onChange={(event) =>
-                setDraft({ ...draft, timeoutSeconds: Math.max(5, Number(event.target.value) || 5) })
-              }
-            />
-          </label>
-          <label>
-            <span>Mode</span>
-            <input readOnly value={draft.apiMode} />
-          </label>
-        </div>
-        <label>
-          <span>Base URL</span>
-          <input
-            value={draft.baseUrl ?? ''}
-            onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value.trim() || null })}
-            placeholder="default"
-          />
-        </label>
-      </div>
-      <div className="config-actions">
-        <button className="agent-action secondary" disabled={refreshing} onClick={refreshModels} type="button">
-          {refreshing ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
-          Refresh models
-        </button>
-        <button className="agent-action" disabled={saving} onClick={persistConfig} type="button">
-          {saving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
-          Save
-        </button>
-      </div>
-      <div className="config-status">{status}</div>
-    </div>
-  );
-}
-
-export default function App() {
-  const [state, setState] = useState<MarketState | null>(null);
-  const [socketStatus, setSocketStatus] = useState('connecting');
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [activeGroup, setActiveGroup] = useState<string | null>(null);
-  const [agentBusyKey, setAgentBusyKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    let disposed = false;
-    let retryTimer: number | undefined;
-    let socket: WebSocket | undefined;
-
-    const scheduleReconnect = () => {
-      if (disposed || retryTimer !== undefined) return;
-      retryTimer = window.setTimeout(() => {
-        retryTimer = undefined;
-        openSocket();
-      }, 1500);
-    };
-
-    const openSocket = () => {
-      if (disposed) return;
-      setSocketStatus('connecting');
-      socket = connectStateSocket(setState, (status) => {
-        setSocketStatus(status);
-        if (status === 'disconnected' || status === 'error') {
-          scheduleReconnect();
-        }
-      });
-    };
-
-    fetchState().then(setState).catch(() => setSocketStatus('error'));
-    openSocket();
-    return () => {
-      disposed = true;
-      if (retryTimer !== undefined) {
-        window.clearTimeout(retryTimer);
-      }
-      socket?.close();
-    };
-  }, []);
-
-  const groups = useMemo(() => orderedGroups(state), [state]);
-
-  useEffect(() => {
-    if (!state) return;
-    if (!activeGroup || !state.groups[activeGroup]) {
-      setActiveGroup(groups[0] ?? null);
-    }
-    if (!selectedKey || !state.quotes[selectedKey]) {
-      const firstKey = groups.flatMap((group) => state.groups[group] ?? [])[0];
-      setSelectedKey(firstKey ?? null);
-    }
-  }, [activeGroup, groups, selectedKey, state]);
-
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
-  const selectedInstrument = state?.instruments.find((instrument) => instrument.key === selectedKey);
-  const selectedQuote = selectedKey ? state?.quotes[selectedKey] : undefined;
-  const selectedAgent = selectedKey ? state?.agentAnalyses[selectedKey] : undefined;
   const tone = analysisTone(selectedQuote);
-
-  async function runAgentAnalysis() {
-    if (!selectedKey) return;
-    setAgentBusyKey(selectedKey);
-    try {
-      const payload = await analyzeInstrument(selectedKey);
-      setState(payload.state);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'agent analysis failed';
-      const fallback: AgentAnalysis = {
-        available: false,
-        provider: state?.config.agent.provider ?? 'codex',
-        model: state?.config.agent.model ?? '-',
-        updatedAt: new Date().toISOString(),
-        summary: '',
-        bias: 'neutral',
-        confidence: 0,
-        keyLevels: [],
-        watchPlan: [],
-        invalidation: '',
-        riskNotes: [],
-        error: message,
-        rawText: null,
-      };
-      setState((current) =>
-        current && selectedKey
-          ? {
-              ...current,
-              agentAnalyses: {
-                ...current.agentAnalyses,
-                [selectedKey]: fallback,
-              },
-            }
-          : current,
-      );
-    } finally {
-      setAgentBusyKey(null);
-    }
-  }
 
   return (
     <main className="app-shell">
@@ -691,6 +447,10 @@ export default function App() {
             <Activity size={15} />
             {state?.config.analysis.interval ?? '5m'}
           </div>
+          <button className="shell-button" type="button" onClick={openSettings}>
+            <Settings size={16} />
+            Settings
+          </button>
         </div>
       </header>
 
@@ -805,7 +565,21 @@ export default function App() {
               <strong>{sourceLabel(selectedInstrument)}</strong>
             </div>
           </div>
-          <AgentConfigPanel state={state} onState={setState} />
+          <div className="agent-card dense">
+            <span className="panel-label">Provider</span>
+            <div className="kv-row">
+              <span>Current</span>
+              <strong>{state?.config.agent.provider ?? 'codex'}</strong>
+            </div>
+            <div className="kv-row">
+              <span>Model</span>
+              <strong>{state?.config.agent.model ?? '-'}</strong>
+            </div>
+            <div className="kv-row">
+              <span>Status</span>
+              <strong>{state?.config.agent.enabled ? 'enabled' : 'disabled'}</strong>
+            </div>
+          </div>
           <div className="agent-card dense">
             <span className="panel-label">Boundary</span>
             <p>本地监控和解释层，不下单、不管理仓位、不生成买卖按钮。</p>
@@ -817,5 +591,492 @@ export default function App() {
         </aside>
       </section>
     </main>
+  );
+}
+
+function ProviderSettingsView({
+  state,
+  onState,
+  onBack,
+}: {
+  state: MarketState | null;
+  onState: (state: MarketState) => void;
+  onBack: () => void;
+}) {
+  const config = state?.config.agent;
+  const configSignature = config ? JSON.stringify(config) : '';
+  const [draft, setDraft] = useState<AgentConfigUpdate | null>(null);
+  const [models, setModels] = useState<AgentModelOption[]>([]);
+  const [providerSearch, setProviderSearch] = useState('');
+  const [modelSearch, setModelSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState('Changes are local until saved.');
+
+  useEffect(() => {
+    if (!config) return;
+    setDraft({
+      enabled: config.enabled,
+      provider: 'codex',
+      apiMode: config.apiMode,
+      model: config.model,
+      baseUrl: config.baseUrl,
+      timeoutSeconds: config.timeoutSeconds,
+      maxCandles: config.maxCandles,
+      reasoningEffort: config.reasoningEffort,
+    });
+  }, [configSignature]);
+
+  async function refreshModels() {
+    setRefreshing(true);
+    setStatus('Refreshing model catalog...');
+    try {
+      const payload = await fetchAgentModels();
+      const visible = payload.models.filter((model) => model.supportedInApi && model.visibility !== 'hide');
+      setModels(visible);
+      setStatus(`${visible.length} models ready.`);
+      setDraft((current) => {
+        if (!current) return current;
+        if (visible.some((model) => model.slug === current.model) || !visible[0]) {
+          return current;
+        }
+        return {
+          ...current,
+          model: visible[0].slug,
+          reasoningEffort: visible[0].defaultReasoningEffort || current.reasoningEffort,
+        };
+      });
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Refresh failed.');
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function persistConfig() {
+    if (!draft) return;
+    setSaving(true);
+    setStatus('Saving provider settings...');
+    try {
+      const nextState = await saveAgentConfig({ ...draft, provider: 'codex' });
+      onState(nextState);
+      setStatus('All changes saved.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Save failed.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!draft) {
+    return (
+      <main className="app-shell settings-shell-page">
+        <section className="settings-frame">
+          <aside className="settings-nav">
+            <button className="settings-back" type="button" onClick={onBack}>
+              <ArrowLeft size={16} />
+              Back to workspace
+            </button>
+          </aside>
+          <section className="settings-stage">
+            <div className="settings-loading">Loading settings...</div>
+          </section>
+        </section>
+      </main>
+    );
+  }
+
+  const providerVisible = 'codex'.includes(providerSearch.trim().toLowerCase());
+  const modelOptions = models.some((model) => model.slug === draft.model)
+    ? models
+    : [
+        {
+          slug: draft.model,
+          displayName: draft.model,
+          description: '',
+          visibility: 'active',
+          supportedInApi: true,
+          defaultReasoningEffort: draft.reasoningEffort,
+          supportedReasoningEfforts: REASONING_OPTIONS,
+          contextWindow: null,
+          preferWebsockets: true,
+        },
+        ...models,
+      ];
+  const visibleModels = modelOptions.filter((model) => {
+    const keyword = modelSearch.trim().toLowerCase();
+    if (!keyword) return true;
+    return `${model.displayName} ${model.slug} ${model.description}`.toLowerCase().includes(keyword);
+  });
+  const selectedModel = modelOptions.find((model) => model.slug === draft.model);
+  const reasoningOptions = selectedModel?.supportedReasoningEfforts.length
+    ? selectedModel.supportedReasoningEfforts
+    : REASONING_OPTIONS;
+
+  return (
+    <main className="app-shell settings-shell-page">
+      <section className="settings-frame">
+        <aside className="settings-nav">
+          <div className="settings-nav-top">
+            <div className="settings-window-dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div>
+              <div className="eyebrow">System Settings</div>
+              <h3>Settings</h3>
+            </div>
+          </div>
+
+          <div className="settings-nav-group">
+            <button className="settings-nav-item active" type="button">
+              <Settings size={18} />
+              <span>Providers</span>
+            </button>
+          </div>
+
+          <div className="settings-nav-meta">
+            <span className="panel-label">Source</span>
+            <strong>{state?.config.sourcePath ?? 'Runtime only'}</strong>
+          </div>
+
+          <button className="settings-back" type="button" onClick={onBack}>
+            <ArrowLeft size={16} />
+            Back to workspace
+          </button>
+        </aside>
+
+        <section className="settings-stage">
+          <header className="settings-stage-head">
+            <div>
+              <div className="eyebrow">Configuration</div>
+              <h2>Providers</h2>
+            </div>
+            <div className="settings-stage-actions">
+              <button className="shell-button muted" type="button" onClick={refreshModels} disabled={refreshing}>
+                {refreshing ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+                Fetch models
+              </button>
+              <button className="shell-button primary" type="button" onClick={persistConfig} disabled={saving}>
+                {saving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
+                Save
+              </button>
+            </div>
+          </header>
+
+          <div className="provider-layout">
+            <section className="provider-catalog">
+              <div className="provider-toolbar">
+                <div className="settings-search">
+                  <Search size={17} />
+                  <input
+                    value={providerSearch}
+                    onChange={(event) => setProviderSearch(event.target.value)}
+                    placeholder="Search providers..."
+                  />
+                </div>
+              </div>
+
+              <div className="provider-list">
+                {providerVisible ? (
+                  <button className="provider-item selected" type="button">
+                    <div className="provider-item-icon">
+                      <Bot size={18} />
+                    </div>
+                    <div className="provider-item-copy">
+                      <strong>Codex</strong>
+                      <small>Responses-backed coding provider</small>
+                    </div>
+                    <span className="provider-item-dot" />
+                  </button>
+                ) : (
+                  <div className="provider-empty">No providers match this search.</div>
+                )}
+              </div>
+            </section>
+
+            <section className="provider-detail">
+              <div className="provider-hero">
+                <div>
+                  <div className="provider-hero-title">
+                    <h3>Codex</h3>
+                    <span className={`provider-state-badge ${draft.enabled ? 'active' : 'inactive'}`}>
+                      {draft.enabled ? 'Active' : 'Disabled'}
+                    </span>
+                  </div>
+                  <p>Codex Responses provider for structured chart commentary and watch-plan output.</p>
+                </div>
+                <label className="switch-row">
+                  <span>Enabled</span>
+                  <input
+                    checked={draft.enabled}
+                    onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
+                    type="checkbox"
+                  />
+                  <span className="switch-slider" />
+                </label>
+              </div>
+
+              <div className="provider-section">
+                <div className="provider-section-card">
+                  <div className="provider-section-head">
+                    <strong>Provider</strong>
+                    <span className="provider-inline-badge">Locked</span>
+                  </div>
+                  <div className="provider-fixed-field">codex</div>
+                </div>
+                <div className="provider-section-card">
+                  <div className="provider-section-head">
+                    <strong>API Mode</strong>
+                    <span className="provider-inline-badge">Readonly</span>
+                  </div>
+                  <div className="provider-fixed-field">{draft.apiMode}</div>
+                </div>
+              </div>
+
+              <div className="provider-form-grid">
+                <label>
+                  <span>Base URL</span>
+                  <input
+                    value={draft.baseUrl ?? ''}
+                    onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value.trim() || null })}
+                    placeholder="default"
+                  />
+                </label>
+                <label>
+                  <span>Reasoning Effort</span>
+                  <select
+                    value={draft.reasoningEffort}
+                    onChange={(event) => setDraft({ ...draft, reasoningEffort: event.target.value })}
+                  >
+                    {reasoningOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Timeout Seconds</span>
+                  <input
+                    min={5}
+                    step={5}
+                    type="number"
+                    value={draft.timeoutSeconds}
+                    onChange={(event) =>
+                      setDraft({ ...draft, timeoutSeconds: Math.max(5, Number(event.target.value) || 5) })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Max Candles</span>
+                  <input
+                    min={10}
+                    step={5}
+                    type="number"
+                    value={draft.maxCandles}
+                    onChange={(event) =>
+                      setDraft({ ...draft, maxCandles: Math.max(10, Number(event.target.value) || 10) })
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="models-panel">
+                <div className="models-panel-head">
+                  <div>
+                    <strong>Models</strong>
+                    <small>选择当前 provider 使用的活动模型。</small>
+                  </div>
+                  <span className="models-count">{visibleModels.length} shown</span>
+                </div>
+
+                <div className="settings-search models-search">
+                  <Search size={17} />
+                  <input
+                    value={modelSearch}
+                    onChange={(event) => setModelSearch(event.target.value)}
+                    placeholder="Search models..."
+                  />
+                </div>
+
+                <div className="model-list">
+                  {visibleModels.map((model) => {
+                    const selected = draft.model === model.slug;
+                    return (
+                      <button
+                        className={`model-row ${selected ? 'selected' : ''}`}
+                        key={model.slug}
+                        type="button"
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            model: model.slug,
+                            reasoningEffort: model.defaultReasoningEffort || draft.reasoningEffort,
+                          })
+                        }
+                      >
+                        <div className="model-copy">
+                          <div className="model-title-row">
+                            <strong>{model.displayName || model.slug}</strong>
+                            {selected && <span className="provider-inline-badge">Selected</span>}
+                          </div>
+                          <div className="model-meta-row">
+                            <span>{model.slug}</span>
+                            <span>{formatContextWindow(model.contextWindow)}</span>
+                            <span>{model.defaultReasoningEffort || '-'}</span>
+                          </div>
+                          {model.description && <small>{model.description}</small>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {visibleModels.length === 0 && (
+                    <div className="provider-empty">No models match this search.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="provider-status-bar">{status}</div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+  );
+}
+
+export default function App() {
+  const [route, setRoute] = useState<AppRoute>(() => readRouteFromHash());
+  const [state, setState] = useState<MarketState | null>(null);
+  const [socketStatus, setSocketStatus] = useState('connecting');
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  const [agentBusyKey, setAgentBusyKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const syncRoute = () => setRoute(readRouteFromHash());
+    window.addEventListener('hashchange', syncRoute);
+    syncRoute();
+    return () => window.removeEventListener('hashchange', syncRoute);
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let retryTimer: number | undefined;
+    let socket: WebSocket | undefined;
+
+    const scheduleReconnect = () => {
+      if (disposed || retryTimer !== undefined) return;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = undefined;
+        openSocket();
+      }, 1500);
+    };
+
+    const openSocket = () => {
+      if (disposed) return;
+      setSocketStatus('connecting');
+      socket = connectStateSocket(setState, (status) => {
+        setSocketStatus(status);
+        if (status === 'disconnected' || status === 'error') {
+          scheduleReconnect();
+        }
+      });
+    };
+
+    fetchState().then(setState).catch(() => setSocketStatus('error'));
+    openSocket();
+    return () => {
+      disposed = true;
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+      socket?.close();
+    };
+  }, []);
+
+  const groups = useMemo(() => orderedGroups(state), [state]);
+
+  useEffect(() => {
+    if (!state) return;
+    if (!activeGroup || !state.groups[activeGroup]) {
+      setActiveGroup(groups[0] ?? null);
+    }
+    if (!selectedKey || !state.quotes[selectedKey]) {
+      const firstKey = groups.flatMap((group) => state.groups[group] ?? [])[0];
+      setSelectedKey(firstKey ?? null);
+    }
+  }, [activeGroup, groups, selectedKey, state]);
+
+  const selectedInstrument = state?.instruments.find((instrument) => instrument.key === selectedKey);
+  const selectedQuote = selectedKey ? state?.quotes[selectedKey] : undefined;
+  const selectedAgent = selectedKey ? state?.agentAnalyses[selectedKey] : undefined;
+
+  async function runAgentAnalysis() {
+    if (!selectedKey) return;
+    setAgentBusyKey(selectedKey);
+    try {
+      const payload = await analyzeInstrument(selectedKey);
+      setState(payload.state);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'agent analysis failed';
+      const fallback: AgentAnalysis = {
+        available: false,
+        provider: state?.config.agent.provider ?? 'codex',
+        model: state?.config.agent.model ?? '-',
+        updatedAt: new Date().toISOString(),
+        summary: '',
+        bias: 'neutral',
+        confidence: 0,
+        keyLevels: [],
+        watchPlan: [],
+        invalidation: '',
+        riskNotes: [],
+        error: message,
+        rawText: null,
+      };
+      setState((current) =>
+        current && selectedKey
+          ? {
+              ...current,
+              agentAnalyses: {
+                ...current.agentAnalyses,
+                [selectedKey]: fallback,
+              },
+            }
+          : current,
+      );
+    } finally {
+      setAgentBusyKey(null);
+    }
+  }
+
+  if (route.view === 'settings') {
+    return (
+      <ProviderSettingsView
+        state={state}
+        onState={setState}
+        onBack={() => navigateToRoute({ view: 'workspace' })}
+      />
+    );
+  }
+
+  return (
+    <WorkspaceView
+      state={state}
+      socketStatus={socketStatus}
+      groups={groups}
+      activeGroup={activeGroup}
+      selectedKey={selectedKey}
+      selectedInstrument={selectedInstrument}
+      selectedQuote={selectedQuote}
+      selectedAgent={selectedAgent}
+      agentBusyKey={agentBusyKey}
+      setActiveGroup={setActiveGroup}
+      setSelectedKey={setSelectedKey}
+      setState={setState}
+      runAgentAnalysis={runAgentAnalysis}
+      openSettings={() => navigateToRoute({ view: 'settings', section: 'providers' })}
+    />
   );
 }
