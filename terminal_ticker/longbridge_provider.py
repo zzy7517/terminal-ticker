@@ -191,6 +191,15 @@ def _no_adjust_type() -> Any:
     return AdjustType.NoAdjust
 
 
+def _all_trade_sessions() -> Any:
+    """Return the Longbridge setting that includes pre, regular, post, and overnight sessions."""
+    try:
+        from longbridge.openapi import TradeSessions
+    except ImportError as exc:
+        raise RuntimeError("longbridge package is required for Longbridge symbols") from exc
+    return TradeSessions.All
+
+
 def _as_text(raw_value: Any) -> str:
     """Convert a raw SDK field into stripped display text."""
     if raw_value is None:
@@ -417,6 +426,7 @@ def fetch_candles(
         _period_for_interval(interval),
         min(limit, 1000),
         _no_adjust_type(),
+        _all_trade_sessions(),
     )
     candles = tuple(_normalize_candle_payload(row, instrument) for row in rows)
     return tuple(sorted(candles, key=lambda candle: candle.open_time_ms))

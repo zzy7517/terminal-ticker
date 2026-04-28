@@ -37,9 +37,9 @@ class FakeCandleContext:
         self.candles = candles
         self.request = None
 
-    def candlesticks(self, symbol, period, count, adjust_type):
+    def candlesticks(self, symbol, period, count, adjust_type, trade_sessions):
         """Return fake candles and record request arguments."""
-        self.request = (symbol, period, count, adjust_type)
+        self.request = (symbol, period, count, adjust_type, trade_sessions)
         return self.candles
 
 
@@ -157,14 +157,15 @@ class LongbridgeProviderTests(unittest.TestCase):
 
         with patch("terminal_ticker.longbridge_provider._period_for_interval", return_value="5m"):
             with patch("terminal_ticker.longbridge_provider._no_adjust_type", return_value="none"):
-                candles = fetch_candles(
-                    instrument,
-                    interval="5m",
-                    limit=40,
-                    quote_context=context,
-                )
+                with patch("terminal_ticker.longbridge_provider._all_trade_sessions", return_value="all"):
+                    candles = fetch_candles(
+                        instrument,
+                        interval="5m",
+                        limit=40,
+                        quote_context=context,
+                    )
 
-        self.assertEqual(context.request, ("AAPL.US", "5m", 40, "none"))
+        self.assertEqual(context.request, ("AAPL.US", "5m", 40, "none", "all"))
         self.assertEqual(candles[0].symbol_key, "longbridge:AAPL.US")
         self.assertEqual(candles[0].open_time_ms, 1776846000000)
         self.assertEqual(candles[0].open, 200.0)
