@@ -19,6 +19,7 @@ from ..market_data.candle_cache import CandleCache, cached_fetch_candles
 from ..config import AppConfig
 from ..market_data.longbridge import (
     LongbridgeInstrument,
+    _build_quote_context as build_longbridge_quote_context,
     fetch_candles as fetch_longbridge_candles,
     fetch_quote_payloads,
 )
@@ -28,6 +29,7 @@ LOGGER = logging.getLogger(__name__)
 THUMBNAIL_INTERVAL = "1H"
 THUMBNAIL_CANDLE_LIMIT = 60
 THUMBNAIL_RETENTION_SECONDS = THUMBNAIL_CANDLE_LIMIT * 60 * 60
+THUMBNAIL_CACHE_MAX_AGE_SECONDS = 15 * 60
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,10 @@ class FeedWorker(threading.Thread):
         self.socket: BitgetPublicWebSocket | None = None
         self.listen_task: asyncio.Task[None] | None = None
         self.tasks: list[asyncio.Task[None]] = []
+        self._longbridge_quote_context: Any | None = None
+        self._longbridge_candle_context: Any | None = None
+        self._longbridge_quote_context_lock = threading.Lock()
+        self._longbridge_candle_context_lock = threading.Lock()
 
     def run(self) -> None:
         """说明：运行线程入口并管理事件循环生命周期。"""
@@ -147,7 +153,7 @@ class FeedWorker(threading.Thread):
         while not self.stop_event.is_set():
             try:
                 # Polling reuses the same quote event shape as websocket updates.
-                payloads = await asyncio.to_thread(fetch_quote_payloads, self.longbridge_instruments)
+                payloads = await asyncio.to_thread(self._fetch_longbridge_quote_payloads)
                 for payload in payloads.values():
                     self.event_queue.put(FeedEvent("quote", payload))
                 if payloads:
@@ -224,6 +230,7 @@ class FeedWorker(threading.Thread):
         interval: str,
         limit: int,
         minimum_retention_seconds: int | None = None,
+        max_cache_age_seconds: int | None = None,
     ):
         """说明：通过缓存或 provider 拉取近期 K 线。"""
         if self.candle_cache is not None:
@@ -235,6 +242,7 @@ class FeedWorker(threading.Thread):
                     limit=limit,
                     fetcher=lambda **kwargs: self._fetch_provider_candles(instrument, **kwargs),
                     minimum_retention_seconds=minimum_retention_seconds,
+                    max_cache_age_seconds=max_cache_age_seconds,
                 )
             except (OSError, sqlite3.Error) as exc:
                 LOGGER.warning("Candle cache unavailable for %s %s: %s", instrument.key, interval, exc)
@@ -255,10 +263,32 @@ class FeedWorker(threading.Thread):
             interval=THUMBNAIL_INTERVAL,
             limit=THUMBNAIL_CANDLE_LIMIT,
             minimum_retention_seconds=THUMBNAIL_RETENTION_SECONDS,
+            max_cache_age_seconds=THUMBNAIL_CACHE_MAX_AGE_SECONDS,
         )
 
-    @staticmethod
+    def _longbridge_quote_context_for_quotes(self) -> Any:
+        """说明：懒加载并复用长桥 quote 轮询连接上下文。"""
+        with self._longbridge_quote_context_lock:
+            if self._longbridge_quote_context is None:
+                self._longbridge_quote_context = build_longbridge_quote_context()
+            return self._longbridge_quote_context
+
+    def _longbridge_quote_context_for_candles(self) -> Any:
+        """说明：懒加载并复用长桥 K 线拉取连接上下文。"""
+        with self._longbridge_candle_context_lock:
+            if self._longbridge_candle_context is None:
+                self._longbridge_candle_context = build_longbridge_quote_context()
+            return self._longbridge_candle_context
+
+    def _fetch_longbridge_quote_payloads(self) -> dict[str, dict[str, Any]]:
+        """说明：用复用的长桥上下文批量拉取报价。"""
+        return fetch_quote_payloads(
+            self.longbridge_instruments,
+            quote_context=self._longbridge_quote_context_for_quotes(),
+        )
+
     def _fetch_provider_candles(
+        self,
         instrument: MarketInstrument,
         *,
         interval: str,
@@ -279,6 +309,7 @@ class FeedWorker(threading.Thread):
                 interval=interval,
                 limit=limit,
                 after_open_time_ms=after_open_time_ms,
+                quote_context=self._longbridge_quote_context_for_candles(),
             )
         raise ValueError(f"unsupported candle provider: {instrument!r}")
 

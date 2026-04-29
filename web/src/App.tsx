@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -31,15 +31,16 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import {
+  addBitgetSymbol,
   addLongbridgeSymbol,
   analyzeInstrument,
   connectStateSocket,
   fetchAgentModels,
   fetchState,
-  removeLongbridgeSymbol,
+  removeWatchlistInstrument,
   saveAgentConfig,
   saveInstrumentAnalysisInterval,
-  searchSecurities,
+  searchInstruments,
 } from './api';
 import type {
   AgentAnalysis,
@@ -47,9 +48,9 @@ import type {
   AgentModelOption,
   CandlePoint,
   Instrument,
+  InstrumentSearchResult,
   MarketState,
   Quote,
-  SecuritySearchResult,
 } from './types';
 
 const GROUP_LABELS: Record<string, string> = {
@@ -62,15 +63,21 @@ const GROUP_LABELS: Record<string, string> = {
 };
 
 const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
-const SETTINGS_HASH = '#/settings/providers';
+const PROVIDERS_HASH = '#/settings/providers';
+const WATCHLIST_HASH = '#/settings/watchlist';
 const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
+type SettingsSection = 'providers' | 'watchlist';
+type SearchSource = 'bitget' | 'longbridge';
 
 type AppRoute =
   | { view: 'workspace' }
-  | { view: 'settings'; section: 'providers' };
+  | { view: 'settings'; section: SettingsSection };
 
 function readRouteFromHash(): AppRoute {
-  if (window.location.hash.startsWith(SETTINGS_HASH)) {
+  if (window.location.hash.startsWith(WATCHLIST_HASH)) {
+    return { view: 'settings', section: 'watchlist' };
+  }
+  if (window.location.hash.startsWith(PROVIDERS_HASH)) {
     return { view: 'settings', section: 'providers' };
   }
   return { view: 'workspace' };
@@ -78,7 +85,7 @@ function readRouteFromHash(): AppRoute {
 
 function navigateToRoute(route: AppRoute) {
   if (route.view === 'settings') {
-    window.location.hash = SETTINGS_HASH;
+    window.location.hash = route.section === 'watchlist' ? WATCHLIST_HASH : PROVIDERS_HASH;
     return;
   }
   if (window.location.hash) {
@@ -123,6 +130,137 @@ function agentTone(analysis: AgentAnalysis | undefined) {
 function sourceLabel(instrument: Instrument | undefined) {
   if (!instrument) return '-';
   return instrument.source === 'longbridge' ? 'Longbridge' : instrument.source.toUpperCase();
+}
+
+function sourceName(source: string) {
+  return source === 'longbridge' ? 'Longbridge' : source.toUpperCase();
+}
+
+function instrumentVenue(instrument: Instrument) {
+  if (instrument.source === 'bitget') {
+    return instrument.instType ?? instrument.key.split(':', 1)[0] ?? 'Bitget';
+  }
+  return sourceName(instrument.source);
+}
+
+type BulkEntry = {
+  raw: string;
+  source: SearchSource;
+  symbol: string;
+  label: string;
+  instType: string | null;
+  key: string;
+  valid: boolean;
+  exists: boolean;
+  inputDuplicate: boolean;
+  error: string | null;
+};
+
+function defaultBitgetLabel(symbol: string) {
+  return symbol.endsWith('USDT') ? symbol.slice(0, -4) || symbol : symbol;
+}
+
+function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'inputDuplicate'> | null {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.startsWith('#')) return null;
+  const [token = '', ...labelParts] = trimmed.split(/\s+/);
+  const explicitLabel = labelParts.join(' ').trim();
+  let sourceHint: SearchSource | null = null;
+  let body = token.trim();
+  const sourceMatch = body.match(/^(bitget|longbridge)[:/](.+)$/i);
+  if (sourceMatch) {
+    sourceHint = sourceMatch[1].toLowerCase() as SearchSource;
+    body = sourceMatch[2];
+  }
+
+  const upperBody = body.toUpperCase();
+  let source: SearchSource;
+  let symbol: string;
+  let instType: string | null = null;
+
+  if (sourceHint === 'longbridge' || (!sourceHint && upperBody.includes('.'))) {
+    source = 'longbridge';
+    symbol = upperBody;
+    if (!symbol.includes('.')) {
+      return {
+        raw: trimmed,
+        source,
+        symbol,
+        label: explicitLabel || symbol,
+        instType,
+        key: `longbridge:${symbol}`,
+        valid: false,
+        exists: false,
+        error: 'Longbridge symbol needs a market suffix.',
+      };
+    }
+  } else {
+    source = 'bitget';
+    const parts = upperBody.split(':');
+    if (parts.length === 2) {
+      instType = parts[0];
+      symbol = parts[1];
+    } else {
+      instType = 'USDT-FUTURES';
+      symbol = upperBody;
+    }
+    if (!['SPOT', 'USDT-FUTURES'].includes(instType) || !symbol) {
+      return {
+        raw: trimmed,
+        source,
+        symbol,
+        label: explicitLabel || defaultBitgetLabel(symbol),
+        instType,
+        key: `${instType}:${symbol}`,
+        valid: false,
+        exists: false,
+        error: 'Unsupported Bitget market.',
+      };
+    }
+  }
+
+  const label = explicitLabel || (source === 'longbridge' ? symbol.split('.', 1)[0] : defaultBitgetLabel(symbol));
+  const key = source === 'longbridge' ? `longbridge:${symbol}` : `${instType}:${symbol}`;
+  return {
+    raw: trimmed,
+    source,
+    symbol,
+    label,
+    instType,
+    key,
+    valid: true,
+    exists: activeKeys.has(key),
+    error: null,
+  };
+}
+
+function parseBulkEntries(text: string, state: MarketState | null): BulkEntry[] {
+  const activeKeys = new Set((state?.instruments ?? []).map((instrument) => instrument.key));
+  const seen = new Set<string>();
+  const entries: BulkEntry[] = [];
+  for (const raw of text.split(/[\n,]+/)) {
+    const parsed = parseBulkLine(raw, activeKeys);
+    if (!parsed) continue;
+    const inputDuplicate = parsed.valid && seen.has(parsed.key);
+    if (parsed.valid) seen.add(parsed.key);
+    entries.push({ ...parsed, inputDuplicate });
+  }
+  return entries;
+}
+
+function resultFromBulkEntry(entry: BulkEntry): InstrumentSearchResult {
+  return {
+    source: entry.source,
+    symbol: entry.symbol,
+    label: entry.label,
+    instType: entry.instType,
+    key: entry.key,
+    nameCn: '',
+    nameHk: '',
+    nameEn: '',
+    displayText: entry.source === 'bitget' ? `${entry.instType} · ${entry.symbol}` : entry.symbol,
+    exists: entry.exists,
+  };
 }
 
 function formatLevelPrice(price: number | null) {
@@ -704,87 +842,321 @@ function StatTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SearchPanel({
+function SettingsFrame({
+  state,
+  section,
+  onSection,
+  onBack,
+  children,
+}: {
+  state: MarketState | null;
+  section: SettingsSection;
+  onSection: (section: SettingsSection) => void;
+  onBack: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <main className="app-shell settings-shell-page">
+      <section className="settings-frame">
+        <aside className="settings-nav">
+          <div className="settings-nav-top">
+            <div className="settings-window-dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div>
+              <div className="eyebrow">System Settings</div>
+              <h3>Settings</h3>
+            </div>
+          </div>
+
+          <div className="settings-nav-group">
+            <button
+              className={`settings-nav-item ${section === 'providers' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('providers')}
+            >
+              <Settings size={18} />
+              <span>Providers</span>
+            </button>
+            <button
+              className={`settings-nav-item ${section === 'watchlist' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('watchlist')}
+            >
+              <CircleDot size={18} />
+              <span>Watchlist</span>
+            </button>
+          </div>
+
+          <div className="settings-nav-meta">
+            <span className="panel-label">Source</span>
+            <strong>{state?.config.sourcePath ?? 'Runtime only'}</strong>
+          </div>
+
+          <button className="settings-back" type="button" onClick={onBack}>
+            <ArrowLeft size={16} />
+            Back to workspace
+          </button>
+        </aside>
+
+        <section className="settings-stage">{children}</section>
+      </section>
+    </main>
+  );
+}
+
+function WatchlistSettingsPanel({
+  state,
   onState,
 }: {
+  state: MarketState | null;
   onState: (state: MarketState) => void;
 }) {
+  const [searchSource, setSearchSource] = useState<SearchSource>('bitget');
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SecuritySearchResult[]>([]);
-  const [status, setStatus] = useState('输入代码或名称');
-  const [busySymbol, setBusySymbol] = useState<string | null>(null);
+  const [results, setResults] = useState<InstrumentSearchResult[]>([]);
+  const [status, setStatus] = useState('Watchlist changes are saved to the local TOML file.');
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const entries = useMemo(() => parseBulkEntries(bulkText, state), [bulkText, state]);
+  const addableEntries = entries.filter((entry) => entry.valid && !entry.exists && !entry.inputDuplicate);
+  const editable = Boolean(state?.config.sourcePath);
+
+  async function addResult(result: InstrumentSearchResult) {
+    if (result.exists || busyKey) return;
+    if (result.source === 'bitget' && !result.instType) {
+      setStatus('Bitget result is missing instType.');
+      return;
+    }
+    setBusyKey(result.key);
+    setStatus(`Adding ${result.symbol}...`);
+    try {
+      const nextState = result.source === 'longbridge'
+        ? await addLongbridgeSymbol(result)
+        : await addBitgetSymbol(result);
+      onState(nextState);
+      setResults((items) =>
+        items.map((item) => (item.key === result.key ? { ...item, exists: true } : item)),
+      );
+      setStatus(`Added ${result.symbol}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Add failed.');
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function removeInstrument(instrument: Instrument) {
+    if (!editable || busyKey) return;
+    if ((state?.instruments.length ?? 0) <= 1) {
+      setStatus('At least one symbol must stay in the watchlist.');
+      return;
+    }
+    setBusyKey(instrument.key);
+    setStatus(`Removing ${instrument.symbol}...`);
+    try {
+      const nextState = await removeWatchlistInstrument(instrument.key);
+      onState(nextState);
+      setResults((items) =>
+        items.map((item) => (item.key === instrument.key ? { ...item, exists: false } : item)),
+      );
+      setStatus(`Removed ${instrument.symbol}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Remove failed.');
+    } finally {
+      setBusyKey(null);
+    }
+  }
 
   async function runSearch() {
     const trimmed = query.trim();
     if (!trimmed) return;
-    setStatus('搜索中...');
+    setStatus('Searching...');
     try {
-      const next = await searchSecurities(trimmed);
+      const next = await searchInstruments(searchSource, trimmed);
       setResults(next);
-      setStatus(next.length ? `${next.length} 个结果` : '没有匹配结果');
+      setStatus(next.length ? `${next.length} matches.` : 'No matches.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '搜索失败');
+      setStatus(error instanceof Error ? error.message : 'Search failed.');
     }
   }
 
-  async function toggleResult(result: SecuritySearchResult) {
-    setBusySymbol(result.symbol);
+  async function addBulkEntries() {
+    if (!editable || bulkBusy || addableEntries.length === 0) return;
+    setBulkBusy(true);
+    setStatus(`Adding ${addableEntries.length} symbols...`);
     try {
-      const nextState = result.exists
-        ? await removeLongbridgeSymbol(result.symbol)
-        : await addLongbridgeSymbol(result);
-      onState(nextState);
-      setResults((items) =>
-        items.map((item) =>
-          item.symbol === result.symbol ? { ...item, exists: !result.exists } : item,
-        ),
-      );
-      setStatus(result.exists ? `已移除 ${result.symbol}` : `已添加 ${result.symbol}`);
+      let added = 0;
+      for (const entry of addableEntries) {
+        const result = resultFromBulkEntry(entry);
+        const nextState = entry.source === 'longbridge'
+          ? await addLongbridgeSymbol(result)
+          : await addBitgetSymbol(result);
+        added += 1;
+        onState(nextState);
+      }
+      setStatus(`Added ${added} symbols.`);
+      setBulkText('');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '操作失败');
+      setStatus(error instanceof Error ? error.message : 'Batch add failed.');
     } finally {
-      setBusySymbol(null);
+      setBulkBusy(false);
     }
+  }
+
+  if (!state) {
+    return <div className="settings-loading">Loading watchlist...</div>;
   }
 
   return (
-    <section className="search-panel" aria-label="Longbridge stock search">
-      <div className="search-box">
-        <Search size={16} />
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') runSearch();
-          }}
-          placeholder="搜索美股代码 / 名称"
-        />
-        <button type="button" onClick={runSearch}>搜索</button>
-      </div>
-      <div className="search-status">{status}</div>
-      {results.length > 0 && (
-        <div className="search-results">
-          {results.map((result) => (
-            <button
-              className="search-result"
-              key={result.symbol}
-              onClick={() => toggleResult(result)}
-              type="button"
-              disabled={busySymbol === result.symbol}
-            >
-              <span>
-                <strong>{result.symbol}</strong>
-                <small>{result.nameCn || result.nameEn || result.nameHk || result.displayText}</small>
-              </span>
-              <span className={result.exists ? 'remove-action' : 'add-action'}>
-                {result.exists ? <Minus size={14} /> : <Plus size={14} />}
-                {result.exists ? '移除' : '添加'}
-              </span>
-            </button>
-          ))}
+    <>
+      <header className="settings-stage-head">
+        <div>
+          <div className="eyebrow">Symbols</div>
+          <h2>Watchlist</h2>
         </div>
-      )}
-    </section>
+        <div className="settings-stage-actions">
+          <span className="models-count">{state.instruments.length} active</span>
+        </div>
+      </header>
+
+      <div className="watchlist-settings-layout">
+        <section className="watchlist-current">
+          <div className="provider-section-head">
+            <strong>Active Symbols</strong>
+            {!editable && <span className="provider-inline-badge">Readonly</span>}
+          </div>
+          <div className="watchlist-table">
+            {state.instruments.map((instrument) => (
+              <div className="watchlist-table-row" key={instrument.key}>
+                <div>
+                  <strong>{instrument.label}</strong>
+                  <small>{instrument.symbol}</small>
+                </div>
+                <span>{sourceName(instrument.source)}</span>
+                <span>{instrumentVenue(instrument)}</span>
+                <span>{instrument.analysisInterval}</span>
+                <button
+                  aria-label={`Remove ${instrument.symbol}`}
+                  className="danger-icon-button"
+                  disabled={!editable || state.instruments.length <= 1 || busyKey === instrument.key}
+                  onClick={() => removeInstrument(instrument)}
+                  type="button"
+                >
+                  {busyKey === instrument.key ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="watchlist-editor">
+          <div className="bulk-import-panel">
+            <div className="provider-section-head">
+              <strong>Batch Add</strong>
+              <span className="provider-inline-badge">{addableEntries.length} ready</span>
+            </div>
+            <textarea
+              value={bulkText}
+              onChange={(event) => setBulkText(event.target.value)}
+              placeholder={'BTCUSDT\nSPOT:ETHUSDT\nAAPL.US'}
+              spellCheck={false}
+            />
+            {entries.length > 0 && (
+              <div className="bulk-preview">
+                {entries.slice(0, 8).map((entry) => (
+                  <div className={`bulk-preview-row ${entry.valid && !entry.exists ? 'ready' : ''}`} key={`${entry.raw}-${entry.key}`}>
+                    <span>{entry.raw}</span>
+                    <small>
+                      {entry.error
+                        || (entry.inputDuplicate ? 'duplicate input' : entry.exists ? 'already active' : `${sourceName(entry.source)} · ${entry.key}`)}
+                    </small>
+                  </div>
+                ))}
+                {entries.length > 8 && <div className="bulk-preview-more">+{entries.length - 8} more</div>}
+              </div>
+            )}
+            <button
+              className="shell-button primary"
+              disabled={!editable || bulkBusy || addableEntries.length === 0}
+              onClick={addBulkEntries}
+              type="button"
+            >
+              {bulkBusy ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
+              Add batch
+            </button>
+          </div>
+
+          <div className="single-add-panel">
+            <div className="provider-section-head">
+              <strong>Search Add</strong>
+              <span className="provider-inline-badge">{sourceName(searchSource)}</span>
+            </div>
+            <div className="source-toggle">
+              <button
+                className={searchSource === 'bitget' ? 'active' : ''}
+                type="button"
+                onClick={() => {
+                  setSearchSource('bitget');
+                  setResults([]);
+                }}
+              >
+                Bitget
+              </button>
+              <button
+                className={searchSource === 'longbridge' ? 'active' : ''}
+                type="button"
+                onClick={() => {
+                  setSearchSource('longbridge');
+                  setResults([]);
+                }}
+              >
+                Longbridge
+              </button>
+            </div>
+            <div className="settings-search">
+              <Search size={17} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') runSearch();
+                }}
+                placeholder={searchSource === 'bitget' ? 'BTC / BTCUSDT' : 'AAPL.US / Apple'}
+              />
+              <button className="inline-search-button" type="button" onClick={runSearch}>
+                Search
+              </button>
+            </div>
+            <div className="search-results settings-results">
+              {results.map((result) => (
+                <button
+                  className="search-result"
+                  key={result.key}
+                  onClick={() => addResult(result)}
+                  type="button"
+                  disabled={!editable || result.exists || busyKey === result.key}
+                >
+                  <span>
+                    <strong>{result.symbol}</strong>
+                    <small>{result.nameCn || result.nameEn || result.nameHk || result.displayText}</small>
+                  </span>
+                  <span className={result.exists ? 'remove-action' : 'add-action'}>
+                    {busyKey === result.key ? <Loader2 className="spin" size={14} /> : <Plus size={14} />}
+                    {result.exists ? 'Active' : 'Add'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div className="provider-status-bar">{status}</div>
+    </>
   );
 }
 
@@ -878,6 +1250,7 @@ function WorkspaceView({
   updateAnalysisInterval,
   runAgentAnalysis,
   openSettings,
+  openWatchlistSettings,
 }: {
   state: MarketState | null;
   socketStatus: string;
@@ -895,6 +1268,7 @@ function WorkspaceView({
   updateAnalysisInterval: (value: string) => void;
   runAgentAnalysis: () => Promise<void>;
   openSettings: () => void;
+  openWatchlistSettings: () => void;
 }) {
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
   const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
@@ -945,7 +1319,14 @@ function WorkspaceView({
               <span>Watchlist</span>
               <small>{state?.instruments.length ?? 0} symbols under watch</small>
             </div>
-            <CircleDot size={17} />
+            <button
+              aria-label="Manage watchlist"
+              className="sidebar-manage-button"
+              onClick={openWatchlistSettings}
+              type="button"
+            >
+              <Settings size={16} />
+            </button>
           </div>
           <SidebarCompass state={state} />
           <div className="group-tabs">
@@ -976,7 +1357,6 @@ function WorkspaceView({
                 );
               })}
           </div>
-          <SearchPanel onState={setState} />
         </aside>
 
         <section className="chart-panel">
@@ -1088,14 +1468,12 @@ function WorkspaceView({
   );
 }
 
-function ProviderSettingsView({
+function ProviderSettingsPanel({
   state,
   onState,
-  onBack,
 }: {
   state: MarketState | null;
   onState: (state: MarketState) => void;
-  onBack: () => void;
 }) {
   const config = state?.config.agent;
   const configSignature = config ? JSON.stringify(config) : '';
@@ -1163,21 +1541,7 @@ function ProviderSettingsView({
   }
 
   if (!draft) {
-    return (
-      <main className="app-shell settings-shell-page">
-        <section className="settings-frame">
-          <aside className="settings-nav">
-            <button className="settings-back" type="button" onClick={onBack}>
-              <ArrowLeft size={16} />
-              Back to workspace
-            </button>
-          </aside>
-          <section className="settings-stage">
-            <div className="settings-loading">Loading settings...</div>
-          </section>
-        </section>
-      </main>
-    );
+    return <div className="settings-loading">Loading settings...</div>;
   }
 
   const providerVisible = 'codex'.includes(providerSearch.trim().toLowerCase());
@@ -1208,40 +1572,7 @@ function ProviderSettingsView({
     : REASONING_OPTIONS;
 
   return (
-    <main className="app-shell settings-shell-page">
-      <section className="settings-frame">
-        <aside className="settings-nav">
-          <div className="settings-nav-top">
-            <div className="settings-window-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
-            <div>
-              <div className="eyebrow">System Settings</div>
-              <h3>Settings</h3>
-            </div>
-          </div>
-
-          <div className="settings-nav-group">
-            <button className="settings-nav-item active" type="button">
-              <Settings size={18} />
-              <span>Providers</span>
-            </button>
-          </div>
-
-          <div className="settings-nav-meta">
-            <span className="panel-label">Source</span>
-            <strong>{state?.config.sourcePath ?? 'Runtime only'}</strong>
-          </div>
-
-          <button className="settings-back" type="button" onClick={onBack}>
-            <ArrowLeft size={16} />
-            Back to workspace
-          </button>
-        </aside>
-
-        <section className="settings-stage">
+    <>
           <header className="settings-stage-head">
             <div>
               <div className="eyebrow">Configuration</div>
@@ -1433,9 +1764,7 @@ function ProviderSettingsView({
               <div className="provider-status-bar">{status}</div>
             </section>
           </div>
-        </section>
-      </section>
-    </main>
+    </>
   );
 }
 
@@ -1561,11 +1890,18 @@ export default function App() {
 
   if (route.view === 'settings') {
     return (
-      <ProviderSettingsView
+      <SettingsFrame
         state={state}
-        onState={setState}
+        section={route.section}
+        onSection={(section) => navigateToRoute({ view: 'settings', section })}
         onBack={() => navigateToRoute({ view: 'workspace' })}
-      />
+      >
+        {route.section === 'providers' ? (
+          <ProviderSettingsPanel state={state} onState={setState} />
+        ) : (
+          <WatchlistSettingsPanel state={state} onState={setState} />
+        )}
+      </SettingsFrame>
     );
   }
 
@@ -1587,6 +1923,7 @@ export default function App() {
       updateAnalysisInterval={updateAnalysisInterval}
       runAgentAnalysis={runAgentAnalysis}
       openSettings={() => navigateToRoute({ view: 'settings', section: 'providers' })}
+      openWatchlistSettings={() => navigateToRoute({ view: 'settings', section: 'watchlist' })}
     />
   );
 }

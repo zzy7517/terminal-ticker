@@ -9,6 +9,7 @@ from terminal_ticker.bitget import (
     _normalize_candle_row,
     _normalize_ticker_payload,
     fetch_candles,
+    search_instruments,
 )
 
 
@@ -103,6 +104,40 @@ class BitgetTests(unittest.TestCase):
         self.assertEqual(params["startTime"], "1695835500001")
         self.assertIn("endTime", params)
         self.assertEqual(candles[0].open_time_ms, 1695835800000)
+
+    def test_search_instruments_filters_catalog(self) -> None:
+        """Verify Bitget search returns matching spot and futures instruments."""
+        catalog = {
+            ("SPOT", "BTCUSDT"): BitgetInstrument(
+                "BTCUSDT",
+                "SPOT",
+                "BTCUSDT",
+                "BTC",
+                "USDT",
+                "spot",
+            ),
+            ("USDT-FUTURES", "BTCUSDT"): BitgetInstrument(
+                "BTCUSDT",
+                "USDT-FUTURES",
+                "BTCUSDT",
+                "BTC",
+                "USDT",
+                "perp",
+            ),
+            ("USDT-FUTURES", "ETHUSDT"): BitgetInstrument(
+                "ETHUSDT",
+                "USDT-FUTURES",
+                "ETHUSDT",
+                "ETH",
+                "USDT",
+                "perp",
+            ),
+        }
+
+        with patch("terminal_ticker.bitget.load_instrument_catalog", return_value=catalog):
+            results = search_instruments("btc")
+
+        self.assertEqual([item.key for item in results], ["SPOT:BTCUSDT", "USDT-FUTURES:BTCUSDT"])
 
 
 if __name__ == "__main__":

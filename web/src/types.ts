@@ -129,6 +129,7 @@ export interface Instrument {
   symbol: string;
   label: string;
   source: string;
+  instType: string | null;
   group: string;
   analysisInterval: string;
 }
@@ -159,12 +160,17 @@ export interface MarketState {
   agentAnalyses: Record<string, AgentAnalysis>;
 }
 
-export interface SecuritySearchResult {
+export interface InstrumentSearchResult {
+  source: string;
   symbol: string;
   label: string;
+  instType: string | null;
+  key: string;
   nameCn: string;
   nameHk: string;
   nameEn: string;
   displayText: string;
   exists: boolean;
 }
+
+export type SecuritySearchResult = InstrumentSearchResult;

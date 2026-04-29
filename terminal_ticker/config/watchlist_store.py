@@ -11,6 +11,7 @@ from . import (
     BITGET_SOURCE,
     GROUP_ALIASES,
     LONGBRIDGE_SOURCE,
+    SUPPORTED_INST_TYPES,
     load_config,
 )
 
@@ -25,6 +26,23 @@ def _normalize_longbridge_symbol(symbol: str) -> str:
     normalized = symbol.strip().upper()
     if not normalized:
         raise ValueError("symbol entries cannot be blank")
+    return normalized
+
+
+def _normalize_bitget_symbol(symbol: str) -> str:
+    """说明：写入或删除前规范化 Bitget 标的代码。"""
+    normalized = symbol.strip().upper()
+    if not normalized:
+        raise ValueError("symbol entries cannot be blank")
+    return normalized
+
+
+def _normalize_bitget_inst_type(inst_type: str | None) -> str:
+    """说明：写入或删除前规范化 Bitget 合约类型。"""
+    normalized = str(inst_type or "").strip().upper()
+    if normalized not in SUPPORTED_INST_TYPES:
+        supported = ", ".join(sorted(SUPPORTED_INST_TYPES))
+        raise ValueError(f"inst_type must be one of: {supported}")
     return normalized
 
 
@@ -52,6 +70,29 @@ def _format_longbridge_entry(
         "  { "
         f"symbol = {_toml_string(symbol)}, "
         'source = "longbridge", '
+        f"label = {_toml_string(label_text)}, "
+        f"group = {_toml_string(group)}, "
+        f"show_collapsed = {collapsed_text}"
+        " },"
+    )
+
+
+def _format_bitget_entry(
+    *,
+    symbol: str,
+    inst_type: str,
+    label: str | None,
+    group: str,
+    show_collapsed: bool,
+) -> str:
+    """说明：渲染一行 Bitget inline TOML 标的配置。"""
+    label_text = label or symbol
+    collapsed_text = "true" if show_collapsed else "false"
+    return (
+        "  { "
+        f"symbol = {_toml_string(symbol)}, "
+        'source = "bitget", '
+        f"inst_type = {_toml_string(inst_type)}, "
         f"label = {_toml_string(label_text)}, "
         f"group = {_toml_string(group)}, "
         f"show_collapsed = {collapsed_text}"
@@ -187,31 +228,115 @@ def append_longbridge_symbol_to_watchlist(
     raise ValueError("symbols array is not closed")
 
 
+def append_bitget_symbol_to_watchlist(
+    path: str | Path,
+    *,
+    symbol: str,
+    inst_type: str,
+    label: str | None = None,
+    group: str = "crypto",
+    show_collapsed: bool = True,
+) -> bool:
+    """说明：不存在时把 Bitget 标的追加到 symbols 数组。"""
+    source_path = Path(path).expanduser().resolve()
+    normalized_symbol = _normalize_bitget_symbol(symbol)
+    normalized_inst_type = _normalize_bitget_inst_type(inst_type)
+    normalized_group = _normalize_group(group)
+
+    config = load_config(source_path)
+    for instrument in config.instruments:
+        if (
+            instrument.source == BITGET_SOURCE
+            and instrument.symbol == normalized_symbol
+            and instrument.inst_type == normalized_inst_type
+        ):
+            return False
+
+    entry = _format_bitget_entry(
+        symbol=normalized_symbol,
+        inst_type=normalized_inst_type,
+        label=label,
+        group=normalized_group,
+        show_collapsed=show_collapsed,
+    )
+    text = source_path.read_text()
+    lines = text.splitlines()
+
+    start_index: int | None = None
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("symbols") and "[" in stripped:
+            start_index = index
+            break
+
+    if start_index is None:
+        if text and not text.endswith("\n"):
+            text += "\n"
+        text += f"\nsymbols = [\n{entry}\n]\n"
+        source_path.write_text(text)
+        return True
+
+    for index in range(start_index + 1, len(lines)):
+        if lines[index].strip() == "]":
+            lines.insert(index, entry)
+            source_path.write_text("\n".join(lines) + "\n")
+            return True
+
+    raise ValueError("symbols array is not closed")
+
+
 def remove_longbridge_symbol_from_watchlist(
     path: str | Path,
     *,
     symbol: str,
 ) -> bool:
     """说明：从 watchlist 文件中删除指定长桥标的。"""
+    return remove_symbol_from_watchlist(
+        path,
+        source=LONGBRIDGE_SOURCE,
+        symbol=symbol,
+        inst_type=None,
+    )
+
+
+def remove_symbol_from_watchlist(
+    path: str | Path,
+    *,
+    source: str,
+    symbol: str,
+    inst_type: str | None,
+) -> bool:
+    """说明：从 watchlist 文件中删除指定 provider 标的。"""
     source_path = Path(path).expanduser().resolve()
-    normalized_symbol = _normalize_longbridge_symbol(symbol)
+    normalized_source = source.strip().lower()
+    normalized_symbol = symbol.strip().upper()
+    normalized_inst_type = inst_type.strip().upper() if inst_type else None
 
     config = load_config(source_path)
     exists = any(
-        instrument.source == LONGBRIDGE_SOURCE and instrument.symbol == normalized_symbol
+        instrument.source == normalized_source
+        and instrument.symbol == normalized_symbol
+        and instrument.inst_type == normalized_inst_type
         for instrument in config.instruments
     )
     if not exists:
         return False
+    if len(config.instruments) <= 1:
+        raise ValueError("cannot remove the last watchlist symbol")
 
     lines = source_path.read_text().splitlines()
     for index, line in enumerate(lines):
-        if _is_longbridge_symbol_entry(line, normalized_symbol):
+        if _is_symbol_entry(
+            line,
+            source=normalized_source,
+            symbol=normalized_symbol,
+            inst_type=normalized_inst_type,
+        ):
             del lines[index]
             source_path.write_text("\n".join(lines) + "\n")
             return True
 
-    raise ValueError(f"{normalized_symbol} exists but is not an inline longbridge symbol entry")
+    raise ValueError(f"{normalized_source}:{normalized_symbol} exists but is not an inline symbol entry")
 
 
 def update_instrument_analysis_interval_in_watchlist(

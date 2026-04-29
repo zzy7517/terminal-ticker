@@ -92,14 +92,24 @@ class CandleCache:
         *,
         now_ms: int | None = None,
         retention_seconds: int | None = None,
+        symbol_key: str | None = None,
+        interval: str | None = None,
     ) -> int:
         """说明：删除超过保留期的 K 线缓存。"""
         current_ms = _now_ms() if now_ms is None else now_ms
         cutoff_ms = current_ms - self._effective_retention(retention_seconds) * 1000
+        clauses = ["open_time_ms < ?"]
+        params: list[int | str] = [cutoff_ms]
+        if symbol_key is not None:
+            clauses.append("symbol_key = ?")
+            params.append(symbol_key)
+        if interval is not None:
+            clauses.append("interval = ?")
+            params.append(interval)
         with self._connect() as connection:
             cursor = connection.execute(
-                "DELETE FROM candles WHERE open_time_ms < ?",
-                (cutoff_ms,),
+                f"DELETE FROM candles WHERE {' AND '.join(clauses)}",
+                params,
             )
             return cursor.rowcount
 
@@ -171,6 +181,29 @@ class CandleCache:
         value = row[0] if row else None
         return int(value) if value is not None else None
 
+    def latest_fetched_at_ms(
+        self,
+        symbol_key: str,
+        interval: str,
+        *,
+        now_ms: int | None = None,
+        retention_seconds: int | None = None,
+    ) -> int | None:
+        """说明：读取某个标的和周期最近一次成功写入缓存的时间。"""
+        current_ms = _now_ms() if now_ms is None else now_ms
+        cutoff_ms = current_ms - self._effective_retention(retention_seconds) * 1000
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT MAX(fetched_at_ms)
+                FROM candles
+                WHERE symbol_key = ? AND interval = ? AND open_time_ms >= ?
+                """,
+                (symbol_key, interval, cutoff_ms),
+            ).fetchone()
+        value = row[0] if row else None
+        return int(value) if value is not None else None
+
     def recent(
         self,
         symbol_key: str,
@@ -224,10 +257,36 @@ def cached_fetch_candles(
     fetcher: Callable[..., tuple[Candle, ...]],
     now_ms: int | None = None,
     minimum_retention_seconds: int | None = None,
+    max_cache_age_seconds: int | None = None,
 ) -> tuple[Candle, ...]:
     """说明：通过 SQLite 缓存拉取 K 线，并只向 provider 请求缺失区间。"""
     current_ms = _now_ms() if now_ms is None else now_ms
-    cache.prune(now_ms=current_ms, retention_seconds=minimum_retention_seconds)
+    cache.prune(
+        now_ms=current_ms,
+        retention_seconds=minimum_retention_seconds,
+        symbol_key=symbol_key,
+        interval=interval,
+    )
+    if max_cache_age_seconds is not None:
+        cached = cache.recent(
+            symbol_key,
+            interval,
+            limit=limit,
+            now_ms=current_ms,
+            retention_seconds=minimum_retention_seconds,
+        )
+        latest_fetched_at_ms = cache.latest_fetched_at_ms(
+            symbol_key,
+            interval,
+            now_ms=current_ms,
+            retention_seconds=minimum_retention_seconds,
+        )
+        if (
+            cached
+            and latest_fetched_at_ms is not None
+            and current_ms - latest_fetched_at_ms <= max_cache_age_seconds * 1000
+        ):
+            return cached
     latest_open_ms = cache.latest_open_time_ms(
         symbol_key,
         interval,
@@ -282,7 +341,7 @@ def _fetch_plan(
     overlapped_after_open_ms = max(0, latest_open_ms - interval_ms)
     return CandleFetchPlan(
         after_open_time_ms=overlapped_after_open_ms,
-        limit=max(limit, int(missing)),
+        limit=int(missing),
     )
 
 

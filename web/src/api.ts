@@ -3,6 +3,7 @@ import type {
   AgentConfigUpdate,
   AgentModelsResponse,
   AnalysisConfigUpdate,
+  InstrumentSearchResult,
   MarketState,
   SecuritySearchResult,
 } from './types';
@@ -37,6 +38,16 @@ export async function searchSecurities(query: string): Promise<SecuritySearchRes
   return payload.results;
 }
 
+export async function searchInstruments(source: string, query: string): Promise<InstrumentSearchResult[]> {
+  const params = new URLSearchParams({ source, q: query });
+  const response = await fetch(`/api/instruments/search?${params}`);
+  if (!response.ok) {
+    throw await responseError(response, 'search failed');
+  }
+  const payload = await response.json();
+  return payload.results;
+}
+
 export async function addLongbridgeSymbol(result: SecuritySearchResult): Promise<MarketState> {
   const response = await fetch('/api/watchlist/longbridge', {
     method: 'POST',
@@ -50,12 +61,40 @@ export async function addLongbridgeSymbol(result: SecuritySearchResult): Promise
   return payload.state;
 }
 
+export async function addBitgetSymbol(result: InstrumentSearchResult): Promise<MarketState> {
+  const response = await fetch('/api/watchlist/bitget', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      symbol: result.symbol,
+      instType: result.instType,
+      label: result.label,
+    }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'add failed');
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
 export async function removeLongbridgeSymbol(symbol: string): Promise<MarketState> {
   const response = await fetch(`/api/watchlist/longbridge/${encodeURIComponent(symbol)}`, {
     method: 'DELETE',
   });
   if (!response.ok) {
     throw new Error(`remove failed: ${response.status}`);
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
+export async function removeWatchlistInstrument(key: string): Promise<MarketState> {
+  const response = await fetch(`/api/watchlist/instruments/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'remove failed');
   }
   const payload = await response.json();
   return payload.state;

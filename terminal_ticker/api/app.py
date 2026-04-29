@@ -25,6 +25,7 @@ from ..config import (
     AgentConfig,
     AnalysisConfig,
     AppConfig,
+    BITGET_SOURCE,
     LONGBRIDGE_SOURCE,
     load_config,
     parse_agent_config,
@@ -36,13 +37,16 @@ from ..market_data.longbridge import (
     resolve_instruments as resolve_longbridge_instruments,
     search_securities,
 )
+from ..market_data.bitget import search_instruments as search_bitget_instruments
 from ..domain.quotes import QuoteState
 from ..domain.price_action import Candle
 from ..domain.strategy import StrategyConfig, generate_signal
 from ..market_data.router import MarketInstrument, resolve_instruments
 from ..config.watchlist_store import (
+    append_bitget_symbol_to_watchlist,
     append_longbridge_symbol_to_watchlist,
     remove_longbridge_symbol_from_watchlist,
+    remove_symbol_from_watchlist,
     update_agent_config_in_watchlist,
     update_analysis_config_in_watchlist,
     update_instrument_analysis_interval_in_watchlist,
@@ -65,6 +69,7 @@ def _instrument_payload(instrument: MarketInstrument, *, default_interval: str) 
         "symbol": instrument.symbol,
         "label": instrument.label,
         "source": instrument.source,
+        "instType": getattr(instrument, "inst_type", None),
         "group": instrument.group,
         "analysisInterval": instrument.analysis_interval or default_interval,
     }
@@ -287,8 +292,11 @@ class MarketRuntime:
         results = await asyncio.to_thread(search_securities, text)
         return [
             {
+                "source": LONGBRIDGE_SOURCE,
                 "symbol": item.symbol,
                 "label": item.default_label,
+                "instType": None,
+                "key": f"{LONGBRIDGE_SOURCE}:{item.symbol}",
                 "nameCn": item.name_cn,
                 "nameHk": item.name_hk,
                 "nameEn": item.name_en,
@@ -297,6 +305,38 @@ class MarketRuntime:
             }
             for item in results
         ]
+
+    async def search_bitget(self, query: str) -> list[dict[str, Any]]:
+        """说明：搜索 Bitget 标的，并标记已在 watchlist 中的结果。"""
+        text = query.strip()
+        if not text:
+            return []
+        active = {instrument.key for instrument in self.instruments}
+        results = await asyncio.to_thread(search_bitget_instruments, text)
+        return [
+            {
+                "source": BITGET_SOURCE,
+                "symbol": item.symbol,
+                "label": item.label,
+                "instType": item.inst_type,
+                "key": item.key,
+                "nameCn": "",
+                "nameHk": "",
+                "nameEn": "",
+                "displayText": f"{item.inst_type} · {item.base_asset}/{item.quote_asset}",
+                "exists": item.key in active,
+            }
+            for item in results
+        ]
+
+    async def search_instruments(self, source: str, query: str) -> list[dict[str, Any]]:
+        """说明：按 provider 搜索可加入 watchlist 的标的。"""
+        normalized_source = source.strip().lower()
+        if normalized_source == LONGBRIDGE_SOURCE:
+            return await self.search_longbridge(query)
+        if normalized_source == BITGET_SOURCE:
+            return await self.search_bitget(query)
+        raise HTTPException(status_code=400, detail="Unsupported search source.")
 
     async def add_longbridge(self, payload: dict[str, Any]) -> dict[str, Any]:
         """说明：把一个长桥标的写入 watchlist 并激活。"""
@@ -315,6 +355,28 @@ class MarketRuntime:
             await self.reload_from_source()
         return {"changed": changed, "state": self.snapshot()}
 
+    async def add_bitget(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：把一个 Bitget 标的写入 watchlist 并激活。"""
+        source_path = self._require_source_path()
+        symbol = str(payload.get("symbol") or "")
+        inst_type = str(payload.get("instType") or payload.get("inst_type") or "")
+        label = str(payload.get("label") or "").strip() or None
+        try:
+            changed = await asyncio.to_thread(
+                append_bitget_symbol_to_watchlist,
+                source_path,
+                symbol=symbol,
+                inst_type=inst_type,
+                label=label,
+                group="crypto",
+                show_collapsed=True,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if changed:
+            await self.reload_from_source()
+        return {"changed": changed, "state": self.snapshot()}
+
     async def remove_longbridge(self, symbol: str) -> dict[str, Any]:
         """说明：从 watchlist 移除一个长桥标的并停用。"""
         source_path = self._require_source_path()
@@ -323,6 +385,25 @@ class MarketRuntime:
             source_path,
             symbol=symbol,
         )
+        if changed:
+            await self.reload_from_source()
+        return {"changed": changed, "state": self.snapshot()}
+
+    async def remove_instrument(self, instrument_key: str) -> dict[str, Any]:
+        """说明：从 watchlist 移除任意当前激活标的。"""
+        source_path = self._require_source_path()
+        instrument = self._instrument_by_key(instrument_key)
+        try:
+            changed = await asyncio.to_thread(
+                remove_symbol_from_watchlist,
+                source_path,
+                source=instrument.source,
+                symbol=instrument.symbol,
+                inst_type=getattr(instrument, "inst_type", None),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        self.agent_analyses.pop(instrument.key, None)
         if changed:
             await self.reload_from_source()
         return {"changed": changed, "state": self.snapshot()}
@@ -560,15 +641,30 @@ def create_app(
         """说明：处理长桥证券搜索请求。"""
         return {"results": await runtime.search_longbridge(q)}
 
+    @app.get("/api/instruments/search")
+    async def search_instruments_endpoint(source: str, q: str) -> dict[str, Any]:
+        """说明：处理 provider 标的搜索请求。"""
+        return {"results": await runtime.search_instruments(source, q)}
+
     @app.post("/api/watchlist/longbridge")
     async def add_longbridge_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         """说明：处理新增长桥标的请求。"""
         return await runtime.add_longbridge(payload)
 
+    @app.post("/api/watchlist/bitget")
+    async def add_bitget_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：处理新增 Bitget 标的请求。"""
+        return await runtime.add_bitget(payload)
+
     @app.delete("/api/watchlist/longbridge/{symbol}")
     async def remove_longbridge_endpoint(symbol: str) -> dict[str, Any]:
         """说明：处理移除长桥标的请求。"""
         return await runtime.remove_longbridge(symbol)
+
+    @app.delete("/api/watchlist/instruments/{instrument_key}")
+    async def remove_instrument_endpoint(instrument_key: str) -> dict[str, Any]:
+        """说明：处理移除任意 watchlist 标的请求。"""
+        return await runtime.remove_instrument(instrument_key)
 
     @app.get("/api/agent/models")
     async def list_agent_models_endpoint() -> dict[str, Any]:

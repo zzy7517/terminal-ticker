@@ -296,5 +296,45 @@ class FeedWorkerTests(unittest.TestCase):
             self.assertEqual(candles, (cached, fetched))
             self.assertEqual(provider.call_args.kwargs["after_open_time_ms"], base_open_ms - 300_000)
 
+    def test_longbridge_quote_polling_reuses_context(self) -> None:
+        """Verify longbridge quote polling does not rebuild the SDK context every request."""
+        event_queue = queue.Queue()
+        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+        worker = FeedWorker(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            event_queue=event_queue,
+        )
+        context = object()
+
+        with patch("terminal_ticker.feed.build_longbridge_quote_context", return_value=context) as build:
+            with patch("terminal_ticker.feed.fetch_quote_payloads", return_value={}) as fetch:
+                worker._fetch_longbridge_quote_payloads()
+                worker._fetch_longbridge_quote_payloads()
+
+        self.assertEqual(build.call_count, 1)
+        self.assertEqual(fetch.call_count, 2)
+        self.assertIs(fetch.call_args.kwargs["quote_context"], context)
+
+    def test_longbridge_candle_fetch_reuses_context(self) -> None:
+        """Verify longbridge candle refreshes reuse their SDK context."""
+        event_queue = queue.Queue()
+        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+        worker = FeedWorker(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            event_queue=event_queue,
+        )
+        context = object()
+
+        with patch("terminal_ticker.feed.build_longbridge_quote_context", return_value=context) as build:
+            with patch("terminal_ticker.feed.fetch_longbridge_candles", return_value=tuple()) as fetch:
+                worker._fetch_provider_candles(instrument, interval="5m", limit=40)
+                worker._fetch_provider_candles(instrument, interval="1H", limit=60)
+
+        self.assertEqual(build.call_count, 1)
+        self.assertEqual(fetch.call_count, 2)
+        self.assertIs(fetch.call_args.kwargs["quote_context"], context)
+
 if __name__ == "__main__":
     unittest.main()

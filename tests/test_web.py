@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from terminal_ticker.agent import AgentAnalysisResult
 from terminal_ticker.config import AppConfig, DisplayConfig, load_config
 from terminal_ticker.controller import DrainResult
+from terminal_ticker.bitget import BitgetInstrument
 from terminal_ticker.longbridge_provider import LongbridgeInstrument, LongbridgeSecurity
 from terminal_ticker.models import QuoteState
 from terminal_ticker.price_action import Candle
@@ -72,6 +73,7 @@ class WebTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["instruments"][0]["key"], "longbridge:AAPL.US")
+        self.assertIsNone(payload["instruments"][0]["instType"])
         self.assertEqual(payload["quotes"][instrument.key]["priceLabel"], "201.25")
         self.assertNotIn("priceAction", payload["quotes"][instrument.key])
         self.assertFalse(payload["quotes"][instrument.key]["strategySignal"]["available"])
@@ -117,6 +119,137 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["results"][0]["exists"])
+
+    def test_bitget_search_endpoint_marks_existing_symbols(self) -> None:
+        """Verify Bitget search reports source, inst_type, and active state."""
+        instrument = BitgetInstrument(
+            "BTCUSDT",
+            "USDT-FUTURES",
+            "BTC",
+            "BTC",
+            "USDT",
+            "perp",
+        )
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+        spot = BitgetInstrument("BTCUSDT", "SPOT", "BTCUSDT", "BTC", "USDT", "spot")
+
+        with patch("terminal_ticker.web.search_bitget_instruments", return_value=(spot, instrument)):
+            with TestClient(app) as client:
+                response = client.get(
+                    "/api/instruments/search",
+                    params={"source": "bitget", "q": "btc"},
+                )
+
+        payload = response.json()["results"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload[0]["instType"], "SPOT")
+        self.assertFalse(payload[0]["exists"])
+        self.assertTrue(payload[1]["exists"])
+
+    def test_bitget_add_endpoint_persists_symbol(self) -> None:
+        """Verify browser can add Bitget symbols to the watchlist."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
+                    ]
+                    """
+                ).strip()
+            )
+            config = load_config(config_path)
+            longbridge = LongbridgeInstrument("AAPL.US", "AAPL")
+            bitget = BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
+            app = create_app(
+                config=config,
+                instruments=(longbridge,),
+                controller_factory=DummyController,
+                auto_start=False,
+            )
+
+            with patch("terminal_ticker.web.resolve_instruments", return_value=(longbridge, bitget)):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/watchlist/bitget",
+                        json={"symbol": "BTCUSDT", "instType": "USDT-FUTURES", "label": "BTC"},
+                    )
+            persisted = load_config(config_path)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["changed"])
+        self.assertEqual(persisted.instruments[1].source, "bitget")
+        self.assertEqual(persisted.instruments[1].inst_type, "USDT-FUTURES")
+
+    def test_remove_instrument_endpoint_persists_bitget_symbol(self) -> None:
+        """Verify browser can remove any active watchlist instrument by key."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
+                      { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC" },
+                    ]
+                    """
+                ).strip()
+            )
+            config = load_config(config_path)
+            longbridge = LongbridgeInstrument("AAPL.US", "AAPL")
+            bitget = BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
+            app = create_app(
+                config=config,
+                instruments=(longbridge, bitget),
+                controller_factory=DummyController,
+                auto_start=False,
+            )
+
+            with patch("terminal_ticker.web.resolve_instruments", return_value=(longbridge,)):
+                with TestClient(app) as client:
+                    response = client.delete("/api/watchlist/instruments/USDT-FUTURES%3ABTCUSDT")
+            persisted_text = config_path.read_text()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["changed"])
+        self.assertNotIn("BTCUSDT", persisted_text)
+        self.assertIn("AAPL.US", persisted_text)
+
+    def test_remove_instrument_endpoint_rejects_last_symbol(self) -> None:
+        """Verify browser cannot remove the final active watchlist instrument."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC" },
+                    ]
+                    """
+                ).strip()
+            )
+            config = load_config(config_path)
+            instrument = BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
+            app = create_app(
+                config=config,
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                auto_start=False,
+            )
+
+            with TestClient(app) as client:
+                response = client.delete("/api/watchlist/instruments/USDT-FUTURES%3ABTCUSDT")
+            persisted_text = config_path.read_text()
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("cannot remove the last watchlist symbol", response.json()["detail"])
+        self.assertIn("BTCUSDT", persisted_text)
 
     def test_agent_analysis_endpoint_runs_provider_and_caches_result(self) -> None:
         """Verify manual agent endpoint analyzes current candles."""

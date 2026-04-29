@@ -101,6 +101,39 @@ def load_instrument_catalog() -> dict[tuple[str, str], BitgetInstrument]:
     return catalog
 
 
+def _search_score(instrument: BitgetInstrument, query: str) -> tuple[int, str, str]:
+    """说明：按精确度和市场类型给 Bitget 搜索结果排序。"""
+    symbol = instrument.symbol.upper()
+    base_asset = instrument.base_asset.upper()
+    query_upper = query.upper()
+    if query_upper in {symbol, base_asset}:
+        return (0, symbol, instrument.inst_type)
+    if symbol.startswith(query_upper) or base_asset.startswith(query_upper):
+        return (1, symbol, instrument.inst_type)
+    if query_upper in symbol:
+        return (2, symbol, instrument.inst_type)
+    return (3, symbol, instrument.inst_type)
+
+
+def search_instruments(query: str, *, limit: int = 20) -> tuple[BitgetInstrument, ...]:
+    """说明：按 symbol/base asset 搜索 Bitget 现货和 USDT 合约标的。"""
+    normalized = query.strip().upper()
+    if not normalized:
+        return tuple()
+    catalog = load_instrument_catalog()
+    matches = [
+        instrument
+        for instrument in catalog.values()
+        if (
+            normalized in instrument.symbol.upper()
+            or normalized in instrument.base_asset.upper()
+            or normalized in instrument.quote_asset.upper()
+        )
+    ]
+    matches.sort(key=lambda instrument: _search_score(instrument, normalized))
+    return tuple(matches[:limit])
+
+
 def resolve_instruments(configured: tuple[InstrumentConfig, ...]) -> tuple[BitgetInstrument, ...]:
     """说明：把配置标的解析为具体 provider 标的，并保持 watchlist 顺序。"""
     catalog = load_instrument_catalog()
