@@ -5,7 +5,7 @@ from terminal_ticker.bitget import BitgetInstrument
 from terminal_ticker.config import AppConfig, DisplayConfig
 from terminal_ticker.controller import TickerController
 from terminal_ticker.feed import FeedEvent
-from terminal_ticker.price_action import Candle, PriceActionState
+from terminal_ticker.price_action import Candle
 
 
 class DummyWorker:
@@ -94,21 +94,18 @@ class ControllerTests(unittest.TestCase):
         self.assertTrue(result.dirty)
         self.assertEqual(self.controller.stream_status, "retrying")
 
-    def test_price_action_event_updates_quote_without_flash(self) -> None:
-        """Verify price action event updates quote without price flash."""
+    def test_candle_event_stores_candles_without_flash(self) -> None:
+        """Verify candle events update chart data without price flash."""
         key = self.instruments[0].key
+        candles = (
+            Candle(key, 1, 100, 101, 99, 100.5, 1000),
+        )
         self.controller.event_queue.put(
             FeedEvent(
-                "price_action",
+                "candles",
                 {
                     "id": key,
-                    "state": PriceActionState(
-                        label="breakout",
-                        bias="bullish",
-                        marker="BO+",
-                        reason="突破近期区间",
-                        strength=82,
-                    ),
+                    "candles": candles,
                 },
             )
         )
@@ -117,53 +114,19 @@ class ControllerTests(unittest.TestCase):
 
         self.assertTrue(result.dirty)
         self.assertEqual(result.flash_directions, {})
-        self.assertEqual(self.controller.quotes[key].price_action.marker, "BO+")
+        self.assertEqual(self.controller.quotes[key].candles, candles)
 
-    def test_price_action_event_stores_candles(self) -> None:
-        """Verify price action event stores chart candles."""
-        key = self.instruments[0].key
-        candles = (
-            Candle(key, 1, 100, 101, 99, 100.5, 1000),
-        )
-        self.controller.event_queue.put(
-            FeedEvent(
-                "price_action",
-                {
-                    "id": key,
-                    "state": PriceActionState(
-                        label="range",
-                        bias="neutral",
-                        marker="RG",
-                        reason="K线重叠震荡",
-                        strength=42,
-                    ),
-                    "candles": candles,
-                },
-            )
-        )
-
-        self.controller.drain_events()
-
-        self.assertEqual(self.controller.quotes[key].price_action_candles, candles)
-
-    def test_price_action_event_stores_thumbnail_candles(self) -> None:
-        """Verify price action events can update fixed thumbnail candles."""
+    def test_candle_event_stores_thumbnail_candles(self) -> None:
+        """Verify candle events can update fixed thumbnail candles."""
         key = self.instruments[0].key
         thumbnail_candles = (
             Candle(key, 1, 100, 101, 99, 100.5, 1000),
         )
         self.controller.event_queue.put(
             FeedEvent(
-                "price_action",
+                "candles",
                 {
                     "id": key,
-                    "state": PriceActionState(
-                        label="range",
-                        bias="neutral",
-                        marker="RG",
-                        reason="K线重叠震荡",
-                        strength=42,
-                    ),
                     "thumbnail_candles": thumbnail_candles,
                 },
             )

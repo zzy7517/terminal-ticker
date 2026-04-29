@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from .price_action import Candle, PriceActionState
+from .price_action import Candle
 
 
 def _to_float(raw_value: Any) -> float | None:
@@ -106,8 +106,7 @@ class QuoteState:
     last_update_at: datetime | None = None
     update_count: int = 0
     last_error: str | None = None
-    price_action: PriceActionState | None = None
-    price_action_candles: tuple[Candle, ...] = tuple()
+    candles: tuple[Candle, ...] = tuple()
     thumbnail_candles: tuple[Candle, ...] = tuple()
 
     @classmethod
@@ -166,50 +165,16 @@ class QuoteState:
         """说明：记录最近一次报价错误。"""
         self.last_error = detail
 
-    def apply_price_action(
+    def apply_candles(
         self,
-        state: PriceActionState,
         *,
         candles: tuple[Candle, ...] = tuple(),
         thumbnail_candles: tuple[Candle, ...] | None = None,
     ) -> None:
-        """说明：把 price action 分析结果写入报价状态。"""
-        self.price_action = state
-        self.price_action_candles = candles
+        """说明：把图表 K 线写入报价状态。"""
+        self.candles = candles
         if thumbnail_candles is not None:
             self.thumbnail_candles = thumbnail_candles
-
-    def price_action_label(
-        self,
-        *,
-        stale_after_seconds: int | None = None,
-        now: datetime | None = None,
-    ) -> str:
-        """说明：返回可展示的 price action 简短标记。"""
-        if self.price_action is None or not self.price_action.is_available():
-            return ""
-        if stale_after_seconds is not None and self.price_action.is_stale(
-            stale_after_seconds,
-            now=now,
-        ):
-            return ""
-        return self.price_action.marker
-
-    def price_action_reason(
-        self,
-        *,
-        stale_after_seconds: int | None = None,
-        now: datetime | None = None,
-    ) -> str:
-        """说明：返回可展示的 price action 简短原因。"""
-        if self.price_action is None or not self.price_action.is_available():
-            return ""
-        if stale_after_seconds is not None and self.price_action.is_stale(
-            stale_after_seconds,
-            now=now,
-        ):
-            return ""
-        return self.price_action.reason
 
     def is_stale(self, stale_after_seconds: int, *, now: datetime | None = None) -> bool:
         """说明：判断当前数据是否超过新鲜度阈值。"""

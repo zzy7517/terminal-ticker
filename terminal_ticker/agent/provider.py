@@ -22,6 +22,7 @@ from ..config.agent_models import (
 )
 from ..domain.quotes import QuoteState
 from ..domain.price_action import Candle
+from ..domain.strategy import StrategyConfig, generate_signal
 from ..market_data.router import MarketInstrument
 
 CODEX_ENV_API_KEYS = ("TERMINAL_TICKER_CODEX_API_KEY", "CODEX_API_KEY")
@@ -132,23 +133,6 @@ def _short_candle(candle: Candle) -> dict[str, Any]:
     }
 
 
-def _price_action_dict(quote: QuoteState) -> dict[str, Any] | None:
-    """说明：把确定性 price action 状态转换成 Agent 输入。"""
-    state = quote.price_action
-    if state is None:
-        return None
-    return {
-        "label": state.label,
-        "bias": state.bias,
-        "marker": state.marker,
-        "reason": state.reason,
-        "strength": state.strength,
-        "available": state.is_available(),
-        "error": state.error,
-        "updated_at": state.updated_at.isoformat(),
-    }
-
-
 def _candle_facts(candles: tuple[Candle, ...]) -> dict[str, Any]:
     """说明：计算 LLM 上下文需要的近期 K 线事实。"""
     if not candles:
@@ -171,6 +155,31 @@ def _candle_facts(candles: tuple[Candle, ...]) -> dict[str, Any]:
     return facts
 
 
+def _strategy_signal_dict(candles: tuple[Candle, ...]) -> dict[str, Any] | None:
+    """说明：把本地 regime/context filter 结果转换成 Agent 输入。"""
+    if len(candles) < 24:
+        return None
+    config = StrategyConfig(window=min(len(candles), 48))
+    signal = generate_signal(candles, config)
+    return {
+        "side": signal.side,
+        "regime": signal.regime,
+        "confidence": signal.confidence,
+        "reason": signal.reason,
+        "features": {
+            "close_return": signal.features.close_return,
+            "range_efficiency": signal.features.range_efficiency,
+            "atr_percent": signal.features.atr_percent,
+            "realized_volatility": signal.features.realized_volatility,
+            "trend_score": signal.features.trend_score,
+            "position_in_range": signal.features.position_in_range,
+            "volume_ratio": signal.features.volume_ratio,
+            "recent_high": signal.features.recent_high,
+            "recent_low": signal.features.recent_low,
+        },
+    }
+
+
 def build_agent_context(
     *,
     instrument: MarketInstrument,
@@ -179,7 +188,7 @@ def build_agent_context(
     max_candles: int,
 ) -> dict[str, Any]:
     """说明：构造发送给 LLM provider 的结构化行情上下文。"""
-    candles = tuple(quote.price_action_candles[-max_candles:])
+    candles = tuple(quote.candles[-max_candles:])
     return {
         "instrument": {
             "key": instrument.key,
@@ -205,8 +214,8 @@ def build_agent_context(
         },
         "analysis": {
             "interval": interval,
-            "deterministic_price_action": _price_action_dict(quote),
             "candle_facts": _candle_facts(candles),
+            "strategy_signal": _strategy_signal_dict(candles),
         },
         "candles": [_short_candle(candle) for candle in candles],
     }

@@ -37,7 +37,8 @@ from ..market_data.longbridge import (
     search_securities,
 )
 from ..domain.quotes import QuoteState
-from ..domain.price_action import Candle, PriceActionState
+from ..domain.price_action import Candle
+from ..domain.strategy import StrategyConfig, generate_signal
 from ..market_data.router import MarketInstrument, resolve_instruments
 from ..config.watchlist_store import (
     append_longbridge_symbol_to_watchlist,
@@ -69,28 +70,6 @@ def _instrument_payload(instrument: MarketInstrument, *, default_interval: str) 
     }
 
 
-def _price_action_payload(
-    state: PriceActionState | None,
-    *,
-    stale_after_seconds: int,
-) -> dict[str, Any] | None:
-    """说明：把 price action 状态序列化给前端，并标记过期状态。"""
-    if state is None:
-        return None
-    stale = state.is_stale(stale_after_seconds)
-    return {
-        "label": state.label,
-        "bias": state.bias,
-        "marker": "" if stale else state.marker,
-        "reason": state.reason,
-        "strength": state.strength,
-        "updatedAt": state.updated_at.isoformat(),
-        "error": state.error,
-        "available": state.is_available() and not stale,
-        "stale": stale,
-    }
-
-
 def _candle_payload(candle: Candle) -> dict[str, Any]:
     """说明：把一根 K 线序列化为图表数据。"""
     return {
@@ -103,13 +82,49 @@ def _candle_payload(candle: Candle) -> dict[str, Any]:
     }
 
 
+def _strategy_signal_payload(quote: QuoteState, config: AnalysisConfig) -> dict[str, Any]:
+    """说明：把当前 K 线窗口转换成可展示的研究信号。"""
+    minimum_window = 24
+    if len(quote.candles) < minimum_window:
+        return {
+            "available": False,
+            "side": "flat",
+            "regime": "unclear",
+            "confidence": 0,
+            "reason": f"Waiting for at least {minimum_window} candles.",
+            "features": None,
+        }
+    window = min(len(quote.candles), max(minimum_window, min(config.lookback, 48)))
+    strategy_config = StrategyConfig(window=window, horizon=max(2, min(6, window // 8)))
+    signal = generate_signal(quote.candles, strategy_config)
+    return {
+        "available": True,
+        "side": signal.side,
+        "regime": signal.regime,
+        "confidence": signal.confidence,
+        "reason": signal.reason,
+        "features": {
+            "closeReturn": signal.features.close_return,
+            "rangeEfficiency": signal.features.range_efficiency,
+            "atrPercent": signal.features.atr_percent,
+            "realizedVolatility": signal.features.realized_volatility,
+            "trendScore": signal.features.trend_score,
+            "positionInRange": signal.features.position_in_range,
+            "volumeRatio": signal.features.volume_ratio,
+            "latestClose": signal.features.latest_close,
+            "recentHigh": signal.features.recent_high,
+            "recentLow": signal.features.recent_low,
+        },
+    }
+
+
 def _quote_payload(
     quote: QuoteState,
     *,
     stale_after_seconds: int,
-    analysis_stale_after_seconds: int,
+    analysis_config: AnalysisConfig,
 ) -> dict[str, Any]:
-    """说明：把报价及其分析结果序列化给前端。"""
+    """说明：把报价和图表 K 线序列化给前端。"""
     return {
         "symbol": quote.symbol,
         "displayName": quote.display_name,
@@ -131,11 +146,8 @@ def _quote_payload(
         "stale": quote.is_stale(stale_after_seconds),
         "lastError": quote.last_error,
         "updateCount": quote.update_count,
-        "priceAction": _price_action_payload(
-            quote.price_action,
-            stale_after_seconds=analysis_stale_after_seconds,
-        ),
-        "candles": [_candle_payload(candle) for candle in quote.price_action_candles],
+        "strategySignal": _strategy_signal_payload(quote, analysis_config),
+        "candles": [_candle_payload(candle) for candle in quote.candles],
         "thumbnailCandles": [
             _candle_payload(candle)
             for candle in quote.thumbnail_candles[-THUMBNAIL_CANDLE_LIMIT:]
@@ -193,7 +205,7 @@ def serialize_market_state(
             key: _quote_payload(
                 quote,
                 stale_after_seconds=config.display.stale_after_seconds,
-                analysis_stale_after_seconds=config.analysis.stale_after_seconds,
+                analysis_config=config.analysis,
             )
             for key, quote in quotes.items()
         },
@@ -348,7 +360,7 @@ class MarketRuntime:
         return {"changed": changed, "state": self.snapshot()}
 
     async def update_analysis_config(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """说明：持久化 price action 分析配置并重新加载运行时。"""
+        """说明：持久化 K 线配置并重新加载运行时。"""
         source_path = self._require_source_path()
         try:
             next_config = _analysis_config_from_payload(self.config.analysis, payload)
@@ -397,7 +409,7 @@ class MarketRuntime:
 
         self.agent_analyses.pop(instrument.key, None)
         if changed:
-            await self.reload_from_source(clear_price_action_keys={instrument.key})
+            await self.reload_from_source(clear_candle_keys={instrument.key})
         else:
             await self.broadcast()
         return {"changed": changed, "state": self.snapshot()}
@@ -416,7 +428,7 @@ class MarketRuntime:
         quote = self.controller.quotes.get(instrument.key)
         if quote is None:
             raise HTTPException(status_code=404, detail="Quote is not available.")
-        if not quote.price_action_candles:
+        if not quote.candles:
             result = AgentAnalysisResult.unavailable(
                 provider=self.config.agent.provider,
                 model=self.config.agent.model,
@@ -440,7 +452,7 @@ class MarketRuntime:
         await self.broadcast()
         return {"result": payload, "state": self.snapshot()}
 
-    async def reload_from_source(self, *, clear_price_action_keys: set[str] | None = None) -> None:
+    async def reload_from_source(self, *, clear_candle_keys: set[str] | None = None) -> None:
         """说明：重新读取 watchlist 配置并重启 feed controller。"""
         if self.config.source_path is None:
             raise HTTPException(status_code=409, detail="No watchlist file is active.")
@@ -454,11 +466,10 @@ class MarketRuntime:
         active_keys = {instrument.key for instrument in instruments}
         for key in active_keys & previous_quotes.keys():
             self.controller.quotes[key] = previous_quotes[key]
-        for key in clear_price_action_keys or set():
+        for key in clear_candle_keys or set():
             quote = self.controller.quotes.get(key)
             if quote is not None:
-                quote.price_action = None
-                quote.price_action_candles = tuple()
+                quote.candles = tuple()
         self.agent_analyses = {
             key: value for key, value in self.agent_analyses.items() if key in active_keys
         }

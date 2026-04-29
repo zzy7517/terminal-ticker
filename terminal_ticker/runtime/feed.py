@@ -6,7 +6,6 @@ import queue
 import sqlite3
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import logging
 from typing import Any
 
@@ -23,7 +22,6 @@ from ..market_data.longbridge import (
     fetch_candles as fetch_longbridge_candles,
     fetch_quote_payloads,
 )
-from ..domain.price_action import PriceActionState, analyze_price_action
 from ..market_data.router import MarketInstrument
 
 LOGGER = logging.getLogger(__name__)
@@ -104,7 +102,7 @@ class FeedWorker(threading.Thread):
         if self.bitget_instruments:
             self.tasks.append(asyncio.create_task(self._run_bitget()))
         if self.config.analysis.enabled and (self.bitget_instruments or self.longbridge_instruments):
-            self.tasks.append(asyncio.create_task(self._run_price_action()))
+            self.tasks.append(asyncio.create_task(self._run_candles()))
         if self.longbridge_instruments:
             self.tasks.append(asyncio.create_task(self._run_longbridge()))
 
@@ -164,14 +162,15 @@ class FeedWorker(threading.Thread):
             except asyncio.CancelledError:
                 break
 
-    async def _run_price_action(self) -> None:
-        """说明：轮询 provider K 线并发送 price action 状态。"""
+    async def _run_candles(self) -> None:
+        """说明：轮询 provider K 线并发送图表数据。"""
         while not self.stop_event.is_set():
             for instrument in self.bitget_instruments + self.longbridge_instruments:
                 if self.stop_event.is_set():
                     break
                 candles = tuple()
                 thumbnail_candles = None
+                error = None
                 try:
                     interval = getattr(instrument, "analysis_interval", None) or self.config.analysis.interval
                     candles = await asyncio.to_thread(
@@ -180,11 +179,10 @@ class FeedWorker(threading.Thread):
                         interval=interval,
                         limit=self.config.analysis.lookback,
                     )
-                    state = self._analyze_fresh_candles(candles)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    state = PriceActionState.unavailable(str(exc) or exc.__class__.__name__)
+                    error = str(exc) or exc.__class__.__name__
                     interval = getattr(instrument, "analysis_interval", None) or self.config.analysis.interval
 
                 try:
@@ -201,14 +199,15 @@ class FeedWorker(threading.Thread):
 
                 payload = {
                     "id": instrument.key,
-                    "state": state,
-                    "candles": candles if state.is_available() else tuple(),
+                    "candles": candles,
                 }
+                if error is not None:
+                    payload["error"] = error
                 if thumbnail_candles is not None:
                     payload["thumbnail_candles"] = thumbnail_candles
                 self.event_queue.put(
                     FeedEvent(
-                        "price_action",
+                        "candles",
                         payload,
                     )
                 )
@@ -217,17 +216,6 @@ class FeedWorker(threading.Thread):
                 await asyncio.sleep(self.config.analysis.poll_interval_seconds)
             except asyncio.CancelledError:
                 break
-
-    def _analyze_fresh_candles(self, candles) -> PriceActionState:
-        """说明：只在最新 K 线仍新鲜时执行 price action 分析。"""
-        if not candles:
-            return PriceActionState.unavailable("No candles returned.")
-        latest_open_ms = max(candle.open_time_ms for candle in candles)
-        latest_open_at = datetime.fromtimestamp(latest_open_ms / 1000, tz=timezone.utc)
-        candle_age = (datetime.now(timezone.utc) - latest_open_at).total_seconds()
-        if candle_age > self.config.analysis.stale_after_seconds:
-            return PriceActionState.unavailable("Candle data is stale.")
-        return analyze_price_action(candles)
 
     def _fetch_candles(
         self,

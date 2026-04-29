@@ -62,8 +62,8 @@ class FeedWorkerTests(unittest.TestCase):
 
         asyncio.run(run_test())
 
-    def test_price_action_polling_enqueues_unavailable_state_on_fetch_error(self) -> None:
-        """Verify price action polling degrades to unavailable on fetch errors."""
+    def test_candle_polling_enqueues_error_on_fetch_error(self) -> None:
+        """Verify candle polling reports provider errors without generating labels."""
         async def run_test() -> None:
             """Exercise run test behavior."""
             event_queue = queue.Queue()
@@ -82,20 +82,20 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch.object(FeedWorker, "_fetch_candles", side_effect=RuntimeError("boom")):
-                task = asyncio.create_task(worker._run_price_action())
+                task = asyncio.create_task(worker._run_candles())
                 await asyncio.sleep(0.05)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
             event = event_queue.get_nowait()
-            self.assertEqual(event.kind, "price_action")
+            self.assertEqual(event.kind, "candles")
             self.assertEqual(event.payload["id"], instrument.key)
-            self.assertEqual(event.payload["state"].label, "unavailable")
+            self.assertEqual(event.payload["error"], "boom")
 
         asyncio.run(run_test())
 
-    def test_longbridge_instruments_are_analyzed_with_candles(self) -> None:
-        """Verify longbridge instruments enter the price action pipeline."""
+    def test_longbridge_instruments_are_polled_for_candles(self) -> None:
+        """Verify longbridge instruments enter the candle pipeline."""
         async def run_test() -> None:
             """Exercise run test behavior."""
             event_queue = queue.Queue()
@@ -122,20 +122,19 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch.object(FeedWorker, "_fetch_candles", return_value=candles):
-                task = asyncio.create_task(worker._run_price_action())
+                task = asyncio.create_task(worker._run_candles())
                 await asyncio.sleep(0.05)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
             event = event_queue.get_nowait()
-            self.assertEqual(event.kind, "price_action")
+            self.assertEqual(event.kind, "candles")
             self.assertEqual(event.payload["id"], "longbridge:AAPL.US")
-            self.assertEqual(event.payload["state"].label, "trend")
             self.assertEqual(event.payload["candles"], candles)
 
         asyncio.run(run_test())
 
-    def test_price_action_uses_per_instrument_interval_override(self) -> None:
+    def test_candle_polling_uses_per_instrument_interval_override(self) -> None:
         """Verify one symbol interval override does not affect other symbols."""
         async def run_test() -> None:
             """Exercise run test behavior."""
@@ -173,7 +172,7 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch.object(FeedWorker, "_fetch_candles", side_effect=fake_fetch):
-                task = asyncio.create_task(worker._run_price_action())
+                task = asyncio.create_task(worker._run_candles())
                 await asyncio.sleep(0.05)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
@@ -183,7 +182,7 @@ class FeedWorkerTests(unittest.TestCase):
 
         asyncio.run(run_test())
 
-    def test_price_action_fetches_fixed_hourly_thumbnail_candles(self) -> None:
+    def test_candle_polling_fetches_fixed_hourly_thumbnail_candles(self) -> None:
         """Verify watchlist thumbnails always use one-hour candles."""
         async def run_test() -> None:
             """Exercise run test behavior."""
@@ -236,7 +235,7 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch.object(FeedWorker, "_fetch_candles", side_effect=fake_fetch):
-                task = asyncio.create_task(worker._run_price_action())
+                task = asyncio.create_task(worker._run_candles())
                 await asyncio.sleep(0.05)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
@@ -296,35 +295,6 @@ class FeedWorkerTests(unittest.TestCase):
 
             self.assertEqual(candles, (cached, fetched))
             self.assertEqual(provider.call_args.kwargs["after_open_time_ms"], base_open_ms - 300_000)
-
-    def test_stale_candles_return_unavailable_state(self) -> None:
-        """Verify old candle timestamps do not produce fresh analysis."""
-        old_open_ms = int(
-            (datetime.now(timezone.utc) - timedelta(minutes=30)).timestamp() * 1000
-        )
-        candles = tuple(
-            Candle(
-                symbol_key="USDT-FUTURES:BTCUSDT",
-                open_time_ms=old_open_ms + index * 60_000,
-                open=100 + index,
-                high=102 + index,
-                low=99 + index,
-                close=101 + index,
-                volume=1000,
-            )
-            for index in range(12)
-        )
-        worker = FeedWorker(
-            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
-            instruments=tuple(),
-            event_queue=queue.Queue(),
-        )
-
-        state = worker._analyze_fresh_candles(candles)
-
-        self.assertEqual(state.label, "unavailable")
-        self.assertEqual(state.error, "Candle data is stale.")
-
 
 if __name__ == "__main__":
     unittest.main()

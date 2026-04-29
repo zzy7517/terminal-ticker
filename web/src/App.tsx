@@ -4,14 +4,11 @@ import {
   ArrowLeft,
   BarChart3,
   Bot,
-  Check,
   CircleDot,
-  Cpu,
   Loader2,
   Minus,
   MousePointer2,
   Plus,
-  Radar,
   RefreshCw,
   Save,
   Search,
@@ -108,10 +105,10 @@ function changeClass(quote: Quote | undefined) {
   return 'neutral';
 }
 
-function analysisTone(quote: Quote | undefined) {
-  const bias = quote?.priceAction?.bias;
-  if (bias === 'bullish') return 'up';
-  if (bias === 'bearish') return 'down';
+function signalTone(quote: Quote | undefined) {
+  const side = quote?.strategySignal?.side;
+  if (side === 'long') return 'up';
+  if (side === 'short') return 'down';
   return 'neutral';
 }
 
@@ -169,7 +166,7 @@ function marketPulse(state: MarketState | null) {
       if (quote.stale || quote.status === 'stale') acc.stale += 1;
       if ((quote.changePercent ?? 0) > 0) acc.up += 1;
       if ((quote.changePercent ?? 0) < 0) acc.down += 1;
-      if (quote.priceAction?.available) acc.signals += 1;
+      if (quote.strategySignal?.available && quote.strategySignal.side !== 'flat') acc.signals += 1;
       return acc;
     },
     { total: 0, up: 0, down: 0, stale: 0, signals: 0 },
@@ -651,7 +648,8 @@ function WatchlistRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const tone = analysisTone(quote);
+  const tone = signalTone(quote);
+  const signal = quote?.strategySignal;
   return (
     <button className={`watch-row ${selected ? 'selected' : ''}`} onClick={onSelect} type="button">
       <div className="watch-main">
@@ -660,7 +658,9 @@ function WatchlistRow({
             <span>{instrument.label}</span>
             <small>{sourceLabel(instrument)}</small>
           </div>
-          <div className="reason-line">{quote?.priceAction?.available ? quote.priceAction.reason : '等待分析'}</div>
+          <div className="reason-line">
+            {signal?.available ? `${signal.side.toUpperCase()} · ${signal.regime}` : '等待 K 线'}
+          </div>
         </div>
         <div className="price-stack">
           <strong>{quote?.priceLabel ?? '-'}</strong>
@@ -669,7 +669,7 @@ function WatchlistRow({
       </div>
       <Sparkline candles={quote?.thumbnailCandles ?? quote?.candles ?? []} tone={changeClass(quote)} />
       <div className="watch-meta">
-        <span className={`marker ${tone}`}>{quote?.priceAction?.marker || '--'}</span>
+        <span className={`marker ${tone}`}>{signal?.available ? signal.side.toUpperCase() : '--'}</span>
         <span>{quote?.ageLabel ?? 'waiting'}</span>
       </div>
     </button>
@@ -810,7 +810,7 @@ function AgentReadout({
       <p>
         {analysis?.available
           ? analysis.summary
-          : analysis?.error || '把当前 quote、price action 和最近 OHLCV 交给 Codex provider 做一次结构化解读。'}
+          : analysis?.error || '把当前 quote、OHLCV K 线和本地结构化特征交给 Codex provider 做一次解读。'}
       </p>
       {analysis?.available && (
         <>
@@ -897,9 +897,10 @@ function WorkspaceView({
   openSettings: () => void;
 }) {
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
-  const tone = analysisTone(selectedQuote);
   const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
   const candleDelta = closeDeltaPercent(selectedQuote?.candles ?? []);
+  const signal = selectedQuote?.strategySignal;
+  const tone = signalTone(selectedQuote);
 
   return (
     <main className="app-shell">
@@ -1004,25 +1005,21 @@ function WorkspaceView({
 
           <div className="analysis-strip">
             <div className={`analysis-marker ${tone}`}>
-              {selectedQuote?.priceAction?.marker || '--'}
+              {signal?.available ? signal.side.toUpperCase() : '--'}
             </div>
             <div>
               <strong>
-                {selectedQuote?.priceAction?.available
-                  ? selectedQuote.priceAction.reason
-                  : selectedQuote?.priceAction?.reason || '等待 price action 分析'}
+                {signal?.available
+                  ? `${signal.regime} · confidence ${Math.round(signal.confidence * 100)}%`
+                  : '等待 strategy context'}
               </strong>
               <span>
-                {selectedQuote?.priceAction?.available
-                  ? `${selectedQuote.priceAction.label} · strength ${selectedQuote.priceAction.strength}`
-                  : '缺少新鲜 K 线时不会展示信号'}
+                {signal?.available
+                  ? signal.reason
+                  : '需要足够 K 线后才生成 long / short / flat 研究信号'}
               </span>
             </div>
-            {selectedQuote?.priceAction?.available ? (
-              <Check className="analysis-check" size={18} />
-            ) : (
-              <Radar className="analysis-waiting" size={18} />
-            )}
+            <Activity className={signal?.available ? 'analysis-check' : 'analysis-waiting'} size={18} />
           </div>
 
           <CandlestickPane
@@ -1047,15 +1044,6 @@ function WorkspaceView({
             disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
             onAnalyze={runAgentAnalysis}
           />
-          <div className="agent-card">
-            <span className="panel-label with-icon"><Cpu size={14} /> Agent State</span>
-            <h3>{selectedQuote?.priceAction?.label ?? 'unavailable'}</h3>
-            <p>
-              {selectedQuote?.priceAction?.available
-                ? selectedQuote.priceAction.reason
-                : '系统直接分析 OHLCV，不读取屏幕截图；数据缺失、过期或接口失败时保持不可用。'}
-            </p>
-          </div>
           <div className="agent-card dense">
             <span className="panel-label">Feed</span>
             <div className="kv-row">

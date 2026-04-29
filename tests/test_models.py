@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from terminal_ticker.models import QuoteState
-from terminal_ticker.price_action import Candle, PriceActionState
+from terminal_ticker.price_action import Candle
 
 
 class QuoteStateTests(unittest.TestCase):
@@ -65,25 +65,8 @@ class QuoteStateTests(unittest.TestCase):
 
         self.assertTrue(label.endswith("ms"))
 
-    def test_apply_price_action_stores_state(self) -> None:
-        """Verify apply price action stores derived analysis."""
-        quote = QuoteState.placeholder("BTCUSDT")
-        state = PriceActionState(
-            label="breakout",
-            bias="bullish",
-            marker="BO+",
-            reason="突破近期区间",
-            strength=82,
-        )
-
-        quote.apply_price_action(state)
-
-        self.assertEqual(quote.price_action.marker, "BO+")
-        self.assertEqual(quote.price_action_label(), "BO+")
-        self.assertEqual(quote.price_action_reason(), "突破近期区间")
-
-    def test_apply_price_action_stores_candles(self) -> None:
-        """Verify apply price action stores recent candles for charting."""
+    def test_apply_candles_stores_chart_candles(self) -> None:
+        """Verify chart candles are tracked for charting and agent context."""
         quote = QuoteState.placeholder("BTCUSDT")
         candles = (
             Candle(
@@ -97,54 +80,20 @@ class QuoteStateTests(unittest.TestCase):
             ),
         )
 
-        quote.apply_price_action(
-            PriceActionState(
-                label="range",
-                bias="neutral",
-                marker="RG",
-                reason="K线重叠震荡",
-                strength=42,
-            ),
-            candles=candles,
-        )
+        quote.apply_candles(candles=candles)
 
-        self.assertEqual(quote.price_action_candles, candles)
+        self.assertEqual(quote.candles, candles)
 
-    def test_apply_price_action_stores_thumbnail_candles(self) -> None:
+    def test_apply_candles_stores_thumbnail_candles(self) -> None:
         """Verify thumbnail candles are tracked separately from chart candles."""
         quote = QuoteState.placeholder("BTCUSDT")
         thumbnail_candles = (
             Candle("USDT-FUTURES:BTCUSDT", 1, 100, 101, 99, 100.5, 1000),
         )
 
-        quote.apply_price_action(
-            PriceActionState(
-                label="range",
-                bias="neutral",
-                marker="RG",
-                reason="K线重叠震荡",
-                strength=42,
-            ),
-            thumbnail_candles=thumbnail_candles,
-        )
+        quote.apply_candles(thumbnail_candles=thumbnail_candles)
 
         self.assertEqual(quote.thumbnail_candles, thumbnail_candles)
-
-    def test_stale_price_action_marker_is_omitted(self) -> None:
-        """Verify stale price action marker is omitted."""
-        quote = QuoteState.placeholder("BTCUSDT")
-        quote.apply_price_action(
-            PriceActionState(
-                label="range",
-                bias="neutral",
-                marker="RG",
-                reason="K线重叠震荡",
-                strength=40,
-                updated_at=datetime.now(timezone.utc) - timedelta(seconds=180),
-            )
-        )
-
-        self.assertEqual(quote.price_action_label(stale_after_seconds=120), "")
 
 
 if __name__ == "__main__":

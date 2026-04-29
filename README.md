@@ -1,14 +1,14 @@
 # Terminal Ticker
 
-一个本地优先的价格行为 Web UI。后端用 Python 连接 Bitget 和长桥 OpenAPI，读取 OHLCV K 线并生成 price action 状态；前端用 React 和 Lightweight Charts 展示 watchlist、K 线图和 agent 解释面板。
+一个本地优先的行情和策略研究 Web UI。后端用 Python 连接 Bitget 和长桥 OpenAPI，读取 OHLCV K 线并生成 regime/context 信号；前端用 React 和 Lightweight Charts 展示 watchlist、K 线图和 agent 解释面板。
 
 ## 功能
 
 - 按 `watchlist.toml` 显示 Bitget、长桥美股和 ETF 标的。
-- 通过本地 WebSocket 推送实时 quote、K 线分析和状态更新。
-- 使用结构化 OHLCV 数据分析趋势、震荡、突破尝试和回调状态。
-- 展示选中标的的 K 线图、价格、涨跌幅、成交量和 price action 解释。
-- 提供 Codex provider 的 LLM 解读入口，把当前 K 线和本地分析结果转成结构化市场解读。
+- 通过本地 WebSocket 推送实时 quote、K 线和策略状态更新。
+- 使用结构化 OHLCV 数据生成 `long` / `short` / `flat` 研究信号、regime 和 confidence。
+- 展示选中标的的 K 线图、价格、涨跌幅、成交量和 strategy context。
+- 提供 Codex provider 的 LLM 解读入口，把当前 K 线、策略信号和本地特征转成结构化市场解读。
 - 美股页内搜索长桥标的，并写入本地 watchlist。
 - 长桥凭证只从环境变量读取，不写入配置文件。
 - 不包含 PySide/Qt 浮窗、折叠行情条或滚动 ticker。
@@ -140,11 +140,11 @@ reasoning_effort = "medium"
 - 没有写 `group` 时会自动归类：Bitget 到 `crypto`，长桥到 `stocks`。
 - `refresh_interval_ms` 控制后端向 WebSocket 客户端刷新状态的心跳。
 - `longbridge_poll_interval_seconds` 控制长桥 quote 拉取间隔。
-- `[analysis]` 控制本地价格行为分析。当前对 Bitget 和长桥标的拉取 OHLCV K 线并生成状态。
+- `[analysis]` 控制本地 K 线拉取和 strategy context 刷新。当前对 Bitget 和长桥标的拉取 OHLCV K 线，并基于 K 线生成 `long` / `short` / `flat` 研究信号。
 - `analysis.interval` 是 K 线周期，默认 `5m`。
-- `analysis.lookback` 是每次分析使用的最近 K 线数量，最小值是 `10`。
-- `analysis.poll_interval_seconds` 控制 K 线分析刷新间隔。
-- `analysis.stale_after_seconds` 控制分析结果和最新 K 线多久后视为过期。
+- `analysis.lookback` 是每次拉取和策略上下文使用的最近 K 线数量，最小值是 `10`。
+- `analysis.poll_interval_seconds` 控制 K 线刷新间隔。
+- `analysis.stale_after_seconds` 控制最新行情多久后视为过期。
 - `[agent]` 控制 LLM 解读层。第一版只支持 `provider = "codex"`。
 - `agent.api_mode` 当前固定为 `codex_responses`，这和 Hermes 把 `openai-codex` 映射到 Responses 风格 transport 的思路一致。
 - Codex provider 会直接读取 Codex CLI 的 `auth.json`，不会读取 Hermes 的 auth store，也不会导入 Hermes runtime。
@@ -153,9 +153,9 @@ reasoning_effort = "medium"
 - `agent.reasoning_effort` 支持 `low`、`medium`、`high`、`xhigh`。
 - 旧配置里的 `show_collapsed` 会被解析以保持兼容，但 Web UI 不再使用折叠行情条。
 
-## 价格行为分析
+## Strategy Context
 
-价格行为分析不识别屏幕截图里的 K 线图，而是直接读取交易所返回的 OHLCV 数据：
+本地策略层不再输出 `TR+`、`BO+`、`RG` 这类固定 price-action 标签，而是直接读取交易所返回的 OHLCV 数据，提取 regime/context filter 特征：
 
 - `O`：开盘价
 - `H`：最高价
@@ -163,25 +163,31 @@ reasoning_effort = "medium"
 - `C`：收盘价
 - `V`：成交量
 
-当前状态标记：
+当前策略信号：
 
-- `TR+` / `TR-`：上涨或下跌趋势
-- `RG`：震荡区间
-- `BO+` / `BO-`：向上或向下突破尝试
-- `PB+` / `PB-`：上涨或下跌背景里的回调
+- `long`：结构化特征支持做多观察
+- `short`：结构化特征支持做空观察
+- `flat`：趋势置信度不足，或者当前 regime 更适合空仓/等待
 
-这只是本地监控和解释层，不会下单、不会管理仓位，也不会给出买卖按钮。
+本地特征包括近期涨跌幅、range efficiency、ATR 百分比、realized volatility、EMA trend score、价格在区间里的位置和成交量相对均值。这个信号是研究信号，不会下单、不会管理仓位，也不会给出买卖按钮。
+
+可以用离线脚本把历史数据切成前半段和后半段：前半段搜索参数，后半段做样本外验证。
+
+```bash
+.venv/bin/python scripts/research_strategy.py --symbol BTCUSDT --inst-type USDT-FUTURES --interval 5m --limit 1000 --refresh
+```
+
+输出会包含训练段和验证段的 `trades`、`hit_rate`、`average_trade_return`、`total_return`、`max_drawdown`、`sharpe_like` 等指标。抓到的 K 线会保存到 `data/strategy/*.csv`，后续不加 `--refresh` 时会复用本地数据。
 
 ## Codex Agent 解读
 
 Web UI 右侧的 `Ask Codex` 会触发一次手动分析。后端发送给 Codex 的不是截图，而是当前标的的结构化上下文：
 
 - 标的信息和实时 quote。
-- deterministic price action 结果。
 - 最近 OHLCV K 线。
-- 本地计算出的近期高低点、最新实体、最新振幅、成交量均值等事实。
+- 本地 strategy signal、regime、confidence 和近期高低点、最新实体、最新振幅、成交量均值等事实。
 
-Codex 必须返回结构化 JSON，Web UI 会展示摘要、方向、置信度、关键价位、观察计划和失效条件。没有 K 线、Codex 登录态缺失、token 过期或 provider 请求失败时，只会显示不可用状态，不影响行情和本地 price action。
+Codex 必须返回结构化 JSON，Web UI 会展示摘要、方向、置信度、关键价位、观察计划和失效条件。没有 K 线、Codex 登录态缺失、token 过期或 provider 请求失败时，只会显示不可用状态，不影响行情和本地 strategy signal。
 
 ## 添加和移除美股
 

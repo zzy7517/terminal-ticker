@@ -9,18 +9,6 @@ export interface CandlePoint {
   volume: number;
 }
 
-export interface PriceAction {
-  label: string;
-  bias: Bias;
-  marker: string;
-  reason: string;
-  strength: number;
-  updatedAt: string;
-  error: string | null;
-  available: boolean;
-  stale: boolean;
-}
-
 export interface AgentAnalysis {
   available: boolean;
   provider: string;
@@ -39,6 +27,26 @@ export interface AgentAnalysis {
   riskNotes: string[];
   error: string | null;
   rawText: string | null;
+}
+
+export interface StrategySignal {
+  available: boolean;
+  side: 'long' | 'short' | 'flat';
+  regime: 'trend' | 'range' | 'high_vol' | 'low_vol' | 'transition' | 'unclear';
+  confidence: number;
+  reason: string;
+  features: {
+    closeReturn: number;
+    rangeEfficiency: number;
+    atrPercent: number;
+    realizedVolatility: number;
+    trendScore: number;
+    positionInRange: number;
+    volumeRatio: number;
+    latestClose: number;
+    recentHigh: number;
+    recentLow: number;
+  } | null;
 }
 
 export interface AgentConfig {
@@ -111,7 +119,7 @@ export interface Quote {
   stale: boolean;
   lastError: string | null;
   updateCount: number;
-  priceAction: PriceAction | null;
+  strategySignal: StrategySignal;
   candles: CandlePoint[];
   thumbnailCandles: CandlePoint[];
 }

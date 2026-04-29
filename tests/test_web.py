@@ -2,7 +2,6 @@
 import tempfile
 import textwrap
 import unittest
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,7 +12,7 @@ from terminal_ticker.config import AppConfig, DisplayConfig, load_config
 from terminal_ticker.controller import DrainResult
 from terminal_ticker.longbridge_provider import LongbridgeInstrument, LongbridgeSecurity
 from terminal_ticker.models import QuoteState
-from terminal_ticker.price_action import Candle, PriceActionState
+from terminal_ticker.price_action import Candle
 from terminal_ticker.web import PROJECT_ROOT, WEB_DIST, create_app, serialize_market_state
 
 
@@ -60,14 +59,7 @@ class WebTests(unittest.TestCase):
         quote.apply_payload({"short_name": "AAPL", "price": 201.25, "change_percent": 0.72})
         candle = Candle("longbridge:AAPL.US", 1776846000000, 200, 202, 199, 201.25, 12345)
         thumbnail_candle = Candle("longbridge:AAPL.US", 1776849600000, 201, 203, 200, 202.25, 14000)
-        quote.apply_price_action(
-            PriceActionState(
-                label="trend",
-                bias="bullish",
-                marker="TR+",
-                reason="收盘持续上行",
-                strength=70,
-            ),
+        quote.apply_candles(
             candles=(candle,),
             thumbnail_candles=(thumbnail_candle,),
         )
@@ -81,41 +73,14 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(payload["instruments"][0]["key"], "longbridge:AAPL.US")
         self.assertEqual(payload["quotes"][instrument.key]["priceLabel"], "201.25")
-        self.assertEqual(payload["quotes"][instrument.key]["priceAction"]["marker"], "TR+")
+        self.assertNotIn("priceAction", payload["quotes"][instrument.key])
+        self.assertFalse(payload["quotes"][instrument.key]["strategySignal"]["available"])
         self.assertEqual(payload["quotes"][instrument.key]["candles"][0]["time"], 1776846000)
         self.assertEqual(payload["quotes"][instrument.key]["thumbnailCandles"][0]["time"], 1776849600)
         self.assertEqual(payload["instruments"][0]["analysisInterval"], "5m")
         self.assertEqual(payload["config"]["agent"]["provider"], "codex")
         self.assertEqual(payload["config"]["agent"]["baseUrl"], None)
         self.assertEqual(payload["agentAnalyses"], {})
-
-    def test_stale_analysis_is_not_marked_available(self) -> None:
-        """Verify stale price action markers do not appear as active signals."""
-        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
-        config = AppConfig(instruments=tuple(), display=DisplayConfig())
-        quote = QuoteState.placeholder("AAPL")
-        old_time = datetime.now(timezone.utc) - timedelta(minutes=20)
-        quote.apply_price_action(
-            PriceActionState(
-                label="breakout",
-                bias="bullish",
-                marker="BO+",
-                reason="突破近期区间",
-                strength=80,
-                updated_at=old_time,
-            )
-        )
-
-        payload = serialize_market_state(
-            config=config,
-            instruments=(instrument,),
-            quotes={instrument.key: quote},
-            stream_status="live",
-        )
-
-        analysis = payload["quotes"][instrument.key]["priceAction"]
-        self.assertFalse(analysis["available"])
-        self.assertEqual(analysis["marker"], "")
 
     def test_state_endpoint_uses_runtime_snapshot(self) -> None:
         """Verify the local API exposes runtime state."""
@@ -164,14 +129,7 @@ class WebTests(unittest.TestCase):
         )
         quote = app.state.runtime.controller.quotes[instrument.key]
         quote.apply_payload({"price": 201.25})
-        quote.apply_price_action(
-            PriceActionState(
-                label="trend",
-                bias="bullish",
-                marker="TR+",
-                reason="收盘持续上行",
-                strength=70,
-            ),
+        quote.apply_candles(
             candles=(Candle("longbridge:AAPL.US", 1776846000000, 200, 202, 199, 201.25, 12345),),
         )
 
