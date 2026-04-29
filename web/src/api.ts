@@ -157,6 +157,16 @@ export async function saveInstrumentAnalysisInterval(key: string, interval: stri
   return payload.state;
 }
 
+export async function loadOlderCandles(key: string): Promise<{ added: number; state: MarketState }> {
+  const response = await fetch(`/api/instruments/${encodeURIComponent(key)}/candles/older`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'older candles request failed');
+  }
+  return response.json();
+}
+
 export function connectStateSocket(onState: (state: MarketState) => void, onStatus: (status: string) => void) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);

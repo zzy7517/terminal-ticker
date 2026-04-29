@@ -31,3 +31,14 @@ class Candle:
     def body(self) -> float:
         """说明：返回 K 线实体大小。"""
         return abs(self.close - self.open)
+
+
+def merge_candles(
+    existing: tuple[Candle, ...],
+    incoming: tuple[Candle, ...],
+) -> tuple[Candle, ...]:
+    """说明：按开盘时间合并 K 线，incoming 覆盖同一根的旧值。"""
+    by_open_time = {candle.open_time_ms: candle for candle in existing}
+    for candle in incoming:
+        by_open_time[candle.open_time_ms] = candle
+    return tuple(by_open_time[key] for key in sorted(by_open_time))

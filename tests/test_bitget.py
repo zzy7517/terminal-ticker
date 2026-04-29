@@ -105,6 +105,61 @@ class BitgetTests(unittest.TestCase):
         self.assertIn("endTime", params)
         self.assertEqual(candles[0].open_time_ms, 1695835800000)
 
+    def test_fetch_candles_before_uses_history_window(self) -> None:
+        """Verify older Bitget candle fetches request the window before cached data."""
+        instrument = BitgetInstrument(
+            symbol="BTCUSDT",
+            inst_type="USDT-FUTURES",
+            label="BTC",
+            base_asset="BTC",
+            quote_asset="USDT",
+            market_kind="perp",
+        )
+
+        with patch(
+            "terminal_ticker.bitget._fetch_json",
+            return_value={
+                "code": "00000",
+                "data": [
+                    ["1695835200000", "1", "2", "0.5", "1.5", "10"],
+                    ["1695835500000", "1.5", "2", "1", "1.8", "11"],
+                    ["1695835800000", "1.8", "2", "1.7", "1.9", "12"],
+                ],
+            },
+        ) as fetch_json:
+            candles = fetch_candles(
+                instrument,
+                interval="5m",
+                limit=2,
+                before_open_time_ms=1695835800000,
+            )
+
+        self.assertEqual(fetch_json.call_args.args[0], "/api/v2/mix/market/history-candles")
+        params = fetch_json.call_args.args[1]
+        self.assertEqual(params["endTime"], "1695835799999")
+        self.assertEqual(params["limit"], "2")
+        self.assertEqual([candle.open_time_ms for candle in candles], [1695835200000, 1695835500000])
+
+    def test_fetch_spot_recent_uses_1000_limit_endpoint(self) -> None:
+        """Verify initial Bitget spot fetches can request the full chart window."""
+        instrument = BitgetInstrument(
+            symbol="BTCUSDT",
+            inst_type=SPOT,
+            label="BTC",
+            base_asset="BTC",
+            quote_asset="USDT",
+            market_kind="spot",
+        )
+
+        with patch(
+            "terminal_ticker.bitget._fetch_json",
+            return_value={"code": "00000", "data": []},
+        ) as fetch_json:
+            fetch_candles(instrument, interval="5m", limit=1000)
+
+        self.assertEqual(fetch_json.call_args.args[0], "/api/v2/spot/market/candles")
+        self.assertEqual(fetch_json.call_args.args[1]["limit"], "1000")
+
     def test_search_instruments_filters_catalog(self) -> None:
         """Verify Bitget search returns matching spot and futures instruments."""
         catalog = {

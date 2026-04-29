@@ -34,10 +34,11 @@ from ..config import (
 )
 from ..market_data.alpaca import search_assets as search_alpaca_assets
 from ..runtime.controller import TickerController
+from ..runtime.feed import CHART_CANDLE_LIMIT, OLDER_CANDLE_LIMIT
 from ..market_data.longbridge import search_securities
 from ..market_data.bitget import search_instruments as search_bitget_instruments
 from ..domain.quotes import QuoteState
-from ..domain.price_action import Candle
+from ..domain.price_action import Candle, merge_candles
 from ..domain.strategy import StrategyConfig, generate_signal
 from ..market_data.router import MarketInstrument, resolve_instruments
 from ..config.watchlist_store import (
@@ -55,6 +56,7 @@ from ..config.watchlist_store import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
 THUMBNAIL_CANDLE_LIMIT = 60
+OLDER_CANDLE_SOURCES = {ALPACA_SOURCE, BITGET_SOURCE}
 
 
 def _utc_now_iso() -> str:
@@ -591,6 +593,46 @@ class MarketRuntime:
         await self.broadcast()
         return {"result": payload, "state": self.snapshot()}
 
+    async def load_older_candles(self, instrument_key: str) -> dict[str, Any]:
+        """说明：为图表继续向前加载一批历史 K 线。"""
+        instrument = self._instrument_by_key(instrument_key)
+        if instrument.source not in OLDER_CANDLE_SOURCES:
+            raise HTTPException(status_code=400, detail="Older candle loading is not supported.")
+        quote = self.controller.quotes.get(instrument.key)
+        if quote is None:
+            raise HTTPException(status_code=404, detail="Quote is not available.")
+
+        interval = instrument.analysis_interval or self.config.analysis.interval
+        before_open_time_ms = quote.candles[0].open_time_ms if quote.candles else None
+        limit = OLDER_CANDLE_LIMIT if before_open_time_ms is not None else CHART_CANDLE_LIMIT
+        try:
+            incoming = await asyncio.to_thread(
+                self.controller.fetch_older_candles,
+                instrument,
+                interval=interval,
+                before_open_time_ms=before_open_time_ms,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc) or exc.__class__.__name__) from exc
+
+        if before_open_time_ms is not None:
+            incoming = tuple(
+                candle for candle in incoming if candle.open_time_ms < before_open_time_ms
+            )
+        previous_count = len(quote.candles)
+        quote.apply_candles(
+            candles=merge_candles(quote.candles, tuple(incoming)),
+            thumbnail_candles=quote.thumbnail_candles,
+        )
+        added = max(0, len(quote.candles) - previous_count)
+        if added:
+            self.agent_analyses.pop(instrument.key, None)
+        await self.broadcast()
+        return {"added": added, "state": self.snapshot()}
+
     async def reload_from_source(self, *, clear_candle_keys: set[str] | None = None) -> None:
         """说明：重新读取 watchlist 配置并重启 feed controller。"""
         if self.config.source_path is None:
@@ -756,6 +798,11 @@ def create_app(
     ) -> dict[str, Any]:
         """说明：处理单个标的 K 线周期更新请求。"""
         return await runtime.update_instrument_analysis_interval(instrument_key, payload)
+
+    @app.post("/api/instruments/{instrument_key}/candles/older")
+    async def load_older_candles_endpoint(instrument_key: str) -> dict[str, Any]:
+        """说明：处理图表向前加载历史 K 线请求。"""
+        return await runtime.load_older_candles(instrument_key)
 
     @app.post("/api/agent/analyze/{instrument_key}")
     async def analyze_instrument_endpoint(instrument_key: str) -> dict[str, Any]:

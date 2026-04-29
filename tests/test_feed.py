@@ -363,7 +363,7 @@ class FeedWorkerTests(unittest.TestCase):
                 "perp",
             )
             base_open_ms = int((datetime.now(timezone.utc) - timedelta(minutes=5)).timestamp() * 1000)
-            cached = Candle(
+            previous = Candle(
                 symbol_key=instrument.key,
                 open_time_ms=base_open_ms,
                 open=100,
@@ -372,7 +372,7 @@ class FeedWorkerTests(unittest.TestCase):
                 close=101,
                 volume=1000,
             )
-            fetched = Candle(
+            cached = Candle(
                 symbol_key=instrument.key,
                 open_time_ms=base_open_ms + 300_000,
                 open=101,
@@ -381,7 +381,16 @@ class FeedWorkerTests(unittest.TestCase):
                 close=102,
                 volume=1200,
             )
-            cache.upsert((cached,), interval="5m", fetched_at_ms=base_open_ms)
+            fetched = Candle(
+                symbol_key=instrument.key,
+                open_time_ms=base_open_ms + 600_000,
+                open=102,
+                high=104,
+                low=101,
+                close=103,
+                volume=1300,
+            )
+            cache.upsert((previous, cached), interval="5m", fetched_at_ms=base_open_ms)
             worker = FeedWorker(
                 config=AppConfig(instruments=tuple(), display=DisplayConfig()),
                 instruments=(instrument,),
@@ -397,7 +406,45 @@ class FeedWorkerTests(unittest.TestCase):
                 candles = worker._fetch_candles(instrument, interval="5m", limit=2)
 
             self.assertEqual(candles, (cached, fetched))
-            self.assertEqual(provider.call_args.kwargs["after_open_time_ms"], base_open_ms - 300_000)
+            self.assertEqual(provider.call_args.kwargs["after_open_time_ms"], base_open_ms)
+
+    def test_fetch_candles_keeps_full_analysis_interval_window(self) -> None:
+        """Verify analysis caches retain enough older candles for slow intervals."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache = CandleCache(Path(tmp_dir) / "candles.sqlite3", retention_seconds=86_400)
+            instrument = BitgetInstrument(
+                "BTCUSDT",
+                "USDT-FUTURES",
+                "BTC",
+                "BTC",
+                "USDT",
+                "perp",
+            )
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            cached = tuple(
+                Candle(
+                    symbol_key=instrument.key,
+                    open_time_ms=now_ms - (39 - index) * 86_400_000,
+                    open=100 + index,
+                    high=102 + index,
+                    low=99 + index,
+                    close=101 + index,
+                    volume=1000 + index,
+                )
+                for index in range(40)
+            )
+            cache.upsert(cached, interval="1D", fetched_at_ms=now_ms)
+            worker = FeedWorker(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                event_queue=queue.Queue(),
+                candle_cache=cache,
+            )
+
+            with patch.object(FeedWorker, "_fetch_provider_candles", return_value=tuple()):
+                candles = worker._fetch_candles(instrument, interval="1D", limit=40)
+
+            self.assertEqual(candles, cached)
 
     def test_longbridge_quote_polling_reuses_context(self) -> None:
         """Verify longbridge quote polling does not rebuild the SDK context every request."""

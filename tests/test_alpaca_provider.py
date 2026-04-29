@@ -107,6 +107,42 @@ class AlpacaProviderTests(unittest.TestCase):
         self.assertEqual(candles[0].open, 200.0)
         self.assertEqual(candles[0].close, 201.25)
 
+    def test_fetch_candles_before_requests_descending_history(self) -> None:
+        """Verify older Alpaca candle fetches request the page before cached data."""
+        captured = []
+        instrument = AlpacaInstrument("AAPL", "AAPL")
+
+        def fake_fetch(_base_url, path, params):
+            captured.append((path, params))
+            return {
+                "bars": {
+                    "AAPL": [
+                        {
+                            "t": "2026-04-28T19:50:00Z",
+                            "o": 199.0,
+                            "h": 201.0,
+                            "l": 198.5,
+                            "c": 200.25,
+                            "v": 12000,
+                        }
+                    ]
+                }
+            }
+
+        with patch("terminal_ticker.alpaca_provider._fetch_json", side_effect=fake_fetch):
+            candles = fetch_candles(
+                instrument,
+                interval="5m",
+                limit=200,
+                before_open_time_ms=1777406400000,
+            )
+
+        self.assertEqual(captured[0][0], "/v2/stocks/bars")
+        self.assertEqual(captured[0][1]["limit"], "200")
+        self.assertEqual(captured[0][1]["sort"], "desc")
+        self.assertEqual(captured[0][1]["end"], "2026-04-28T19:59:59.999000Z")
+        self.assertEqual(candles[0].open_time_ms, 1777405800000)
+
     def test_search_assets_filters_cached_asset_list(self) -> None:
         """Verify Alpaca asset search matches symbol and name."""
         with patch(

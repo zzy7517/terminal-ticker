@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from terminal_ticker.candle_cache import CandleCache, cached_fetch_candles
+from terminal_ticker.candle_cache import (
+    CandleCache,
+    cached_fetch_candles,
+    retention_seconds_for_window,
+)
 from terminal_ticker.price_action import Candle
 
 
@@ -95,11 +99,12 @@ class CandleCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             cache = CandleCache(Path(tmp_dir) / "candles.sqlite3")
             symbol_key = "longbridge:AAPL.US"
+            previous = _candle(symbol_key, 700_000)
             latest = _candle(symbol_key, 1_000_000)
             fetched = _candle(symbol_key, 1_300_000, close=104)
             calls = []
 
-            cache.upsert((latest,), interval="5m", fetched_at_ms=1_000_000)
+            cache.upsert((previous, latest), interval="5m", fetched_at_ms=1_000_000)
 
             def fetcher(*, interval, limit, after_open_time_ms):
                 calls.append((interval, limit, after_open_time_ms))
@@ -116,6 +121,36 @@ class CandleCacheTests(unittest.TestCase):
 
             self.assertEqual(calls[0][2], 700_000)
             self.assertEqual(candles, (latest, fetched))
+
+    def test_cached_fetch_requests_direct_window_when_cache_is_short(self) -> None:
+        """Verify partial cache windows are filled by one direct provider request."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache = CandleCache(Path(tmp_dir) / "candles.sqlite3")
+            symbol_key = "USDT-FUTURES:BTCUSDT"
+            latest = _candle(symbol_key, 12_700_000, close=139)
+            fetched = tuple(
+                _candle(symbol_key, 1_000_000 + index * 300_000, close=100 + index)
+                for index in range(40)
+            )
+            calls = []
+
+            cache.upsert((latest,), interval="5m", fetched_at_ms=12_700_000)
+
+            def fetcher(*, interval, limit, after_open_time_ms):
+                calls.append((interval, limit, after_open_time_ms))
+                return fetched
+
+            candles = cached_fetch_candles(
+                cache=cache,
+                symbol_key=symbol_key,
+                interval="5m",
+                limit=40,
+                fetcher=fetcher,
+                now_ms=12_700_000,
+            )
+
+            self.assertEqual(calls, [("5m", 1000, None)])
+            self.assertEqual(candles, fetched)
 
     def test_cached_fetch_requests_only_missing_window(self) -> None:
         """Verify hot cache refreshes do not request the full lookback again."""
@@ -149,15 +184,15 @@ class CandleCacheTests(unittest.TestCase):
             self.assertEqual(len(candles), 40)
             self.assertEqual(candles[-1], fetched)
 
-    def test_cached_fetch_can_return_fresh_cache_without_provider(self) -> None:
+    def test_cached_fetch_can_return_full_fresh_cache_without_provider(self) -> None:
         """Verify callers can skip provider refreshes for recently fetched candles."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            cache = CandleCache(Path(tmp_dir) / "candles.sqlite3")
+            cache = CandleCache(Path(tmp_dir) / "candles.sqlite3", retention_seconds=60 * 60 * 60)
             symbol_key = "longbridge:AAPL.US"
             now_ms = 2_000_000
-            cached = (
-                _candle(symbol_key, now_ms - 3_600_000, close=101),
-                _candle(symbol_key, now_ms, close=102),
+            cached = tuple(
+                _candle(symbol_key, now_ms - (59 - index) * 3_600_000, close=100 + index)
+                for index in range(60)
             )
             cache.upsert(cached, interval="1H", fetched_at_ms=now_ms - 60_000)
 
@@ -175,6 +210,10 @@ class CandleCacheTests(unittest.TestCase):
             )
 
             self.assertEqual(candles, cached)
+
+    def test_retention_seconds_for_window_uses_interval_span(self) -> None:
+        """Verify cache retention can be sized to the requested candle window."""
+        self.assertEqual(retention_seconds_for_window("1D", 40), 40 * 24 * 60 * 60)
 
     def test_cached_fetch_refreshes_latest_cached_candle(self) -> None:
         """Verify unfinished cached candles can be overwritten by provider data."""

@@ -340,9 +340,15 @@ def fetch_candles(
     interval: str,
     limit: int,
     after_open_time_ms: int | None = None,
+    before_open_time_ms: int | None = None,
 ) -> tuple[Candle, ...]:
     """说明：拉取指定 Alpaca 标的的近期 K 线。"""
-    end_time = datetime.now(timezone.utc) - timedelta(minutes=BAR_DELAY_MINUTES)
+    if after_open_time_ms is not None and before_open_time_ms is not None:
+        raise ValueError("after_open_time_ms and before_open_time_ms cannot both be set")
+    if before_open_time_ms is None:
+        end_time = datetime.now(timezone.utc) - timedelta(minutes=BAR_DELAY_MINUTES)
+    else:
+        end_time = datetime.fromtimestamp((before_open_time_ms - 1) / 1000, tz=timezone.utc)
     if after_open_time_ms is None:
         start_time = _initial_start_time(end_time, interval=interval, limit=limit)
     else:
@@ -355,10 +361,10 @@ def fetch_candles(
         "timeframe": _timeframe_for_interval(interval),
         "start": start_time.isoformat().replace("+00:00", "Z"),
         "end": end_time.isoformat().replace("+00:00", "Z"),
-        "limit": "10000",
+        "limit": str(min(max(limit, 1), 10000) if before_open_time_ms is not None else 10000),
         "feed": _data_feed(),
         "adjustment": "raw",
-        "sort": "asc",
+        "sort": "desc" if before_open_time_ms is not None else "asc",
     }
     payload = _fetch_json(_data_base_url(), "/v2/stocks/bars", params)
     if not isinstance(payload, dict):
@@ -382,6 +388,8 @@ def fetch_candles(
     )
     if after_open_time_ms is not None:
         candles = tuple(candle for candle in candles if candle.open_time_ms > after_open_time_ms)
+    if before_open_time_ms is not None:
+        candles = tuple(candle for candle in candles if candle.open_time_ms < before_open_time_ms)
     return candles[-limit:]
 
 

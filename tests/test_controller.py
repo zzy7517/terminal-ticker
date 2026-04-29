@@ -135,6 +135,27 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(result.flash_directions, {})
         self.assertEqual(self.controller.quotes[key].candles, candles)
 
+    def test_candle_event_merges_with_loaded_history(self) -> None:
+        """Verify live refreshes do not discard manually loaded older candles."""
+        key = self.instruments[0].key
+        older = Candle(key, 1, 90, 91, 89, 90.5, 900)
+        stale_current = Candle(key, 2, 100, 101, 99, 100.5, 1000)
+        refreshed_current = Candle(key, 2, 100, 102, 99, 101.5, 1200)
+        self.controller.quotes[key].apply_candles(candles=(older, stale_current))
+        self.controller.event_queue.put(
+            FeedEvent(
+                "candles",
+                {
+                    "id": key,
+                    "candles": (refreshed_current,),
+                },
+            )
+        )
+
+        self.controller.drain_events()
+
+        self.assertEqual(self.controller.quotes[key].candles, (older, refreshed_current))
+
     def test_candle_event_stores_thumbnail_candles(self) -> None:
         """Verify candle events can update fixed thumbnail candles."""
         key = self.instruments[0].key

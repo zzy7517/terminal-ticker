@@ -428,8 +428,11 @@ def fetch_candles(
     limit: int,
     quote_context: Any | None = None,
     after_open_time_ms: int | None = None,
+    before_open_time_ms: int | None = None,
 ) -> tuple[Candle, ...]:
     """说明：拉取指定 provider 标的的近期 K 线。"""
+    if before_open_time_ms is not None:
+        raise ValueError("Longbridge candles do not support before_open_time_ms")
     ctx = quote_context or _build_quote_context()
     if after_open_time_ms is None:
         rows = ctx.candlesticks(

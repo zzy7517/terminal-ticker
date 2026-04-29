@@ -31,6 +31,8 @@ class DummyController:
         }
         self.stream_status = "idle"
         self.started = False
+        self.older_candles = tuple()
+        self.older_requests = []
 
     def start(self) -> None:
         """Record start calls."""
@@ -43,6 +45,18 @@ class DummyController:
     def drain_events(self) -> DrainResult:
         """Report no queued changes."""
         return DrainResult(dirty=False, flash_directions={})
+
+    def fetch_older_candles(
+        self,
+        instrument,
+        *,
+        interval,
+        before_open_time_ms,
+        limit,
+    ):
+        """Return fixture older candles for API tests."""
+        self.older_requests.append((instrument.key, interval, before_open_time_ms, limit))
+        return self.older_candles
 
 
 class WebTests(unittest.TestCase):
@@ -100,6 +114,51 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["instruments"][0]["key"], "longbridge:AAPL.US")
+
+    def test_load_older_candles_endpoint_merges_history(self) -> None:
+        """Verify browser can request earlier candles for the selected chart."""
+        instrument = AlpacaInstrument("AAPL", "AAPL")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+        runtime = app.state.runtime
+        existing = Candle("alpaca:AAPL", 1777406400000, 200, 202, 199, 201.25, 12345)
+        older = Candle("alpaca:AAPL", 1777406100000, 199, 201, 198.5, 200.0, 12000)
+        runtime.controller.quotes[instrument.key].apply_candles(candles=(existing,))
+        runtime.controller.older_candles = (older,)
+
+        with TestClient(app) as client:
+            response = client.post("/api/instruments/alpaca%3AAAPL/candles/older")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["added"], 1)
+        self.assertEqual(
+            runtime.controller.older_requests,
+            [("alpaca:AAPL", "5m", 1777406400000, 200)],
+        )
+        self.assertEqual(
+            [item["time"] for item in payload["state"]["quotes"]["alpaca:AAPL"]["candles"]],
+            [1777406100, 1777406400],
+        )
+
+    def test_load_older_candles_rejects_unsupported_provider(self) -> None:
+        """Verify unsupported providers do not issue ambiguous history requests."""
+        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/api/instruments/longbridge%3AAAPL.US/candles/older")
+
+        self.assertEqual(response.status_code, 400)
 
     def test_search_endpoint_marks_existing_symbols(self) -> None:
         """Verify default securities search uses Alpaca and marks active symbols."""

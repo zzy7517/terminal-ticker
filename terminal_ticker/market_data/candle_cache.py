@@ -28,6 +28,7 @@ INTERVAL_SECONDS = {
     "1W": 7 * 24 * 60 * 60,
     "1M": 31 * 24 * 60 * 60,
 }
+DIRECT_WINDOW_CANDLE_LIMIT = 1000
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,11 @@ def default_cache_path() -> Path:
     """说明：返回平台本地默认 SQLite 缓存路径。"""
     base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
     return base / DEFAULT_CACHE_SUBDIR / DEFAULT_CACHE_FILENAME
+
+
+def retention_seconds_for_window(interval: str, limit: int) -> int:
+    """说明：返回保留指定 K 线窗口至少需要的秒数。"""
+    return INTERVAL_SECONDS.get(interval, 60) * max(1, limit)
 
 
 class CandleCache:
@@ -267,14 +273,14 @@ def cached_fetch_candles(
         symbol_key=symbol_key,
         interval=interval,
     )
+    cached = cache.recent(
+        symbol_key,
+        interval,
+        limit=limit,
+        now_ms=current_ms,
+        retention_seconds=minimum_retention_seconds,
+    )
     if max_cache_age_seconds is not None:
-        cached = cache.recent(
-            symbol_key,
-            interval,
-            limit=limit,
-            now_ms=current_ms,
-            retention_seconds=minimum_retention_seconds,
-        )
         latest_fetched_at_ms = cache.latest_fetched_at_ms(
             symbol_key,
             interval,
@@ -282,18 +288,19 @@ def cached_fetch_candles(
             retention_seconds=minimum_retention_seconds,
         )
         if (
-            cached
+            len(cached) >= limit
             and latest_fetched_at_ms is not None
             and current_ms - latest_fetched_at_ms <= max_cache_age_seconds * 1000
         ):
             return cached
-    latest_open_ms = cache.latest_open_time_ms(
-        symbol_key,
-        interval,
+    latest_open_ms = cached[-1].open_time_ms if cached else None
+    plan = _fetch_plan(
+        latest_open_ms,
+        cached_count=len(cached),
+        interval=interval,
+        limit=limit,
         now_ms=current_ms,
-        retention_seconds=minimum_retention_seconds,
     )
-    plan = _fetch_plan(latest_open_ms, interval=interval, limit=limit, now_ms=current_ms)
     try:
         fetched = fetcher(
             interval=interval,
@@ -327,17 +334,24 @@ def cached_fetch_candles(
 def _fetch_plan(
     latest_open_ms: int | None,
     *,
+    cached_count: int,
     interval: str,
     limit: int,
     now_ms: int,
 ) -> CandleFetchPlan:
     """说明：根据缓存最新时间计算下一次 provider 请求计划。"""
-    if latest_open_ms is None:
-        return CandleFetchPlan(after_open_time_ms=None, limit=limit)
+    if latest_open_ms is None or cached_count < limit:
+        return CandleFetchPlan(
+            after_open_time_ms=None,
+            limit=max(limit, DIRECT_WINDOW_CANDLE_LIMIT),
+        )
     interval_ms = INTERVAL_SECONDS.get(interval, 60) * 1000
     missing = max(1, ((now_ms - latest_open_ms) // interval_ms) + 2)
-    if missing > 1000:
-        return CandleFetchPlan(after_open_time_ms=None, limit=min(max(limit, 1000), missing))
+    if missing > DIRECT_WINDOW_CANDLE_LIMIT:
+        return CandleFetchPlan(
+            after_open_time_ms=None,
+            limit=max(limit, DIRECT_WINDOW_CANDLE_LIMIT),
+        )
     overlapped_after_open_ms = max(0, latest_open_ms - interval_ms)
     return CandleFetchPlan(
         after_open_time_ms=overlapped_after_open_ms,

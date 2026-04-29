@@ -251,19 +251,31 @@ def fetch_candles(
     interval: str,
     limit: int,
     after_open_time_ms: int | None = None,
+    before_open_time_ms: int | None = None,
 ) -> tuple[Candle, ...]:
     """说明：拉取指定 provider 标的的近期 K 线。"""
+    if after_open_time_ms is not None and before_open_time_ms is not None:
+        raise ValueError("after_open_time_ms and before_open_time_ms cannot both be set")
     if instrument.inst_type == SPOT:
         params = {
             "symbol": instrument.symbol,
             "granularity": _api_granularity(instrument.inst_type, interval),
-            "endTime": str(int(time.time() * 1000)),
-            "limit": str(min(limit, 200)),
+            "endTime": str(
+                before_open_time_ms - 1
+                if before_open_time_ms is not None
+                else int(time.time() * 1000)
+            ),
+            "limit": str(min(limit, 200 if before_open_time_ms is not None else 1000)),
         }
         if after_open_time_ms is not None:
             params["startTime"] = str(after_open_time_ms + 1)
+        path = (
+            "/api/v2/spot/market/history-candles"
+            if before_open_time_ms is not None
+            else "/api/v2/spot/market/candles"
+        )
         payload = _fetch_json(
-            "/api/v2/spot/market/history-candles",
+            path,
             params,
         )
         context = "Bitget spot candles"
@@ -272,13 +284,20 @@ def fetch_candles(
             "symbol": instrument.symbol,
             "productType": instrument.inst_type,
             "granularity": _api_granularity(instrument.inst_type, interval),
-            "limit": str(min(limit, 1000)),
+            "limit": str(min(limit, 200 if before_open_time_ms is not None else 1000)),
         }
         if after_open_time_ms is not None:
             params["startTime"] = str(after_open_time_ms + 1)
             params["endTime"] = str(int(time.time() * 1000))
+        if before_open_time_ms is not None:
+            params["endTime"] = str(before_open_time_ms - 1)
+        path = (
+            "/api/v2/mix/market/history-candles"
+            if before_open_time_ms is not None
+            else "/api/v2/mix/market/candles"
+        )
         payload = _fetch_json(
-            "/api/v2/mix/market/candles",
+            path,
             params,
         )
         context = "Bitget futures candles"
@@ -289,7 +308,11 @@ def fetch_candles(
         for row in rows
         if isinstance(row, list)
     ]
-    return tuple(sorted(candles, key=lambda candle: candle.open_time_ms))
+    if after_open_time_ms is not None:
+        candles = [candle for candle in candles if candle.open_time_ms > after_open_time_ms]
+    if before_open_time_ms is not None:
+        candles = [candle for candle in candles if candle.open_time_ms < before_open_time_ms]
+    return tuple(sorted(candles, key=lambda candle: candle.open_time_ms)[-limit:])
 
 
 def _normalize_ticker_payload(

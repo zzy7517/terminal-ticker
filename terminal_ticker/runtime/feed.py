@@ -20,7 +20,11 @@ from ..market_data.bitget import (
     fetch_candles as fetch_bitget_candles,
     fetch_snapshot_payloads,
 )
-from ..market_data.candle_cache import CandleCache, cached_fetch_candles
+from ..market_data.candle_cache import (
+    CandleCache,
+    cached_fetch_candles,
+    retention_seconds_for_window,
+)
 from ..config import AppConfig
 from ..market_data.longbridge import (
     LongbridgeInstrument,
@@ -31,6 +35,8 @@ from ..market_data.longbridge import (
 from ..market_data.router import MarketInstrument
 
 LOGGER = logging.getLogger(__name__)
+CHART_CANDLE_LIMIT = 1000
+OLDER_CANDLE_LIMIT = 200
 THUMBNAIL_INTERVAL = "1H"
 THUMBNAIL_CANDLE_LIMIT = 60
 THUMBNAIL_RETENTION_SECONDS = THUMBNAIL_CANDLE_LIMIT * 60 * 60
@@ -222,11 +228,12 @@ class FeedWorker(threading.Thread):
                 error = None
                 try:
                     interval = getattr(instrument, "analysis_interval", None) or self.config.analysis.interval
+                    candle_limit = max(self.config.analysis.lookback, CHART_CANDLE_LIMIT)
                     candles = await asyncio.to_thread(
                         self._fetch_candles,
                         instrument,
                         interval=interval,
-                        limit=self.config.analysis.lookback,
+                        limit=candle_limit,
                     )
                 except asyncio.CancelledError:
                     raise
@@ -277,6 +284,9 @@ class FeedWorker(threading.Thread):
     ):
         """说明：通过缓存或 provider 拉取近期 K 线。"""
         if self.candle_cache is not None:
+            retention_seconds = minimum_retention_seconds
+            if retention_seconds is None:
+                retention_seconds = retention_seconds_for_window(interval, limit)
             try:
                 return cached_fetch_candles(
                     cache=self.candle_cache,
@@ -284,7 +294,7 @@ class FeedWorker(threading.Thread):
                     interval=interval,
                     limit=limit,
                     fetcher=lambda **kwargs: self._fetch_provider_candles(instrument, **kwargs),
-                    minimum_retention_seconds=minimum_retention_seconds,
+                    minimum_retention_seconds=retention_seconds,
                     max_cache_age_seconds=max_cache_age_seconds,
                 )
             except (OSError, sqlite3.Error) as exc:
@@ -337,6 +347,7 @@ class FeedWorker(threading.Thread):
         interval: str,
         limit: int,
         after_open_time_ms: int | None = None,
+        before_open_time_ms: int | None = None,
     ):
         """说明：绕过缓存直接从 provider 拉取近期 K 线。"""
         if isinstance(instrument, BitgetInstrument):
@@ -345,6 +356,7 @@ class FeedWorker(threading.Thread):
                 interval=interval,
                 limit=limit,
                 after_open_time_ms=after_open_time_ms,
+                before_open_time_ms=before_open_time_ms,
             )
         if isinstance(instrument, AlpacaInstrument):
             return fetch_alpaca_candles(
@@ -352,6 +364,7 @@ class FeedWorker(threading.Thread):
                 interval=interval,
                 limit=limit,
                 after_open_time_ms=after_open_time_ms,
+                before_open_time_ms=before_open_time_ms,
             )
         if isinstance(instrument, LongbridgeInstrument):
             return fetch_longbridge_candles(
@@ -359,9 +372,32 @@ class FeedWorker(threading.Thread):
                 interval=interval,
                 limit=limit,
                 after_open_time_ms=after_open_time_ms,
+                before_open_time_ms=before_open_time_ms,
                 quote_context=self._longbridge_quote_context_for_candles(),
             )
         raise ValueError(f"unsupported candle provider: {instrument!r}")
+
+    def fetch_older_candles(
+        self,
+        instrument: MarketInstrument,
+        *,
+        interval: str,
+        before_open_time_ms: int | None,
+        limit: int = OLDER_CANDLE_LIMIT,
+    ):
+        """说明：按最早缓存 K 线继续向前拉取一批历史 K 线。"""
+        candles = self._fetch_provider_candles(
+            instrument,
+            interval=interval,
+            limit=limit,
+            before_open_time_ms=before_open_time_ms,
+        )
+        if candles and self.candle_cache is not None:
+            try:
+                self.candle_cache.upsert(candles, interval=interval)
+            except (OSError, sqlite3.Error) as exc:
+                LOGGER.warning("Candle cache unavailable for %s %s: %s", instrument.key, interval, exc)
+        return candles
 
     def _handle_message(self, payload: dict[str, Any]) -> None:
         """说明：把一条 Bitget WebSocket 消息转发到事件队列。"""

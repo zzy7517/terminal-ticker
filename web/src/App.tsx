@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bot,
   CircleDot,
+  History,
   Loader2,
   Minus,
   MousePointer2,
@@ -37,6 +38,7 @@ import {
   connectStateSocket,
   fetchAgentModels,
   fetchState,
+  loadOlderCandles,
   removeWatchlistInstrument,
   saveAgentConfig,
   saveInstrumentAnalysisInterval,
@@ -395,6 +397,15 @@ function canUpdateLatestCandle(previous: ChartCandle[], next: ChartCandle[]) {
   return false;
 }
 
+function prependedCandleCount(previous: ChartCandle[], next: ChartCandle[]) {
+  if (previous.length === 0 || next.length <= previous.length) return 0;
+  const offset = next.length - previous.length;
+  for (let index = 0; index < previous.length; index += 1) {
+    if (!sameChartCandle(previous[index], next[index + offset])) return 0;
+  }
+  return offset;
+}
+
 function candleSignature(data: ChartCandle[]) {
   if (data.length === 0) return 'empty';
   return data
@@ -465,7 +476,19 @@ function chartPointFromParam(
   };
 }
 
-function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartKey: string }) {
+function CandlestickPane({
+  candles,
+  chartKey,
+  canLoadOlder,
+  olderLoading,
+  onLoadOlder,
+}: {
+  candles: CandlePoint[];
+  chartKey: string;
+  canLoadOlder: boolean;
+  olderLoading: boolean;
+  onLoadOlder: () => void;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -473,12 +496,39 @@ function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartK
   const signatureRef = useRef('');
   const chartKeyRef = useRef('');
   const redrawFrameRef = useRef<number | null>(null);
+  const canLoadOlderRef = useRef(canLoadOlder);
+  const olderLoadingRef = useRef(olderLoading);
+  const onLoadOlderRef = useRef(onLoadOlder);
   const [drawingsByChart, setDrawingsByChart] = useState<Record<string, ChartDrawing[]>>({});
   const [activeTool, setActiveTool] = useState<DrawingTool>('cursor');
   const [trendStart, setTrendStart] = useState<DrawingPoint | null>(null);
   const [hoverPoint, setHoverPoint] = useState<DrawingPoint | null>(null);
   const [, setRenderTick] = useState(0);
   const drawings = drawingsByChart[chartKey] ?? [];
+
+  useEffect(() => {
+    canLoadOlderRef.current = canLoadOlder;
+    olderLoadingRef.current = olderLoading;
+    onLoadOlderRef.current = onLoadOlder;
+  }, [canLoadOlder, olderLoading, onLoadOlder]);
+
+  const maybeLoadOlder = (range: { from: number; to: number } | null) => {
+    const logicalFrom = range?.from;
+    const visibleSpan = range ? range.to - range.from : null;
+    const dataLength = dataRef.current.length;
+    if (
+      logicalFrom == null ||
+      logicalFrom > 8 ||
+      visibleSpan == null ||
+      dataLength === 0 ||
+      visibleSpan >= dataLength - 1 ||
+      !canLoadOlderRef.current ||
+      olderLoadingRef.current
+    ) {
+      return;
+    }
+    onLoadOlderRef.current();
+  };
 
   const requestOverlayRender = () => {
     if (redrawFrameRef.current !== null) return;
@@ -591,7 +641,11 @@ function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartK
     container.addEventListener('pointermove', requestOverlayRender);
     container.addEventListener('pointerup', requestOverlayRender);
     container.addEventListener('dblclick', requestOverlayRender);
-    chart.timeScale().subscribeVisibleLogicalRangeChange(requestOverlayRender);
+    const handleLogicalRange = (range: { from: number; to: number } | null) => {
+      requestOverlayRender();
+      maybeLoadOlder(range);
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleLogicalRange);
     chart.timeScale().subscribeSizeChange(requestOverlayRender);
 
     return () => {
@@ -599,7 +653,7 @@ function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartK
       container.removeEventListener('pointermove', requestOverlayRender);
       container.removeEventListener('pointerup', requestOverlayRender);
       container.removeEventListener('dblclick', requestOverlayRender);
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(requestOverlayRender);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleLogicalRange);
       chart.timeScale().unsubscribeSizeChange(requestOverlayRender);
       if (redrawFrameRef.current !== null) {
         window.cancelAnimationFrame(redrawFrameRef.current);
@@ -623,9 +677,18 @@ function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartK
     const previous = dataRef.current;
     const resetSeries = chartKeyRef.current !== chartKey;
     const wasFollowingRealtime = previous.length === 0 || Math.abs(chart.timeScale().scrollPosition()) < 2;
+    const prependedCount = prependedCandleCount(previous, data);
+    const visibleLogicalRange =
+      !resetSeries && prependedCount > 0 ? chart.timeScale().getVisibleLogicalRange() : null;
 
     if (resetSeries || data.length === 0 || !canUpdateLatestCandle(previous, data)) {
       series.setData(data);
+      if (visibleLogicalRange) {
+        chart.timeScale().setVisibleLogicalRange({
+          from: visibleLogicalRange.from + prependedCount,
+          to: visibleLogicalRange.to + prependedCount,
+        });
+      }
       if (data.length > 0 && (resetSeries || previous.length === 0)) {
         chart.priceScale('right').setAutoScale(true);
         chart.timeScale().fitContent();
@@ -743,6 +806,16 @@ function CandlestickPane({ candles, chartKey }: { candles: CandlePoint[]; chartK
           type="button"
         >
           <Trash2 size={15} />
+        </button>
+        <button
+          aria-label="Load older candles"
+          className="drawing-tool"
+          disabled={!canLoadOlder || olderLoading}
+          onClick={onLoadOlder}
+          title="Load older candles"
+          type="button"
+        >
+          {olderLoading ? <Loader2 className="spin" size={15} /> : <History size={15} />}
         </button>
       </div>
       <svg aria-hidden="true" className="drawing-layer">
@@ -1283,10 +1356,13 @@ function WorkspaceView({
   selectedAgent,
   agentBusyKey,
   analysisIntervalBusy,
+  olderBusyKey,
+  exhaustedHistoryKeys,
   setActiveGroup,
   setSelectedKey,
   setState,
   updateAnalysisInterval,
+  loadOlderForSelected,
   runAgentAnalysis,
   openSettings,
   openWatchlistSettings,
@@ -1301,10 +1377,13 @@ function WorkspaceView({
   selectedAgent: AgentAnalysis | undefined;
   agentBusyKey: string | null;
   analysisIntervalBusy: boolean;
+  olderBusyKey: string | null;
+  exhaustedHistoryKeys: Set<string>;
   setActiveGroup: (value: string) => void;
   setSelectedKey: (value: string) => void;
   setState: (state: MarketState) => void;
   updateAnalysisInterval: (value: string) => void;
+  loadOlderForSelected: () => void;
   runAgentAnalysis: () => Promise<void>;
   openSettings: () => void;
   openWatchlistSettings: () => void;
@@ -1314,6 +1393,10 @@ function WorkspaceView({
   const candleDelta = closeDeltaPercent(selectedQuote?.candles ?? []);
   const signal = selectedQuote?.strategySignal;
   const tone = signalTone(selectedQuote);
+  const historyKey = selectedKey ? `${selectedKey}:${currentInterval}` : null;
+  const canLoadOlder =
+    Boolean(selectedInstrument && ['alpaca', 'bitget'].includes(selectedInstrument.source)) &&
+    Boolean(historyKey && !exhaustedHistoryKeys.has(historyKey));
 
   return (
     <main className="app-shell">
@@ -1443,7 +1526,10 @@ function WorkspaceView({
 
           <CandlestickPane
             candles={selectedQuote?.candles ?? []}
+            canLoadOlder={canLoadOlder}
             chartKey={`${selectedKey ?? 'none'}:${currentInterval}`}
+            olderLoading={Boolean(historyKey && olderBusyKey === historyKey)}
+            onLoadOlder={loadOlderForSelected}
           />
 
           <div className="stat-grid">
@@ -1815,6 +1901,9 @@ export default function App() {
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [agentBusyKey, setAgentBusyKey] = useState<string | null>(null);
   const [analysisIntervalBusy, setAnalysisIntervalBusy] = useState(false);
+  const [olderBusyKey, setOlderBusyKey] = useState<string | null>(null);
+  const [exhaustedHistoryKeys, setExhaustedHistoryKeys] = useState<Set<string>>(() => new Set());
+  const olderBusyRef = useRef<string | null>(null);
 
   useEffect(() => {
     const syncRoute = () => setRoute(readRouteFromHash());
@@ -1874,6 +1963,8 @@ export default function App() {
   const selectedInstrument = state?.instruments.find((instrument) => instrument.key === selectedKey);
   const selectedQuote = selectedKey ? state?.quotes[selectedKey] : undefined;
   const selectedAgent = selectedKey ? state?.agentAnalyses[selectedKey] : undefined;
+  const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
+  const historyKey = selectedKey ? `${selectedKey}:${currentInterval}` : null;
 
   async function updateAnalysisInterval(interval: string) {
     if (!state || !selectedKey || interval === selectedInstrument?.analysisInterval || analysisIntervalBusy) return;
@@ -1885,6 +1976,39 @@ export default function App() {
       console.error(error);
     } finally {
       setAnalysisIntervalBusy(false);
+    }
+  }
+
+  async function loadOlderForSelected() {
+    if (
+      !selectedKey ||
+      !selectedInstrument ||
+      !historyKey ||
+      olderBusyRef.current === historyKey ||
+      exhaustedHistoryKeys.has(historyKey) ||
+      !['alpaca', 'bitget'].includes(selectedInstrument.source)
+    ) {
+      return;
+    }
+    olderBusyRef.current = historyKey;
+    setOlderBusyKey(historyKey);
+    try {
+      const payload = await loadOlderCandles(selectedKey);
+      setState(payload.state);
+      setExhaustedHistoryKeys((current) => {
+        const next = new Set(current);
+        if (payload.added === 0) {
+          next.add(historyKey);
+        } else {
+          next.delete(historyKey);
+        }
+        return next;
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      olderBusyRef.current = null;
+      setOlderBusyKey(null);
     }
   }
 
@@ -1956,10 +2080,13 @@ export default function App() {
       selectedAgent={selectedAgent}
       agentBusyKey={agentBusyKey}
       analysisIntervalBusy={analysisIntervalBusy}
+      olderBusyKey={olderBusyKey}
+      exhaustedHistoryKeys={exhaustedHistoryKeys}
       setActiveGroup={setActiveGroup}
       setSelectedKey={setSelectedKey}
       setState={setState}
       updateAnalysisInterval={updateAnalysisInterval}
+      loadOlderForSelected={loadOlderForSelected}
       runAgentAnalysis={runAgentAnalysis}
       openSettings={() => navigateToRoute({ view: 'settings', section: 'providers' })}
       openWatchlistSettings={() => navigateToRoute({ view: 'settings', section: 'watchlist' })}
