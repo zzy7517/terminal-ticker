@@ -28,7 +28,6 @@ import {
   type CandlestickData,
   type IChartApi,
   type ISeriesApi,
-  type MouseEventParams,
   type UTCTimestamp,
 } from 'lightweight-charts';
 import {
@@ -54,6 +53,7 @@ import type {
   MarketState,
   Quote,
 } from './types';
+import { svgPoint, useChartDrawings } from './chartDrawings';
 
 const GROUP_LABELS: Record<string, string> = {
   stocks: '美股',
@@ -351,14 +351,6 @@ function ConnectionBadge({ socketStatus, streamStatus }: { socketStatus: string;
 }
 
 type ChartCandle = CandlestickData<UTCTimestamp>;
-type DrawingTool = 'cursor' | 'horizontal' | 'trend';
-type DrawingPoint = {
-  time: UTCTimestamp;
-  price: number;
-};
-type ChartDrawing =
-  | { id: string; kind: 'horizontal'; price: number }
-  | { id: string; kind: 'trend'; start: DrawingPoint; end: DrawingPoint };
 
 function toChartCandles(candles: CandlePoint[]): ChartCandle[] {
   return candles.map((item) => ({
@@ -425,10 +417,6 @@ function priceRangeFromCandles(data: ChartCandle[]) {
   };
 }
 
-function createDrawingId() {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 function intervalOptions(currentInterval: string) {
   if (ANALYSIS_INTERVAL_OPTIONS.includes(currentInterval)) {
     return ANALYSIS_INTERVAL_OPTIONS;
@@ -451,31 +439,6 @@ function sparklinePoints(candles: CandlePoint[], width = 112, height = 34) {
     .join(' ');
 }
 
-function svgPoint(
-  point: DrawingPoint,
-  chart: IChartApi | null,
-  series: ISeriesApi<'Candlestick'> | null,
-) {
-  if (!chart || !series) return null;
-  const x = chart.timeScale().timeToCoordinate(point.time);
-  const y = series.priceToCoordinate(point.price);
-  if (x == null || y == null) return null;
-  return { x, y };
-}
-
-function chartPointFromParam(
-  param: MouseEventParams,
-  series: ISeriesApi<'Candlestick'> | null,
-): DrawingPoint | null {
-  if (!series || !param.point || typeof param.time !== 'number') return null;
-  const price = series.coordinateToPrice(param.point.y);
-  if (typeof price !== 'number') return null;
-  return {
-    time: param.time as UTCTimestamp,
-    price,
-  };
-}
-
 function CandlestickPane({
   candles,
   chartKey,
@@ -492,6 +455,8 @@ function CandlestickPane({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const [chartApi, setChartApi] = useState<IChartApi | null>(null);
+  const [seriesApi, setSeriesApi] = useState<ISeriesApi<'Candlestick'> | null>(null);
   const dataRef = useRef<ChartCandle[]>([]);
   const signatureRef = useRef('');
   const chartKeyRef = useRef('');
@@ -499,12 +464,18 @@ function CandlestickPane({
   const canLoadOlderRef = useRef(canLoadOlder);
   const olderLoadingRef = useRef(olderLoading);
   const onLoadOlderRef = useRef(onLoadOlder);
-  const [drawingsByChart, setDrawingsByChart] = useState<Record<string, ChartDrawing[]>>({});
-  const [activeTool, setActiveTool] = useState<DrawingTool>('cursor');
-  const [trendStart, setTrendStart] = useState<DrawingPoint | null>(null);
-  const [hoverPoint, setHoverPoint] = useState<DrawingPoint | null>(null);
   const [, setRenderTick] = useState(0);
-  const drawings = drawingsByChart[chartKey] ?? [];
+  const {
+    activeTool,
+    clearDrawings,
+    hasDrawings,
+    setDrawingTool,
+    visibleTrendDrawings,
+  } = useChartDrawings({
+    chart: chartApi,
+    series: seriesApi,
+    chartKey,
+  });
 
   useEffect(() => {
     canLoadOlderRef.current = canLoadOlder;
@@ -536,18 +507,6 @@ function CandlestickPane({
       redrawFrameRef.current = null;
       setRenderTick((value) => value + 1);
     });
-  };
-
-  const setDrawingTool = (tool: DrawingTool) => {
-    setActiveTool(tool);
-    setTrendStart(null);
-    setHoverPoint(null);
-  };
-
-  const clearDrawings = () => {
-    setDrawingsByChart((current) => ({ ...current, [chartKey]: [] }));
-    setTrendStart(null);
-    setHoverPoint(null);
   };
 
   useEffect(() => {
@@ -605,6 +564,8 @@ function CandlestickPane({
     });
     chartRef.current = chart;
     seriesRef.current = series;
+    setChartApi(chart);
+    setSeriesApi(series);
 
     const handleWheel = (event: WheelEvent) => {
       const chart = chartRef.current;
@@ -706,66 +667,6 @@ function CandlestickPane({
     requestOverlayRender();
   }, [candles, chartKey]);
 
-  useEffect(() => {
-    setTrendStart(null);
-    setHoverPoint(null);
-  }, [chartKey]);
-
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-
-    const handleClick = (param: MouseEventParams) => {
-      const point = chartPointFromParam(param, seriesRef.current);
-      if (!point || activeTool === 'cursor') return;
-
-      if (activeTool === 'horizontal') {
-        setDrawingsByChart((current) => ({
-          ...current,
-          [chartKey]: [
-            ...(current[chartKey] ?? []),
-            { id: createDrawingId(), kind: 'horizontal', price: point.price },
-          ],
-        }));
-        return;
-      }
-
-      if (!trendStart) {
-        setTrendStart(point);
-        setHoverPoint(point);
-        return;
-      }
-
-      setDrawingsByChart((current) => ({
-        ...current,
-        [chartKey]: [
-          ...(current[chartKey] ?? []),
-          { id: createDrawingId(), kind: 'trend', start: trendStart, end: point },
-        ],
-      }));
-      setTrendStart(null);
-      setHoverPoint(null);
-    };
-
-    const handleMove = (param: MouseEventParams) => {
-      if (activeTool !== 'trend' || !trendStart) return;
-      setHoverPoint(chartPointFromParam(param, seriesRef.current));
-    };
-
-    chart.subscribeClick(handleClick);
-    chart.subscribeCrosshairMove(handleMove);
-    return () => {
-      chart.unsubscribeClick(handleClick);
-      chart.unsubscribeCrosshairMove(handleMove);
-    };
-  }, [activeTool, chartKey, trendStart]);
-
-  const previewDrawing: ChartDrawing | null =
-    trendStart && hoverPoint
-      ? { id: 'preview', kind: 'trend', start: trendStart, end: hoverPoint }
-      : null;
-  const visibleDrawings = previewDrawing ? [...drawings, previewDrawing] : drawings;
-
   return (
     <div className={`chart-shell ${activeTool !== 'cursor' ? 'drawing-active' : ''}`}>
       <div ref={containerRef} className="chart-canvas" />
@@ -800,7 +701,7 @@ function CandlestickPane({
         <button
           aria-label="Clear drawings"
           className="drawing-tool danger"
-          disabled={drawings.length === 0 && !trendStart}
+          disabled={!hasDrawings}
           onClick={clearDrawings}
           title="Clear drawings"
           type="button"
@@ -819,21 +720,7 @@ function CandlestickPane({
         </button>
       </div>
       <svg aria-hidden="true" className="drawing-layer">
-        {visibleDrawings.map((drawing) => {
-          if (drawing.kind === 'horizontal') {
-            const y = seriesRef.current?.priceToCoordinate(drawing.price);
-            if (y == null) return null;
-            return (
-              <line
-                className="drawing-line horizontal"
-                key={drawing.id}
-                x1="0"
-                x2="100%"
-                y1={y}
-                y2={y}
-              />
-            );
-          }
+        {visibleTrendDrawings.map((drawing) => {
           const start = svgPoint(drawing.start, chartRef.current, seriesRef.current);
           const end = svgPoint(drawing.end, chartRef.current, seriesRef.current);
           if (!start || !end) return null;
