@@ -10,8 +10,9 @@ from fastapi.testclient import TestClient
 from terminal_ticker.agent import AgentAnalysisResult
 from terminal_ticker.config import AppConfig, DisplayConfig, load_config
 from terminal_ticker.controller import DrainResult
+from terminal_ticker.alpaca_provider import AlpacaAsset, AlpacaInstrument
 from terminal_ticker.bitget import BitgetInstrument
-from terminal_ticker.longbridge_provider import LongbridgeInstrument, LongbridgeSecurity
+from terminal_ticker.longbridge_provider import LongbridgeInstrument
 from terminal_ticker.models import QuoteState
 from terminal_ticker.price_action import Candle
 from terminal_ticker.web import PROJECT_ROOT, WEB_DIST, create_app, serialize_market_state
@@ -101,8 +102,8 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.json()["instruments"][0]["key"], "longbridge:AAPL.US")
 
     def test_search_endpoint_marks_existing_symbols(self) -> None:
-        """Verify Longbridge search reports whether a result is already active."""
-        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+        """Verify default securities search uses Alpaca and marks active symbols."""
+        instrument = AlpacaInstrument("AAPL", "AAPL")
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
             instruments=(instrument,),
@@ -111,14 +112,15 @@ class WebTests(unittest.TestCase):
         )
 
         with patch(
-            "terminal_ticker.web.search_securities",
-            return_value=(LongbridgeSecurity("AAPL.US", name_en="Apple Inc."),),
+            "terminal_ticker.web.search_alpaca_assets",
+            return_value=(AlpacaAsset("AAPL", name="Apple Inc.", exchange="NASDAQ"),),
         ):
             with TestClient(app) as client:
                 response = client.get("/api/securities/search", params={"q": "apple"})
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["results"][0]["exists"])
+        self.assertEqual(response.json()["results"][0]["source"], "alpaca")
 
     def test_bitget_search_endpoint_marks_existing_symbols(self) -> None:
         """Verify Bitget search reports source, inst_type, and active state."""
@@ -186,6 +188,42 @@ class WebTests(unittest.TestCase):
         self.assertTrue(response.json()["changed"])
         self.assertEqual(persisted.instruments[1].source, "bitget")
         self.assertEqual(persisted.instruments[1].inst_type, "USDT-FUTURES")
+
+    def test_alpaca_add_endpoint_persists_symbol(self) -> None:
+        """Verify browser can add Alpaca symbols to the watchlist."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC" },
+                    ]
+                    """
+                ).strip()
+            )
+            config = load_config(config_path)
+            bitget = BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
+            alpaca = AlpacaInstrument("AAPL", "AAPL")
+            app = create_app(
+                config=config,
+                instruments=(bitget,),
+                controller_factory=DummyController,
+                auto_start=False,
+            )
+
+            with patch("terminal_ticker.web.resolve_instruments", return_value=(bitget, alpaca)):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/watchlist/alpaca",
+                        json={"symbol": "AAPL.US", "label": "AAPL"},
+                    )
+            persisted = load_config(config_path)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["changed"])
+        self.assertEqual(persisted.instruments[1].symbol, "AAPL")
+        self.assertEqual(persisted.instruments[1].source, "alpaca")
 
     def test_remove_instrument_endpoint_persists_bitget_symbol(self) -> None:
         """Verify browser can remove any active watchlist instrument by key."""

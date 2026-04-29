@@ -87,6 +87,27 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.instruments[1].show_collapsed)
         self.assertEqual(config.display.longbridge_poll_interval_seconds, 2)
 
+    def test_parse_config_supports_alpaca_source_and_legacy_suffix(self) -> None:
+        """Verify parse config supports Alpaca source and normalizes old .US symbols."""
+        config = parse_config(
+            {
+                "symbols": [
+                    {"symbol": "aapl.us", "source": "alpaca", "label": "Apple"},
+                    {"symbol": "spy", "source": "alpaca", "label": "SPY"},
+                ],
+                "display": {"stock_poll_interval_seconds": 5},
+            }
+        )
+
+        self.assertEqual(
+            self._instrument_rows(config),
+            (
+                ("AAPL", "alpaca", None, "Apple", "stocks"),
+                ("SPY", "alpaca", None, "SPY", "stocks"),
+            ),
+        )
+        self.assertEqual(config.display.stock_poll_interval_seconds, 5)
+
     def test_parse_config_supports_analysis_defaults_and_overrides(self) -> None:
         """Verify parse config supports analysis defaults and overrides."""
         default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})

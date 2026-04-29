@@ -104,6 +104,15 @@ class TickerController:
 
         if event.kind == "error":
             self.stream_status = "retrying"
+            payload = event.payload
+            if isinstance(payload, dict):
+                detail = str(payload.get("message") or "")
+                ids = payload.get("ids")
+                if detail and isinstance(ids, list):
+                    for key in ids:
+                        quote = self.quotes.get(str(key))
+                        if quote is not None:
+                            quote.mark_error(detail)
             return True
 
         if event.kind == "candles":

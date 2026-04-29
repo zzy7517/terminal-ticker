@@ -150,6 +150,7 @@ export interface MarketState {
     display: {
       refreshIntervalMs: number;
       staleAfterSeconds: number;
+      stockPollIntervalSeconds: number;
       longbridgePollIntervalSeconds: number;
     };
     sourcePath: string | null;

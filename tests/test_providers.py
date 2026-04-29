@@ -2,6 +2,7 @@
 import unittest
 from unittest.mock import patch
 
+from terminal_ticker.alpaca_provider import AlpacaInstrument
 from terminal_ticker.bitget import BitgetInstrument
 from terminal_ticker.config import InstrumentConfig
 from terminal_ticker.providers import resolve_instruments
@@ -29,6 +30,37 @@ class ProviderTests(unittest.TestCase):
 
     def test_resolve_mixed_sources_preserves_watchlist_order(self) -> None:
         """Verify resolve mixed sources preserves watchlist order."""
+        configs = (
+            InstrumentConfig(symbol="AAPL", source="alpaca", label="AAPL"),
+            InstrumentConfig(symbol="BTCUSDT", source="bitget", inst_type="USDT-FUTURES"),
+        )
+        alpaca_instrument = AlpacaInstrument("AAPL", "AAPL")
+        bitget_instrument = BitgetInstrument(
+            "BTCUSDT",
+            "USDT-FUTURES",
+            "BTCUSDT",
+            "BTC",
+            "USDT",
+            "perp",
+        )
+
+        with patch(
+            "terminal_ticker.providers.alpaca.resolve_instruments",
+            return_value=(alpaca_instrument,),
+        ):
+            with patch(
+                "terminal_ticker.providers.bitget.resolve_instruments",
+                return_value=(bitget_instrument,),
+            ):
+                instruments = resolve_instruments(configs)
+
+        self.assertEqual(
+            [instrument.key for instrument in instruments],
+            ["alpaca:AAPL", "USDT-FUTURES:BTCUSDT"],
+        )
+
+    def test_resolve_legacy_longbridge_source_still_works(self) -> None:
+        """Verify legacy Longbridge source remains loadable."""
         configs = (
             InstrumentConfig(symbol="AAPL.US", source="longbridge", label="AAPL"),
             InstrumentConfig(symbol="BTCUSDT", source="bitget", inst_type="USDT-FUTURES"),

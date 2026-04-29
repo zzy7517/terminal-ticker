@@ -10,6 +10,7 @@ from unittest.mock import patch
 from terminal_ticker.candle_cache import CandleCache
 from terminal_ticker.config import AnalysisConfig, AppConfig, DisplayConfig
 from terminal_ticker.feed import FeedWorker, THUMBNAIL_CANDLE_LIMIT, THUMBNAIL_INTERVAL
+from terminal_ticker.alpaca_provider import AlpacaInstrument
 from terminal_ticker.bitget import BitgetInstrument
 from terminal_ticker.longbridge_provider import LongbridgeInstrument
 from terminal_ticker.price_action import Candle
@@ -47,11 +48,42 @@ class FeedWorkerTests(unittest.TestCase):
                 event_queue=event_queue,
             )
 
+            with patch("terminal_ticker.feed.build_longbridge_quote_context", return_value=object()):
+                with patch(
+                    "terminal_ticker.feed.fetch_quote_payloads",
+                    return_value={"longbridge:AAPL.US": {"id": "longbridge:AAPL.US", "price": 201.5}},
+                ):
+                    task = asyncio.create_task(worker._run_longbridge())
+                    await asyncio.sleep(0.05)
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+
+            event = event_queue.get_nowait()
+            self.assertEqual(event.kind, "quote")
+            self.assertEqual(event.payload["price"], 201.5)
+
+        asyncio.run(run_test())
+
+    def test_alpaca_polling_enqueues_quote_events(self) -> None:
+        """Verify Alpaca polling enqueues quote events."""
+        async def run_test() -> None:
+            """Exercise run test behavior."""
+            event_queue = queue.Queue()
+            instrument = AlpacaInstrument("AAPL", "AAPL")
+            worker = FeedWorker(
+                config=AppConfig(
+                    instruments=tuple(),
+                    display=DisplayConfig(stock_poll_interval_seconds=60),
+                ),
+                instruments=(instrument,),
+                event_queue=event_queue,
+            )
+
             with patch(
-                "terminal_ticker.feed.fetch_quote_payloads",
-                return_value={"longbridge:AAPL.US": {"id": "longbridge:AAPL.US", "price": 201.5}},
+                "terminal_ticker.feed.fetch_alpaca_snapshot_payloads",
+                return_value={"alpaca:AAPL": {"id": "alpaca:AAPL", "price": 201.5}},
             ):
-                task = asyncio.create_task(worker._run_longbridge())
+                task = asyncio.create_task(worker._run_alpaca())
                 await asyncio.sleep(0.05)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
@@ -59,6 +91,37 @@ class FeedWorkerTests(unittest.TestCase):
             event = event_queue.get_nowait()
             self.assertEqual(event.kind, "quote")
             self.assertEqual(event.payload["price"], 201.5)
+
+        asyncio.run(run_test())
+
+    def test_alpaca_polling_enqueues_targeted_error_events(self) -> None:
+        """Verify Alpaca polling failures identify the affected instruments."""
+        async def run_test() -> None:
+            """Exercise run test behavior."""
+            event_queue = queue.Queue()
+            instrument = AlpacaInstrument("AAPL", "AAPL")
+            worker = FeedWorker(
+                config=AppConfig(
+                    instruments=tuple(),
+                    display=DisplayConfig(stock_poll_interval_seconds=60),
+                ),
+                instruments=(instrument,),
+                event_queue=event_queue,
+            )
+
+            with patch(
+                "terminal_ticker.feed.fetch_alpaca_snapshot_payloads",
+                side_effect=RuntimeError("missing credentials"),
+            ):
+                task = asyncio.create_task(worker._run_alpaca())
+                await asyncio.sleep(0.05)
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+            event = event_queue.get_nowait()
+            self.assertEqual(event.kind, "error")
+            self.assertEqual(event.payload["message"], "missing credentials")
+            self.assertEqual(event.payload["ids"], ["alpaca:AAPL"])
 
         asyncio.run(run_test())
 
@@ -130,6 +193,46 @@ class FeedWorkerTests(unittest.TestCase):
             event = event_queue.get_nowait()
             self.assertEqual(event.kind, "candles")
             self.assertEqual(event.payload["id"], "longbridge:AAPL.US")
+            self.assertEqual(event.payload["candles"], candles)
+
+        asyncio.run(run_test())
+
+    def test_alpaca_instruments_are_polled_for_candles(self) -> None:
+        """Verify Alpaca instruments enter the candle pipeline."""
+        async def run_test() -> None:
+            """Exercise run test behavior."""
+            event_queue = queue.Queue()
+            instrument = AlpacaInstrument("AAPL", "AAPL")
+            base_open_ms = int(
+                (datetime.now(timezone.utc) - timedelta(minutes=11)).timestamp() * 1000
+            )
+            candles = tuple(
+                Candle(
+                    symbol_key=instrument.key,
+                    open_time_ms=base_open_ms + index * 60_000,
+                    open=100 + index,
+                    high=102 + index,
+                    low=99 + index,
+                    close=101 + index,
+                    volume=1000,
+                )
+                for index in range(12)
+            )
+            worker = FeedWorker(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                event_queue=event_queue,
+            )
+
+            with patch.object(FeedWorker, "_fetch_candles", return_value=candles):
+                task = asyncio.create_task(worker._run_candles())
+                await asyncio.sleep(0.05)
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+            event = event_queue.get_nowait()
+            self.assertEqual(event.kind, "candles")
+            self.assertEqual(event.payload["id"], "alpaca:AAPL")
             self.assertEqual(event.payload["candles"], candles)
 
         asyncio.run(run_test())

@@ -15,8 +15,9 @@ from .agent_models import (
 )
 
 BITGET_SOURCE = "bitget"
+ALPACA_SOURCE = "alpaca"
 LONGBRIDGE_SOURCE = "longbridge"
-SUPPORTED_SOURCES = {BITGET_SOURCE, LONGBRIDGE_SOURCE}
+SUPPORTED_SOURCES = {BITGET_SOURCE, ALPACA_SOURCE, LONGBRIDGE_SOURCE}
 SUPPORTED_INST_TYPES = {"SPOT", "USDT-FUTURES"}
 SUPPORTED_ANALYSIS_INTERVALS = {
     "1m",
@@ -62,6 +63,7 @@ class DisplayConfig:
     refresh_interval_ms: int = 1000
     stale_after_seconds: int = 20
     reconnect_delay_seconds: float = 3.0
+    stock_poll_interval_seconds: int = 5
     longbridge_poll_interval_seconds: int = 2
 
 
@@ -168,6 +170,8 @@ def _default_group(source: str) -> str:
     """说明：根据数据源选择默认 UI 分组。"""
     if source == BITGET_SOURCE:
         return "crypto"
+    if source == ALPACA_SOURCE:
+        return "stocks"
     if source == LONGBRIDGE_SOURCE:
         return "stocks"
     return DEFAULT_GROUP
@@ -343,6 +347,8 @@ def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> Ins
             symbol = maybe_symbol
 
     normalized_symbol = symbol.strip().upper()
+    if source == ALPACA_SOURCE and normalized_symbol.endswith(".US"):
+        normalized_symbol = normalized_symbol[:-3]
     if not normalized_symbol:
         raise ValueError("symbol entries cannot be blank")
     return InstrumentConfig(
@@ -458,6 +464,14 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
             raw_display.get("reconnect_delay_seconds"),
             "display.reconnect_delay_seconds",
             3.0,
+        ),
+        stock_poll_interval_seconds=_coerce_int(
+            raw_display.get(
+                "stock_poll_interval_seconds",
+                raw_display.get("longbridge_poll_interval_seconds"),
+            ),
+            "display.stock_poll_interval_seconds",
+            5,
         ),
         longbridge_poll_interval_seconds=_coerce_int(
             raw_display.get("longbridge_poll_interval_seconds"),

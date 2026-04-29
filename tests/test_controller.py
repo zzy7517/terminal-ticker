@@ -94,6 +94,25 @@ class ControllerTests(unittest.TestCase):
         self.assertTrue(result.dirty)
         self.assertEqual(self.controller.stream_status, "retrying")
 
+    def test_targeted_error_event_marks_quote_error(self) -> None:
+        """Verify provider errors can be attached to affected quote rows."""
+        key = self.instruments[0].key
+        self.controller.event_queue.put(
+            FeedEvent(
+                "error",
+                {
+                    "message": "missing credentials",
+                    "ids": [key],
+                },
+            )
+        )
+
+        result = self.controller.drain_events()
+
+        self.assertTrue(result.dirty)
+        self.assertEqual(self.controller.stream_status, "retrying")
+        self.assertEqual(self.controller.quotes[key].last_error, "missing credentials")
+
     def test_candle_event_stores_candles_without_flash(self) -> None:
         """Verify candle events update chart data without price flash."""
         key = self.instruments[0].key

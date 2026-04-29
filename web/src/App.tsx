@@ -31,8 +31,8 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import {
+  addAlpacaSymbol,
   addBitgetSymbol,
-  addLongbridgeSymbol,
   analyzeInstrument,
   connectStateSocket,
   fetchAgentModels,
@@ -67,7 +67,8 @@ const PROVIDERS_HASH = '#/settings/providers';
 const WATCHLIST_HASH = '#/settings/watchlist';
 const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
 type SettingsSection = 'providers' | 'watchlist';
-type SearchSource = 'bitget' | 'longbridge';
+type SearchSource = 'bitget' | 'alpaca';
+type SourceHint = SearchSource | 'longbridge';
 
 type AppRoute =
   | { view: 'workspace' }
@@ -129,11 +130,15 @@ function agentTone(analysis: AgentAnalysis | undefined) {
 
 function sourceLabel(instrument: Instrument | undefined) {
   if (!instrument) return '-';
-  return instrument.source === 'longbridge' ? 'Longbridge' : instrument.source.toUpperCase();
+  if (instrument.source === 'alpaca') return 'Alpaca';
+  if (instrument.source === 'longbridge') return 'Longbridge';
+  return instrument.source.toUpperCase();
 }
 
 function sourceName(source: string) {
-  return source === 'longbridge' ? 'Longbridge' : source.toUpperCase();
+  if (source === 'alpaca') return 'Alpaca';
+  if (source === 'longbridge') return 'Longbridge';
+  return source.toUpperCase();
 }
 
 function instrumentVenue(instrument: Instrument) {
@@ -141,6 +146,28 @@ function instrumentVenue(instrument: Instrument) {
     return instrument.instType ?? instrument.key.split(':', 1)[0] ?? 'Bitget';
   }
   return sourceName(instrument.source);
+}
+
+function watchlistSectionLabel(source: string) {
+  if (source === 'alpaca') return '美股';
+  if (source === 'longbridge') return '美股';
+  if (source === 'bitget') return 'Crypto';
+  return sourceName(source);
+}
+
+function watchlistSections(instruments: Instrument[]) {
+  const preferred = ['alpaca', 'longbridge', 'bitget'];
+  const sources = [
+    ...preferred.filter((source) => instruments.some((instrument) => instrument.source === source)),
+    ...Array.from(new Set(instruments.map((instrument) => instrument.source)))
+      .filter((source) => !preferred.includes(source))
+      .sort(),
+  ];
+  return sources.map((source) => ({
+    source,
+    label: watchlistSectionLabel(source),
+    instruments: instruments.filter((instrument) => instrument.source === source),
+  }));
 }
 
 type BulkEntry = {
@@ -165,11 +192,11 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
   if (!trimmed || trimmed.startsWith('#')) return null;
   const [token = '', ...labelParts] = trimmed.split(/\s+/);
   const explicitLabel = labelParts.join(' ').trim();
-  let sourceHint: SearchSource | null = null;
+  let sourceHint: SourceHint | null = null;
   let body = token.trim();
-  const sourceMatch = body.match(/^(bitget|longbridge)[:/](.+)$/i);
+  const sourceMatch = body.match(/^(bitget|alpaca|longbridge)[:/](.+)$/i);
   if (sourceMatch) {
-    sourceHint = sourceMatch[1].toLowerCase() as SearchSource;
+    sourceHint = sourceMatch[1].toLowerCase() as SourceHint;
     body = sourceMatch[2];
   }
 
@@ -178,20 +205,20 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
   let symbol: string;
   let instType: string | null = null;
 
-  if (sourceHint === 'longbridge' || (!sourceHint && upperBody.includes('.'))) {
-    source = 'longbridge';
-    symbol = upperBody;
-    if (!symbol.includes('.')) {
+  if (sourceHint === 'alpaca' || sourceHint === 'longbridge' || (!sourceHint && upperBody.endsWith('.US'))) {
+    source = 'alpaca';
+    symbol = upperBody.endsWith('.US') ? upperBody.slice(0, -3) : upperBody;
+    if (!symbol) {
       return {
         raw: trimmed,
         source,
         symbol,
-        label: explicitLabel || symbol,
+        label: explicitLabel || upperBody,
         instType,
-        key: `longbridge:${symbol}`,
+        key: `alpaca:${symbol}`,
         valid: false,
         exists: false,
-        error: 'Longbridge symbol needs a market suffix.',
+        error: 'Alpaca symbol cannot be blank.',
       };
     }
   } else {
@@ -219,8 +246,8 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
     }
   }
 
-  const label = explicitLabel || (source === 'longbridge' ? symbol.split('.', 1)[0] : defaultBitgetLabel(symbol));
-  const key = source === 'longbridge' ? `longbridge:${symbol}` : `${instType}:${symbol}`;
+  const label = explicitLabel || (source === 'alpaca' ? symbol : defaultBitgetLabel(symbol));
+  const key = source === 'alpaca' ? `alpaca:${symbol}` : `${instType}:${symbol}`;
   return {
     raw: trimmed,
     source,
@@ -924,6 +951,7 @@ function WatchlistSettingsPanel({
   const entries = useMemo(() => parseBulkEntries(bulkText, state), [bulkText, state]);
   const addableEntries = entries.filter((entry) => entry.valid && !entry.exists && !entry.inputDuplicate);
   const editable = Boolean(state?.config.sourcePath);
+  const sections = useMemo(() => watchlistSections(state?.instruments ?? []), [state?.instruments]);
 
   async function addResult(result: InstrumentSearchResult) {
     if (result.exists || busyKey) return;
@@ -934,9 +962,9 @@ function WatchlistSettingsPanel({
     setBusyKey(result.key);
     setStatus(`Adding ${result.symbol}...`);
     try {
-      const nextState = result.source === 'longbridge'
-        ? await addLongbridgeSymbol(result)
-        : await addBitgetSymbol(result);
+      const nextState = result.source === 'bitget'
+        ? await addBitgetSymbol(result)
+        : await addAlpacaSymbol(result);
       onState(nextState);
       setResults((items) =>
         items.map((item) => (item.key === result.key ? { ...item, exists: true } : item)),
@@ -992,9 +1020,9 @@ function WatchlistSettingsPanel({
       let added = 0;
       for (const entry of addableEntries) {
         const result = resultFromBulkEntry(entry);
-        const nextState = entry.source === 'longbridge'
-          ? await addLongbridgeSymbol(result)
-          : await addBitgetSymbol(result);
+        const nextState = entry.source === 'bitget'
+          ? await addBitgetSymbol(result)
+          : await addAlpacaSymbol(result);
         added += 1;
         onState(nextState);
       }
@@ -1030,24 +1058,35 @@ function WatchlistSettingsPanel({
             {!editable && <span className="provider-inline-badge">Readonly</span>}
           </div>
           <div className="watchlist-table">
-            {state.instruments.map((instrument) => (
-              <div className="watchlist-table-row" key={instrument.key}>
-                <div>
-                  <strong>{instrument.label}</strong>
-                  <small>{instrument.symbol}</small>
+            {sections.map((section) => (
+              <div className="watchlist-source-section" key={section.source}>
+                <div className="watchlist-source-head">
+                  <div>
+                    <span>{section.label}</span>
+                    <small>{sourceName(section.source)}</small>
+                  </div>
+                  <span className="source-count">{section.instruments.length}</span>
                 </div>
-                <span>{sourceName(instrument.source)}</span>
-                <span>{instrumentVenue(instrument)}</span>
-                <span>{instrument.analysisInterval}</span>
-                <button
-                  aria-label={`Remove ${instrument.symbol}`}
-                  className="danger-icon-button"
-                  disabled={!editable || state.instruments.length <= 1 || busyKey === instrument.key}
-                  onClick={() => removeInstrument(instrument)}
-                  type="button"
-                >
-                  {busyKey === instrument.key ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
-                </button>
+                {section.instruments.map((instrument) => (
+                  <div className="watchlist-table-row" key={instrument.key}>
+                    <div>
+                      <strong>{instrument.label}</strong>
+                      <small>{instrument.symbol}</small>
+                    </div>
+                    <span>{sourceName(instrument.source)}</span>
+                    <span>{instrumentVenue(instrument)}</span>
+                    <span>{instrument.analysisInterval}</span>
+                    <button
+                      aria-label={`Remove ${instrument.symbol}`}
+                      className="danger-icon-button"
+                      disabled={!editable || state.instruments.length <= 1 || busyKey === instrument.key}
+                      onClick={() => removeInstrument(instrument)}
+                      type="button"
+                    >
+                      {busyKey === instrument.key ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
+                    </button>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -1107,14 +1146,14 @@ function WatchlistSettingsPanel({
                 Bitget
               </button>
               <button
-                className={searchSource === 'longbridge' ? 'active' : ''}
+                className={searchSource === 'alpaca' ? 'active' : ''}
                 type="button"
                 onClick={() => {
-                  setSearchSource('longbridge');
+                  setSearchSource('alpaca');
                   setResults([]);
                 }}
               >
-                Longbridge
+                Alpaca
               </button>
             </div>
             <div className="settings-search">
@@ -1125,7 +1164,7 @@ function WatchlistSettingsPanel({
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') runSearch();
                 }}
-                placeholder={searchSource === 'bitget' ? 'BTC / BTCUSDT' : 'AAPL.US / Apple'}
+                placeholder={searchSource === 'bitget' ? 'BTC / BTCUSDT' : 'AAPL / Apple'}
               />
               <button className="inline-search-button" type="button" onClick={runSearch}>
                 Search

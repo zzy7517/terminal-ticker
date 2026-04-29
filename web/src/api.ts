@@ -48,8 +48,8 @@ export async function searchInstruments(source: string, query: string): Promise<
   return payload.results;
 }
 
-export async function addLongbridgeSymbol(result: SecuritySearchResult): Promise<MarketState> {
-  const response = await fetch('/api/watchlist/longbridge', {
+export async function addAlpacaSymbol(result: InstrumentSearchResult): Promise<MarketState> {
+  const response = await fetch('/api/watchlist/alpaca', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ symbol: result.symbol, label: result.label }),
@@ -78,8 +78,8 @@ export async function addBitgetSymbol(result: InstrumentSearchResult): Promise<M
   return payload.state;
 }
 
-export async function removeLongbridgeSymbol(symbol: string): Promise<MarketState> {
-  const response = await fetch(`/api/watchlist/longbridge/${encodeURIComponent(symbol)}`, {
+export async function removeAlpacaSymbol(symbol: string): Promise<MarketState> {
+  const response = await fetch(`/api/watchlist/alpaca/${encodeURIComponent(symbol)}`, {
     method: 'DELETE',
   });
   if (!response.ok) {
