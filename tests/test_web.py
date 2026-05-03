@@ -66,6 +66,32 @@ class WebTests(unittest.TestCase):
         self.assertTrue((PROJECT_ROOT / "vite.config.ts").is_file())
         self.assertEqual(WEB_DIST, PROJECT_ROOT / "web" / "dist")
 
+    def test_web_dist_responses_disable_browser_cache(self) -> None:
+        """Verify local web responses do not reuse stale frontend bundles."""
+        instrument = AlpacaInstrument("AAPL", "AAPL")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with TestClient(app) as client:
+            index_response = client.get("/")
+            asset_path = next((WEB_DIST / "assets").glob("*.js"))
+            asset_response = client.get(f"/assets/{asset_path.name}")
+
+        self.assertEqual(index_response.status_code, 200)
+        self.assertEqual(asset_response.status_code, 200)
+        self.assertEqual(
+            index_response.headers["cache-control"],
+            "no-store, max-age=0, must-revalidate",
+        )
+        self.assertEqual(
+            asset_response.headers["cache-control"],
+            "no-store, max-age=0, must-revalidate",
+        )
+
     def test_serialize_market_state_includes_analysis_and_candles(self) -> None:
         """Verify browser state contains quote, analysis, and chart data."""
         instrument = AlpacaInstrument("AAPL", "AAPL")

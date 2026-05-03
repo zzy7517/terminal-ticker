@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Scope
 
 from ..agent import (
     AgentAnalysisResult,
@@ -52,9 +53,19 @@ from ..config.watchlist_store import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
+WEB_CACHE_HEADERS = {"Cache-Control": "no-store, max-age=0, must-revalidate"}
 THUMBNAIL_CANDLE_LIMIT = 60
 OLDER_CANDLE_SOURCES = {ALPACA_SOURCE, BITGET_SOURCE}
 DEFAULT_AGENT_USER_PROMPT = "Analyze the current K-line chart and update the watch plan."
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """Serve local frontend assets without browser cache reuse."""
+
+    def file_response(self, full_path: Path, stat_result: Any, scope: Scope, status_code: int = 200):
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        response.headers.update(WEB_CACHE_HEADERS)
+        return response
 
 
 def _utc_now_iso() -> str:
@@ -877,15 +888,15 @@ def create_app(
     if WEB_DIST.exists():
         assets_dir = WEB_DIST / "assets"
         if assets_dir.exists():
-            app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+            app.mount("/assets", NoCacheStaticFiles(directory=assets_dir), name="assets")
 
         @app.get("/{path:path}")
         async def serve_web(path: str) -> FileResponse:
             """说明：返回构建后的前端静态文件或入口页面。"""
             requested = WEB_DIST / path
             if path and requested.is_file():
-                return FileResponse(requested)
-            return FileResponse(WEB_DIST / "index.html")
+                return FileResponse(requested, headers=WEB_CACHE_HEADERS)
+            return FileResponse(WEB_DIST / "index.html", headers=WEB_CACHE_HEADERS)
 
     return app
 
