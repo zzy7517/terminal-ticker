@@ -32,19 +32,19 @@ class CandleCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             cache = CandleCache(Path(tmp_dir) / "candles.sqlite3", retention_seconds=86_400)
             now_ms = 200_000_000
-            fresh = _candle("longbridge:AAPL.US", now_ms - 60_000, close=101)
-            old = _candle("longbridge:AAPL.US", now_ms - 90_000_000, close=99)
-            other_interval = _candle("longbridge:AAPL.US", now_ms - 30_000, close=105)
+            fresh = _candle("alpaca:AAPL", now_ms - 60_000, close=101)
+            old = _candle("alpaca:AAPL", now_ms - 90_000_000, close=99)
+            other_interval = _candle("alpaca:AAPL", now_ms - 30_000, close=105)
 
             cache.upsert((fresh, old), interval="5m", fetched_at_ms=now_ms)
             cache.upsert((other_interval,), interval="15m", fetched_at_ms=now_ms)
-            recent = cache.recent("longbridge:AAPL.US", "5m", limit=10, now_ms=now_ms)
+            recent = cache.recent("alpaca:AAPL", "5m", limit=10, now_ms=now_ms)
             removed = cache.prune(now_ms=now_ms)
 
             self.assertEqual(recent, (fresh,))
             self.assertEqual(removed, 1)
             self.assertEqual(
-                cache.recent("longbridge:AAPL.US", "15m", limit=10, now_ms=now_ms),
+                cache.recent("alpaca:AAPL", "15m", limit=10, now_ms=now_ms),
                 (other_interval,),
             )
 
@@ -98,7 +98,7 @@ class CandleCacheTests(unittest.TestCase):
         """Verify provider fetches re-request the latest cached candle."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             cache = CandleCache(Path(tmp_dir) / "candles.sqlite3")
-            symbol_key = "longbridge:AAPL.US"
+            symbol_key = "alpaca:AAPL"
             previous = _candle(symbol_key, 700_000)
             latest = _candle(symbol_key, 1_000_000)
             fetched = _candle(symbol_key, 1_300_000, close=104)
@@ -188,7 +188,7 @@ class CandleCacheTests(unittest.TestCase):
         """Verify callers can skip provider refreshes for recently fetched candles."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             cache = CandleCache(Path(tmp_dir) / "candles.sqlite3", retention_seconds=60 * 60 * 60)
-            symbol_key = "longbridge:AAPL.US"
+            symbol_key = "alpaca:AAPL"
             now_ms = 2_000_000
             cached = tuple(
                 _candle(symbol_key, now_ms - (59 - index) * 3_600_000, close=100 + index)
@@ -215,7 +215,7 @@ class CandleCacheTests(unittest.TestCase):
         """Verify older page loads do not make the latest candle look fresh."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             cache = CandleCache(Path(tmp_dir) / "candles.sqlite3", retention_seconds=86_400)
-            symbol_key = "longbridge:AAPL.US"
+            symbol_key = "alpaca:AAPL"
             now_ms = 1_000_000_000
             interval_ms = 3_600_000
             cached = tuple(

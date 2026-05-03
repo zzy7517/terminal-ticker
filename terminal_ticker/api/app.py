@@ -28,7 +28,6 @@ from ..config import (
     ALPACA_SOURCE,
     AppConfig,
     BITGET_SOURCE,
-    LONGBRIDGE_SOURCE,
     load_config,
     parse_agent_config,
     parse_analysis_config,
@@ -36,7 +35,6 @@ from ..config import (
 from ..market_data.alpaca import search_assets as search_alpaca_assets
 from ..runtime.controller import TickerController
 from ..runtime.feed import CHART_CANDLE_LIMIT, OLDER_CANDLE_LIMIT
-from ..market_data.longbridge import search_securities
 from ..market_data.bitget import search_instruments as search_bitget_instruments
 from ..domain.quotes import QuoteState
 from ..domain.price_action import Candle, merge_candles
@@ -45,9 +43,7 @@ from ..market_data.router import MarketInstrument, resolve_instruments
 from ..config.watchlist_store import (
     append_alpaca_symbol_to_watchlist,
     append_bitget_symbol_to_watchlist,
-    append_longbridge_symbol_to_watchlist,
     remove_alpaca_symbol_from_watchlist,
-    remove_longbridge_symbol_from_watchlist,
     remove_symbol_from_watchlist,
     update_agent_config_in_watchlist,
     update_analysis_config_in_watchlist,
@@ -212,7 +208,6 @@ def serialize_market_state(
                 "refreshIntervalMs": config.display.refresh_interval_ms,
                 "staleAfterSeconds": config.display.stale_after_seconds,
                 "stockPollIntervalSeconds": config.display.stock_poll_interval_seconds,
-                "longbridgePollIntervalSeconds": config.display.longbridge_poll_interval_seconds,
             },
             "sourcePath": str(config.source_path) if config.source_path else None,
         },
@@ -300,29 +295,6 @@ class MarketRuntime:
         finally:
             self.clients.discard(websocket)
 
-    async def search_longbridge(self, query: str) -> list[dict[str, Any]]:
-        """说明：搜索长桥证券，并标记已在 watchlist 中的结果。"""
-        text = query.strip()
-        if not text:
-            return []
-        active = {instrument.key for instrument in self.instruments}
-        results = await asyncio.to_thread(search_securities, text)
-        return [
-            {
-                "source": LONGBRIDGE_SOURCE,
-                "symbol": item.symbol,
-                "label": item.default_label,
-                "instType": None,
-                "key": f"{LONGBRIDGE_SOURCE}:{item.symbol}",
-                "nameCn": item.name_cn,
-                "nameHk": item.name_hk,
-                "nameEn": item.name_en,
-                "displayText": item.display_text(),
-                "exists": f"{LONGBRIDGE_SOURCE}:{item.symbol}" in active,
-            }
-            for item in results
-        ]
-
     async def search_alpaca(self, query: str) -> list[dict[str, Any]]:
         """说明：搜索 Alpaca 美股/ETF 标的，并标记已在 watchlist 中的结果。"""
         text = query.strip()
@@ -374,8 +346,6 @@ class MarketRuntime:
         normalized_source = source.strip().lower()
         if normalized_source == ALPACA_SOURCE:
             return await self.search_alpaca(query)
-        if normalized_source == LONGBRIDGE_SOURCE:
-            return await self.search_longbridge(query)
         if normalized_source == BITGET_SOURCE:
             return await self.search_bitget(query)
         raise HTTPException(status_code=400, detail="Unsupported search source.")
@@ -400,23 +370,6 @@ class MarketRuntime:
             await self.reload_from_source()
         return {"changed": changed, "state": self.snapshot()}
 
-    async def add_longbridge(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """说明：把一个长桥标的写入 watchlist 并激活。"""
-        source_path = self._require_source_path()
-        symbol = str(payload.get("symbol") or "")
-        label = str(payload.get("label") or "").strip() or None
-        changed = await asyncio.to_thread(
-            append_longbridge_symbol_to_watchlist,
-            source_path,
-            symbol=symbol,
-            label=label,
-            group="stocks",
-            show_collapsed=True,
-        )
-        if changed:
-            await self.reload_from_source()
-        return {"changed": changed, "state": self.snapshot()}
-
     async def add_bitget(self, payload: dict[str, Any]) -> dict[str, Any]:
         """说明：把一个 Bitget 标的写入 watchlist 并激活。"""
         source_path = self._require_source_path()
@@ -435,18 +388,6 @@ class MarketRuntime:
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if changed:
-            await self.reload_from_source()
-        return {"changed": changed, "state": self.snapshot()}
-
-    async def remove_longbridge(self, symbol: str) -> dict[str, Any]:
-        """说明：从 watchlist 移除一个长桥标的并停用。"""
-        source_path = self._require_source_path()
-        changed = await asyncio.to_thread(
-            remove_longbridge_symbol_from_watchlist,
-            source_path,
-            symbol=symbol,
-        )
         if changed:
             await self.reload_from_source()
         return {"changed": changed, "state": self.snapshot()}
@@ -861,20 +802,10 @@ def create_app(
         """说明：处理新增 Alpaca 标的请求。"""
         return await runtime.add_alpaca(payload)
 
-    @app.post("/api/watchlist/longbridge")
-    async def add_longbridge_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
-        """说明：处理新增长桥标的请求。"""
-        return await runtime.add_longbridge(payload)
-
     @app.post("/api/watchlist/bitget")
     async def add_bitget_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         """说明：处理新增 Bitget 标的请求。"""
         return await runtime.add_bitget(payload)
-
-    @app.delete("/api/watchlist/longbridge/{symbol}")
-    async def remove_longbridge_endpoint(symbol: str) -> dict[str, Any]:
-        """说明：处理移除长桥标的请求。"""
-        return await runtime.remove_longbridge(symbol)
 
     @app.delete("/api/watchlist/alpaca/{symbol}")
     async def remove_alpaca_endpoint(symbol: str) -> dict[str, Any]:

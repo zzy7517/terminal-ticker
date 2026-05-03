@@ -8,9 +8,7 @@ from terminal_ticker.config import AgentConfig, AnalysisConfig, load_config
 from terminal_ticker.watchlist_store import (
     append_alpaca_symbol_to_watchlist,
     append_bitget_symbol_to_watchlist,
-    append_longbridge_symbol_to_watchlist,
     remove_alpaca_symbol_from_watchlist,
-    remove_longbridge_symbol_from_watchlist,
     remove_symbol_from_watchlist,
     update_agent_config_in_watchlist,
     update_analysis_config_in_watchlist,
@@ -20,41 +18,6 @@ from terminal_ticker.watchlist_store import (
 
 class WatchlistStoreTests(unittest.TestCase):
     """Group tests for WatchlistStoreTests."""
-    def test_append_longbridge_symbol_to_watchlist(self) -> None:
-        """Verify append longbridge symbol to watchlist."""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            config_path = Path(tmp_dir) / "watchlist.toml"
-            config_path.write_text(
-                textwrap.dedent(
-                    """
-                    symbols = [
-                      { symbol = "BTCUSDT", inst_type = "USDT-FUTURES", label = "BTC" },
-                    ]
-
-                    [display]
-                    stale_after_seconds = 15
-                    """
-                ).strip()
-            )
-
-            inserted = append_longbridge_symbol_to_watchlist(
-                config_path,
-                symbol="aapl.us",
-                label="AAPL",
-            )
-            duplicate = append_longbridge_symbol_to_watchlist(
-                config_path,
-                symbol="AAPL.US",
-                label="AAPL",
-            )
-            config = load_config(config_path)
-
-        self.assertTrue(inserted)
-        self.assertFalse(duplicate)
-        self.assertEqual(config.instruments[1].symbol, "AAPL.US")
-        self.assertEqual(config.instruments[1].source, "longbridge")
-        self.assertEqual(config.instruments[1].group, "stocks")
-
     def test_append_bitget_symbol_to_watchlist(self) -> None:
         """Verify append bitget symbol to watchlist."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -63,7 +26,7 @@ class WatchlistStoreTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
+                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
                     ]
                     """
                 ).strip()
@@ -122,30 +85,6 @@ class WatchlistStoreTests(unittest.TestCase):
         self.assertEqual(config.instruments[1].source, "alpaca")
         self.assertEqual(config.instruments[1].group, "stocks")
 
-    def test_remove_longbridge_symbol_from_watchlist_only_removes_exact_source_match(self) -> None:
-        """Verify remove longbridge symbol from watchlist only removes exact source match."""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            config_path = Path(tmp_dir) / "watchlist.toml"
-            config_path.write_text(
-                textwrap.dedent(
-                    """
-                    symbols = [
-                      { symbol = "AAP.US", source = "longbridge", label = "AAP", group = "stocks" },
-                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL", group = "stocks" },
-                      { symbol = "AAPLUSDT", inst_type = "USDT-FUTURES", label = "AAPL" },
-                    ]
-                    """
-                ).strip()
-            )
-
-            removed = remove_longbridge_symbol_from_watchlist(config_path, symbol="aapl.us")
-            missing = remove_longbridge_symbol_from_watchlist(config_path, symbol="MSFT.US")
-            config = load_config(config_path)
-
-        self.assertTrue(removed)
-        self.assertFalse(missing)
-        self.assertEqual([item.symbol for item in config.instruments], ["AAP.US", "AAPLUSDT"])
-
     def test_remove_alpaca_symbol_from_watchlist_only_removes_exact_source_match(self) -> None:
         """Verify remove alpaca symbol from watchlist only removes exact source match."""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -154,8 +93,8 @@ class WatchlistStoreTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
+                      { symbol = "AAP", source = "alpaca", label = "AAP", group = "stocks" },
                       { symbol = "AAPL", source = "alpaca", label = "AAPL", group = "stocks" },
-                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL", group = "stocks" },
                       { symbol = "AAPLUSDT", inst_type = "USDT-FUTURES", label = "AAPL" },
                     ]
                     """
@@ -168,7 +107,7 @@ class WatchlistStoreTests(unittest.TestCase):
 
         self.assertTrue(removed)
         self.assertFalse(missing)
-        self.assertEqual([item.source for item in config.instruments], ["longbridge", "bitget"])
+        self.assertEqual([item.source for item in config.instruments], ["alpaca", "bitget"])
 
     def test_remove_symbol_from_watchlist_removes_bitget_by_inst_type(self) -> None:
         """Verify generic remove handles Bitget source and inst_type."""
@@ -296,7 +235,7 @@ class WatchlistStoreTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL", group = "stocks" },
+                      { symbol = "AAPL", source = "alpaca", label = "AAPL", group = "stocks" },
                       { symbol = "BTCUSDT", inst_type = "USDT-FUTURES", label = "BTC" },
                     ]
                     """
@@ -305,8 +244,8 @@ class WatchlistStoreTests(unittest.TestCase):
 
             changed = update_instrument_analysis_interval_in_watchlist(
                 config_path,
-                source="longbridge",
-                symbol="AAPL.US",
+                source="alpaca",
+                symbol="AAPL",
                 inst_type=None,
                 interval="15m",
             )

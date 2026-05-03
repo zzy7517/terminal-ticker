@@ -12,7 +12,6 @@ from terminal_ticker.config import AppConfig, DisplayConfig, load_config
 from terminal_ticker.controller import DrainResult
 from terminal_ticker.alpaca_provider import AlpacaAsset, AlpacaInstrument
 from terminal_ticker.bitget import BitgetInstrument
-from terminal_ticker.longbridge_provider import LongbridgeInstrument
 from terminal_ticker.models import QuoteState
 from terminal_ticker.price_action import Candle
 from terminal_ticker.web import PROJECT_ROOT, WEB_DIST, create_app, serialize_market_state
@@ -69,12 +68,12 @@ class WebTests(unittest.TestCase):
 
     def test_serialize_market_state_includes_analysis_and_candles(self) -> None:
         """Verify browser state contains quote, analysis, and chart data."""
-        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+        instrument = AlpacaInstrument("AAPL", "AAPL")
         config = AppConfig(instruments=tuple(), display=DisplayConfig())
         quote = QuoteState.placeholder("AAPL")
         quote.apply_payload({"short_name": "AAPL", "price": 201.25, "change_percent": 0.72})
-        candle = Candle("longbridge:AAPL.US", 1776846000000, 200, 202, 199, 201.25, 12345)
-        thumbnail_candle = Candle("longbridge:AAPL.US", 1776849600000, 201, 203, 200, 202.25, 14000)
+        candle = Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345)
+        thumbnail_candle = Candle("alpaca:AAPL", 1776849600000, 201, 203, 200, 202.25, 14000)
         quote.apply_candles(
             candles=(candle,),
             thumbnail_candles=(thumbnail_candle,),
@@ -87,7 +86,7 @@ class WebTests(unittest.TestCase):
             stream_status="live",
         )
 
-        self.assertEqual(payload["instruments"][0]["key"], "longbridge:AAPL.US")
+        self.assertEqual(payload["instruments"][0]["key"], "alpaca:AAPL")
         self.assertIsNone(payload["instruments"][0]["instType"])
         self.assertEqual(payload["quotes"][instrument.key]["priceLabel"], "201.25")
         self.assertNotIn("priceAction", payload["quotes"][instrument.key])
@@ -101,7 +100,7 @@ class WebTests(unittest.TestCase):
 
     def test_state_endpoint_uses_runtime_snapshot(self) -> None:
         """Verify the local API exposes runtime state."""
-        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+        instrument = AlpacaInstrument("AAPL", "AAPL")
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
             instruments=(instrument,),
@@ -113,7 +112,7 @@ class WebTests(unittest.TestCase):
             response = client.get("/api/state")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["instruments"][0]["key"], "longbridge:AAPL.US")
+        self.assertEqual(response.json()["instruments"][0]["key"], "alpaca:AAPL")
 
     def test_load_older_candles_endpoint_merges_history(self) -> None:
         """Verify browser can request earlier candles for the selected chart."""
@@ -147,7 +146,15 @@ class WebTests(unittest.TestCase):
 
     def test_load_older_candles_rejects_unsupported_provider(self) -> None:
         """Verify unsupported providers do not issue ambiguous history requests."""
-        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+        class UnsupportedInstrument:
+            symbol = "TEST"
+            label = "TEST"
+            source = "paper"
+            group = "other"
+            analysis_interval = None
+            key = "paper:TEST"
+
+        instrument = UnsupportedInstrument()
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
             instruments=(instrument,),
@@ -156,7 +163,7 @@ class WebTests(unittest.TestCase):
         )
 
         with TestClient(app) as client:
-            response = client.post("/api/instruments/longbridge%3AAAPL.US/candles/older")
+            response = client.post("/api/instruments/paper%3ATEST/candles/older")
 
         self.assertEqual(response.status_code, 400)
 
@@ -220,22 +227,22 @@ class WebTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
+                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
                     ]
                     """
                 ).strip()
             )
             config = load_config(config_path)
-            longbridge = LongbridgeInstrument("AAPL.US", "AAPL")
+            alpaca = AlpacaInstrument("AAPL", "AAPL")
             bitget = BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
             app = create_app(
                 config=config,
-                instruments=(longbridge,),
+                instruments=(alpaca,),
                 controller_factory=DummyController,
                 auto_start=False,
             )
 
-            with patch("terminal_ticker.web.resolve_instruments", return_value=(longbridge, bitget)):
+            with patch("terminal_ticker.web.resolve_instruments", return_value=(alpaca, bitget)):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/watchlist/bitget",
@@ -292,23 +299,23 @@ class WebTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
+                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
                       { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC" },
                     ]
                     """
                 ).strip()
             )
             config = load_config(config_path)
-            longbridge = LongbridgeInstrument("AAPL.US", "AAPL")
+            alpaca = AlpacaInstrument("AAPL", "AAPL")
             bitget = BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
             app = create_app(
                 config=config,
-                instruments=(longbridge, bitget),
+                instruments=(alpaca, bitget),
                 controller_factory=DummyController,
                 auto_start=False,
             )
 
-            with patch("terminal_ticker.web.resolve_instruments", return_value=(longbridge,)):
+            with patch("terminal_ticker.web.resolve_instruments", return_value=(alpaca,)):
                 with TestClient(app) as client:
                     response = client.delete("/api/watchlist/instruments/USDT-FUTURES%3ABTCUSDT")
             persisted_text = config_path.read_text()
@@ -316,7 +323,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["changed"])
         self.assertNotIn("BTCUSDT", persisted_text)
-        self.assertIn("AAPL.US", persisted_text)
+        self.assertIn("AAPL", persisted_text)
 
     def test_remove_instrument_endpoint_rejects_last_symbol(self) -> None:
         """Verify browser cannot remove the final active watchlist instrument."""
@@ -366,7 +373,7 @@ class WebTests(unittest.TestCase):
                 )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+            instrument = AlpacaInstrument("AAPL", "AAPL")
             store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
             app = create_app(
                 config=AppConfig(instruments=tuple(), display=DisplayConfig()),
@@ -378,17 +385,17 @@ class WebTests(unittest.TestCase):
             quote = app.state.runtime.controller.quotes[instrument.key]
             quote.apply_payload({"price": 201.25})
             quote.apply_candles(
-                candles=(Candle("longbridge:AAPL.US", 1776846000000, 200, 202, 199, 201.25, 12345),),
+                candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
             provider = FakeProvider()
 
             with patch("terminal_ticker.web.create_llm_provider", return_value=provider):
                 with TestClient(app) as client:
                     response = client.post(
-                        "/api/agent/sessions/longbridge:AAPL.US/messages",
+                        "/api/agent/sessions/alpaca:AAPL/messages",
                         json={"message": "What changed since the prior candle?"},
                     )
-                    persisted_response = client.get("/api/agent/sessions/longbridge:AAPL.US")
+                    persisted_response = client.get("/api/agent/sessions/alpaca:AAPL")
 
         payload = response.json()
         persisted_payload = persisted_response.json()
@@ -409,7 +416,7 @@ class WebTests(unittest.TestCase):
 
     def test_agent_models_endpoint_returns_provider_models(self) -> None:
         """Verify model discovery endpoint forwards provider model metadata."""
-        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+        instrument = AlpacaInstrument("AAPL", "AAPL")
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
             instruments=(instrument,),
@@ -441,13 +448,13 @@ class WebTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
+                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
                     ]
                     """
                 ).strip()
             )
             config = load_config(config_path)
-            instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+            instrument = AlpacaInstrument("AAPL", "AAPL")
             app = create_app(
                 config=config,
                 instruments=(instrument,),
@@ -483,13 +490,13 @@ class WebTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
+                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
                     ]
                     """
                 ).strip()
             )
             config = load_config(config_path)
-            instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+            instrument = AlpacaInstrument("AAPL", "AAPL")
             app = create_app(
                 config=config,
                 instruments=(instrument,),
@@ -514,16 +521,16 @@ class WebTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL.US", source = "longbridge", label = "AAPL" },
-                      { symbol = "SPY.US", source = "longbridge", label = "SPY" },
+                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
+                      { symbol = "SPY", source = "alpaca", label = "SPY" },
                     ]
                     """
                 ).strip()
             )
             config = load_config(config_path)
             instruments = (
-                LongbridgeInstrument("AAPL.US", "AAPL"),
-                LongbridgeInstrument("SPY.US", "SPY"),
+                AlpacaInstrument("AAPL", "AAPL"),
+                AlpacaInstrument("SPY", "SPY"),
             )
             app = create_app(
                 config=config,
@@ -534,7 +541,7 @@ class WebTests(unittest.TestCase):
 
             with TestClient(app) as client:
                 response = client.post(
-                    "/api/instruments/longbridge%3AAAPL.US/analysis-interval",
+                    "/api/instruments/alpaca%3AAAPL/analysis-interval",
                     json={"interval": "15m"},
                 )
 
@@ -543,8 +550,8 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         state = response.json()["state"]
         intervals = {item["key"]: item["analysisInterval"] for item in state["instruments"]}
-        self.assertEqual(intervals["longbridge:AAPL.US"], "15m")
-        self.assertEqual(intervals["longbridge:SPY.US"], "5m")
+        self.assertEqual(intervals["alpaca:AAPL"], "15m")
+        self.assertEqual(intervals["alpaca:SPY"], "5m")
         self.assertEqual(persisted.instruments[0].analysis_interval, "15m")
         self.assertIsNone(persisted.instruments[1].analysis_interval)
 

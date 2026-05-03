@@ -11,7 +11,6 @@ from . import (
     ALPACA_SOURCE,
     BITGET_SOURCE,
     GROUP_ALIASES,
-    LONGBRIDGE_SOURCE,
     SUPPORTED_INST_TYPES,
     load_config,
 )
@@ -20,14 +19,6 @@ from . import (
 def _toml_string(value: str) -> str:
     """说明：把字符串安全地写成 TOML 字面量。"""
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def _normalize_longbridge_symbol(symbol: str) -> str:
-    """说明：写入或删除前规范化长桥标的代码。"""
-    normalized = symbol.strip().upper()
-    if not normalized:
-        raise ValueError("symbol entries cannot be blank")
-    return normalized
 
 
 def _normalize_alpaca_symbol(symbol: str) -> str:
@@ -65,27 +56,6 @@ def _normalize_group(group: str | None) -> str:
     if not normalized:
         return "stocks"
     return GROUP_ALIASES.get(normalized, normalized)
-
-
-def _format_longbridge_entry(
-    *,
-    symbol: str,
-    label: str | None,
-    group: str,
-    show_collapsed: bool,
-) -> str:
-    """说明：渲染一行长桥 inline TOML 标的配置。"""
-    label_text = label or symbol.split(".", 1)[0]
-    collapsed_text = "true" if show_collapsed else "false"
-    return (
-        "  { "
-        f"symbol = {_toml_string(symbol)}, "
-        'source = "longbridge", '
-        f"label = {_toml_string(label_text)}, "
-        f"group = {_toml_string(group)}, "
-        f"show_collapsed = {collapsed_text}"
-        " },"
-    )
 
 
 def _format_alpaca_entry(
@@ -149,16 +119,6 @@ def _parse_inline_symbol_entry(line: str) -> dict | None:
     return entry if isinstance(entry, dict) else None
 
 
-def _is_longbridge_symbol_entry(line: str, symbol: str) -> bool:
-    """说明：判断一行 TOML 是否为指定长桥标的。"""
-    entry = _parse_inline_symbol_entry(line)
-    if entry is None:
-        return False
-    source = str(entry.get("source") or "").strip().lower()
-    raw_symbol = str(entry.get("symbol") or "").strip().upper()
-    return source == LONGBRIDGE_SOURCE and raw_symbol == symbol
-
-
 def _entry_source(entry: dict) -> str:
     """说明：读取 inline 标的配置的数据源。"""
     return str(entry.get("source") or BITGET_SOURCE).strip().lower() or BITGET_SOURCE
@@ -208,56 +168,6 @@ def _set_inline_analysis_interval(line: str, interval: str) -> str:
     separator = "" if prefix.endswith("{") else ","
     updated = f"{prefix}{separator} {replacement} {suffix}"
     return f"{updated}," if has_trailing_comma else updated
-
-
-def append_longbridge_symbol_to_watchlist(
-    path: str | Path,
-    *,
-    symbol: str,
-    label: str | None = None,
-    group: str = "stocks",
-    show_collapsed: bool = True,
-) -> bool:
-    """说明：不存在时把长桥标的追加到 symbols 数组。"""
-    source_path = Path(path).expanduser().resolve()
-    normalized_symbol = _normalize_longbridge_symbol(symbol)
-    normalized_group = _normalize_group(group)
-
-    config = load_config(source_path)
-    for instrument in config.instruments:
-        if instrument.source == LONGBRIDGE_SOURCE and instrument.symbol == normalized_symbol:
-            return False
-
-    entry = _format_longbridge_entry(
-        symbol=normalized_symbol,
-        label=label,
-        group=normalized_group,
-        show_collapsed=show_collapsed,
-    )
-    text = source_path.read_text()
-    lines = text.splitlines()
-
-    start_index: int | None = None
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("symbols") and "[" in stripped:
-            start_index = index
-            break
-
-    if start_index is None:
-        if text and not text.endswith("\n"):
-            text += "\n"
-        text += f"\nsymbols = [\n{entry}\n]\n"
-        source_path.write_text(text)
-        return True
-
-    for index in range(start_index + 1, len(lines)):
-        if lines[index].strip() == "]":
-            lines.insert(index, entry)
-            source_path.write_text("\n".join(lines) + "\n")
-            return True
-
-    raise ValueError("symbols array is not closed")
 
 
 def append_alpaca_symbol_to_watchlist(
@@ -365,20 +275,6 @@ def append_bitget_symbol_to_watchlist(
             return True
 
     raise ValueError("symbols array is not closed")
-
-
-def remove_longbridge_symbol_from_watchlist(
-    path: str | Path,
-    *,
-    symbol: str,
-) -> bool:
-    """说明：从 watchlist 文件中删除指定长桥标的。"""
-    return remove_symbol_from_watchlist(
-        path,
-        source=LONGBRIDGE_SOURCE,
-        symbol=symbol,
-        inst_type=None,
-    )
 
 
 def remove_alpaca_symbol_from_watchlist(

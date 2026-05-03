@@ -16,8 +16,7 @@ from .agent_models import (
 
 BITGET_SOURCE = "bitget"
 ALPACA_SOURCE = "alpaca"
-LONGBRIDGE_SOURCE = "longbridge"
-SUPPORTED_SOURCES = {BITGET_SOURCE, ALPACA_SOURCE, LONGBRIDGE_SOURCE}
+SUPPORTED_SOURCES = {BITGET_SOURCE, ALPACA_SOURCE}
 SUPPORTED_INST_TYPES = {"SPOT", "USDT-FUTURES"}
 SUPPORTED_ANALYSIS_INTERVALS = {
     "1m",
@@ -64,7 +63,6 @@ class DisplayConfig:
     stale_after_seconds: int = 20
     reconnect_delay_seconds: float = 3.0
     stock_poll_interval_seconds: int = 5
-    longbridge_poll_interval_seconds: int = 2
 
 
 @dataclass(frozen=True)
@@ -170,8 +168,6 @@ def _default_group(source: str) -> str:
     if source == BITGET_SOURCE:
         return "crypto"
     if source == ALPACA_SOURCE:
-        return "stocks"
-    if source == LONGBRIDGE_SOURCE:
         return "stocks"
     return DEFAULT_GROUP
 
@@ -454,17 +450,9 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
             3.0,
         ),
         stock_poll_interval_seconds=_coerce_int(
-            raw_display.get(
-                "stock_poll_interval_seconds",
-                raw_display.get("longbridge_poll_interval_seconds"),
-            ),
+            raw_display.get("stock_poll_interval_seconds"),
             "display.stock_poll_interval_seconds",
             5,
-        ),
-        longbridge_poll_interval_seconds=_coerce_int(
-            raw_display.get("longbridge_poll_interval_seconds"),
-            "display.longbridge_poll_interval_seconds",
-            2,
         ),
     )
 

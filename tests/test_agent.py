@@ -91,8 +91,8 @@ class AgentTests(unittest.TestCase):
             path = Path(tmp_dir) / "agent.sqlite3"
             store = AgentSessionStore(path)
             session = store.get_or_create_active_session(
-                instrument_key="longbridge:AAPL.US",
-                title="AAPL · AAPL.US",
+                instrument_key="alpaca:AAPL",
+                title="AAPL · AAPL",
                 provider="codex",
                 model="gpt-test",
             )
@@ -115,17 +115,17 @@ class AgentTests(unittest.TestCase):
             )
 
             reopened = AgentSessionStore(path)
-            payload = reopened.active_session_payload("longbridge:AAPL.US")
+            payload = reopened.active_session_payload("alpaca:AAPL")
             history = reopened.history_for_context(session.id, limit=4)
             refreshed_session = reopened.get_or_create_active_session(
-                instrument_key="longbridge:AAPL.US",
-                title="AAPL · AAPL.US",
+                instrument_key="alpaca:AAPL",
+                title="AAPL · AAPL",
                 provider="codex",
                 model="gpt-next",
             )
             next_session = reopened.create_session(
-                instrument_key="longbridge:AAPL.US",
-                title="AAPL · AAPL.US",
+                instrument_key="alpaca:AAPL",
+                title="AAPL · AAPL",
                 provider="codex",
                 model="gpt-test",
             )
@@ -138,7 +138,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(history[-1]["analysis"]["watch_plan"], ["Wait for a pullback."])
         self.assertEqual(refreshed_session.id, session.id)
         self.assertEqual(refreshed_session.model, "gpt-next")
-        self.assertEqual(next_session.instrument_key, "longbridge:AAPL.US")
+        self.assertEqual(next_session.instrument_key, "alpaca:AAPL")
         self.assertFalse(previous_payload["session"]["active"])
 
 

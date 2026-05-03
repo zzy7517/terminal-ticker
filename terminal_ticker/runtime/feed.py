@@ -26,12 +26,6 @@ from ..market_data.candle_cache import (
     retention_seconds_for_window,
 )
 from ..config import AppConfig
-from ..market_data.longbridge import (
-    LongbridgeInstrument,
-    _build_quote_context as build_longbridge_quote_context,
-    fetch_candles as fetch_longbridge_candles,
-    fetch_quote_payloads,
-)
 from ..market_data.router import MarketInstrument
 
 LOGGER = logging.getLogger(__name__)
@@ -70,9 +64,6 @@ class FeedWorker(threading.Thread):
         self.alpaca_instruments = tuple(
             instrument for instrument in instruments if isinstance(instrument, AlpacaInstrument)
         )
-        self.longbridge_instruments = tuple(
-            instrument for instrument in instruments if isinstance(instrument, LongbridgeInstrument)
-        )
         self.event_queue = event_queue
         self.candle_cache = candle_cache
         if self.candle_cache is None and self.config.cache.enabled:
@@ -82,10 +73,6 @@ class FeedWorker(threading.Thread):
         self.socket: BitgetPublicWebSocket | None = None
         self.listen_task: asyncio.Task[None] | None = None
         self.tasks: list[asyncio.Task[None]] = []
-        self._longbridge_quote_context: Any | None = None
-        self._longbridge_candle_context: Any | None = None
-        self._longbridge_quote_context_lock = threading.Lock()
-        self._longbridge_candle_context_lock = threading.Lock()
 
     def run(self) -> None:
         """说明：运行线程入口并管理事件循环生命周期。"""
@@ -121,14 +108,10 @@ class FeedWorker(threading.Thread):
         """说明：启动 provider 任务并在退出时发送 stopped 状态。"""
         if self.bitget_instruments:
             self.tasks.append(asyncio.create_task(self._run_bitget()))
-        if self.config.analysis.enabled and (
-            self.bitget_instruments or self.alpaca_instruments or self.longbridge_instruments
-        ):
+        if self.config.analysis.enabled and (self.bitget_instruments or self.alpaca_instruments):
             self.tasks.append(asyncio.create_task(self._run_candles()))
         if self.alpaca_instruments:
             self.tasks.append(asyncio.create_task(self._run_alpaca()))
-        if self.longbridge_instruments:
-            self.tasks.append(asyncio.create_task(self._run_longbridge()))
 
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
@@ -166,26 +149,6 @@ class FeedWorker(threading.Thread):
                 self.socket = None
                 self.listen_task = None
 
-    async def _run_longbridge(self) -> None:
-        """说明：按配置周期轮询长桥报价 REST 数据。"""
-        while not self.stop_event.is_set():
-            try:
-                # Polling reuses the same quote event shape as websocket updates.
-                payloads = await asyncio.to_thread(self._fetch_longbridge_quote_payloads)
-                for payload in payloads.values():
-                    self.event_queue.put(FeedEvent("quote", payload))
-                if payloads:
-                    self.event_queue.put(FeedEvent("status", "polling"))
-            except asyncio.CancelledError:
-                break
-            except Exception as exc:
-                self.event_queue.put(FeedEvent("error", str(exc) or exc.__class__.__name__))
-
-            try:
-                await asyncio.sleep(self.config.display.longbridge_poll_interval_seconds)
-            except asyncio.CancelledError:
-                break
-
     async def _run_alpaca(self) -> None:
         """说明：按配置周期轮询 Alpaca 股票快照。"""
         while not self.stop_event.is_set():
@@ -220,7 +183,7 @@ class FeedWorker(threading.Thread):
     async def _run_candles(self) -> None:
         """说明：轮询 provider K 线并发送图表数据。"""
         while not self.stop_event.is_set():
-            for instrument in self.bitget_instruments + self.alpaca_instruments + self.longbridge_instruments:
+            for instrument in self.bitget_instruments + self.alpaca_instruments:
                 if self.stop_event.is_set():
                     break
                 candles = tuple()
@@ -319,27 +282,6 @@ class FeedWorker(threading.Thread):
             max_cache_age_seconds=THUMBNAIL_CACHE_MAX_AGE_SECONDS,
         )
 
-    def _longbridge_quote_context_for_quotes(self) -> Any:
-        """说明：懒加载并复用长桥 quote 轮询连接上下文。"""
-        with self._longbridge_quote_context_lock:
-            if self._longbridge_quote_context is None:
-                self._longbridge_quote_context = build_longbridge_quote_context()
-            return self._longbridge_quote_context
-
-    def _longbridge_quote_context_for_candles(self) -> Any:
-        """说明：懒加载并复用长桥 K 线拉取连接上下文。"""
-        with self._longbridge_candle_context_lock:
-            if self._longbridge_candle_context is None:
-                self._longbridge_candle_context = build_longbridge_quote_context()
-            return self._longbridge_candle_context
-
-    def _fetch_longbridge_quote_payloads(self) -> dict[str, dict[str, Any]]:
-        """说明：用复用的长桥上下文批量拉取报价。"""
-        return fetch_quote_payloads(
-            self.longbridge_instruments,
-            quote_context=self._longbridge_quote_context_for_quotes(),
-        )
-
     def _fetch_provider_candles(
         self,
         instrument: MarketInstrument,
@@ -365,15 +307,6 @@ class FeedWorker(threading.Thread):
                 limit=limit,
                 after_open_time_ms=after_open_time_ms,
                 before_open_time_ms=before_open_time_ms,
-            )
-        if isinstance(instrument, LongbridgeInstrument):
-            return fetch_longbridge_candles(
-                instrument,
-                interval=interval,
-                limit=limit,
-                after_open_time_ms=after_open_time_ms,
-                before_open_time_ms=before_open_time_ms,
-                quote_context=self._longbridge_quote_context_for_candles(),
             )
         raise ValueError(f"unsupported candle provider: {instrument!r}")
 

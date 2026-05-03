@@ -58,34 +58,16 @@ class ConfigTests(unittest.TestCase):
             ),
         )
 
-    def test_parse_config_supports_longbridge_source_and_collapsed_defaults(self) -> None:
-        """Verify parse config supports longbridge source and collapsed defaults."""
-        config = parse_config(
-            {
-                "symbols": [
-                    {"symbol": "aapl.us", "source": "longbridge", "label": "Apple"},
-                    {
-                        "symbol": "spy.us",
-                        "source": "longbridge",
-                        "label": "SPY",
-                        "show_collapsed": False,
-                        "group": "watchlist",
-                    },
-                ],
-                "display": {"longbridge_poll_interval_seconds": 2},
-            }
-        )
-
-        self.assertEqual(
-            self._instrument_rows(config),
-            (
-                ("AAPL.US", "longbridge", None, "Apple", "stocks"),
-                ("SPY.US", "longbridge", None, "SPY", "watchlist"),
-            ),
-        )
-        self.assertTrue(config.instruments[0].show_collapsed)
-        self.assertFalse(config.instruments[1].show_collapsed)
-        self.assertEqual(config.display.longbridge_poll_interval_seconds, 2)
+    def test_parse_config_rejects_removed_sources(self) -> None:
+        """Verify removed market-data sources are rejected at config load time."""
+        with self.assertRaisesRegex(ValueError, "source must be one of: alpaca, bitget"):
+            parse_config(
+                {
+                    "symbols": [
+                        {"symbol": "aapl.us", "source": "legacy", "label": "Apple"},
+                    ],
+                }
+            )
 
     def test_parse_config_supports_alpaca_source_and_legacy_suffix(self) -> None:
         """Verify parse config supports Alpaca source and normalizes old .US symbols."""

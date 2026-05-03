@@ -77,7 +77,7 @@ const THEME_STORAGE_KEY = 'terminal-ticker-theme';
 const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
 type SettingsSection = 'providers' | 'watchlist';
 type SearchSource = 'bitget' | 'alpaca';
-type SourceHint = SearchSource | 'longbridge';
+type SourceHint = SearchSource;
 type ThemeName = 'light' | 'tokyo-night';
 
 type AppRoute =
@@ -242,14 +242,12 @@ function agentConfidencePercent(analysis: AgentAnalysis | null | undefined) {
 function sourceLabel(instrument: Instrument | undefined) {
   if (!instrument) return '-';
   if (instrument.source === 'alpaca') return 'Alpaca';
-  if (instrument.source === 'longbridge') return 'Longbridge';
   return instrument.source.toUpperCase();
 }
 
 // Formats a raw provider source identifier for settings and watchlist text.
 function sourceName(source: string) {
   if (source === 'alpaca') return 'Alpaca';
-  if (source === 'longbridge') return 'Longbridge';
   return source.toUpperCase();
 }
 
@@ -264,14 +262,13 @@ function instrumentVenue(instrument: Instrument) {
 // Groups provider sources into the higher-level labels used in settings.
 function watchlistSectionLabel(source: string) {
   if (source === 'alpaca') return '美股';
-  if (source === 'longbridge') return '美股';
   if (source === 'bitget') return 'Crypto';
   return sourceName(source);
 }
 
 // Builds provider sections while preserving a useful default source order.
 function watchlistSections(instruments: Instrument[]) {
-  const preferred = ['alpaca', 'longbridge', 'bitget'];
+  const preferred = ['alpaca', 'bitget'];
   const sources = [
     ...preferred.filter((source) => instruments.some((instrument) => instrument.source === source)),
     ...Array.from(new Set(instruments.map((instrument) => instrument.source)))
@@ -311,7 +308,7 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
   const explicitLabel = labelParts.join(' ').trim();
   let sourceHint: SourceHint | null = null;
   let body = token.trim();
-  const sourceMatch = body.match(/^(bitget|alpaca|longbridge)[:/](.+)$/i);
+  const sourceMatch = body.match(/^(bitget|alpaca)[:/](.+)$/i);
   if (sourceMatch) {
     sourceHint = sourceMatch[1].toLowerCase() as SourceHint;
     body = sourceMatch[2];
@@ -322,7 +319,7 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
   let symbol: string;
   let instType: string | null = null;
 
-  if (sourceHint === 'alpaca' || sourceHint === 'longbridge' || (!sourceHint && upperBody.endsWith('.US'))) {
+  if (sourceHint === 'alpaca' || (!sourceHint && upperBody.endsWith('.US'))) {
     source = 'alpaca';
     symbol = upperBody.endsWith('.US') ? upperBody.slice(0, -3) : upperBody;
     if (!symbol) {
