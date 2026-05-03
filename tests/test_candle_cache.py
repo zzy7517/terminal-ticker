@@ -211,6 +211,42 @@ class CandleCacheTests(unittest.TestCase):
 
             self.assertEqual(candles, cached)
 
+    def test_cached_fetch_age_uses_latest_candle_not_any_recent_write(self) -> None:
+        """Verify older page loads do not make the latest candle look fresh."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache = CandleCache(Path(tmp_dir) / "candles.sqlite3", retention_seconds=86_400)
+            symbol_key = "longbridge:AAPL.US"
+            now_ms = 1_000_000_000
+            interval_ms = 3_600_000
+            cached = tuple(
+                _candle(symbol_key, now_ms - (59 - index) * interval_ms, close=100 + index)
+                for index in range(60)
+            )
+            older_page = _candle(symbol_key, now_ms - 60 * interval_ms, close=100)
+            refreshed_latest = _candle(symbol_key, cached[-1].open_time_ms, close=180)
+            calls = []
+
+            cache.upsert(cached, interval="1H", fetched_at_ms=now_ms - interval_ms)
+            cache.upsert((older_page,), interval="1H", fetched_at_ms=now_ms)
+
+            def fetcher(*, interval, limit, after_open_time_ms):
+                calls.append((interval, limit, after_open_time_ms))
+                return (refreshed_latest,)
+
+            candles = cached_fetch_candles(
+                cache=cache,
+                symbol_key=symbol_key,
+                interval="1H",
+                limit=60,
+                fetcher=fetcher,
+                now_ms=now_ms,
+                minimum_retention_seconds=60 * 60 * 60,
+                max_cache_age_seconds=900,
+            )
+
+            self.assertEqual(calls[0][2], cached[-2].open_time_ms)
+            self.assertEqual(candles[-1], refreshed_latest)
+
     def test_retention_seconds_for_window_uses_interval_span(self) -> None:
         """Verify cache retention can be sized to the requested candle window."""
         self.assertEqual(retention_seconds_for_window("1D", 40), 40 * 24 * 60 * 60)

@@ -361,10 +361,10 @@ def fetch_candles(
         "timeframe": _timeframe_for_interval(interval),
         "start": start_time.isoformat().replace("+00:00", "Z"),
         "end": end_time.isoformat().replace("+00:00", "Z"),
-        "limit": str(min(max(limit, 1), 10000) if before_open_time_ms is not None else 10000),
+        "limit": str(min(max(limit, 1), 10000)),
         "feed": _data_feed(),
         "adjustment": "raw",
-        "sort": "desc" if before_open_time_ms is not None else "asc",
+        "sort": "desc",
     }
     payload = _fetch_json(_data_base_url(), "/v2/stocks/bars", params)
     if not isinstance(payload, dict):

@@ -195,15 +195,17 @@ class CandleCache:
         now_ms: int | None = None,
         retention_seconds: int | None = None,
     ) -> int | None:
-        """说明：读取某个标的和周期最近一次成功写入缓存的时间。"""
+        """说明：读取某个标的和周期最新 K 线的缓存写入时间。"""
         current_ms = _now_ms() if now_ms is None else now_ms
         cutoff_ms = current_ms - self._effective_retention(retention_seconds) * 1000
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT MAX(fetched_at_ms)
+                SELECT fetched_at_ms
                 FROM candles
                 WHERE symbol_key = ? AND interval = ? AND open_time_ms >= ?
+                ORDER BY open_time_ms DESC
+                LIMIT 1
                 """,
                 (symbol_key, interval, cutoff_ms),
             ).fetchone()

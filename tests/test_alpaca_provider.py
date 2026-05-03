@@ -107,6 +107,45 @@ class AlpacaProviderTests(unittest.TestCase):
         self.assertEqual(candles[0].open, 200.0)
         self.assertEqual(candles[0].close, 201.25)
 
+    def test_fetch_candles_recent_requests_newest_page_first(self) -> None:
+        """Verify recent Alpaca fetches do not cache an old paginated first page."""
+        captured = []
+        instrument = AlpacaInstrument("AAPL", "AAPL")
+
+        def fake_fetch(_base_url, path, params):
+            captured.append((path, params))
+            return {
+                "bars": {
+                    "AAPL": [
+                        {
+                            "t": "2026-04-30T19:00:00Z",
+                            "o": 204.0,
+                            "h": 206.0,
+                            "l": 203.5,
+                            "c": 205.25,
+                            "v": 13000,
+                        },
+                        {
+                            "t": "2026-04-30T18:00:00Z",
+                            "o": 203.0,
+                            "h": 205.0,
+                            "l": 202.5,
+                            "c": 204.25,
+                            "v": 12000,
+                        },
+                    ]
+                },
+                "next_page_token": "older-page",
+            }
+
+        with patch("terminal_ticker.alpaca_provider._fetch_json", side_effect=fake_fetch):
+            candles = fetch_candles(instrument, interval="1H", limit=60)
+
+        self.assertEqual(captured[0][0], "/v2/stocks/bars")
+        self.assertEqual(captured[0][1]["sort"], "desc")
+        self.assertEqual(captured[0][1]["limit"], "60")
+        self.assertEqual([candle.open_time_ms for candle in candles], [1777572000000, 1777575600000])
+
     def test_fetch_candles_before_requests_descending_history(self) -> None:
         """Verify older Alpaca candle fetches request the page before cached data."""
         captured = []
