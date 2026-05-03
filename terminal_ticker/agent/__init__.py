@@ -4,17 +4,15 @@ from __future__ import annotations
 from . import provider as _provider
 from .provider import (
     AgentAnalysisResult,
-    CodexProvider,
     LLMProvider,
     LLMProviderError,
     LLMProviderUnavailable,
     build_agent_context,
     create_llm_provider,
     list_available_agent_models,
-    _codex_request_headers,
-    _read_codex_cli_credentials,
     _result_from_text,
 )
+from .providers.codex import CodexProvider, _codex_request_headers, _read_codex_cli_credentials
 from .session_store import (
     AgentMessage,
     AgentSession,

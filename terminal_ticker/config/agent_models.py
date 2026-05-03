@@ -19,17 +19,6 @@ CODEX_MODEL_ALIASES = {
     "fast": DEFAULT_CODEX_MODEL,
 }
 
-CODEX_KNOWN_MODELS = (
-    "gpt-5.5",
-    "gpt-5.4-mini",
-    "gpt-5.4",
-    "gpt-5.3-codex",
-    "gpt-5.2",
-    "gpt-5.2-codex",
-    "gpt-5.1-codex-max",
-    "gpt-5.1-codex-mini",
-)
-
 
 @dataclass(frozen=True)
 class AgentModelProfile:
