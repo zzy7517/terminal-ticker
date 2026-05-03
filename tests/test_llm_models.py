@@ -2,7 +2,7 @@
 import unittest
 
 from terminal_ticker.config import AgentConfig
-from terminal_ticker.llm_models import (
+from terminal_ticker.config.agent_models import (
     CODEX_API_MODE,
     DEFAULT_CODEX_MODEL,
     normalize_model,

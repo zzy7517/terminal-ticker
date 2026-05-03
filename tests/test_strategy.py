@@ -1,8 +1,8 @@
 """Test regime/context strategy research helpers."""
 import unittest
 
-from terminal_ticker.price_action import Candle
-from terminal_ticker.strategy import (
+from terminal_ticker.domain.price_action import Candle
+from terminal_ticker.domain.strategy import (
     StrategyConfig,
     generate_signal,
     split_optimize_validate,

@@ -1,7 +1,7 @@
 """Test normalized candle primitives."""
 import unittest
 
-from terminal_ticker.price_action import Candle
+from terminal_ticker.domain.price_action import Candle
 
 
 class CandleTests(unittest.TestCase):

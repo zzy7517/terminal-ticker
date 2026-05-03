@@ -9,12 +9,12 @@ from fastapi.testclient import TestClient
 
 from terminal_ticker.agent import AgentAnalysisResult, AgentSessionStore
 from terminal_ticker.config import AppConfig, DisplayConfig, load_config
-from terminal_ticker.controller import DrainResult
-from terminal_ticker.alpaca_provider import AlpacaAsset, AlpacaInstrument
-from terminal_ticker.bitget import BitgetInstrument
-from terminal_ticker.models import QuoteState
-from terminal_ticker.price_action import Candle
-from terminal_ticker.web import PROJECT_ROOT, WEB_DIST, create_app, serialize_market_state
+from terminal_ticker.runtime.controller import DrainResult
+from terminal_ticker.market_data.alpaca import AlpacaAsset, AlpacaInstrument
+from terminal_ticker.market_data.bitget import BitgetInstrument
+from terminal_ticker.domain.quotes import QuoteState
+from terminal_ticker.domain.price_action import Candle
+from terminal_ticker.api.app import PROJECT_ROOT, WEB_DIST, create_app, serialize_market_state
 
 
 class DummyController:
@@ -178,7 +178,7 @@ class WebTests(unittest.TestCase):
         )
 
         with patch(
-            "terminal_ticker.web.search_alpaca_assets",
+            "terminal_ticker.api.app.search_alpaca_assets",
             return_value=(AlpacaAsset("AAPL", name="Apple Inc.", exchange="NASDAQ"),),
         ):
             with TestClient(app) as client:
@@ -206,7 +206,7 @@ class WebTests(unittest.TestCase):
         )
         spot = BitgetInstrument("BTCUSDT", "SPOT", "BTCUSDT", "BTC", "USDT", "spot")
 
-        with patch("terminal_ticker.web.search_bitget_instruments", return_value=(spot, instrument)):
+        with patch("terminal_ticker.api.app.search_bitget_instruments", return_value=(spot, instrument)):
             with TestClient(app) as client:
                 response = client.get(
                     "/api/instruments/search",
@@ -242,7 +242,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("terminal_ticker.web.resolve_instruments", return_value=(alpaca, bitget)):
+            with patch("terminal_ticker.api.app.resolve_instruments", return_value=(alpaca, bitget)):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/watchlist/bitget",
@@ -278,7 +278,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("terminal_ticker.web.resolve_instruments", return_value=(bitget, alpaca)):
+            with patch("terminal_ticker.api.app.resolve_instruments", return_value=(bitget, alpaca)):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/watchlist/alpaca",
@@ -315,7 +315,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("terminal_ticker.web.resolve_instruments", return_value=(alpaca,)):
+            with patch("terminal_ticker.api.app.resolve_instruments", return_value=(alpaca,)):
                 with TestClient(app) as client:
                     response = client.delete("/api/watchlist/instruments/USDT-FUTURES%3ABTCUSDT")
             persisted_text = config_path.read_text()
@@ -389,7 +389,7 @@ class WebTests(unittest.TestCase):
             )
             provider = FakeProvider()
 
-            with patch("terminal_ticker.web.create_llm_provider", return_value=provider):
+            with patch("terminal_ticker.api.app.create_llm_provider", return_value=provider):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/alpaca:AAPL/messages",
@@ -425,7 +425,7 @@ class WebTests(unittest.TestCase):
         )
 
         with patch(
-            "terminal_ticker.web.list_available_agent_models",
+            "terminal_ticker.api.app.list_available_agent_models",
             return_value=[
                 {
                     "slug": "gpt-5.4-mini",

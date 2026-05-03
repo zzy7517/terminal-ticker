@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 
-from terminal_ticker.bitget import (
+from terminal_ticker.market_data.bitget import (
     SPOT,
     BitgetInstrument,
     _api_granularity,
@@ -87,7 +87,7 @@ class BitgetTests(unittest.TestCase):
         )
 
         with patch(
-            "terminal_ticker.bitget._fetch_json",
+            "terminal_ticker.market_data.bitget._fetch_json",
             return_value={
                 "code": "00000",
                 "data": [["1695835800000", "1", "2", "0.5", "1.5", "10"]],
@@ -117,7 +117,7 @@ class BitgetTests(unittest.TestCase):
         )
 
         with patch(
-            "terminal_ticker.bitget._fetch_json",
+            "terminal_ticker.market_data.bitget._fetch_json",
             return_value={
                 "code": "00000",
                 "data": [
@@ -152,7 +152,7 @@ class BitgetTests(unittest.TestCase):
         )
 
         with patch(
-            "terminal_ticker.bitget._fetch_json",
+            "terminal_ticker.market_data.bitget._fetch_json",
             return_value={"code": "00000", "data": []},
         ) as fetch_json:
             fetch_candles(instrument, interval="5m", limit=1000)
@@ -189,7 +189,7 @@ class BitgetTests(unittest.TestCase):
             ),
         }
 
-        with patch("terminal_ticker.bitget.load_instrument_catalog", return_value=catalog):
+        with patch("terminal_ticker.market_data.bitget.load_instrument_catalog", return_value=catalog):
             results = search_instruments("btc")
 
         self.assertEqual([item.key for item in results], ["SPOT:BTCUSDT", "USDT-FUTURES:BTCUSDT"])

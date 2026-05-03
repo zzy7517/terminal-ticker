@@ -2,8 +2,8 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from terminal_ticker.models import QuoteState
-from terminal_ticker.price_action import Candle
+from terminal_ticker.domain.quotes import QuoteState
+from terminal_ticker.domain.price_action import Candle
 
 
 class QuoteStateTests(unittest.TestCase):

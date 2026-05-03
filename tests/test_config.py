@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from terminal_ticker.config import build_runtime_config, load_config, parse_config
-from terminal_ticker.llm_models import DEFAULT_CODEX_MODEL
+from terminal_ticker.config.agent_models import DEFAULT_CODEX_MODEL
 
 
 class ConfigTests(unittest.TestCase):

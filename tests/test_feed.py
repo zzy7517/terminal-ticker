@@ -7,12 +7,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from terminal_ticker.candle_cache import CandleCache
+from terminal_ticker.market_data.candle_cache import CandleCache
 from terminal_ticker.config import AnalysisConfig, AppConfig, DisplayConfig
-from terminal_ticker.feed import FeedWorker, THUMBNAIL_CANDLE_LIMIT, THUMBNAIL_INTERVAL
-from terminal_ticker.alpaca_provider import AlpacaInstrument
-from terminal_ticker.bitget import BitgetInstrument
-from terminal_ticker.price_action import Candle
+from terminal_ticker.runtime.feed import FeedWorker, THUMBNAIL_CANDLE_LIMIT, THUMBNAIL_INTERVAL
+from terminal_ticker.market_data.alpaca import AlpacaInstrument
+from terminal_ticker.market_data.bitget import BitgetInstrument
+from terminal_ticker.domain.price_action import Candle
 
 
 class FeedWorkerTests(unittest.TestCase):
@@ -48,7 +48,7 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch(
-                "terminal_ticker.feed.fetch_alpaca_snapshot_payloads",
+                "terminal_ticker.runtime.feed.fetch_alpaca_snapshot_payloads",
                 return_value={"alpaca:AAPL": {"id": "alpaca:AAPL", "price": 201.5}},
             ):
                 task = asyncio.create_task(worker._run_alpaca())
@@ -78,7 +78,7 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch(
-                "terminal_ticker.feed.fetch_alpaca_snapshot_payloads",
+                "terminal_ticker.runtime.feed.fetch_alpaca_snapshot_payloads",
                 side_effect=RuntimeError("missing credentials"),
             ):
                 task = asyncio.create_task(worker._run_alpaca())

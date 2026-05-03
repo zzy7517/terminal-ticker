@@ -14,9 +14,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from terminal_ticker.bitget import BitgetInstrument, fetch_candles
-from terminal_ticker.price_action import Candle
-from terminal_ticker.strategy import StrategyConfig, split_optimize_validate
+from terminal_ticker.market_data.bitget import BitgetInstrument, fetch_candles
+from terminal_ticker.domain.price_action import Candle
+from terminal_ticker.domain.strategy import StrategyConfig, split_optimize_validate
 
 
 def _default_output(symbol: str, inst_type: str, interval: str) -> Path:

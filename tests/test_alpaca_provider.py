@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 
-from terminal_ticker.alpaca_provider import (
+from terminal_ticker.market_data.alpaca import (
     AlpacaInstrument,
     clear_asset_cache,
     fetch_candles,
@@ -63,7 +63,7 @@ class AlpacaProviderTests(unittest.TestCase):
                 }
             }
 
-        with patch("terminal_ticker.alpaca_provider._fetch_json", side_effect=fake_fetch):
+        with patch("terminal_ticker.market_data.alpaca._fetch_json", side_effect=fake_fetch):
             payloads = fetch_snapshot_payloads(instruments)
 
         self.assertEqual(calls[0][0], "/v2/stocks/snapshots")
@@ -96,7 +96,7 @@ class AlpacaProviderTests(unittest.TestCase):
                 }
             }
 
-        with patch("terminal_ticker.alpaca_provider._fetch_json", side_effect=fake_fetch):
+        with patch("terminal_ticker.market_data.alpaca._fetch_json", side_effect=fake_fetch):
             candles = fetch_candles(instrument, interval="5m", limit=40)
 
         self.assertEqual(captured[0][0], "/v2/stocks/bars")
@@ -138,7 +138,7 @@ class AlpacaProviderTests(unittest.TestCase):
                 "next_page_token": "older-page",
             }
 
-        with patch("terminal_ticker.alpaca_provider._fetch_json", side_effect=fake_fetch):
+        with patch("terminal_ticker.market_data.alpaca._fetch_json", side_effect=fake_fetch):
             candles = fetch_candles(instrument, interval="1H", limit=60)
 
         self.assertEqual(captured[0][0], "/v2/stocks/bars")
@@ -168,7 +168,7 @@ class AlpacaProviderTests(unittest.TestCase):
                 }
             }
 
-        with patch("terminal_ticker.alpaca_provider._fetch_json", side_effect=fake_fetch):
+        with patch("terminal_ticker.market_data.alpaca._fetch_json", side_effect=fake_fetch):
             candles = fetch_candles(
                 instrument,
                 interval="5m",
@@ -185,7 +185,7 @@ class AlpacaProviderTests(unittest.TestCase):
     def test_search_assets_filters_cached_asset_list(self) -> None:
         """Verify Alpaca asset search matches symbol and name."""
         with patch(
-            "terminal_ticker.alpaca_provider._fetch_json",
+            "terminal_ticker.market_data.alpaca._fetch_json",
             return_value=[
                 {"symbol": "AAPL", "name": "Apple Inc.", "exchange": "NASDAQ", "tradable": True},
                 {"symbol": "AAP", "name": "Advance Auto Parts", "exchange": "NYSE"},

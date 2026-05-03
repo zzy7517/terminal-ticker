@@ -3,12 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from terminal_ticker.candle_cache import (
+from terminal_ticker.market_data.candle_cache import (
     CandleCache,
     cached_fetch_candles,
     retention_seconds_for_window,
 )
-from terminal_ticker.price_action import Candle
+from terminal_ticker.domain.price_action import Candle
 
 
 def _candle(symbol_key: str, open_time_ms: int, close: float = 101.0) -> Candle:
