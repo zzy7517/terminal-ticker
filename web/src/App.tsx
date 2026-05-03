@@ -8,6 +8,7 @@ import {
   History,
   Loader2,
   Minus,
+  Moon,
   MousePointer2,
   Plus,
   RefreshCw,
@@ -15,6 +16,7 @@ import {
   Search,
   Settings,
   Sparkles,
+  Sun,
   Trash2,
   TrendingUp,
   Wifi,
@@ -71,14 +73,102 @@ const GROUP_LABELS: Record<string, string> = {
 const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
 const PROVIDERS_HASH = '#/settings/providers';
 const WATCHLIST_HASH = '#/settings/watchlist';
+const THEME_STORAGE_KEY = 'terminal-ticker-theme';
 const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
 type SettingsSection = 'providers' | 'watchlist';
 type SearchSource = 'bitget' | 'alpaca';
 type SourceHint = SearchSource | 'longbridge';
+type ThemeName = 'light' | 'tokyo-night';
 
 type AppRoute =
   | { view: 'workspace' }
   | { view: 'settings'; section: SettingsSection };
+
+const THEME_LABELS: Record<ThemeName, string> = {
+  light: 'Light',
+  'tokyo-night': 'Tokyo Night',
+};
+
+const CHART_THEMES = {
+  light: {
+    chart: {
+      layout: {
+        background: { type: ColorType.Solid, color: '#fbfcfb' },
+        textColor: 'rgba(39, 49, 49, 0.64)',
+        fontFamily: 'Aptos, "Avenir Next", "Segoe UI", sans-serif',
+      },
+      grid: {
+        vertLines: { color: 'rgba(42, 66, 70, 0.07)' },
+        horzLines: { color: 'rgba(42, 66, 70, 0.09)' },
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(42, 66, 70, 0.14)',
+        scaleMargins: { top: 0.12, bottom: 0.14 },
+      },
+      timeScale: {
+        borderColor: 'rgba(42, 66, 70, 0.14)',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      crosshair: {
+        vertLine: { color: 'rgba(15, 124, 144, 0.38)' },
+        horzLine: { color: 'rgba(15, 124, 144, 0.38)' },
+      },
+    },
+    series: {
+      upColor: '#2e9a66',
+      downColor: '#c65047',
+      wickUpColor: '#25885b',
+      wickDownColor: '#b3433d',
+      borderVisible: false,
+    },
+  },
+  'tokyo-night': {
+    chart: {
+      layout: {
+        background: { type: ColorType.Solid, color: '#11121a' },
+        textColor: 'rgba(192, 202, 245, 0.72)',
+        fontFamily: 'Aptos, "Avenir Next", "Segoe UI", sans-serif',
+      },
+      grid: {
+        vertLines: { color: 'rgba(122, 162, 247, 0.10)' },
+        horzLines: { color: 'rgba(122, 162, 247, 0.12)' },
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(122, 162, 247, 0.22)',
+        scaleMargins: { top: 0.12, bottom: 0.14 },
+      },
+      timeScale: {
+        borderColor: 'rgba(122, 162, 247, 0.22)',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      crosshair: {
+        vertLine: { color: 'rgba(125, 207, 255, 0.42)' },
+        horzLine: { color: 'rgba(125, 207, 255, 0.42)' },
+      },
+    },
+    series: {
+      upColor: '#9ece6a',
+      downColor: '#f7768e',
+      wickUpColor: '#9ece6a',
+      wickDownColor: '#f7768e',
+      borderVisible: false,
+    },
+  },
+};
+
+function readInitialTheme(): ThemeName {
+  try {
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'tokyo-night' ? 'tokyo-night' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+function nextTheme(theme: ThemeName): ThemeName {
+  return theme === 'tokyo-night' ? 'light' : 'tokyo-night';
+}
 
 // Converts the browser hash into the app's internal route shape.
 function readRouteFromHash(): AppRoute {
@@ -485,12 +575,14 @@ function sparklinePoints(candles: CandlePoint[], width = 112, height = 34) {
 function CandlestickPane({
   candles,
   chartKey,
+  theme,
   canLoadOlder,
   olderLoading,
   onLoadOlder,
 }: {
   candles: CandlePoint[];
   chartKey: string;
+  theme: ThemeName;
   canLoadOlder: boolean;
   olderLoading: boolean;
   onLoadOlder: () => void;
@@ -507,6 +599,7 @@ function CandlestickPane({
   const canLoadOlderRef = useRef(canLoadOlder);
   const olderLoadingRef = useRef(olderLoading);
   const onLoadOlderRef = useRef(onLoadOlder);
+  const initialThemeRef = useRef(CHART_THEMES[theme]);
   const [, setRenderTick] = useState(0);
   const {
     activeTool,
@@ -557,31 +650,14 @@ function CandlestickPane({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    const visualTheme = initialThemeRef.current;
 
     const chart = createChart(container, {
       autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: '#fbfcfb' },
-        textColor: 'rgba(39, 49, 49, 0.64)',
-        fontFamily: 'Aptos, "Avenir Next", "Segoe UI", sans-serif',
-      },
-      grid: {
-        vertLines: { color: 'rgba(42, 66, 70, 0.07)' },
-        horzLines: { color: 'rgba(42, 66, 70, 0.09)' },
-      },
+      ...visualTheme.chart,
       rightPriceScale: {
+        ...visualTheme.chart.rightPriceScale,
         autoScale: true,
-        borderColor: 'rgba(42, 66, 70, 0.14)',
-        scaleMargins: { top: 0.12, bottom: 0.14 },
-      },
-      timeScale: {
-        borderColor: 'rgba(42, 66, 70, 0.14)',
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      crosshair: {
-        vertLine: { color: 'rgba(15, 124, 144, 0.38)' },
-        horzLine: { color: 'rgba(15, 124, 144, 0.38)' },
       },
       localization: {
         priceFormatter: (price: number) => price.toFixed(price > 1000 ? 1 : 2),
@@ -600,13 +676,7 @@ function CandlestickPane({
       },
     });
 
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor: '#2e9a66',
-      downColor: '#c65047',
-      wickUpColor: '#25885b',
-      wickDownColor: '#b3433d',
-      borderVisible: false,
-    });
+    const series = chart.addSeries(CandlestickSeries, visualTheme.series);
     chartRef.current = chart;
     seriesRef.current = series;
     setChartApi(chart);
@@ -672,6 +742,15 @@ function CandlestickPane({
       seriesRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    const visualTheme = CHART_THEMES[theme];
+    chart?.applyOptions(visualTheme.chart);
+    series?.applyOptions(visualTheme.series);
+    requestOverlayRender();
+  }, [theme]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1404,6 +1483,7 @@ function WorkspaceView({
   selectedInstrument,
   selectedQuote,
   selectedAgent,
+  theme,
   agentSession,
   agentPrompt,
   agentBusyKey,
@@ -1419,6 +1499,7 @@ function WorkspaceView({
   loadOlderForSelected,
   runAgentAnalysis,
   resetAgentConversation,
+  onThemeToggle,
   openSettings,
   openWatchlistSettings,
 }: {
@@ -1430,6 +1511,7 @@ function WorkspaceView({
   selectedInstrument: Instrument | undefined;
   selectedQuote: Quote | undefined;
   selectedAgent: AgentAnalysis | undefined;
+  theme: ThemeName;
   agentSession: AgentSessionResponse | null;
   agentPrompt: string;
   agentBusyKey: string | null;
@@ -1445,6 +1527,7 @@ function WorkspaceView({
   loadOlderForSelected: () => void;
   runAgentAnalysis: () => Promise<void>;
   resetAgentConversation: () => Promise<void>;
+  onThemeToggle: () => void;
   openSettings: () => void;
   openWatchlistSettings: () => void;
 }) {
@@ -1457,6 +1540,7 @@ function WorkspaceView({
   const canLoadOlder =
     Boolean(selectedInstrument && ['alpaca', 'bitget'].includes(selectedInstrument.source)) &&
     Boolean(historyKey && !exhaustedHistoryKeys.has(historyKey));
+  const nextThemeName = nextTheme(theme);
 
   return (
     <main className="app-shell">
@@ -1472,6 +1556,17 @@ function WorkspaceView({
         </div>
         <div className="topbar-right">
           <ConnectionBadge socketStatus={socketStatus} streamStatus={state?.streamStatus ?? 'idle'} />
+          <button
+            aria-label={`Switch to ${THEME_LABELS[nextThemeName]} skin`}
+            aria-pressed={theme === 'tokyo-night'}
+            className="shell-button theme-toggle"
+            onClick={onThemeToggle}
+            title={`Switch to ${THEME_LABELS[nextThemeName]}`}
+            type="button"
+          >
+            {theme === 'tokyo-night' ? <Sun size={16} /> : <Moon size={16} />}
+            <span>{THEME_LABELS[nextThemeName]}</span>
+          </button>
           <label className="interval-pill interval-control">
             <Activity size={15} />
             <select
@@ -1588,6 +1683,7 @@ function WorkspaceView({
             candles={selectedQuote?.candles ?? []}
             canLoadOlder={canLoadOlder}
             chartKey={`${selectedKey ?? 'none'}:${currentInterval}`}
+            theme={theme}
             olderLoading={Boolean(historyKey && olderBusyKey === historyKey)}
             onLoadOlder={loadOlderForSelected}
           />
@@ -1955,6 +2051,7 @@ function ProviderSettingsPanel({
 // Coordinates top-level routing, live state hydration, and workspace actions.
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => readRouteFromHash());
+  const [theme, setTheme] = useState<ThemeName>(() => readInitialTheme());
   const [state, setState] = useState<MarketState | null>(null);
   const [socketStatus, setSocketStatus] = useState('connecting');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -1967,6 +2064,15 @@ export default function App() {
   const [olderBusyKey, setOlderBusyKey] = useState<string | null>(null);
   const [exhaustedHistoryKeys, setExhaustedHistoryKeys] = useState<Set<string>>(() => new Set());
   const olderBusyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Theme persistence is optional; the UI still switches for this session.
+    }
+  }, [theme]);
 
   useEffect(() => {
     // Mirrors browser hash changes into React state.
@@ -2206,6 +2312,7 @@ export default function App() {
       selectedInstrument={selectedInstrument}
       selectedQuote={selectedQuote}
       selectedAgent={selectedAgent}
+      theme={theme}
       agentSession={selectedAgentSession}
       agentPrompt={agentPrompt}
       agentBusyKey={agentBusyKey}
@@ -2221,6 +2328,7 @@ export default function App() {
       loadOlderForSelected={loadOlderForSelected}
       runAgentAnalysis={runAgentAnalysis}
       resetAgentConversation={resetAgentConversation}
+      onThemeToggle={() => setTheme((current) => nextTheme(current))}
       openSettings={() => navigateToRoute({ view: 'settings', section: 'providers' })}
       openWatchlistSettings={() => navigateToRoute({ view: 'settings', section: 'watchlist' })}
     />
