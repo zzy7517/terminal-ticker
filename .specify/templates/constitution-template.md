@@ -1,50 +1,49 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# [项目名] 开发宪法
+<!-- 示例：Spec Constitution、TaskFlow Constitution、priceViewer 开发宪法 -->
 
-## Core Principles
+## 核心原则
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### [原则 1 名称]
+<!-- 示例：I. 本地优先 -->
+[原则 1 描述]
+<!-- 示例：功能默认在本机运行；配置、缓存和凭证优先保存在本地；新增远端依赖需要 spec 明确批准。 -->
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### [原则 2 名称]
+<!-- 示例：II. 图表优先 -->
+[原则 2 描述]
+<!-- 示例：新增体验围绕 watchlist、K 线图、本地策略信号和 Agent session 设计。 -->
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### [原则 3 名称]
+<!-- 示例：III. 行情可靠性优先 -->
+[原则 3 描述]
+<!-- 示例：陈旧、缺失、重连、占位或过少 K 线不得展示成新鲜有效信号。 -->
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### [原则 4 名称]
+<!-- 示例：IV. Provider 边界清楚 -->
+[原则 4 描述]
+<!-- 示例：产品概念不绑定某个模型 provider；Codex 等 provider 只作为 adapter。 -->
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### [原则 5 名称]
+<!-- 示例：V. 行为必须可验证 -->
+[原则 5 描述]
+<!-- 示例：用户可见行为、配置、provider、缓存、策略信号和 session 改动都要有验证。 -->
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## [章节 2 名称]
+<!-- 示例：产品约束、数据源边界、安全要求、性能标准 -->
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+[章节 2 内容]
+<!-- 示例：当前运行形态、主数据源、持久化方式、非交易边界。 -->
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## [章节 3 名称]
+<!-- 示例：开发流程、Review 要求、质量门禁 -->
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+[章节 3 内容]
+<!-- 示例：什么时候必须写 spec / plan / tasks，合并前要跑哪些验证。 -->
 
-## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
+## 治理
+<!-- 示例：宪法高于临时实践；修订需要说明原因、影响和迁移计划。 -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+[治理规则]
+<!-- 示例：所有 spec、plan、tasks、review 都必须检查宪法；复杂度必须写入 Complexity Tracking。 -->
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**版本**：[CONSTITUTION_VERSION] | **批准时间**：[RATIFICATION_DATE] | **最近修订**：[LAST_AMENDED_DATE]

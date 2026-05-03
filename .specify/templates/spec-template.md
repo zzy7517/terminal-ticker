@@ -1,127 +1,113 @@
-# Feature Specification: [FEATURE NAME]
+# 功能规格：[功能名]
 
-**Feature Branch**: `[###-feature-name]`  
-**Created**: [DATE]  
-**Status**: Draft  
-**Input**: User description: "$ARGUMENTS"
+**功能分支**：`[###-feature-name]`
+**创建时间**：[DATE]
+**状态**：Draft
+**输入**：用户描述：`$ARGUMENTS`
 
-> Project guardrails: keep the feature local-first, preserve the compact
-> floating-window experience, and define safe behavior for stale or reconnecting
-> market data.
+> 项目约束：保持本地优先；围绕 watchlist、K 线图、本地策略信号和 Agent session 设计；行情脏数据必须有降级行为；Codex 等模型只能作为 provider adapter。
 
-## User Scenarios & Testing *(mandatory)*
+## 用户场景与测试（必填）
 
 <!--
-  IMPORTANT: User stories should be PRIORITIZED as user journeys ordered by importance.
-  Each user story/journey must be INDEPENDENTLY TESTABLE - meaning if you implement just ONE of them,
-  you should still have a viable MVP (Minimum Viable Product) that delivers value.
-  
-  Assign priorities (P1, P2, P3, etc.) to each story, where P1 is the most critical.
-  Think of each story as a standalone slice of functionality that can be:
-  - Developed independently
-  - Tested independently
-  - Deployed independently
-  - Demonstrated to users independently
+  用户故事按重要性排序。
+  每个用户故事都要能独立测试：只实现这一条，也应该能交付一个有价值的切片。
+  优先级使用 P1、P2、P3，P1 是最关键路径。
 -->
 
-### User Story 1 - [Brief Title] (Priority: P1)
+### 用户故事 1：[简短标题]（优先级：P1）
 
-[Describe this user journey in plain language]
+[用用户语言描述这条路径。]
 
-**Why this priority**: [Explain the value and why it has this priority level]
+**为什么是这个优先级**：[说明它带来的价值。]
 
-**Independent Test**: [Describe how this can be tested independently - e.g., "Can be fully tested by [specific action] and delivers [specific value]"]
+**独立测试**：[说明只测这一条时怎么验证。]
 
-**Acceptance Scenarios**:
+**验收场景**：
 
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-2. **Given** [initial state], **When** [action], **Then** [expected outcome]
+1. **给定** [初始状态]，**当** [动作]，**那么** [预期结果]。
+2. **给定** [初始状态]，**当** [动作]，**那么** [预期结果]。
 
 ---
 
-### User Story 2 - [Brief Title] (Priority: P2)
+### 用户故事 2：[简短标题]（优先级：P2）
 
-[Describe this user journey in plain language]
+[用用户语言描述这条路径。]
 
-**Why this priority**: [Explain the value and why it has this priority level]
+**为什么是这个优先级**：[说明它带来的价值。]
 
-**Independent Test**: [Describe how this can be tested independently]
+**独立测试**：[说明只测这一条时怎么验证。]
 
-**Acceptance Scenarios**:
+**验收场景**：
 
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
----
-
-### User Story 3 - [Brief Title] (Priority: P3)
-
-[Describe this user journey in plain language]
-
-**Why this priority**: [Explain the value and why it has this priority level]
-
-**Independent Test**: [Describe how this can be tested independently]
-
-**Acceptance Scenarios**:
-
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
+1. **给定** [初始状态]，**当** [动作]，**那么** [预期结果]。
 
 ---
 
-[Add more user stories as needed, each with an assigned priority]
+### 用户故事 3：[简短标题]（优先级：P3）
 
-### Edge Cases
+[用用户语言描述这条路径。]
 
-- What happens when the latest quote is stale, missing, or still a placeholder?
-- How does the feature behave immediately after the market feed reconnects?
-- How does the feature preserve readability when the window is collapsed or used
-  in a very small screen corner?
+**为什么是这个优先级**：[说明它带来的价值。]
 
-## Requirements *(mandatory)*
+**独立测试**：[说明只测这一条时怎么验证。]
 
-<!--
-  ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right functional requirements.
--->
+**验收场景**：
 
-### Functional Requirements
+1. **给定** [初始状态]，**当** [动作]，**那么** [预期结果]。
 
-- **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]
-- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]  
-- **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
-- **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
-- **FR-005**: System MUST [behavior, e.g., "log all security events"]
+---
 
-*Example of marking unclear requirements:*
+[按需继续增加用户故事。]
 
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+### 边界情况
 
-### Key Entities *(include if feature involves data)*
+- 最新 quote 可用但 K 线缺失时怎么办？
+- provider 重连后，哪些状态可以继续展示，哪些必须降级？
+- K 线过少、过旧、重复或解析失败时，策略信号和 Agent 如何处理？
+- provider 凭证缺失、token 过期或请求失败时，行情 UI 是否继续可用？
+- 这个功能是否会碰到 Longbridge legacy 路径？如果会，写清楚是兼容还是清理。
 
-- **[Entity 1]**: [What it represents, key attributes without implementation]
-- **[Entity 2]**: [What it represents, relationships to other entities]
-
-## Success Criteria *(mandatory)*
+## 需求（必填）
 
 <!--
-  ACTION REQUIRED: Define measurable success criteria.
-  These must be technology-agnostic and measurable.
+  用具体、可测试的需求替换本节占位。
+  不确定的点写 NEEDS CLARIFICATION。
 -->
 
-### Measurable Outcomes
+### 功能需求
 
-- **SC-001**: [Measurable metric, e.g., "Users can complete account creation in under 2 minutes"]
-- **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
-- **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
-- **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
+- **FR-001**：系统必须 [具体能力，例如“按 instrument key 读取 active Agent session”]。
+- **FR-002**：系统必须 [具体能力，例如“把当前 K 线和策略信号加入 provider 上下文”]。
+- **FR-003**：用户必须能够 [关键交互，例如“重置当前标的会话”]。
+- **FR-004**：系统必须 [数据要求，例如“把 user / assistant 消息保存到本地 SQLite”]。
+- **FR-005**：系统必须 [降级行为，例如“provider 失败时保留行情 UI 可用”]。
 
-## Assumptions
+*不清楚的需求示例：*
 
-- Core user value continues to come from local configuration and public market
-  data rather than hosted services.
-- Features extend the existing desktop application rather than replacing it with
-  another runtime or delivery model.
-- A v1 feature may reuse the current watchlist-driven workflow unless the user
-  explicitly asks for a new editing surface.
-- Existing quote freshness and reconnect behavior remain the baseline unless the
-  new feature deliberately tightens them.
+- **FR-006**：系统必须支持 [NEEDS CLARIFICATION: provider 范围未确定，是只支持 Codex 还是同时支持其他 provider？]
+
+### 关键实体（涉及数据时填写）
+
+- **[实体 1]**：[它表示什么，关键字段是什么，不写具体实现细节。]
+- **[实体 2]**：[它和其他实体的关系。]
+
+## 成功标准（必填）
+
+<!--
+  成功标准要可衡量。能用命令、API、UI 行为或明确观测结果验证。
+-->
+
+### 可衡量结果
+
+- **SC-001**：[例如“连续两次向同一标的提问时，第二次 provider 上下文包含第一次问答历史”。]
+- **SC-002**：[例如“`.venv/bin/python -m unittest discover -s tests` 通过”。]
+- **SC-003**：[例如“`npm run build` 通过”。]
+- **SC-004**：[例如“UI 不出现 Ask Codex 文案，Codex 只出现在 provider 配置中”。]
+
+## 假设
+
+- 核心用户价值来自本地行情、K 线图和会话式 Agent，不来自远端多用户服务。
+- 当前主数据源是 Bitget 和 Alpaca；Longbridge 默认视为 legacy。
+- 功能默认不涉及下单、仓位管理或交易执行。
+- 第一版可以复用当前 watchlist 驱动流程，除非用户明确要求新的配置面。

@@ -1,34 +1,36 @@
-# Specification Quality Checklist: Price Action Agent
+# 规格质量检查清单：本地图表 Agent 工作台
 
-**Purpose**: Validate specification completeness and quality before proceeding to planning  
-**Created**: 2026-04-28  
-**Feature**: [spec.md](../spec.md)
+**目的**：在继续实现或清理前，检查规格是否完整、可测试，并且符合当前产品讨论。
+**创建时间**：2026-04-28
+**最近更新**：2026-05-04
+**功能**：[spec.md](../spec.md)
 
-## Content Quality
+## 内容质量
 
-- [x] No implementation details beyond required product constraints
-- [x] Focused on user value and business needs
-- [x] Written for non-technical stakeholders
-- [x] All mandatory sections completed
+- [x] 规格使用中文描述，保留必要代码名和 provider 名。
+- [x] 用户入口使用图表 Agent / K 线 Agent / session 语义。
+- [x] Codex 只作为 provider adapter 出现，不作为产品名称。
+- [x] Longbridge 不再被写成当前主路径数据源。
+- [x] 文档聚焦用户价值和行为边界，而不是堆实现细节。
 
-## Requirement Completeness
+## 需求完整性
 
-- [x] No [NEEDS CLARIFICATION] markers remain
-- [x] Requirements are testable and unambiguous
-- [x] Success criteria are measurable
-- [x] Success criteria are technology-agnostic where possible
-- [x] All acceptance scenarios are defined
-- [x] Edge cases are identified
-- [x] Scope is clearly bounded
-- [x] Dependencies and assumptions identified
+- [x] 没有残留 `[NEEDS CLARIFICATION]` 标记。
+- [x] 需求可测试，能映射到 API、UI、存储或 provider 行为。
+- [x] 成功标准可用命令或可观察行为验证。
+- [x] 会话持久化、reset、历史上下文和 provider 失败都定义了行为。
+- [x] 陈旧、缺失、失败、过少 K 线的降级行为已定义。
+- [x] 非交易边界已写清楚。
 
-## Feature Readiness
+## 功能就绪度
 
-- [x] All functional requirements have clear acceptance criteria
-- [x] User scenarios cover primary flows
-- [x] Feature meets measurable outcomes defined in Success Criteria
-- [x] Implementation constraints are limited to project guardrails and necessary source boundary
+- [x] P1 用户故事可以独立验证。
+- [x] 本地 Web 工作台和 Agent session 都有明确验收场景。
+- [x] 主数据源边界与当前实现方向一致：Bitget + Alpaca。
+- [x] Longbridge 删除被拆成独立后续任务，没有伪装成已完成。
+- [x] 测试门禁包含 Python 单测和前端构建。
 
-## Notes
+## 备注
 
-- V1 deliberately excludes order execution and screenshot-based chart recognition.
+- 当前版本明确排除下单、仓位管理和截图式图表识别。
+- Longbridge legacy 代码仍待单独删除；规格已不再依赖它。

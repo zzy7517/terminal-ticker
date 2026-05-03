@@ -1,62 +1,62 @@
-# Git Branching Workflow Extension Configuration
-# Copied to .specify/extensions/git/git-config.yml on install
+# Git 分支工作流扩展配置
+# 安装时会复制到 .specify/extensions/git/git-config.yml
 
-# Branch numbering strategy: "sequential" (001, 002, ...) or "timestamp" (YYYYMMDD-HHMMSS)
+# 分支编号策略："sequential"（001、002、...）或 "timestamp"（YYYYMMDD-HHMMSS）
 branch_numbering: sequential
 
-# Commit message used by `git commit` during repository initialization
-init_commit_message: "[Spec Kit] Initial commit"
+# 仓库初始化时使用的提交信息
+init_commit_message: "[Spec Kit] 初始提交"
 
-# Auto-commit before/after core commands.
-# Set "default" to enable for all commands, then override per-command.
-# Each key can be true/false. Message is customizable per-command.
+# 核心命令前后的自动提交配置。
+# 设置 default 可控制所有命令，再按具体命令覆盖。
+# 每个 key 可设置 true/false，并可单独配置提交信息。
 auto_commit:
   default: false
   before_clarify:
     enabled: false
-    message: "[Spec Kit] Save progress before clarification"
+    message: "[Spec Kit] 规格澄清前保存进度"
   before_plan:
     enabled: false
-    message: "[Spec Kit] Save progress before planning"
+    message: "[Spec Kit] 计划前保存进度"
   before_tasks:
     enabled: false
-    message: "[Spec Kit] Save progress before task generation"
+    message: "[Spec Kit] 任务生成前保存进度"
   before_implement:
     enabled: false
-    message: "[Spec Kit] Save progress before implementation"
+    message: "[Spec Kit] 实现前保存进度"
   before_checklist:
     enabled: false
-    message: "[Spec Kit] Save progress before checklist"
+    message: "[Spec Kit] 检查清单前保存进度"
   before_analyze:
     enabled: false
-    message: "[Spec Kit] Save progress before analysis"
+    message: "[Spec Kit] 分析前保存进度"
   before_taskstoissues:
     enabled: false
-    message: "[Spec Kit] Save progress before issue sync"
+    message: "[Spec Kit] issue 同步前保存进度"
   after_constitution:
     enabled: false
-    message: "[Spec Kit] Add project constitution"
+    message: "[Spec Kit] 新增项目宪法"
   after_specify:
     enabled: false
-    message: "[Spec Kit] Add specification"
+    message: "[Spec Kit] 新增规格"
   after_clarify:
     enabled: false
-    message: "[Spec Kit] Clarify specification"
+    message: "[Spec Kit] 澄清规格"
   after_plan:
     enabled: false
-    message: "[Spec Kit] Add implementation plan"
+    message: "[Spec Kit] 新增实施计划"
   after_tasks:
     enabled: false
-    message: "[Spec Kit] Add tasks"
+    message: "[Spec Kit] 新增任务"
   after_implement:
     enabled: false
-    message: "[Spec Kit] Implementation progress"
+    message: "[Spec Kit] 实现进度"
   after_checklist:
     enabled: false
-    message: "[Spec Kit] Add checklist"
+    message: "[Spec Kit] 新增检查清单"
   after_analyze:
     enabled: false
-    message: "[Spec Kit] Add analysis report"
+    message: "[Spec Kit] 新增分析报告"
   after_taskstoissues:
     enabled: false
-    message: "[Spec Kit] Sync tasks to issues"
+    message: "[Spec Kit] 同步任务到 issue"

@@ -7,142 +7,142 @@ hooks:
     command: speckit.git.initialize
     enabled: true
     optional: false
-    prompt: Execute speckit.git.initialize?
-    description: Initialize Git repository before constitution setup
+    prompt: 是否执行 speckit.git.initialize？
+    description: 在初始化宪法前初始化 Git 仓库
     condition: null
   before_specify:
   - extension: git
     command: speckit.git.feature
     enabled: true
     optional: false
-    prompt: Execute speckit.git.feature?
-    description: Create feature branch before specification
+    prompt: 是否执行 speckit.git.feature？
+    description: 在编写规格前创建功能分支
     condition: null
   before_clarify:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit outstanding changes before clarification?
-    description: Auto-commit before spec clarification
+    prompt: 是否在澄清规格前提交当前修改？
+    description: 在规格澄清前自动提交
     condition: null
   before_plan:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit outstanding changes before planning?
-    description: Auto-commit before implementation planning
+    prompt: 是否在实施计划前提交当前修改？
+    description: 在实施计划前自动提交
     condition: null
   before_tasks:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit outstanding changes before task generation?
-    description: Auto-commit before task generation
+    prompt: 是否在生成任务前提交当前修改？
+    description: 在生成任务前自动提交
     condition: null
   before_implement:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit outstanding changes before implementation?
-    description: Auto-commit before implementation
+    prompt: 是否在实现前提交当前修改？
+    description: 在实现前自动提交
     condition: null
   before_checklist:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit outstanding changes before checklist?
-    description: Auto-commit before checklist generation
+    prompt: 是否在生成检查清单前提交当前修改？
+    description: 在生成检查清单前自动提交
     condition: null
   before_analyze:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit outstanding changes before analysis?
-    description: Auto-commit before analysis
+    prompt: 是否在分析前提交当前修改？
+    description: 在分析前自动提交
     condition: null
   before_taskstoissues:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit outstanding changes before issue sync?
-    description: Auto-commit before tasks-to-issues conversion
+    prompt: 是否在同步 issue 前提交当前修改？
+    description: 在 tasks-to-issues 转换前自动提交
     condition: null
   after_constitution:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit constitution changes?
-    description: Auto-commit after constitution update
+    prompt: 是否提交宪法修改？
+    description: 在宪法更新后自动提交
     condition: null
   after_specify:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit specification changes?
-    description: Auto-commit after specification
+    prompt: 是否提交规格修改？
+    description: 在规格生成后自动提交
     condition: null
   after_clarify:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit clarification changes?
-    description: Auto-commit after spec clarification
+    prompt: 是否提交规格澄清修改？
+    description: 在规格澄清后自动提交
     condition: null
   after_plan:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit plan changes?
-    description: Auto-commit after implementation planning
+    prompt: 是否提交计划修改？
+    description: 在实施计划后自动提交
     condition: null
   after_tasks:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit task changes?
-    description: Auto-commit after task generation
+    prompt: 是否提交任务修改？
+    description: 在任务生成后自动提交
     condition: null
   after_implement:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit implementation changes?
-    description: Auto-commit after implementation
+    prompt: 是否提交实现修改？
+    description: 在实现后自动提交
     condition: null
   after_checklist:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit checklist changes?
-    description: Auto-commit after checklist generation
+    prompt: 是否提交检查清单修改？
+    description: 在检查清单生成后自动提交
     condition: null
   after_analyze:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit analysis results?
-    description: Auto-commit after analysis
+    prompt: 是否提交分析结果？
+    description: 在分析后自动提交
     condition: null
   after_taskstoissues:
   - extension: git
     command: speckit.git.commit
     enabled: true
     optional: true
-    prompt: Commit after syncing issues?
-    description: Auto-commit after tasks-to-issues conversion
+    prompt: 是否在同步 issue 后提交？
+    description: 在 tasks-to-issues 转换后自动提交
     condition: null

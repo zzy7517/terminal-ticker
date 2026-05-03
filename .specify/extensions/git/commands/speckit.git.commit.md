@@ -1,48 +1,48 @@
 ---
-description: "Auto-commit changes after a Spec Kit command completes"
+description: "在 Spec Kit 命令完成后自动提交修改"
 ---
 
-# Auto-Commit Changes
+# 自动提交修改
 
-Automatically stage and commit all changes after a Spec Kit command completes.
+在 Spec Kit 命令完成前或完成后，自动 stage 并 commit 当前修改。
 
-## Behavior
+## 行为
 
-This command is invoked as a hook after (or before) core commands. It:
+此命令通常由 hook 触发。它会：
 
-1. Determines the event name from the hook context (e.g., if invoked as an `after_specify` hook, the event is `after_specify`; if `before_plan`, the event is `before_plan`)
-2. Checks `.specify/extensions/git/git-config.yml` for the `auto_commit` section
-3. Looks up the specific event key to see if auto-commit is enabled
-4. Falls back to `auto_commit.default` if no event-specific key exists
-5. Uses the per-command `message` if configured, otherwise a default message
-6. If enabled and there are uncommitted changes, runs `git add .` + `git commit`
+1. 从 hook 上下文判断事件名，例如 `after_specify` 或 `before_plan`。
+2. 读取 `.specify/extensions/git/git-config.yml` 的 `auto_commit` 配置。
+3. 查找当前事件是否启用自动提交。
+4. 如果没有事件专属配置，则回退到 `auto_commit.default`。
+5. 优先使用事件配置中的 `message`，否则使用默认提交信息。
+6. 如果已启用且存在未提交修改，执行 `git add .` 和 `git commit`。
 
-## Execution
+## 执行
 
-Determine the event name from the hook that triggered this command, then run the script:
+确定触发此命令的事件名，然后运行对应脚本：
 
-- **Bash**: `.specify/extensions/git/scripts/bash/auto-commit.sh <event_name>`
-- **PowerShell**: `.specify/extensions/git/scripts/powershell/auto-commit.ps1 <event_name>`
+- **Bash**：`.specify/extensions/git/scripts/bash/auto-commit.sh <event_name>`
+- **PowerShell**：`.specify/extensions/git/scripts/powershell/auto-commit.ps1 <event_name>`
 
-Replace `<event_name>` with the actual hook event (e.g., `after_specify`, `before_plan`, `after_implement`).
+把 `<event_name>` 替换成真实 hook 事件，例如 `after_specify`、`before_plan`、`after_implement`。
 
-## Configuration
+## 配置
 
-In `.specify/extensions/git/git-config.yml`:
+在 `.specify/extensions/git/git-config.yml` 中配置：
 
 ```yaml
 auto_commit:
-  default: false          # Global toggle — set true to enable for all commands
+  default: false
   after_specify:
-    enabled: true          # Override per-command
-    message: "[Spec Kit] Add specification"
+    enabled: true
+    message: "[Spec Kit] 新增规格"
   after_plan:
     enabled: false
-    message: "[Spec Kit] Add implementation plan"
+    message: "[Spec Kit] 新增实施计划"
 ```
 
-## Graceful Degradation
+## 降级行为
 
-- If Git is not available or the current directory is not a repository: skips with a warning
-- If no config file exists: skips (disabled by default)
-- If no changes to commit: skips with a message
+- 未安装 Git 或当前目录不是 Git 仓库时：给出警告并跳过。
+- 配置文件不存在时：跳过，默认不自动提交。
+- 没有可提交修改时：跳过并输出提示。

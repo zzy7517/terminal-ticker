@@ -1,100 +1,100 @@
-# Git Branching Workflow Extension
+# Git 分支工作流扩展
 
-Git repository initialization, feature branch creation, numbering (sequential/timestamp), validation, remote detection, and auto-commit for Spec Kit.
+这个扩展为 Spec Kit 提供 Git 仓库初始化、功能分支创建、编号、分支校验、远端识别和自动提交能力。
 
-## Overview
+## 概览
 
-This extension provides Git operations as an optional, self-contained module. It manages:
+扩展把 Git 操作做成独立模块，主要管理：
 
-- **Repository initialization** with configurable commit messages
-- **Feature branch creation** with sequential (`001-feature-name`) or timestamp (`20260319-143022-feature-name`) numbering
-- **Branch validation** to ensure branches follow naming conventions
-- **Git remote detection** for GitHub integration (e.g., issue creation)
-- **Auto-commit** after core commands (configurable per-command with custom messages)
+- **仓库初始化**：可配置初始提交信息。
+- **功能分支创建**：支持顺序编号，例如 `001-feature-name`，也支持时间戳编号，例如 `20260319-143022-feature-name`。
+- **分支校验**：检查当前分支是否符合命名约定。
+- **Git 远端识别**：为 GitHub issue 等集成提供 owner / repo 信息。
+- **自动提交**：可在核心 Speckit 命令前后提交修改，并为每个事件配置提交信息。
 
-## Commands
+## 命令
 
-| Command | Description |
-|---------|-------------|
-| `speckit.git.initialize` | Initialize a Git repository with a configurable commit message |
-| `speckit.git.feature` | Create a feature branch with sequential or timestamp numbering |
-| `speckit.git.validate` | Validate current branch follows feature branch naming conventions |
-| `speckit.git.remote` | Detect Git remote URL for GitHub integration |
-| `speckit.git.commit` | Auto-commit changes (configurable per-command enable/disable and messages) |
+| 命令 | 说明 |
+|------|------|
+| `speckit.git.initialize` | 初始化 Git 仓库，并使用可配置的初始提交信息 |
+| `speckit.git.feature` | 创建顺序编号或时间戳编号的功能分支 |
+| `speckit.git.validate` | 校验当前分支是否符合功能分支命名约定 |
+| `speckit.git.remote` | 识别 Git 远端 URL，供 GitHub 集成使用 |
+| `speckit.git.commit` | 自动提交修改，支持按命令开关和自定义提交信息 |
 
-## Hooks
+## 钩子
 
-| Event | Command | Optional | Description |
-|-------|---------|----------|-------------|
-| `before_constitution` | `speckit.git.initialize` | No | Init git repo before constitution |
-| `before_specify` | `speckit.git.feature` | No | Create feature branch before specification |
-| `before_clarify` | `speckit.git.commit` | Yes | Commit outstanding changes before clarification |
-| `before_plan` | `speckit.git.commit` | Yes | Commit outstanding changes before planning |
-| `before_tasks` | `speckit.git.commit` | Yes | Commit outstanding changes before task generation |
-| `before_implement` | `speckit.git.commit` | Yes | Commit outstanding changes before implementation |
-| `before_checklist` | `speckit.git.commit` | Yes | Commit outstanding changes before checklist |
-| `before_analyze` | `speckit.git.commit` | Yes | Commit outstanding changes before analysis |
-| `before_taskstoissues` | `speckit.git.commit` | Yes | Commit outstanding changes before issue sync |
-| `after_constitution` | `speckit.git.commit` | Yes | Auto-commit after constitution update |
-| `after_specify` | `speckit.git.commit` | Yes | Auto-commit after specification |
-| `after_clarify` | `speckit.git.commit` | Yes | Auto-commit after clarification |
-| `after_plan` | `speckit.git.commit` | Yes | Auto-commit after planning |
-| `after_tasks` | `speckit.git.commit` | Yes | Auto-commit after task generation |
-| `after_implement` | `speckit.git.commit` | Yes | Auto-commit after implementation |
-| `after_checklist` | `speckit.git.commit` | Yes | Auto-commit after checklist |
-| `after_analyze` | `speckit.git.commit` | Yes | Auto-commit after analysis |
-| `after_taskstoissues` | `speckit.git.commit` | Yes | Auto-commit after issue sync |
+| 事件 | 命令 | 可选 | 说明 |
+|------|------|------|------|
+| `before_constitution` | `speckit.git.initialize` | 否 | 初始化宪法前初始化 Git 仓库 |
+| `before_specify` | `speckit.git.feature` | 否 | 编写规格前创建功能分支 |
+| `before_clarify` | `speckit.git.commit` | 是 | 规格澄清前提交未提交修改 |
+| `before_plan` | `speckit.git.commit` | 是 | 计划前提交未提交修改 |
+| `before_tasks` | `speckit.git.commit` | 是 | 生成任务前提交未提交修改 |
+| `before_implement` | `speckit.git.commit` | 是 | 实现前提交未提交修改 |
+| `before_checklist` | `speckit.git.commit` | 是 | 生成检查清单前提交未提交修改 |
+| `before_analyze` | `speckit.git.commit` | 是 | 分析前提交未提交修改 |
+| `before_taskstoissues` | `speckit.git.commit` | 是 | 同步 issue 前提交未提交修改 |
+| `after_constitution` | `speckit.git.commit` | 是 | 宪法更新后自动提交 |
+| `after_specify` | `speckit.git.commit` | 是 | 规格生成后自动提交 |
+| `after_clarify` | `speckit.git.commit` | 是 | 规格澄清后自动提交 |
+| `after_plan` | `speckit.git.commit` | 是 | 计划生成后自动提交 |
+| `after_tasks` | `speckit.git.commit` | 是 | 任务生成后自动提交 |
+| `after_implement` | `speckit.git.commit` | 是 | 实现后自动提交 |
+| `after_checklist` | `speckit.git.commit` | 是 | 检查清单生成后自动提交 |
+| `after_analyze` | `speckit.git.commit` | 是 | 分析后自动提交 |
+| `after_taskstoissues` | `speckit.git.commit` | 是 | 同步 issue 后自动提交 |
 
-## Configuration
+## 配置
 
-Configuration is stored in `.specify/extensions/git/git-config.yml`:
+配置保存在 `.specify/extensions/git/git-config.yml`：
 
 ```yaml
-# Branch numbering strategy: "sequential" or "timestamp"
+# 分支编号策略："sequential" 或 "timestamp"
 branch_numbering: sequential
 
-# Custom commit message for git init
-init_commit_message: "[Spec Kit] Initial commit"
+# git init 后的初始提交信息
+init_commit_message: "[Spec Kit] 初始提交"
 
-# Auto-commit per command (all disabled by default)
-# Example: enable auto-commit after specify
+# 按命令配置自动提交，默认关闭
 auto_commit:
   default: false
   after_specify:
     enabled: true
-    message: "[Spec Kit] Add specification"
+    message: "[Spec Kit] 新增规格"
 ```
 
-## Installation
+## 安装
 
 ```bash
-# Install the bundled git extension (no network required)
+# 安装内置 git 扩展，不需要网络
 specify extension add git
 ```
 
-## Disabling
+## 禁用
 
 ```bash
-# Disable the git extension (spec creation continues without branching)
+# 禁用 git 扩展，spec 创建流程仍会继续
 specify extension disable git
 
-# Re-enable it
+# 重新启用
 specify extension enable git
 ```
 
-## Graceful Degradation
+## 降级行为
 
-When Git is not installed or the directory is not a Git repository:
-- Spec directories are still created under `specs/`
-- Branch creation is skipped with a warning
-- Branch validation is skipped with a warning
-- Remote detection returns empty results
+当未安装 Git 或当前目录不是 Git 仓库时：
 
-## Scripts
+- spec 目录仍会创建在 `specs/` 下。
+- 分支创建会跳过并给出警告。
+- 分支校验会跳过并给出警告。
+- 远端识别会返回空结果。
 
-The extension bundles cross-platform scripts:
+## 脚本
 
-- `scripts/bash/create-new-feature.sh` — Bash implementation
-- `scripts/bash/git-common.sh` — Shared Git utilities (Bash)
-- `scripts/powershell/create-new-feature.ps1` — PowerShell implementation
-- `scripts/powershell/git-common.ps1` — Shared Git utilities (PowerShell)
+扩展包含跨平台脚本：
+
+- `scripts/bash/create-new-feature.sh`：Bash 版本的功能分支创建脚本。
+- `scripts/bash/git-common.sh`：Bash 共享 Git 工具。
+- `scripts/powershell/create-new-feature.ps1`：PowerShell 版本的功能分支创建脚本。
+- `scripts/powershell/git-common.ps1`：PowerShell 共享 Git 工具。
