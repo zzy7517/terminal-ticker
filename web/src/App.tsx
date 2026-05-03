@@ -33,20 +33,24 @@ import {
 import {
   addAlpacaSymbol,
   addBitgetSymbol,
-  analyzeInstrument,
   connectStateSocket,
+  fetchAgentSession,
   fetchAgentModels,
   fetchState,
   loadOlderCandles,
   removeWatchlistInstrument,
+  resetAgentSession,
   saveAgentConfig,
   saveInstrumentAnalysisInterval,
   searchInstruments,
+  sendAgentMessage,
 } from './api';
 import type {
   AgentAnalysis,
   AgentConfigUpdate,
+  AgentMessage,
   AgentModelOption,
+  AgentSessionResponse,
   CandlePoint,
   Instrument,
   InstrumentSearchResult,
@@ -76,6 +80,7 @@ type AppRoute =
   | { view: 'workspace' }
   | { view: 'settings'; section: SettingsSection };
 
+// Converts the browser hash into the app's internal route shape.
 function readRouteFromHash(): AppRoute {
   if (window.location.hash.startsWith(WATCHLIST_HASH)) {
     return { view: 'settings', section: 'watchlist' };
@@ -86,6 +91,7 @@ function readRouteFromHash(): AppRoute {
   return { view: 'workspace' };
 }
 
+// Updates the browser hash while keeping the workspace route hash-free.
 function navigateToRoute(route: AppRoute) {
   if (route.view === 'settings') {
     window.location.hash = route.section === 'watchlist' ? WATCHLIST_HASH : PROVIDERS_HASH;
@@ -98,6 +104,7 @@ function navigateToRoute(route: AppRoute) {
   }
 }
 
+// Orders watchlist groups so common asset classes stay in predictable positions.
 function orderedGroups(state: MarketState | null) {
   if (!state) return [];
   const preferred = ['stocks', 'crypto', 'metals', 'indices', 'watchlist', 'other'];
@@ -108,6 +115,7 @@ function orderedGroups(state: MarketState | null) {
   ];
 }
 
+// Maps quote change direction to the CSS tone used across the UI.
 function changeClass(quote: Quote | undefined) {
   if (!quote || quote.change == null) return 'neutral';
   if (quote.change > 0) return 'up';
@@ -115,6 +123,7 @@ function changeClass(quote: Quote | undefined) {
   return 'neutral';
 }
 
+// Maps local strategy side to the visual tone used by badges and rows.
 function signalTone(quote: Quote | undefined) {
   const side = quote?.strategySignal?.side;
   if (side === 'long') return 'up';
@@ -122,6 +131,7 @@ function signalTone(quote: Quote | undefined) {
   return 'neutral';
 }
 
+// Maps agent bias to the same visual tone vocabulary as market signals.
 function agentTone(analysis: AgentAnalysis | undefined) {
   const bias = analysis?.bias;
   if (bias === 'bullish') return 'up';
@@ -130,6 +140,15 @@ function agentTone(analysis: AgentAnalysis | undefined) {
   return 'neutral';
 }
 
+// Normalizes provider confidence values that may arrive as either 0-1 or 0-100.
+function agentConfidencePercent(analysis: AgentAnalysis | null | undefined) {
+  if (!analysis?.available) return 0;
+  const value = Number(analysis.confidence);
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value <= 1 ? value * 100 : value);
+}
+
+// Returns the short source label shown beside an instrument.
 function sourceLabel(instrument: Instrument | undefined) {
   if (!instrument) return '-';
   if (instrument.source === 'alpaca') return 'Alpaca';
@@ -137,12 +156,14 @@ function sourceLabel(instrument: Instrument | undefined) {
   return instrument.source.toUpperCase();
 }
 
+// Formats a raw provider source identifier for settings and watchlist text.
 function sourceName(source: string) {
   if (source === 'alpaca') return 'Alpaca';
   if (source === 'longbridge') return 'Longbridge';
   return source.toUpperCase();
 }
 
+// Returns the exchange or contract venue label for a watchlist instrument.
 function instrumentVenue(instrument: Instrument) {
   if (instrument.source === 'bitget') {
     return instrument.instType ?? instrument.key.split(':', 1)[0] ?? 'Bitget';
@@ -150,6 +171,7 @@ function instrumentVenue(instrument: Instrument) {
   return sourceName(instrument.source);
 }
 
+// Groups provider sources into the higher-level labels used in settings.
 function watchlistSectionLabel(source: string) {
   if (source === 'alpaca') return '美股';
   if (source === 'longbridge') return '美股';
@@ -157,6 +179,7 @@ function watchlistSectionLabel(source: string) {
   return sourceName(source);
 }
 
+// Builds provider sections while preserving a useful default source order.
 function watchlistSections(instruments: Instrument[]) {
   const preferred = ['alpaca', 'longbridge', 'bitget'];
   const sources = [
@@ -185,10 +208,12 @@ type BulkEntry = {
   error: string | null;
 };
 
+// Derives a compact default label from a Bitget symbol.
 function defaultBitgetLabel(symbol: string) {
   return symbol.endsWith('USDT') ? symbol.slice(0, -4) || symbol : symbol;
 }
 
+// Parses one batch-import line into a normalized addable instrument candidate.
 function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'inputDuplicate'> | null {
   const trimmed = raw.trim();
   if (!trimmed || trimmed.startsWith('#')) return null;
@@ -263,6 +288,7 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
   };
 }
 
+// Parses the whole batch-import textbox and marks duplicates in the user's input.
 function parseBulkEntries(text: string, state: MarketState | null): BulkEntry[] {
   const activeKeys = new Set((state?.instruments ?? []).map((instrument) => instrument.key));
   const seen = new Set<string>();
@@ -277,6 +303,7 @@ function parseBulkEntries(text: string, state: MarketState | null): BulkEntry[] 
   return entries;
 }
 
+// Converts a validated batch row into the same shape returned by search.
 function resultFromBulkEntry(entry: BulkEntry): InstrumentSearchResult {
   return {
     source: entry.source,
@@ -292,23 +319,27 @@ function resultFromBulkEntry(entry: BulkEntry): InstrumentSearchResult {
   };
 }
 
+// Formats support/resistance prices with compact precision.
 function formatLevelPrice(price: number | null) {
   if (price == null) return '-';
   return price.toFixed(price > 1000 ? 1 : 2);
 }
 
+// Formats model context-window sizes for the provider settings table.
 function formatContextWindow(size: number | null) {
   if (size == null) return '-';
   if (size >= 1000) return `${Math.round(size / 1000)}K`;
   return String(size);
 }
 
+// Formats signed percentage and delta values with a visible plus sign.
 function formatSignedNumber(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return '-';
   const prefix = value > 0 ? '+' : '';
   return `${prefix}${value.toFixed(2)}`;
 }
 
+// Summarizes the visible candle window as low/high text.
 function candleRangeLabel(candles: CandlePoint[]) {
   if (candles.length === 0) return '-';
   const low = Math.min(...candles.map((item) => item.low));
@@ -317,6 +348,7 @@ function candleRangeLabel(candles: CandlePoint[]) {
   return `${formatLevelPrice(low)} / ${formatLevelPrice(high)}`;
 }
 
+// Computes the percent move across the currently loaded candle window.
 function closeDeltaPercent(candles: CandlePoint[]) {
   if (candles.length < 2) return null;
   const first = candles[0].close;
@@ -325,6 +357,7 @@ function closeDeltaPercent(candles: CandlePoint[]) {
   return ((last - first) / Math.abs(first)) * 100;
 }
 
+// Aggregates watchlist quotes into the sidebar's market-bias summary.
 function marketPulse(state: MarketState | null) {
   const quotes = state ? Object.values(state.quotes) : [];
   return quotes.reduce(
@@ -340,6 +373,7 @@ function marketPulse(state: MarketState | null) {
   );
 }
 
+// Renders the live/offline connection state for the top bar.
 function ConnectionBadge({ socketStatus, streamStatus }: { socketStatus: string; streamStatus: string }) {
   const connected = socketStatus === 'connected';
   return (
@@ -352,6 +386,7 @@ function ConnectionBadge({ socketStatus, streamStatus }: { socketStatus: string;
 
 type ChartCandle = CandlestickData<UTCTimestamp>;
 
+// Converts API candle payloads into the shape expected by Lightweight Charts.
 function toChartCandles(candles: CandlePoint[]): ChartCandle[] {
   return candles.map((item) => ({
     time: item.time as UTCTimestamp,
@@ -362,6 +397,7 @@ function toChartCandles(candles: CandlePoint[]): ChartCandle[] {
   }));
 }
 
+// Compares two chart candles so incremental updates can avoid full redraws.
 function sameChartCandle(left: ChartCandle, right: ChartCandle) {
   return (
     left.time === right.time &&
@@ -372,6 +408,7 @@ function sameChartCandle(left: ChartCandle, right: ChartCandle) {
   );
 }
 
+// Detects whether the new dataset can be applied as a latest-candle update.
 function canUpdateLatestCandle(previous: ChartCandle[], next: ChartCandle[]) {
   if (previous.length === 0 || next.length === 0) return false;
   if (next.length === previous.length) {
@@ -389,6 +426,7 @@ function canUpdateLatestCandle(previous: ChartCandle[], next: ChartCandle[]) {
   return false;
 }
 
+// Counts newly prepended historical candles while preserving the existing suffix.
 function prependedCandleCount(previous: ChartCandle[], next: ChartCandle[]) {
   if (previous.length === 0 || next.length <= previous.length) return 0;
   const offset = next.length - previous.length;
@@ -398,6 +436,7 @@ function prependedCandleCount(previous: ChartCandle[], next: ChartCandle[]) {
   return offset;
 }
 
+// Builds a cheap data signature for avoiding duplicate chart writes.
 function candleSignature(data: ChartCandle[]) {
   if (data.length === 0) return 'empty';
   return data
@@ -405,6 +444,7 @@ function candleSignature(data: ChartCandle[]) {
     .join('|');
 }
 
+// Computes a padded price range used as a fallback for manual axis zooming.
 function priceRangeFromCandles(data: ChartCandle[]) {
   if (data.length === 0) return null;
   const low = Math.min(...data.map((item) => item.low));
@@ -417,6 +457,7 @@ function priceRangeFromCandles(data: ChartCandle[]) {
   };
 }
 
+// Ensures the current interval stays selectable even if it is not in defaults.
 function intervalOptions(currentInterval: string) {
   if (ANALYSIS_INTERVAL_OPTIONS.includes(currentInterval)) {
     return ANALYSIS_INTERVAL_OPTIONS;
@@ -424,6 +465,7 @@ function intervalOptions(currentInterval: string) {
   return [currentInterval, ...ANALYSIS_INTERVAL_OPTIONS];
 }
 
+// Projects recent closes into a compact SVG sparkline polyline.
 function sparklinePoints(candles: CandlePoint[], width = 112, height = 34) {
   const closes = candles.slice(-60).map((item) => item.close).filter(Number.isFinite);
   if (closes.length < 2) return '';
@@ -439,6 +481,7 @@ function sparklinePoints(candles: CandlePoint[], width = 112, height = 34) {
     .join(' ');
 }
 
+// Owns the main K-line chart instance, incremental data updates, and drawing overlay.
 function CandlestickPane({
   candles,
   chartKey,
@@ -483,6 +526,7 @@ function CandlestickPane({
     onLoadOlderRef.current = onLoadOlder;
   }, [canLoadOlder, olderLoading, onLoadOlder]);
 
+  // Triggers historical pagination when the visible range nears the left edge.
   const maybeLoadOlder = (range: { from: number; to: number } | null) => {
     const logicalFrom = range?.from;
     const visibleSpan = range ? range.to - range.from : null;
@@ -501,6 +545,7 @@ function CandlestickPane({
     onLoadOlderRef.current();
   };
 
+  // Schedules a lightweight React render so SVG drawings follow chart movement.
   const requestOverlayRender = () => {
     if (redrawFrameRef.current !== null) return;
     redrawFrameRef.current = window.requestAnimationFrame(() => {
@@ -567,6 +612,7 @@ function CandlestickPane({
     setChartApi(chart);
     setSeriesApi(series);
 
+    // Implements price-axis zooming while leaving normal chart scrolling intact.
     const handleWheel = (event: WheelEvent) => {
       const chart = chartRef.current;
       const series = seriesRef.current;
@@ -602,6 +648,7 @@ function CandlestickPane({
     container.addEventListener('pointermove', requestOverlayRender);
     container.addEventListener('pointerup', requestOverlayRender);
     container.addEventListener('dblclick', requestOverlayRender);
+    // Keeps overlays and historical pagination in sync with visible time changes.
     const handleLogicalRange = (range: { from: number; to: number } | null) => {
       requestOverlayRender();
       maybeLoadOlder(range);
@@ -746,6 +793,7 @@ function CandlestickPane({
   );
 }
 
+// Renders a tiny trend preview for each watchlist row.
 function Sparkline({ candles, tone }: { candles: CandlePoint[]; tone: string }) {
   const points = sparklinePoints(candles);
   return (
@@ -762,6 +810,7 @@ function Sparkline({ candles, tone }: { candles: CandlePoint[]; tone: string }) 
   );
 }
 
+// Renders one selectable symbol row with quote, signal, and sparkline state.
 function WatchlistRow({
   instrument,
   quote,
@@ -801,6 +850,7 @@ function WatchlistRow({
   );
 }
 
+// Renders the watchlist-wide risk-on/risk-off summary.
 function SidebarCompass({ state }: { state: MarketState | null }) {
   const pulse = marketPulse(state);
   const total = pulse.total || 1;
@@ -820,6 +870,7 @@ function SidebarCompass({ state }: { state: MarketState | null }) {
   );
 }
 
+// Renders one compact chart statistic tile.
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
     <div className="stat-tile">
@@ -829,6 +880,7 @@ function StatTile({ label, value }: { label: string; value: string }) {
   );
 }
 
+// Provides the shared navigation shell for all settings sections.
 function SettingsFrame({
   state,
   section,
@@ -894,6 +946,7 @@ function SettingsFrame({
   );
 }
 
+// Handles watchlist search, batch add, removal, and persistence feedback.
 function WatchlistSettingsPanel({
   state,
   onState,
@@ -913,6 +966,7 @@ function WatchlistSettingsPanel({
   const editable = Boolean(state?.config.sourcePath);
   const sections = useMemo(() => watchlistSections(state?.instruments ?? []), [state?.instruments]);
 
+  // Adds one search result to the local watchlist configuration.
   async function addResult(result: InstrumentSearchResult) {
     if (result.exists || busyKey) return;
     if (result.source === 'bitget' && !result.instType) {
@@ -937,6 +991,7 @@ function WatchlistSettingsPanel({
     }
   }
 
+  // Removes one active instrument while preserving the one-symbol minimum.
   async function removeInstrument(instrument: Instrument) {
     if (!editable || busyKey) return;
     if ((state?.instruments.length ?? 0) <= 1) {
@@ -959,6 +1014,7 @@ function WatchlistSettingsPanel({
     }
   }
 
+  // Runs provider search from the single-symbol add form.
   async function runSearch() {
     const trimmed = query.trim();
     if (!trimmed) return;
@@ -972,6 +1028,7 @@ function WatchlistSettingsPanel({
     }
   }
 
+  // Adds all currently valid batch-import rows in sequence.
   async function addBulkEntries() {
     if (!editable || bulkBusy || addableEntries.length === 0) return;
     setBulkBusy(true);
@@ -1159,31 +1216,13 @@ function WatchlistSettingsPanel({
   );
 }
 
-function AgentReadout({
-  analysis,
-  busy,
-  disabled,
-  onAnalyze,
-}: {
-  analysis: AgentAnalysis | undefined;
-  busy: boolean;
-  disabled: boolean;
-  onAnalyze: () => void;
-}) {
-  const tone = agentTone(analysis);
-  const confidence = analysis?.available ? Math.round(analysis.confidence * 100) : 0;
+// Renders the structured fields returned by the chart-agent provider.
+function AgentAnalysisBlock({ analysis }: { analysis: AgentAnalysis }) {
+  const confidence = agentConfidencePercent(analysis);
   return (
-    <div className="agent-card agent-readout">
-      <div className="agent-card-head">
-        <span className="panel-label with-icon"><Sparkles size={14} /> Codex Read</span>
-        <span className={`agent-bias ${tone}`}>{analysis?.bias ?? 'idle'}</span>
-      </div>
-      <p>
-        {analysis?.available
-          ? analysis.summary
-          : analysis?.error || '把当前 quote、OHLCV K 线和本地结构化特征交给 Codex provider 做一次解读。'}
-      </p>
-      {analysis?.available && (
+    <>
+      <p>{analysis.available ? analysis.summary : analysis.error || 'Agent response unavailable.'}</p>
+      {analysis.available && (
         <>
           <div className="confidence-meter">
             <div>
@@ -1224,14 +1263,138 @@ function AgentReadout({
           )}
         </>
       )}
-      <button className="agent-action" type="button" onClick={onAnalyze} disabled={disabled || busy}>
-        {busy ? <Loader2 className="spin" size={16} /> : <Bot size={16} />}
-        {busy ? 'Analyzing' : 'Run Codex Read'}
-      </button>
+    </>
+  );
+}
+
+// Renders one persisted chat turn in the chart-agent transcript.
+function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
+  const analysis = message.analysis;
+  const tone = agentTone(analysis ?? undefined);
+  const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
+  return (
+    <div className={`session-message ${message.role}`}>
+      <div className="session-message-head">
+        <span>{label}</span>
+        <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
+      </div>
+      {message.role === 'assistant' && analysis ? (
+        <>
+          <div className="session-analysis-head">
+            <span className={`agent-bias ${tone}`}>{analysis.bias}</span>
+            <small>{analysis.model}</small>
+          </div>
+          <AgentAnalysisBlock analysis={analysis} />
+        </>
+      ) : (
+        <p>{message.content || message.error || 'No content.'}</p>
+      )}
     </div>
   );
 }
 
+// Renders the active per-instrument chart-agent session and compose box.
+function AgentSessionPanel({
+  analysis,
+  session,
+  prompt,
+  sessionLoading,
+  busy,
+  disabled,
+  onPromptChange,
+  onSend,
+  onReset,
+}: {
+  analysis: AgentAnalysis | undefined;
+  session: AgentSessionResponse | null;
+  prompt: string;
+  sessionLoading: boolean;
+  busy: boolean;
+  disabled: boolean;
+  onPromptChange: (value: string) => void;
+  onSend: () => Promise<void>;
+  onReset: () => Promise<void>;
+}) {
+  const messages = session?.messages ?? [];
+  const latestAnalysis =
+    [...messages].reverse().find((message) => message.analysis)?.analysis ?? analysis;
+  const tone = agentTone(latestAnalysis ?? undefined);
+  const canSend = !disabled && !busy && !sessionLoading;
+  const sessionTime = session?.session
+    ? new Date(session.session.updatedAt).toLocaleTimeString()
+    : 'No session';
+
+  return (
+    <div className="agent-card agent-readout agent-session-card">
+      <div className="agent-card-head">
+        <span className="panel-label with-icon">
+          <Sparkles size={14} /> Chart Session
+        </span>
+        <span className={`agent-bias ${tone}`}>{latestAnalysis?.bias ?? 'idle'}</span>
+      </div>
+      <div className="session-toolbar">
+        <span>{session?.session?.model ?? analysis?.model ?? '-'}</span>
+        <small>{sessionLoading ? 'Loading' : sessionTime}</small>
+        <button
+          aria-label="Start new agent session"
+          className="session-icon-action"
+          disabled={busy || sessionLoading || !session?.session}
+          onClick={onReset}
+          type="button"
+        >
+          <RefreshCw size={14} />
+        </button>
+      </div>
+      <div className="session-transcript">
+        {sessionLoading && (
+          <div className="session-empty">
+            <Loader2 className="spin" size={16} />
+            <span>Loading session</span>
+          </div>
+        )}
+        {!sessionLoading && messages.map((message) => (
+          <AgentTranscriptMessage key={message.id} message={message} />
+        ))}
+        {!sessionLoading && messages.length === 0 && analysis && (
+          <div className="session-message assistant">
+            <div className="session-message-head">
+              <span>Latest</span>
+              <time>{new Date(analysis.updatedAt).toLocaleTimeString()}</time>
+            </div>
+            <AgentAnalysisBlock analysis={analysis} />
+          </div>
+        )}
+        {!sessionLoading && messages.length === 0 && !analysis && (
+          <div className="session-empty">
+            <History size={16} />
+            <span>No turns in this chart session.</span>
+          </div>
+        )}
+      </div>
+      <div className="session-compose">
+        <textarea
+          disabled={disabled || busy || sessionLoading}
+          onChange={(event) => onPromptChange(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+              event.preventDefault();
+              if (canSend) void onSend();
+            }
+          }}
+          placeholder="Ask about this chart"
+          rows={3}
+          value={prompt}
+        />
+        <button className="agent-action" type="button" onClick={onSend} disabled={!canSend}>
+          {busy ? <Loader2 className="spin" size={16} /> : <Bot size={16} />}
+          {busy ? 'Analyzing' : 'Ask Agent'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Renders the main trading workspace across watchlist, chart, and agent panels.
 function WorkspaceView({
   state,
   socketStatus,
@@ -1241,16 +1404,21 @@ function WorkspaceView({
   selectedInstrument,
   selectedQuote,
   selectedAgent,
+  agentSession,
+  agentPrompt,
   agentBusyKey,
+  agentSessionLoading,
   analysisIntervalBusy,
   olderBusyKey,
   exhaustedHistoryKeys,
   setActiveGroup,
   setSelectedKey,
   setState,
+  setAgentPrompt,
   updateAnalysisInterval,
   loadOlderForSelected,
   runAgentAnalysis,
+  resetAgentConversation,
   openSettings,
   openWatchlistSettings,
 }: {
@@ -1262,16 +1430,21 @@ function WorkspaceView({
   selectedInstrument: Instrument | undefined;
   selectedQuote: Quote | undefined;
   selectedAgent: AgentAnalysis | undefined;
+  agentSession: AgentSessionResponse | null;
+  agentPrompt: string;
   agentBusyKey: string | null;
+  agentSessionLoading: boolean;
   analysisIntervalBusy: boolean;
   olderBusyKey: string | null;
   exhaustedHistoryKeys: Set<string>;
   setActiveGroup: (value: string) => void;
   setSelectedKey: (value: string) => void;
   setState: (state: MarketState) => void;
+  setAgentPrompt: (value: string) => void;
   updateAnalysisInterval: (value: string) => void;
   loadOlderForSelected: () => void;
   runAgentAnalysis: () => Promise<void>;
+  resetAgentConversation: () => Promise<void>;
   openSettings: () => void;
   openWatchlistSettings: () => void;
 }) {
@@ -1430,11 +1603,16 @@ function WorkspaceView({
         </section>
 
         <aside className="agent-panel">
-          <AgentReadout
+          <AgentSessionPanel
             analysis={selectedAgent}
+            session={agentSession}
+            prompt={agentPrompt}
+            sessionLoading={agentSessionLoading}
             busy={agentBusyKey === selectedKey}
             disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
-            onAnalyze={runAgentAnalysis}
+            onPromptChange={setAgentPrompt}
+            onSend={runAgentAnalysis}
+            onReset={resetAgentConversation}
           />
           <div className="agent-card dense">
             <span className="panel-label">Feed</span>
@@ -1480,6 +1658,7 @@ function WorkspaceView({
   );
 }
 
+// Handles model discovery and persistence for the configured LLM provider adapter.
 function ProviderSettingsPanel({
   state,
   onState,
@@ -1504,13 +1683,13 @@ function ProviderSettingsPanel({
       provider: 'codex',
       apiMode: config.apiMode,
       model: config.model,
-      baseUrl: config.baseUrl,
       timeoutSeconds: config.timeoutSeconds,
       maxCandles: config.maxCandles,
       reasoningEffort: config.reasoningEffort,
     });
   }, [configSignature]);
 
+  // Refreshes the provider model catalog and updates the draft selection if needed.
   async function refreshModels() {
     setRefreshing(true);
     setStatus('Refreshing model catalog...');
@@ -1537,6 +1716,7 @@ function ProviderSettingsPanel({
     }
   }
 
+  // Writes the current provider-settings draft to the local TOML file.
   async function persistConfig() {
     if (!draft) return;
     setSaving(true);
@@ -1623,7 +1803,7 @@ function ProviderSettingsPanel({
                     </div>
                     <div className="provider-item-copy">
                       <strong>Codex</strong>
-                      <small>Responses-backed coding provider</small>
+                      <small>Responses adapter for chart analysis</small>
                     </div>
                     <span className="provider-item-dot" />
                   </button>
@@ -1642,7 +1822,7 @@ function ProviderSettingsPanel({
                       {draft.enabled ? 'Active' : 'Disabled'}
                     </span>
                   </div>
-                  <p>Codex Responses provider for structured chart commentary and watch-plan output.</p>
+                  <p>Codex Responses adapter used by the chart agent for structured commentary and watch-plan output.</p>
                 </div>
                 <label className="switch-row">
                   <span>Enabled</span>
@@ -1673,14 +1853,6 @@ function ProviderSettingsPanel({
               </div>
 
               <div className="provider-form-grid">
-                <label>
-                  <span>Base URL</span>
-                  <input
-                    value={draft.baseUrl ?? ''}
-                    onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value.trim() || null })}
-                    placeholder="default"
-                  />
-                </label>
                 <label>
                   <span>Reasoning Effort</span>
                   <select
@@ -1780,6 +1952,7 @@ function ProviderSettingsPanel({
   );
 }
 
+// Coordinates top-level routing, live state hydration, and workspace actions.
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => readRouteFromHash());
   const [state, setState] = useState<MarketState | null>(null);
@@ -1787,12 +1960,16 @@ export default function App() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [agentBusyKey, setAgentBusyKey] = useState<string | null>(null);
+  const [agentSessionLoadingKey, setAgentSessionLoadingKey] = useState<string | null>(null);
+  const [agentSession, setAgentSession] = useState<AgentSessionResponse | null>(null);
+  const [agentPrompt, setAgentPrompt] = useState('');
   const [analysisIntervalBusy, setAnalysisIntervalBusy] = useState(false);
   const [olderBusyKey, setOlderBusyKey] = useState<string | null>(null);
   const [exhaustedHistoryKeys, setExhaustedHistoryKeys] = useState<Set<string>>(() => new Set());
   const olderBusyRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // Mirrors browser hash changes into React state.
     const syncRoute = () => setRoute(readRouteFromHash());
     window.addEventListener('hashchange', syncRoute);
     syncRoute();
@@ -1804,6 +1981,7 @@ export default function App() {
     let retryTimer: number | undefined;
     let socket: WebSocket | undefined;
 
+    // Schedules a bounded-delay WebSocket reconnect after transient disconnects.
     const scheduleReconnect = () => {
       if (disposed || retryTimer !== undefined) return;
       retryTimer = window.setTimeout(() => {
@@ -1812,6 +1990,7 @@ export default function App() {
       }, 1500);
     };
 
+    // Opens the market-state socket and wires status changes into reconnect logic.
     const openSocket = () => {
       if (disposed) return;
       setSocketStatus('connecting');
@@ -1852,7 +2031,44 @@ export default function App() {
   const selectedAgent = selectedKey ? state?.agentAnalyses[selectedKey] : undefined;
   const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
   const historyKey = selectedKey ? `${selectedKey}:${currentInterval}` : null;
+  const selectedAgentSession =
+    agentSession?.session?.instrumentKey === selectedKey || (!agentSession?.session && selectedKey)
+      ? agentSession
+      : null;
 
+  useEffect(() => {
+    if (!selectedKey) {
+      setAgentSession(null);
+      setAgentPrompt('');
+      return;
+    }
+    let disposed = false;
+    const key = selectedKey;
+    setAgentSessionLoadingKey(key);
+    setAgentPrompt('');
+    fetchAgentSession(key)
+      .then((payload) => {
+        if (!disposed) {
+          setAgentSession(payload);
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        if (!disposed) {
+          setAgentSession(null);
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setAgentSessionLoadingKey(null);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [selectedKey]);
+
+  // Saves a per-instrument K-line interval change from the top-bar selector.
   async function updateAnalysisInterval(interval: string) {
     if (!state || !selectedKey || interval === selectedInstrument?.analysisInterval || analysisIntervalBusy) return;
     setAnalysisIntervalBusy(true);
@@ -1866,6 +2082,7 @@ export default function App() {
     }
   }
 
+  // Requests older candles for the selected chart while preventing duplicate loads.
   async function loadOlderForSelected() {
     if (
       !selectedKey ||
@@ -1899,12 +2116,15 @@ export default function App() {
     }
   }
 
+  // Sends the current prompt to the selected instrument's active agent session.
   async function runAgentAnalysis() {
     if (!selectedKey) return;
     setAgentBusyKey(selectedKey);
     try {
-      const payload = await analyzeInstrument(selectedKey);
+      const payload = await sendAgentMessage(selectedKey, agentPrompt);
       setState(payload.state);
+      setAgentSession(payload.session);
+      setAgentPrompt('');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'agent analysis failed';
       const fallback: AgentAnalysis = {
@@ -1938,6 +2158,27 @@ export default function App() {
     }
   }
 
+  // Starts a fresh active agent session and clears the cached readout for this symbol.
+  async function resetAgentConversation() {
+    if (!selectedKey) return;
+    const key = selectedKey;
+    setAgentBusyKey(key);
+    try {
+      const payload = await resetAgentSession(key);
+      setAgentSession(payload);
+      setAgentPrompt('');
+      setState((current) => {
+        if (!current) return current;
+        const { [key]: _removed, ...agentAnalyses } = current.agentAnalyses;
+        return { ...current, agentAnalyses };
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setAgentBusyKey(null);
+    }
+  }
+
   if (route.view === 'settings') {
     return (
       <SettingsFrame
@@ -1965,16 +2206,21 @@ export default function App() {
       selectedInstrument={selectedInstrument}
       selectedQuote={selectedQuote}
       selectedAgent={selectedAgent}
+      agentSession={selectedAgentSession}
+      agentPrompt={agentPrompt}
       agentBusyKey={agentBusyKey}
+      agentSessionLoading={agentSessionLoadingKey === selectedKey}
       analysisIntervalBusy={analysisIntervalBusy}
       olderBusyKey={olderBusyKey}
       exhaustedHistoryKeys={exhaustedHistoryKeys}
       setActiveGroup={setActiveGroup}
       setSelectedKey={setSelectedKey}
       setState={setState}
+      setAgentPrompt={setAgentPrompt}
       updateAnalysisInterval={updateAnalysisInterval}
       loadOlderForSelected={loadOlderForSelected}
       runAgentAnalysis={runAgentAnalysis}
+      resetAgentConversation={resetAgentConversation}
       openSettings={() => navigateToRoute({ view: 'settings', section: 'providers' })}
       openWatchlistSettings={() => navigateToRoute({ view: 'settings', section: 'watchlist' })}
     />

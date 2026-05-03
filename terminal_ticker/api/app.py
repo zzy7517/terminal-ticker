@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..agent import (
     AgentAnalysisResult,
+    AgentSessionStore,
     LLMProviderError,
     LLMProviderUnavailable,
     build_agent_context,
@@ -57,11 +58,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
 THUMBNAIL_CANDLE_LIMIT = 60
 OLDER_CANDLE_SOURCES = {ALPACA_SOURCE, BITGET_SOURCE}
+DEFAULT_AGENT_USER_PROMPT = "Analyze the current K-line chart and update the watch plan."
 
 
 def _utc_now_iso() -> str:
     """说明：返回当前 UTC 时间的 ISO 字符串。"""
     return datetime.now(timezone.utc).isoformat()
+
+
+def _agent_session_title(instrument: MarketInstrument) -> str:
+    """说明：生成某个标的会话在侧栏中展示的标题。"""
+    return f"{instrument.label} · {instrument.symbol}"
+
+
+def _normalize_agent_prompt(prompt: str | None) -> str:
+    """说明：规范化用户发给 Agent 的问题。"""
+    text = (prompt or "").strip()
+    return text or DEFAULT_AGENT_USER_PROMPT
 
 
 def _instrument_payload(instrument: MarketInstrument, *, default_interval: str) -> dict[str, Any]:
@@ -191,7 +204,6 @@ def serialize_market_state(
                 "provider": config.agent.provider,
                 "apiMode": config.agent.api_mode,
                 "model": config.agent.model,
-                "baseUrl": config.agent.base_url,
                 "timeoutSeconds": config.agent.timeout_seconds,
                 "maxCandles": config.agent.max_candles,
                 "reasoningEffort": config.agent.reasoning_effort,
@@ -230,6 +242,7 @@ class MarketRuntime:
         config: AppConfig,
         instruments: tuple[MarketInstrument, ...],
         controller_factory: Callable[..., Any] = TickerController,
+        agent_session_store: AgentSessionStore | None = None,
     ) -> None:
         """说明：初始化当前对象的运行状态。"""
         self.config = config
@@ -240,6 +253,7 @@ class MarketRuntime:
         self.pump_task: asyncio.Task[None] | None = None
         self.running = False
         self.agent_analyses: dict[str, dict[str, Any]] = {}
+        self.agent_session_store = agent_session_store or AgentSessionStore()
 
     async def start(self) -> None:
         """说明：启动后台运行时组件。"""
@@ -555,20 +569,71 @@ class MarketRuntime:
             await self.broadcast()
         return {"changed": changed, "state": self.snapshot()}
 
-    async def analyze_instrument(self, instrument_key: str) -> dict[str, Any]:
-        """说明：对单个标的执行一次手动 LLM 分析。"""
+    async def get_agent_session(self, instrument_key: str) -> dict[str, Any]:
+        """说明：读取某个标的的 active Agent 会话。"""
+        instrument = self._instrument_by_key(instrument_key)
+        payload = await asyncio.to_thread(
+            self.agent_session_store.active_session_payload,
+            instrument.key,
+        )
+        return payload or {"session": None, "messages": []}
+
+    async def reset_agent_session(self, instrument_key: str) -> dict[str, Any]:
+        """说明：为某个标的创建一个新的 active Agent 会话。"""
+        instrument = self._instrument_by_key(instrument_key)
+        session = await asyncio.to_thread(
+            self.agent_session_store.create_session,
+            instrument_key=instrument.key,
+            title=_agent_session_title(instrument),
+            provider=self.config.agent.provider,
+            model=self.config.agent.model,
+        )
+        self.agent_analyses.pop(instrument.key, None)
+        await self.broadcast()
+        return await self._agent_session_payload(session.id)
+
+    async def analyze_instrument(
+        self,
+        instrument_key: str,
+        prompt: str | None = None,
+    ) -> dict[str, Any]:
+        """说明：对单个标的执行一次会话式 LLM 分析。"""
+        instrument = self._instrument_by_key(instrument_key)
+        quote = self.controller.quotes.get(instrument.key)
+        if quote is None:
+            raise HTTPException(status_code=404, detail="Quote is not available.")
+
+        session = await asyncio.to_thread(
+            self.agent_session_store.get_or_create_active_session,
+            instrument_key=instrument.key,
+            title=_agent_session_title(instrument),
+            provider=self.config.agent.provider,
+            model=self.config.agent.model,
+        )
+        user_prompt = _normalize_agent_prompt(prompt)
+        await asyncio.to_thread(
+            self.agent_session_store.append_message,
+            session_id=session.id,
+            role="user",
+            content=user_prompt,
+        )
+
         if not self.config.agent.enabled:
             result = AgentAnalysisResult.unavailable(
                 provider=self.config.agent.provider,
                 model=self.config.agent.model,
                 error="Agent is disabled in config.",
             )
-            return {"result": result.to_payload(), "state": self.snapshot()}
+            payload = result.to_payload()
+            self.agent_analyses[instrument.key] = payload
+            await self._record_agent_assistant_message(session.id, payload)
+            await self.broadcast()
+            return {
+                "result": payload,
+                "session": await self._agent_session_payload(session.id),
+                "state": self.snapshot(),
+            }
 
-        instrument = self._instrument_by_key(instrument_key)
-        quote = self.controller.quotes.get(instrument.key)
-        if quote is None:
-            raise HTTPException(status_code=404, detail="Quote is not available.")
         if not quote.candles:
             result = AgentAnalysisResult.unavailable(
                 provider=self.config.agent.provider,
@@ -577,21 +642,64 @@ class MarketRuntime:
             )
             payload = result.to_payload()
             self.agent_analyses[instrument.key] = payload
+            await self._record_agent_assistant_message(session.id, payload)
             await self.broadcast()
-            return {"result": payload, "state": self.snapshot()}
+            return {
+                "result": payload,
+                "session": await self._agent_session_payload(session.id),
+                "state": self.snapshot(),
+            }
 
+        history = await asyncio.to_thread(
+            self.agent_session_store.history_for_context,
+            session.id,
+            limit=8,
+        )
         context = build_agent_context(
             instrument=instrument,
             quote=quote,
             interval=instrument.analysis_interval or self.config.analysis.interval,
             max_candles=self.config.agent.max_candles,
+            session_history=history,
         )
         provider = create_llm_provider(self.config.agent)
         result = await provider.analyze(context)
         payload = result.to_payload()
         self.agent_analyses[instrument.key] = payload
+        await self._record_agent_assistant_message(session.id, payload, context=context)
         await self.broadcast()
-        return {"result": payload, "state": self.snapshot()}
+        return {
+            "result": payload,
+            "session": await self._agent_session_payload(session.id),
+            "state": self.snapshot(),
+        }
+
+    async def _record_agent_assistant_message(
+        self,
+        session_id: str,
+        analysis_payload: dict[str, Any],
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        """说明：把 LLM 结果写入会话消息历史。"""
+        content = str(
+            analysis_payload.get("summary")
+            or analysis_payload.get("error")
+            or "Agent response unavailable."
+        )
+        await asyncio.to_thread(
+            self.agent_session_store.append_message,
+            session_id=session_id,
+            role="assistant",
+            content=content,
+            analysis=analysis_payload,
+            context=context,
+            error=analysis_payload.get("error") if not analysis_payload.get("available") else None,
+        )
+
+    async def _agent_session_payload(self, session_id: str) -> dict[str, Any]:
+        """说明：异步读取一个 session payload。"""
+        payload = await asyncio.to_thread(self.agent_session_store.session_payload, session_id)
+        return payload or {"session": None, "messages": []}
 
     async def load_older_candles(self, instrument_key: str) -> dict[str, Any]:
         """说明：为图表继续向前加载一批历史 K 线。"""
@@ -702,6 +810,7 @@ def create_app(
     config: AppConfig,
     instruments: tuple[MarketInstrument, ...],
     controller_factory: Callable[..., Any] = TickerController,
+    agent_session_store: AgentSessionStore | None = None,
     auto_start: bool = True,
 ) -> FastAPI:
     """说明：创建并配置 FastAPI 应用。"""
@@ -709,6 +818,7 @@ def create_app(
         config=config,
         instruments=instruments,
         controller_factory=controller_factory,
+        agent_session_store=agent_session_store,
     )
 
     @asynccontextmanager
@@ -786,6 +896,25 @@ def create_app(
         """说明：处理 Agent 配置更新请求。"""
         return await runtime.update_agent_config(payload)
 
+    @app.get("/api/agent/sessions/{instrument_key}")
+    async def get_agent_session_endpoint(instrument_key: str) -> dict[str, Any]:
+        """说明：读取某个标的当前 active Agent 会话。"""
+        return await runtime.get_agent_session(instrument_key)
+
+    @app.post("/api/agent/sessions/{instrument_key}/messages")
+    async def append_agent_session_message_endpoint(
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：追加用户问题并触发一次会话式 Agent 分析。"""
+        message = payload.get("message", payload.get("prompt"))
+        return await runtime.analyze_instrument(instrument_key, prompt=str(message) if message is not None else None)
+
+    @app.post("/api/agent/sessions/{instrument_key}/reset")
+    async def reset_agent_session_endpoint(instrument_key: str) -> dict[str, Any]:
+        """说明：为某个标的开启一个新的 Agent 会话。"""
+        return await runtime.reset_agent_session(instrument_key)
+
     @app.post("/api/analysis/config")
     async def update_analysis_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         """说明：处理分析配置更新请求。"""
@@ -837,7 +966,6 @@ def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) ->
         "provider": current.provider,
         "api_mode": current.api_mode,
         "model": current.model,
-        "base_url": current.base_url,
         "timeout_seconds": current.timeout_seconds,
         "max_candles": current.max_candles,
         "reasoning_effort": current.reasoning_effort,
@@ -848,8 +976,6 @@ def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) ->
         "apiMode": "api_mode",
         "api_mode": "api_mode",
         "model": "model",
-        "baseUrl": "base_url",
-        "base_url": "base_url",
         "timeoutSeconds": "timeout_seconds",
         "timeout_seconds": "timeout_seconds",
         "maxCandles": "max_candles",

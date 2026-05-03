@@ -26,7 +26,6 @@ from ..domain.strategy import StrategyConfig, generate_signal
 from ..market_data.router import MarketInstrument
 
 CODEX_ENV_API_KEYS = ("TERMINAL_TICKER_CODEX_API_KEY", "CODEX_API_KEY")
-CODEX_ENV_BASE_URL = "TERMINAL_TICKER_CODEX_BASE_URL"
 
 AGENT_INSTRUCTIONS = """你是一个本地运行的 price action trading assistant。
 你只分析用户提供的结构化行情数据和 OHLCV K 线，不读取截图，不假设缺失数据。
@@ -186,6 +185,7 @@ def build_agent_context(
     quote: QuoteState,
     interval: str,
     max_candles: int,
+    session_history: tuple[dict[str, Any], ...] = tuple(),
 ) -> dict[str, Any]:
     """说明：构造发送给 LLM provider 的结构化行情上下文。"""
     candles = tuple(quote.candles[-max_candles:])
@@ -218,6 +218,13 @@ def build_agent_context(
             "strategy_signal": _strategy_signal_dict(candles),
         },
         "candles": [_short_candle(candle) for candle in candles],
+        "session": {
+            "recent_history": list(session_history),
+            "instruction": (
+                "Use recent_history only as prior discussion context. "
+                "Current market data and candles are authoritative."
+            ),
+        },
     }
 
 
@@ -245,7 +252,7 @@ class CodexProvider:
     async def analyze(self, context: dict[str, Any]) -> AgentAnalysisResult:
         """说明：分析一个结构化行情上下文。"""
         try:
-            credentials = _resolve_codex_credentials(self.profile)
+            credentials = _resolve_codex_credentials()
             response_data = await self._request_analysis(credentials, context)
             text = _extract_response_text(response_data)
             if not text:
@@ -274,7 +281,7 @@ class CodexProvider:
         context: dict[str, Any],
     ) -> dict[str, Any]:
         """说明：调用 Codex Responses 风格的流式分析接口。"""
-        base_url = credentials["base_url"].rstrip("/")
+        api_root = DEFAULT_CODEX_BASE_URL.rstrip("/")
         payload: dict[str, Any] = {
             "model": self.model,
             "instructions": AGENT_INSTRUCTIONS,
@@ -305,7 +312,7 @@ class CodexProvider:
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
                 "POST",
-                f"{base_url}/responses",
+                f"{api_root}/responses",
                 json=payload,
                 headers=headers,
             ) as response:
@@ -317,8 +324,8 @@ class CodexProvider:
 
     async def list_models(self) -> list[dict[str, Any]]:
         """说明：拉取当前账号可见的 Codex 模型列表。"""
-        credentials = _resolve_codex_credentials(self.profile)
-        base_url = credentials["base_url"].rstrip("/")
+        credentials = _resolve_codex_credentials()
+        api_root = DEFAULT_CODEX_BASE_URL.rstrip("/")
         headers = {
             "Authorization": f"Bearer {credentials['api_key']}",
             **_codex_request_headers(credentials["api_key"], credentials.get("account_id")),
@@ -326,7 +333,7 @@ class CodexProvider:
         timeout = httpx.Timeout(self.config.timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(
-                f"{base_url}/models",
+                f"{api_root}/models",
                 params={"client_version": "1.0.0"},
                 headers=headers,
             )
@@ -428,25 +435,16 @@ def _codex_model_option(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _resolve_codex_credentials(profile: AgentModelProfile) -> dict[str, str]:
+def _resolve_codex_credentials() -> dict[str, str]:
     """说明：从环境变量或 Codex CLI 登录文件解析凭证。"""
     api_key = _first_env(CODEX_ENV_API_KEYS)
-    env_base_url = os.getenv(CODEX_ENV_BASE_URL, "").strip()
-    base_url = (
-        profile.base_url
-        if profile.base_url_configured
-        else env_base_url
-        or profile.base_url
-        or DEFAULT_CODEX_BASE_URL
-    )
     if api_key:
-        return {"api_key": api_key, "base_url": base_url}
+        return {"api_key": api_key}
 
     codex = _read_codex_cli_credentials()
     if codex:
         return {
             "api_key": codex["api_key"],
-            "base_url": base_url,
             "account_id": codex.get("account_id", ""),
         }
 

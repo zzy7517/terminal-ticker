@@ -8,7 +8,7 @@
 - 通过本地 WebSocket 推送实时 quote、K 线和策略状态更新。
 - 使用结构化 OHLCV 数据生成 `long` / `short` / `flat` 研究信号、regime 和 confidence。
 - 展示选中标的的 K 线图、价格、涨跌幅、成交量和 strategy context。
-- 提供 Codex provider 的 LLM 解读入口，把当前 K 线、策略信号和本地特征转成结构化市场解读。
+- 提供会话式 K 线 Agent 解读入口，把当前 K 线、策略信号、本地特征和最近问答历史转成结构化市场解读；Codex 只是当前默认的 LLM provider adapter。
 - 美股页内搜索 Alpaca 标的，并写入本地 watchlist。
 - Alpaca 凭证只从环境变量读取，不写入配置文件。
 - 不包含 PySide/Qt 浮窗、折叠行情条或滚动 ticker。
@@ -38,17 +38,16 @@ export APCA_API_BASE_URL="https://paper-api.alpaca.markets"
 export ALPACA_DATA_FEED="iex"
 ```
 
-Codex agent 解读默认读取本机 Codex CLI 登录态：
+当前 Codex provider adapter 默认读取本机 Codex CLI 登录态：
 
 ```text
 $CODEX_HOME/auth.json，未设置 CODEX_HOME 时使用 ~/.codex/auth.json
 ```
 
-也可以用环境变量覆盖：
+也可以用环境变量提供 Codex access token：
 
 ```bash
 export TERMINAL_TICKER_CODEX_API_KEY="你的 Codex access token"
-export TERMINAL_TICKER_CODEX_BASE_URL="https://chatgpt.com/backend-api/codex"
 ```
 
 开发模式需要两个终端。
@@ -145,9 +144,10 @@ reasoning_effort = "medium"
 - `analysis.lookback` 是每次拉取和策略上下文使用的最近 K 线数量，最小值是 `10`。
 - `analysis.poll_interval_seconds` 控制 K 线刷新间隔。
 - `analysis.stale_after_seconds` 控制最新行情多久后视为过期。
-- `[agent]` 控制 LLM 解读层。第一版只支持 `provider = "codex"`。
+- `[agent]` 控制 LLM provider 层。第一版只支持 `provider = "codex"`，但产品侧的核心概念是 K 线 Agent 会话，不是“问 Codex”。
 - `agent.api_mode` 当前固定为 `codex_responses`，这和 Hermes 把 `openai-codex` 映射到 Responses 风格 transport 的思路一致。
-- Codex provider 会直接读取 Codex CLI 的 `auth.json`，不会读取 Hermes 的 auth store，也不会导入 Hermes runtime。
+- Codex provider adapter 会直接读取 Codex CLI 的 `auth.json`，不会读取 Hermes 的 auth store，也不会导入 Hermes runtime。
+- Codex provider adapter 不再支持通过配置文件或环境变量覆盖 base URL；当前只走内置 Codex backend。
 - Web UI 右侧 `Agent Config` 可以刷新当前 Codex 账号可用模型，选择模型后会写回配置文件。
 - `agent.max_candles` 控制每次发送给 LLM 的最近 K 线数量，最小值是 `10`。
 - `agent.reasoning_effort` 支持 `low`、`medium`、`high`、`xhigh`。
@@ -179,15 +179,16 @@ reasoning_effort = "medium"
 
 输出会包含训练段和验证段的 `trades`、`hit_rate`、`average_trade_return`、`total_return`、`max_drawdown`、`sharpe_like` 等指标。抓到的 K 线会保存到 `data/strategy/*.csv`，后续不加 `--refresh` 时会复用本地数据。
 
-## Codex Agent 解读
+## Agent 会话解读
 
-Web UI 右侧的 `Ask Codex` 会触发一次手动分析。后端发送给 Codex 的不是截图，而是当前标的的结构化上下文：
+Web UI 右侧的 `Ask Agent` 会把用户问题追加到当前标的的本地会话，并触发一次手动分析。后端发送给 LLM provider 的不是截图，而是当前标的的结构化上下文：
 
 - 标的信息和实时 quote。
 - 最近 OHLCV K 线。
 - 本地 strategy signal、regime、confidence 和近期高低点、最新实体、最新振幅、成交量均值等事实。
+- 当前标的最近的用户问题和 Agent 回复摘要，用于延续会话。
 
-Codex 必须返回结构化 JSON，Web UI 会展示摘要、方向、置信度、关键价位、观察计划和失效条件。没有 K 线、Codex 登录态缺失、token 过期或 provider 请求失败时，只会显示不可用状态，不影响行情和本地 strategy signal。
+LLM provider 必须返回结构化 JSON，Web UI 会展示摘要、方向、置信度、关键价位、观察计划和失效条件。会话消息会持久化到本机 SQLite cache，按标的保留 active session；没有 K 线、provider 凭证缺失、token 过期或 provider 请求失败时，只会显示不可用状态，不影响行情和本地 strategy signal。
 
 ## 添加和移除美股
 

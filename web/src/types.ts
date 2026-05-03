@@ -29,6 +29,32 @@ export interface AgentAnalysis {
   rawText: string | null;
 }
 
+export interface AgentSession {
+  id: string;
+  instrumentKey: string;
+  title: string;
+  provider: string;
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+  active: boolean;
+}
+
+export interface AgentMessage {
+  id: number;
+  sessionId: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  createdAt: string;
+  analysis: AgentAnalysis | null;
+  error: string | null;
+}
+
+export interface AgentSessionResponse {
+  session: AgentSession | null;
+  messages: AgentMessage[];
+}
+
 export interface StrategySignal {
   available: boolean;
   side: 'long' | 'short' | 'flat';
@@ -54,7 +80,6 @@ export interface AgentConfig {
   provider: string;
   apiMode: string;
   model: string;
-  baseUrl: string | null;
   timeoutSeconds: number;
   maxCandles: number;
   reasoningEffort: string;
@@ -65,7 +90,6 @@ export interface AgentConfigUpdate {
   provider: string;
   apiMode: string;
   model: string;
-  baseUrl: string | null;
   timeoutSeconds: number;
   maxCandles: number;
   reasoningEffort: string;

@@ -242,7 +242,6 @@ class WatchlistStoreTests(unittest.TestCase):
                 AgentConfig(
                     enabled=False,
                     model="gpt-5.4",
-                    base_url="https://example.test/codex",
                     max_candles=25,
                     reasoning_effort="high",
                 ),
@@ -252,12 +251,13 @@ class WatchlistStoreTests(unittest.TestCase):
                 AgentConfig(enabled=True, model="gpt-5.4-mini", max_candles=40),
             )
             config = load_config(config_path)
+            persisted_text = config_path.read_text()
 
         self.assertTrue(inserted)
         self.assertTrue(replaced)
         self.assertTrue(config.agent.enabled)
         self.assertEqual(config.agent.model, "gpt-5.4-mini")
-        self.assertIsNone(config.agent.base_url)
+        self.assertNotIn("base_url", persisted_text)
 
     def test_update_analysis_config_in_watchlist_inserts_and_replaces_table(self) -> None:
         """Verify K-line analysis settings persist in TOML."""

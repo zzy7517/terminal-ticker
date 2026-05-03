@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from terminal_ticker.agent import AgentAnalysisResult
+from terminal_ticker.agent import AgentAnalysisResult, AgentSessionStore
 from terminal_ticker.config import AppConfig, DisplayConfig, load_config
 from terminal_ticker.controller import DrainResult
 from terminal_ticker.alpaca_provider import AlpacaAsset, AlpacaInstrument
@@ -96,7 +96,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(payload["quotes"][instrument.key]["thumbnailCandles"][0]["time"], 1776849600)
         self.assertEqual(payload["instruments"][0]["analysisInterval"], "5m")
         self.assertEqual(payload["config"]["agent"]["provider"], "codex")
-        self.assertEqual(payload["config"]["agent"]["baseUrl"], None)
+        self.assertNotIn("baseUrl", payload["config"]["agent"])
         self.assertEqual(payload["agentAnalyses"], {})
 
     def test_state_endpoint_uses_runtime_snapshot(self) -> None:
@@ -350,19 +350,6 @@ class WebTests(unittest.TestCase):
 
     def test_agent_analysis_endpoint_runs_provider_and_caches_result(self) -> None:
         """Verify manual agent endpoint analyzes current candles."""
-        instrument = LongbridgeInstrument("AAPL.US", "AAPL")
-        app = create_app(
-            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
-            instruments=(instrument,),
-            controller_factory=DummyController,
-            auto_start=False,
-        )
-        quote = app.state.runtime.controller.quotes[instrument.key]
-        quote.apply_payload({"price": 201.25})
-        quote.apply_candles(
-            candles=(Candle("longbridge:AAPL.US", 1776846000000, 200, 202, 199, 201.25, 12345),),
-        )
-
         class FakeProvider:
             """Return a deterministic agent result."""
 
@@ -378,14 +365,47 @@ class WebTests(unittest.TestCase):
                     confidence=70,
                 )
 
-        with patch("terminal_ticker.web.create_llm_provider", return_value=FakeProvider()):
-            with TestClient(app) as client:
-                response = client.post("/api/agent/analyze/longbridge:AAPL.US")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            instrument = LongbridgeInstrument("AAPL.US", "AAPL")
+            store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
+            app = create_app(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                agent_session_store=store,
+                auto_start=False,
+            )
+            quote = app.state.runtime.controller.quotes[instrument.key]
+            quote.apply_payload({"price": 201.25})
+            quote.apply_candles(
+                candles=(Candle("longbridge:AAPL.US", 1776846000000, 200, 202, 199, 201.25, 12345),),
+            )
+            provider = FakeProvider()
+
+            with patch("terminal_ticker.web.create_llm_provider", return_value=provider):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/agent/sessions/longbridge:AAPL.US/messages",
+                        json={"message": "What changed since the prior candle?"},
+                    )
+                    persisted_response = client.get("/api/agent/sessions/longbridge:AAPL.US")
 
         payload = response.json()
+        persisted_payload = persisted_response.json()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(payload["result"]["available"])
         self.assertEqual(payload["state"]["agentAnalyses"][instrument.key]["summary"], "AAPL is trending.")
+        self.assertEqual(payload["session"]["session"]["instrumentKey"], instrument.key)
+        self.assertEqual(
+            [message["role"] for message in payload["session"]["messages"]],
+            ["user", "assistant"],
+        )
+        self.assertEqual(
+            provider.context["session"]["recent_history"][0]["content"],
+            "What changed since the prior candle?",
+        )
+        self.assertEqual(persisted_response.status_code, 200)
+        self.assertEqual(persisted_payload["messages"][1]["analysis"]["summary"], "AAPL is trending.")
 
     def test_agent_models_endpoint_returns_provider_models(self) -> None:
         """Verify model discovery endpoint forwards provider model metadata."""

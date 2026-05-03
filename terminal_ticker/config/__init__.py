@@ -92,7 +92,6 @@ class AgentConfig:
     provider: str = "codex"
     api_mode: str = "codex_responses"
     model: str = DEFAULT_CODEX_MODEL
-    base_url: str | None = None
     timeout_seconds: float = 45.0
     max_candles: int = 40
     reasoning_effort: str = "medium"
@@ -245,16 +244,6 @@ def _normalize_agent_provider(raw_value: Any) -> str:
     return normalize_provider(raw_value)
 
 
-def _normalize_optional_string(raw_value: Any, field_name: str) -> str | None:
-    """说明：规范化可选非空字符串。"""
-    if raw_value is None:
-        return None
-    if not isinstance(raw_value, str):
-        raise ValueError(f"{field_name} must be a string")
-    value = raw_value.strip()
-    return value or None
-
-
 def _normalize_reasoning_effort(raw_value: Any) -> str:
     """说明：规范化 Responses 风格模型的推理强度。"""
     return normalize_reasoning_effort(raw_value)
@@ -272,7 +261,6 @@ def parse_agent_config(raw_agent: dict[str, Any] | None) -> AgentConfig:
         provider=agent_provider,
         api_mode=normalize_api_mode(agent_provider, raw_agent.get("api_mode")),
         model=normalize_model(agent_provider, raw_agent.get("model")),
-        base_url=_normalize_optional_string(raw_agent.get("base_url"), "agent.base_url"),
         timeout_seconds=_coerce_float(
             raw_agent.get("timeout_seconds"),
             "agent.timeout_seconds",

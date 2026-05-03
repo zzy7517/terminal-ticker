@@ -32,10 +32,12 @@ export type ChartDrawing = HorizontalDrawing | TrendDrawing;
 
 const EMPTY_DRAWINGS: ChartDrawing[] = [];
 
+// Creates a stable client-side identifier for one chart drawing.
 function createDrawingId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+// Converts a chart mouse event into the time/price point used by drawing tools.
 function chartPointFromParam(
   param: MouseEventParams,
   series: ISeriesApi<'Candlestick'> | null,
@@ -49,6 +51,7 @@ function chartPointFromParam(
   };
 }
 
+// Projects a drawing point into SVG overlay coordinates.
 export function svgPoint(
   point: DrawingPoint,
   chart: IChartApi | null,
@@ -61,6 +64,7 @@ export function svgPoint(
   return { x, y };
 }
 
+// Owns drawing-tool state, persistence by chart key, and price-line side effects.
 export function useChartDrawings({
   chart,
   series,
@@ -107,11 +111,13 @@ export function useChartDrawings({
     setHoverPoint(null);
   }, [chartKey]);
 
+  // Keeps the pending trend-line anchor synchronized for event handlers.
   const setTrendStart = useCallback((point: DrawingPoint | null) => {
     trendStartRef.current = point;
     setTrendStartState(point);
   }, []);
 
+  // Switches the active drawing mode and clears any incomplete preview.
   const setDrawingTool = useCallback((tool: DrawingTool) => {
     activeToolRef.current = tool;
     setActiveToolState(tool);
@@ -119,6 +125,7 @@ export function useChartDrawings({
     setHoverPoint(null);
   }, [setTrendStart]);
 
+  // Clears all drawings for the current chart without touching other symbols.
   const clearDrawings = useCallback(() => {
     const key = chartKeyRef.current;
     setDrawingsByChart((current) => ({ ...current, [key]: [] }));
@@ -129,6 +136,7 @@ export function useChartDrawings({
   useEffect(() => {
     if (!chart || !series) return;
 
+    // Applies the active drawing tool to chart click events.
     const handleClick = (param: MouseEventParams) => {
       const point = chartPointFromParam(param, series);
       if (!point || activeToolRef.current === 'cursor') return;
@@ -163,6 +171,7 @@ export function useChartDrawings({
       setHoverPoint(null);
     };
 
+    // Updates the live trend-line preview while the crosshair moves.
     const handleMove = (param: MouseEventParams) => {
       if (activeToolRef.current !== 'trend' || !trendStartRef.current) return;
       setHoverPoint(chartPointFromParam(param, series));

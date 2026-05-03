@@ -11,7 +11,7 @@ Replace the PySide floating desktop UI with a local Web UI. Python remains respo
 
 **Language/Version**: Python 3.x in the existing virtual environment; TypeScript/React through Vite
 **Primary Dependencies**: FastAPI, uvicorn, websockets, longbridge, React, Lightweight Charts, lucide-react
-**Storage**: Local runtime memory and existing TOML config only
+**Storage**: Existing TOML config plus local SQLite cache for per-instrument Agent sessions
 **Testing**: `unittest` via `.venv/bin/python -m unittest discover -s tests`; frontend build via `npm run build`
 **Target Platform**: Local browser UI served from the Python process, with Vite dev server during development
 **Project Type**: local web app

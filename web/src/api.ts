@@ -2,12 +2,14 @@ import type {
   AgentAnalysis,
   AgentConfigUpdate,
   AgentModelsResponse,
+  AgentSessionResponse,
   AnalysisConfigUpdate,
   InstrumentSearchResult,
   MarketState,
   SecuritySearchResult,
 } from './types';
 
+// Builds a user-facing error while preserving FastAPI's structured detail when available.
 async function responseError(response: Response, prefix: string): Promise<Error> {
   try {
     const payload = await response.json();
@@ -20,6 +22,7 @@ async function responseError(response: Response, prefix: string): Promise<Error>
   return new Error(`${prefix}: ${response.status}`);
 }
 
+// Loads the complete market snapshot used to hydrate or refresh the workspace.
 export async function fetchState(): Promise<MarketState> {
   const response = await fetch('/api/state');
   if (!response.ok) {
@@ -28,6 +31,7 @@ export async function fetchState(): Promise<MarketState> {
   return response.json();
 }
 
+// Searches the legacy securities endpoint retained for compatibility.
 export async function searchSecurities(query: string): Promise<SecuritySearchResult[]> {
   const params = new URLSearchParams({ q: query });
   const response = await fetch(`/api/securities/search?${params}`);
@@ -38,6 +42,7 @@ export async function searchSecurities(query: string): Promise<SecuritySearchRes
   return payload.results;
 }
 
+// Searches addable instruments for a specific market-data source.
 export async function searchInstruments(source: string, query: string): Promise<InstrumentSearchResult[]> {
   const params = new URLSearchParams({ source, q: query });
   const response = await fetch(`/api/instruments/search?${params}`);
@@ -48,6 +53,7 @@ export async function searchInstruments(source: string, query: string): Promise<
   return payload.results;
 }
 
+// Persists an Alpaca symbol to the watchlist and returns the reloaded state.
 export async function addAlpacaSymbol(result: InstrumentSearchResult): Promise<MarketState> {
   const response = await fetch('/api/watchlist/alpaca', {
     method: 'POST',
@@ -61,6 +67,7 @@ export async function addAlpacaSymbol(result: InstrumentSearchResult): Promise<M
   return payload.state;
 }
 
+// Persists a Bitget instrument to the watchlist and returns the reloaded state.
 export async function addBitgetSymbol(result: InstrumentSearchResult): Promise<MarketState> {
   const response = await fetch('/api/watchlist/bitget', {
     method: 'POST',
@@ -78,6 +85,7 @@ export async function addBitgetSymbol(result: InstrumentSearchResult): Promise<M
   return payload.state;
 }
 
+// Removes an Alpaca symbol through the source-specific compatibility route.
 export async function removeAlpacaSymbol(symbol: string): Promise<MarketState> {
   const response = await fetch(`/api/watchlist/alpaca/${encodeURIComponent(symbol)}`, {
     method: 'DELETE',
@@ -89,6 +97,7 @@ export async function removeAlpacaSymbol(symbol: string): Promise<MarketState> {
   return payload.state;
 }
 
+// Removes any watchlist instrument by its stable provider key.
 export async function removeWatchlistInstrument(key: string): Promise<MarketState> {
   const response = await fetch(`/api/watchlist/instruments/${encodeURIComponent(key)}`, {
     method: 'DELETE',
@@ -100,16 +109,43 @@ export async function removeWatchlistInstrument(key: string): Promise<MarketStat
   return payload.state;
 }
 
-export async function analyzeInstrument(key: string): Promise<{ result: AgentAnalysis; state: MarketState }> {
-  const response = await fetch(`/api/agent/analyze/${encodeURIComponent(key)}`, {
-    method: 'POST',
-  });
+// Loads the active chart-agent session for one instrument.
+export async function fetchAgentSession(key: string): Promise<AgentSessionResponse> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}`);
   if (!response.ok) {
-    throw new Error(`agent analysis failed: ${response.status}`);
+    throw await responseError(response, 'agent session fetch failed');
   }
   return response.json();
 }
 
+// Appends a user turn to the active chart-agent session and waits for the provider result.
+export async function sendAgentMessage(
+  key: string,
+  message: string,
+): Promise<{ result: AgentAnalysis; session: AgentSessionResponse; state: MarketState }> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'agent message failed');
+  }
+  return response.json();
+}
+
+// Starts a clean active chart-agent session without deleting historical sessions.
+export async function resetAgentSession(key: string): Promise<AgentSessionResponse> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/reset`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'agent session reset failed');
+  }
+  return response.json();
+}
+
+// Fetches the currently configured provider's visible model catalog.
 export async function fetchAgentModels(): Promise<AgentModelsResponse> {
   const response = await fetch('/api/agent/models');
   if (!response.ok) {
@@ -118,6 +154,7 @@ export async function fetchAgentModels(): Promise<AgentModelsResponse> {
   return response.json();
 }
 
+// Saves LLM provider settings to the local watchlist configuration.
 export async function saveAgentConfig(config: AgentConfigUpdate): Promise<MarketState> {
   const response = await fetch('/api/agent/config', {
     method: 'POST',
@@ -131,6 +168,7 @@ export async function saveAgentConfig(config: AgentConfigUpdate): Promise<Market
   return payload.state;
 }
 
+// Saves global local-analysis settings and returns the updated runtime state.
 export async function saveAnalysisConfig(config: AnalysisConfigUpdate): Promise<MarketState> {
   const response = await fetch('/api/analysis/config', {
     method: 'POST',
@@ -144,6 +182,7 @@ export async function saveAnalysisConfig(config: AnalysisConfigUpdate): Promise<
   return payload.state;
 }
 
+// Saves the selected K-line interval for a single watchlist instrument.
 export async function saveInstrumentAnalysisInterval(key: string, interval: string): Promise<MarketState> {
   const response = await fetch(`/api/instruments/${encodeURIComponent(key)}/analysis-interval`, {
     method: 'POST',
@@ -157,6 +196,7 @@ export async function saveInstrumentAnalysisInterval(key: string, interval: stri
   return payload.state;
 }
 
+// Requests another historical candle page for the selected instrument.
 export async function loadOlderCandles(key: string): Promise<{ added: number; state: MarketState }> {
   const response = await fetch(`/api/instruments/${encodeURIComponent(key)}/candles/older`, {
     method: 'POST',
@@ -167,6 +207,7 @@ export async function loadOlderCandles(key: string): Promise<{ added: number; st
   return response.json();
 }
 
+// Opens the live state WebSocket and normalizes connection-status callbacks.
 export function connectStateSocket(onState: (state: MarketState) => void, onStatus: (status: string) => void) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);

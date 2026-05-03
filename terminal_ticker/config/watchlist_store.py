@@ -476,8 +476,6 @@ def _format_agent_config(config: AgentConfig) -> list[str]:
         f"api_mode = {_toml_string(config.api_mode)}",
         f"model = {_toml_string(config.model)}",
     ]
-    if config.base_url:
-        lines.append(f"base_url = {_toml_string(config.base_url)}")
     lines.extend(
         [
             f"timeout_seconds = {config.timeout_seconds:g}",

@@ -1,7 +1,7 @@
 symbols = [
-  { symbol = "AAPL", source = "alpaca", label = "AAPL", group = "stocks", show_collapsed = true },
+  { symbol = "AAPL", source = "alpaca", label = "AAPL", group = "stocks", show_collapsed = true, analysis_interval = "5m"},
   { symbol = "SPY", source = "alpaca", label = "SPY", group = "stocks", show_collapsed = false },
-  { symbol = "BTCUSDT", inst_type = "USDT-FUTURES", label = "BTC", group = "crypto" },
+  { symbol = "BTCUSDT", inst_type = "USDT-FUTURES", label = "BTC", group = "crypto", analysis_interval = "15m" },
   { symbol = "ETHUSDT", inst_type = "USDT-FUTURES", label = "ETH", group = "crypto" },
   { symbol = "XAUUSDT", inst_type = "USDT-FUTURES", label = "XAU", group = "crypto" },
   { symbol = "MSFT", source = "alpaca", label = "MSFT", group = "stocks", show_collapsed = true },

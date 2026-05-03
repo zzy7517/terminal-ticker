@@ -38,9 +38,7 @@ class AgentModelProfile:
     provider: str
     api_mode: str
     model: str
-    base_url: str
     reasoning_effort: str
-    base_url_configured: bool = False
     supports_reasoning: bool = True
     requires_account_id: bool = True
 
@@ -115,15 +113,11 @@ def resolve_agent_model(config: Any) -> AgentModelProfile:
     api_mode = normalize_api_mode(provider, getattr(config, "api_mode", None))
     model = normalize_model(provider, getattr(config, "model", None))
     reasoning_effort = normalize_reasoning_effort(getattr(config, "reasoning_effort", None))
-    raw_base_url = getattr(config, "base_url", None)
-    base_url = raw_base_url or DEFAULT_CODEX_BASE_URL
     if provider == CODEX_PROVIDER:
         return AgentModelProfile(
             provider=provider,
             api_mode=api_mode,
             model=model,
-            base_url=str(base_url).rstrip("/"),
-            base_url_configured=bool(raw_base_url),
             reasoning_effort=reasoning_effort,
         )
     raise ValueError(f"Unsupported agent provider: {provider}")

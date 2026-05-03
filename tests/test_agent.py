@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from terminal_ticker.agent import (
+    AgentSessionStore,
     _codex_request_headers,
     _read_codex_cli_credentials,
     _result_from_text,
@@ -83,6 +84,62 @@ class AgentTests(unittest.TestCase):
 
         self.assertEqual(headers["originator"], "codex_cli_rs")
         self.assertEqual(headers["ChatGPT-Account-ID"], "acct-direct")
+
+    def test_session_store_persists_active_conversation(self) -> None:
+        """Verify local agent sessions survive store re-instantiation."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "agent.sqlite3"
+            store = AgentSessionStore(path)
+            session = store.get_or_create_active_session(
+                instrument_key="longbridge:AAPL.US",
+                title="AAPL · AAPL.US",
+                provider="codex",
+                model="gpt-test",
+            )
+            store.append_message(
+                session_id=session.id,
+                role="user",
+                content="How does this K-line window look?",
+            )
+            store.append_message(
+                session_id=session.id,
+                role="assistant",
+                content="Trend is constructive.",
+                analysis={
+                    "summary": "Trend is constructive.",
+                    "bias": "bullish",
+                    "confidence": 70,
+                    "watchPlan": ["Wait for a pullback."],
+                    "invalidation": "Lose 200.",
+                },
+            )
+
+            reopened = AgentSessionStore(path)
+            payload = reopened.active_session_payload("longbridge:AAPL.US")
+            history = reopened.history_for_context(session.id, limit=4)
+            refreshed_session = reopened.get_or_create_active_session(
+                instrument_key="longbridge:AAPL.US",
+                title="AAPL · AAPL.US",
+                provider="codex",
+                model="gpt-next",
+            )
+            next_session = reopened.create_session(
+                instrument_key="longbridge:AAPL.US",
+                title="AAPL · AAPL.US",
+                provider="codex",
+                model="gpt-test",
+            )
+            previous_payload = reopened.session_payload(session.id)
+
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["session"]["id"], session.id)
+        self.assertEqual([message["role"] for message in payload["messages"]], ["user", "assistant"])
+        self.assertEqual(payload["messages"][1]["analysis"]["summary"], "Trend is constructive.")
+        self.assertEqual(history[-1]["analysis"]["watch_plan"], ["Wait for a pullback."])
+        self.assertEqual(refreshed_session.id, session.id)
+        self.assertEqual(refreshed_session.model, "gpt-next")
+        self.assertEqual(next_session.instrument_key, "longbridge:AAPL.US")
+        self.assertFalse(previous_payload["session"]["active"])
 
 
 if __name__ == "__main__":

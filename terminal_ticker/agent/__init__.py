@@ -15,6 +15,12 @@ from .provider import (
     _read_codex_cli_credentials,
     _result_from_text,
 )
+from .session_store import (
+    AgentMessage,
+    AgentSession,
+    AgentSessionStore,
+    default_agent_session_path,
+)
 
 for _name in dir(_provider):
     if not _name.startswith("__"):
@@ -29,6 +35,10 @@ __all__ = [
     "build_agent_context",
     "create_llm_provider",
     "list_available_agent_models",
+    "AgentMessage",
+    "AgentSession",
+    "AgentSessionStore",
+    "default_agent_session_path",
     "_codex_request_headers",
     "_read_codex_cli_credentials",
     "_result_from_text",
