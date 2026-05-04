@@ -145,7 +145,8 @@ def build_market_tools(context_provider: Any) -> ToolRegistry:
         quote = context_provider.get_quote(instrument_key)
         if quote is None:
             return _json_output({"error": f"No candle data for {instrument_key}"})
-        candles = quote.candles[-min(count, 50):]
+        candle_count = max(1, min(int(count), 50))
+        candles = quote.candles[-candle_count:]
         return _json_output([{
             "time": c.open_time_ms // 1000,
             "open": c.open,
@@ -167,8 +168,10 @@ def build_market_tools(context_provider: Any) -> ToolRegistry:
                 },
                 "count": {
                     "type": "integer",
-                    "description": "返回 K 线数量，默认 20，最多 50",
+                    "description": "返回 K 线数量，默认 20，范围 1-50",
                     "default": 20,
+                    "minimum": 1,
+                    "maximum": 50,
                 },
             },
             "required": ["instrument_key"],

@@ -692,11 +692,10 @@ class MarketRuntime:
             f"{user_prompt}"
         )
 
-        conversation_history = [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in history
-            if msg.get("role") in ("user", "assistant")
-        ]
+        conversation_history = _agent_loop_history_without_current_turn(
+            history,
+            current_user_prompt=user_prompt,
+        )
 
         loop = AgentLoop(
             provider=provider,
@@ -709,7 +708,13 @@ class MarketRuntime:
             conversation_history=conversation_history if conversation_history else None,
         )
 
-        if loop_result.finished:
+        if loop_result.finished and not loop_result.content.strip():
+            result = AgentAnalysisResult.unavailable(
+                provider=provider.name,
+                model=provider.model,
+                error="Agent returned no output text.",
+            )
+        elif loop_result.finished:
             result = _result_from_text(
                 loop_result.content, provider=provider.name, model=provider.model,
             )
@@ -1044,6 +1049,24 @@ def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) ->
         if "apiMode" not in payload and "api_mode" not in payload:
             raw["api_mode"] = None
     return parse_agent_config(raw)
+
+
+def _agent_loop_history_without_current_turn(
+    history: tuple[dict[str, Any], ...],
+    *,
+    current_user_prompt: str,
+) -> list[dict[str, Any]]:
+    """Return prior chat history without the user turn already represented by the prompt."""
+    history_items = list(history)
+    if history_items:
+        latest = history_items[-1]
+        if latest.get("role") == "user" and str(latest.get("content", "")) == current_user_prompt:
+            history_items = history_items[:-1]
+    return [
+        {"role": msg["role"], "content": msg["content"]}
+        for msg in history_items
+        if msg.get("role") in ("user", "assistant")
+    ]
 
 
 def _analysis_config_from_payload(current: AnalysisConfig, payload: dict[str, Any]) -> AnalysisConfig:

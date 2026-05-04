@@ -6,10 +6,13 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from terminal_ticker.agent import (
     AgentSessionStore,
+    ToolCall,
+    build_market_tools,
     _codex_request_headers,
     _read_codex_cli_credentials,
     _result_from_text,
@@ -143,6 +146,44 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(response.tool_calls[0].id, "call_1")
         self.assertEqual(response.tool_calls[0].name, "get_quote")
         self.assertEqual(response.tool_calls[0].arguments, {"instrument_key": "alpaca:AAPL"})
+
+    def test_get_candles_clamps_requested_count(self) -> None:
+        """Verify candle tool never returns the whole history for zero or negative counts."""
+        candles = tuple(
+            SimpleNamespace(
+                open_time_ms=1776846000000 + index * 60_000,
+                open=index,
+                high=index + 1,
+                low=index - 1,
+                close=index + 0.5,
+                volume=index * 100,
+            )
+            for index in range(5)
+        )
+        quote = SimpleNamespace(candles=candles)
+        context_provider = SimpleNamespace(
+            get_quote=lambda instrument_key: quote if instrument_key == "alpaca:AAPL" else None,
+            get_strategy_signal=lambda instrument_key: None,
+            list_instruments=lambda: tuple(),
+        )
+        tools = build_market_tools(context_provider)
+
+        zero_result = asyncio.run(tools.execute(ToolCall(
+            id="call_1",
+            name="get_candles",
+            arguments={"instrument_key": "alpaca:AAPL", "count": 0},
+        )))
+        large_result = asyncio.run(tools.execute(ToolCall(
+            id="call_2",
+            name="get_candles",
+            arguments={"instrument_key": "alpaca:AAPL", "count": 100},
+        )))
+
+        self.assertFalse(zero_result.error)
+        self.assertEqual(len(json.loads(zero_result.output)), 1)
+        self.assertEqual(len(json.loads(large_result.output)), 5)
+        self.assertEqual(tools.get("get_candles").parameters["properties"]["count"]["minimum"], 1)
+        self.assertEqual(tools.get("get_candles").parameters["properties"]["count"]["maximum"], 50)
 
     def test_session_store_persists_active_conversation(self) -> None:
         """Verify local agent sessions survive store re-instantiation."""
