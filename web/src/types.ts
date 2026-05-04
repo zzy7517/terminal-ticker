@@ -9,6 +9,36 @@ export interface CandlePoint {
   volume: number;
 }
 
+export interface LoopToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface LoopToolResult {
+  callId: string;
+  name: string;
+  output: string;
+  error: boolean;
+}
+
+export interface LoopStep {
+  stepType: 'tool_call' | 'tool_result' | 'assistant';
+  timestamp: number;
+  toolCall?: LoopToolCall;
+  toolResult?: LoopToolResult;
+  content?: string;
+}
+
+export interface LoopResult {
+  content: string;
+  steps: LoopStep[];
+  iterations: number;
+  totalTokens: number;
+  finished: boolean;
+  error: string | null;
+}
+
 export interface AgentAnalysis {
   available: boolean;
   provider: string;
@@ -27,6 +57,7 @@ export interface AgentAnalysis {
   riskNotes: string[];
   error: string | null;
   rawText: string | null;
+  loopResult?: LoopResult;
 }
 
 export interface AgentSession {
@@ -83,6 +114,8 @@ export interface AgentConfig {
   timeoutSeconds: number;
   maxCandles: number;
   reasoningEffort: string;
+  maxIterations: number;
+  useTools: boolean;
 }
 
 export interface AgentConfigUpdate {
@@ -93,6 +126,8 @@ export interface AgentConfigUpdate {
   timeoutSeconds: number;
   maxCandles: number;
   reasoningEffort: string;
+  maxIterations: number;
+  useTools: boolean;
 }
 
 export interface AnalysisConfigUpdate {

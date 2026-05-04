@@ -377,6 +377,8 @@ def _format_agent_config(config: AgentConfig) -> list[str]:
             f"timeout_seconds = {config.timeout_seconds:g}",
             f"max_candles = {config.max_candles}",
             f"reasoning_effort = {_toml_string(config.reasoning_effort)}",
+            f"max_iterations = {config.max_iterations}",
+            f"use_tools = {'true' if config.use_tools else 'false'}",
         ]
     )
     return lines

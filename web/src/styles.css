@@ -2376,6 +2376,95 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.loop-info {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.agent-tool-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.agent-tool-step {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-soft);
+  overflow: hidden;
+}
+
+.agent-tool-step summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  gap: 6px;
+  padding: 5px 8px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.agent-tool-step summary:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.agent-tool-step .tool-name {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.agent-tool-step .tool-error-badge {
+  background: var(--sell);
+  border-radius: 3px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  text-transform: uppercase;
+}
+
+.tool-step-detail {
+  border-top: 1px solid var(--line-soft);
+  padding: 6px 8px;
+}
+
+.tool-step-detail small {
+  color: var(--text-muted);
+  display: block;
+  font-size: 10px;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tool-step-detail pre {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.5;
+  margin: 0 0 6px;
+  max-height: 120px;
+  overflow: auto;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tool-output.error pre {
+  border-left: 2px solid var(--sell);
+}
+
+.tool-args pre {
+  border-left: 2px solid var(--accent);
+}
+
 .session-empty {
   align-items: center;
   color: var(--text-muted);
