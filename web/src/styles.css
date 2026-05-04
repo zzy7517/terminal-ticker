@@ -1931,7 +1931,7 @@ textarea:focus-visible {
   background: var(--accent);
   border: 0;
   border-radius: var(--radius-sm);
-  color: #fff;
+  color: var(--accent-contrast);
   cursor: pointer;
   min-height: 30px;
   min-width: 64px;
@@ -2460,4 +2460,96 @@ textarea:focus-visible {
 
 .news-item__keywords {
   color: var(--text-muted);
+}
+
+/* ── News Settings page ───────────────────────────────────────────── */
+.settings-toggle-row {
+  align-items: center;
+  background: var(--panel-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.settings-toggle-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-toggle-row strong {
+  font-size: 13px;
+}
+
+.settings-toggle-row small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-toggle {
+  background: var(--line-soft);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  height: 24px;
+  position: relative;
+  transition: background 160ms;
+  width: 44px;
+}
+
+.settings-toggle > span {
+  background: var(--canvas-2);
+  border-radius: 50%;
+  height: 18px;
+  left: 3px;
+  position: absolute;
+  top: 3px;
+  transition: transform 160ms;
+  width: 18px;
+}
+
+.settings-toggle.on {
+  background: var(--accent);
+}
+
+.settings-toggle.on > span {
+  transform: translateX(20px);
+}
+
+.settings-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.settings-readonly-grid {
+  display: grid;
+  gap: 10px 20px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-top: 16px;
+}
+
+.settings-readonly-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-readonly-grid strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.settings-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 12px;
+}
+
+.provider-inline-badge.positive {
+  background: rgba(16, 185, 129, 0.15);
+  color: rgb(16, 185, 129);
 }
