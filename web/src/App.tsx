@@ -1567,6 +1567,7 @@ function WorkspaceView({
   openWatchlistSettings: () => void;
 }) {
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
+  const collapsedKeys = state?.instruments.map((instrument) => instrument.key) ?? [];
   const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
   const candleDelta = closeDeltaPercent(selectedQuote?.candles ?? []);
   const multiTimeframeLabel = selectedQuote?.multiTimeframeIntervals?.length
@@ -1700,7 +1701,7 @@ function WorkspaceView({
               </div>
               <div className="sidebar-collapsed-symbols">
                 {state &&
-                  activeKeys.slice(0, 12).map((key) => {
+                  collapsedKeys.map((key) => {
                     const instrument = state.instruments.find((item) => item.key === key);
                     if (!instrument) return null;
                     return (
@@ -1726,6 +1727,8 @@ function WorkspaceView({
         <section className="main-content">
           <div className={`chart-section ${chartExpanded ? 'expanded' : 'collapsed'}`}>
             <button
+              aria-controls="kline-chart-content"
+              aria-expanded={chartExpanded}
               className="chart-toggle-bar"
               onClick={() => setChartExpanded(!chartExpanded)}
               type="button"
@@ -1748,69 +1751,67 @@ function WorkspaceView({
               </div>
             </button>
 
-            {chartExpanded && (
-              <div className="chart-panel-inner">
-                <div className="chart-header">
-                  <div>
-                    <div className="instrument-kicker">
-                      <span>{sourceLabel(selectedInstrument)}</span>
-                      <span>{selectedInstrument?.symbol ?? '-'}</span>
-                      <span>{currentInterval}</span>
-                    </div>
-                    <h2>{selectedInstrument?.label ?? '选择标的'}</h2>
-                    <div className="instrument-meta-row">
-                      <span>{selectedQuote?.exchange || selectedQuote?.currency || 'local feed'}</span>
-                      <span>{selectedQuote?.candles.length ?? 0} candles</span>
-                      <span>{selectedQuote?.status ?? 'waiting'}</span>
-                    </div>
+            <div id="kline-chart-content" className="chart-panel-inner" aria-hidden={!chartExpanded}>
+              <div className="chart-header">
+                <div>
+                  <div className="instrument-kicker">
+                    <span>{sourceLabel(selectedInstrument)}</span>
+                    <span>{selectedInstrument?.symbol ?? '-'}</span>
+                    <span>{currentInterval}</span>
                   </div>
-                  <div className="price-readout">
-                    <span className="readout-label">Last</span>
-                    <strong>{selectedQuote?.priceLabel ?? '-'}</strong>
-                    <span className={changeClass(selectedQuote)}>
-                      {selectedQuote?.changeLabel ?? '-'} · {selectedQuote?.percentLabel ?? '-'}
-                    </span>
+                  <h2>{selectedInstrument?.label ?? '选择标的'}</h2>
+                  <div className="instrument-meta-row">
+                    <span>{selectedQuote?.exchange || selectedQuote?.currency || 'local feed'}</span>
+                    <span>{selectedQuote?.candles.length ?? 0} candles</span>
+                    <span>{selectedQuote?.status ?? 'waiting'}</span>
                   </div>
                 </div>
-
-                <div className="analysis-strip">
-                  <div className={`analysis-marker ${changeClass(selectedQuote)}`}>
-                    MTF
-                  </div>
-                  <div>
-                    <strong>
-                      {selectedQuote?.candles.length
-                        ? `Multi-timeframe context · ${multiTimeframeLabel}`
-                        : '等待多周期 K 线'}
-                    </strong>
-                    <span>
-                      {selectedAgent?.available
-                        ? selectedAgent.summary
-                        : 'Agent 直接读取多周期 OHLCV 上下文，不再依赖本地 strategy / regime 解析层。'}
-                    </span>
-                  </div>
-                  <Activity className={selectedQuote?.candles.length ? 'analysis-check' : 'analysis-waiting'} size={18} />
-                </div>
-
-                <CandlestickPane
-                  candles={selectedQuote?.candles ?? []}
-                  canLoadOlder={canLoadOlder}
-                  chartKey={`${selectedKey ?? 'none'}:${currentInterval}`}
-                  theme={theme}
-                  olderLoading={Boolean(historyKey && olderBusyKey === historyKey)}
-                  onLoadOlder={loadOlderForSelected}
-                />
-
-                <div className="stat-grid">
-                  <StatTile label="High" value={selectedQuote?.dayHigh?.toFixed(2) ?? '-'} />
-                  <StatTile label="Low" value={selectedQuote?.dayLow?.toFixed(2) ?? '-'} />
-                  <StatTile label="Volume" value={selectedQuote?.volumeLabel ?? '-'} />
-                  <StatTile label="Range" value={candleRangeLabel(selectedQuote?.candles ?? [])} />
-                  <StatTile label="Window" value={candleDelta == null ? '-' : `${formatSignedNumber(candleDelta)}%`} />
-                  <StatTile label="Age" value={selectedQuote?.ageLabel ?? 'waiting'} />
+                <div className="price-readout">
+                  <span className="readout-label">Last</span>
+                  <strong>{selectedQuote?.priceLabel ?? '-'}</strong>
+                  <span className={changeClass(selectedQuote)}>
+                    {selectedQuote?.changeLabel ?? '-'} · {selectedQuote?.percentLabel ?? '-'}
+                  </span>
                 </div>
               </div>
-            )}
+
+              <div className="analysis-strip">
+                <div className={`analysis-marker ${changeClass(selectedQuote)}`}>
+                  MTF
+                </div>
+                <div>
+                  <strong>
+                    {selectedQuote?.candles.length
+                      ? `Multi-timeframe context · ${multiTimeframeLabel}`
+                      : '等待多周期 K 线'}
+                  </strong>
+                  <span>
+                    {selectedAgent?.available
+                      ? selectedAgent.summary
+                      : 'Agent 直接读取多周期 OHLCV 上下文，不再依赖本地 strategy / regime 解析层。'}
+                  </span>
+                </div>
+                <Activity className={selectedQuote?.candles.length ? 'analysis-check' : 'analysis-waiting'} size={18} />
+              </div>
+
+              <CandlestickPane
+                candles={selectedQuote?.candles ?? []}
+                canLoadOlder={canLoadOlder}
+                chartKey={`${selectedKey ?? 'none'}:${currentInterval}`}
+                theme={theme}
+                olderLoading={Boolean(historyKey && olderBusyKey === historyKey)}
+                onLoadOlder={loadOlderForSelected}
+              />
+
+              <div className="stat-grid">
+                <StatTile label="High" value={selectedQuote?.dayHigh?.toFixed(2) ?? '-'} />
+                <StatTile label="Low" value={selectedQuote?.dayLow?.toFixed(2) ?? '-'} />
+                <StatTile label="Volume" value={selectedQuote?.volumeLabel ?? '-'} />
+                <StatTile label="Range" value={candleRangeLabel(selectedQuote?.candles ?? [])} />
+                <StatTile label="Window" value={candleDelta == null ? '-' : `${formatSignedNumber(candleDelta)}%`} />
+                <StatTile label="Age" value={selectedQuote?.ageLabel ?? 'waiting'} />
+              </div>
+            </div>
           </div>
 
           <div className="agent-main-panel">

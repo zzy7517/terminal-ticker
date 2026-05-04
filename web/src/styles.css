@@ -1626,10 +1626,13 @@ h3 {
 }
 
 .sidebar-collapsed-content {
+  align-items: center;
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 8px;
-  align-items: center;
+  min-height: 0;
+  width: 100%;
 }
 
 .sidebar-collapsed-icons {
@@ -1708,6 +1711,11 @@ h3 {
 
 .chart-section.collapsed {
   max-height: 52px;
+}
+
+.chart-section.collapsed .chart-panel-inner {
+  pointer-events: none;
+  visibility: hidden;
 }
 
 .chart-toggle-bar {
@@ -1801,13 +1809,20 @@ h3 {
 }
 
 .agent-main-panel .agent-session-card {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 400px;
+  overflow: hidden;
 }
 
 .agent-main-panel .session-transcript {
-  max-height: none;
-  flex: 1;
+  flex: 1 1 auto;
+  max-height: clamp(220px, 42vh, 620px);
+}
+
+.agent-main-panel .session-compose {
+  flex: 0 0 auto;
 }
 
 .agent-info-strip {
