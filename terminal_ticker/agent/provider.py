@@ -29,10 +29,6 @@ invalidation: string
 risk_notes: array of string
 """
 
-# TODO: add chart snapshot export and structured drawing instructions for a future
-# vision-enabled agent pass, so the model can inspect the rendered chart and
-# propose drawings without taking over the front-end rendering itself.
-
 
 class LLMProviderUnavailable(RuntimeError):
     """说明：表示模型 provider 缺少凭证或运行环境不可用。"""
