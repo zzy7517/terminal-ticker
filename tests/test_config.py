@@ -183,6 +183,34 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.agent.max_candles, 24)
         self.assertEqual(config.agent.reasoning_effort, "high")
 
+    def test_parse_config_news_defaults_when_absent(self) -> None:
+        """Verify NewsConfig defaults when the [news] section is absent."""
+        config = parse_config({"symbols": [{"symbol": "BTCUSDT", "inst_type": "USDT-FUTURES"}]})
+        self.assertFalse(config.news.enabled)
+        self.assertEqual(config.news.poll_interval_seconds, 30)
+        self.assertEqual(config.news.recent_limit, 50)
+        self.assertTrue(config.news.reuters_url.startswith("https://"))
+
+    def test_parse_config_news_section_overrides(self) -> None:
+        """Verify NewsConfig honors [news] overrides."""
+        config = parse_config({
+            "symbols": [{"symbol": "BTCUSDT", "inst_type": "USDT-FUTURES"}],
+            "news": {
+                "enabled": True,
+                "poll_interval_seconds": 45,
+                "max_interval_seconds": 300,
+                "recent_limit": 100,
+                "retention_days": 7,
+                "reuters_url": "https://example/sitemap.xml",
+            },
+        })
+        self.assertTrue(config.news.enabled)
+        self.assertEqual(config.news.poll_interval_seconds, 45)
+        self.assertEqual(config.news.max_interval_seconds, 300)
+        self.assertEqual(config.news.recent_limit, 100)
+        self.assertEqual(config.news.retention_days, 7)
+        self.assertEqual(config.news.reuters_url, "https://example/sitemap.xml")
+
     def test_build_runtime_requires_symbols(self) -> None:
         """Verify build runtime requires symbols."""
         with self.assertRaises(ValueError):

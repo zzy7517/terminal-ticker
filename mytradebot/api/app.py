@@ -23,11 +23,14 @@ from ..agent import (
     LLMProviderUnavailable,
     build_agent_context,
     build_market_tools,
+    build_news_tools,
     build_trading_tools,
     create_llm_provider,
     list_available_agent_models,
     merge_registries,
 )
+from ..news import NewsService, NewsStore
+from ..news.providers.reuters import ReutersSitemapProvider
 from ..agent.provider import _result_from_text
 from ..agent.tools import ToolRegistry
 from ..trading import TradeStatus, TradeStore
@@ -162,6 +165,8 @@ def serialize_market_state(
     stream_status: str,
     agent_analyses: dict[str, dict[str, Any]] | None = None,
     open_trades: list[dict[str, Any]] | None = None,
+    recent_news: list[dict[str, Any]] | None = None,
+    news_status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """说明：构造浏览器需要的完整市场状态快照。"""
     groups: dict[str, list[str]] = {}
@@ -195,6 +200,12 @@ def serialize_market_state(
                 "staleAfterSeconds": config.display.stale_after_seconds,
                 "stockPollIntervalSeconds": config.display.stock_poll_interval_seconds,
             },
+            "news": {
+                "enabled": config.news.enabled,
+                "pollIntervalSeconds": config.news.poll_interval_seconds,
+                "recentLimit": config.news.recent_limit,
+                "reutersUrl": config.news.reuters_url,
+            },
             "sourcePath": str(config.source_path) if config.source_path else None,
         },
         "instruments": [
@@ -211,6 +222,8 @@ def serialize_market_state(
         },
         "agentAnalyses": agent_analyses or {},
         "openTrades": open_trades or [],
+        "recentNews": recent_news or [],
+        "newsStatus": news_status or {},
     }
 
 
@@ -279,6 +292,21 @@ class MarketRuntime:
         self.agent_analyses: dict[str, dict[str, Any]] = {}
         self.agent_session_store = agent_session_store or AgentSessionStore()
         self._active_session_for_tools: str | None = None
+        self.news_service: NewsService | None = None
+        if config.news.enabled:
+            news_store = NewsStore()
+            news_provider = ReutersSitemapProvider(
+                url=config.news.reuters_url,
+                timeout_seconds=config.news.request_timeout_seconds,
+            )
+            self.news_service = NewsService(
+                store=news_store,
+                provider=news_provider,
+                poll_interval_seconds=config.news.poll_interval_seconds,
+                max_interval_seconds=config.news.max_interval_seconds,
+                retention_days=config.news.retention_days,
+                recent_limit=config.news.recent_limit,
+            )
 
     async def start(self) -> None:
         """说明：启动后台运行时组件。"""
@@ -288,6 +316,8 @@ class MarketRuntime:
         self.controller.start()
         self.pump_task = asyncio.create_task(self._pump())
         self.review_task = asyncio.create_task(self._run_review_loop())
+        if self.news_service is not None:
+            await self.news_service.start()
 
     async def stop(self) -> None:
         """说明：停止后台运行时组件并释放连接。"""
@@ -302,6 +332,8 @@ class MarketRuntime:
             with suppress(asyncio.CancelledError):
                 await self.review_task
             self.review_task = None
+        if self.news_service is not None:
+            await self.news_service.stop()
         self.controller.stop()
         for websocket in tuple(self.clients):
             with suppress(Exception):
@@ -316,6 +348,15 @@ class MarketRuntime:
                 statuses=[TradeStatus.PLANNED, TradeStatus.OPEN],
             )
         ]
+        recent_news: list[dict[str, Any]] = []
+        news_status: dict[str, Any] = {"enabled": self.config.news.enabled}
+        if self.news_service is not None:
+            recent_news = [item.to_payload() for item in self.news_service.recent()]
+            news_status.update({
+                "lastStatus": self.news_service.last_status,
+                "lastError": self.news_service.last_error,
+                "lastFetchedAtMs": self.news_service.last_fetched_at_ms,
+            })
         return serialize_market_state(
             config=self.config,
             instruments=self.instruments,
@@ -323,6 +364,8 @@ class MarketRuntime:
             stream_status=self.controller.stream_status,
             agent_analyses=self.agent_analyses,
             open_trades=open_trades,
+            recent_news=recent_news,
+            news_status=news_status,
         )
 
     async def connect(self, websocket: WebSocket) -> None:
@@ -690,7 +733,8 @@ class MarketRuntime:
             snapshot_provider=lambda key: self._trading_snapshot_payload(key),
             session_id_provider=lambda: active_session_id,
         )
-        tools = merge_registries(market_tools, trading_tools)
+        news_tools = build_news_tools(self.news_service)
+        tools = merge_registries(market_tools, trading_tools, news_tools)
 
         current_context = build_agent_context(
             instrument=instrument,
@@ -1226,6 +1270,31 @@ def create_app(
                 }
                 for r in results
             ],
+        }
+
+    @app.get("/api/news")
+    async def get_news_endpoint(limit: int = 50) -> dict[str, Any]:
+        """说明：读取本地缓存的最近新闻。"""
+        if runtime.news_service is None:
+            return {"news": [], "enabled": False}
+        resolved = max(1, min(int(limit), 200))
+        items = runtime.news_service.recent(limit=resolved)
+        return {"news": [item.to_payload() for item in items], "enabled": True}
+
+    @app.post("/api/news/refresh")
+    async def refresh_news_endpoint() -> dict[str, Any]:
+        """说明：手动触发一次新闻抓取，超时降级返回缓存。"""
+        if runtime.news_service is None:
+            raise HTTPException(status_code=409, detail="news module disabled")
+        outcome = await runtime.news_service.refresh_now()
+        items = runtime.news_service.recent()
+        return {
+            "status": outcome.status,
+            "inserted": outcome.inserted,
+            "totalRecent": outcome.total_recent,
+            "stale": outcome.status == "timeout",
+            "error": outcome.error,
+            "news": [item.to_payload() for item in items],
         }
 
     @app.websocket("/ws")

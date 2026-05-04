@@ -98,6 +98,18 @@ class AgentConfig:
 
 
 @dataclass(frozen=True)
+class NewsConfig:
+    """说明：封装新闻抓取的开关、源地址和轮询参数。"""
+    enabled: bool = False
+    poll_interval_seconds: int = 30
+    max_interval_seconds: int = 600
+    reuters_url: str = "https://www.reuters.com/sitemap_news.xml"
+    request_timeout_seconds: float = 10.0
+    retention_days: int = 30
+    recent_limit: int = 50
+
+
+@dataclass(frozen=True)
 class InstrumentConfig:
     """说明：封装 watchlist 中尚未解析到 provider 的标的配置。"""
     symbol: str
@@ -138,6 +150,7 @@ class AppConfig:
     analysis: AnalysisConfig = AnalysisConfig()
     cache: CacheConfig = CacheConfig()
     agent: AgentConfig = AgentConfig()
+    news: NewsConfig = NewsConfig()
 
 
 def _normalize_inst_type(raw_value: Any) -> str | None:
@@ -292,6 +305,51 @@ def parse_analysis_config(raw_analysis: dict[str, Any] | None) -> AnalysisConfig
             raw_analysis.get("stale_after_seconds"),
             "analysis.stale_after_seconds",
             420,
+        ),
+    )
+
+
+def parse_news_config(raw_news: dict[str, Any] | None) -> NewsConfig:
+    """说明：把原始新闻配置解析为 NewsConfig。"""
+    if raw_news is None:
+        raw_news = {}
+    if not isinstance(raw_news, dict):
+        raise ValueError("news must be a table")
+    raw_url = raw_news.get("reuters_url")
+    if raw_url is not None and not isinstance(raw_url, str):
+        raise ValueError("news.reuters_url must be a string")
+    reuters_url = raw_url.strip() if isinstance(raw_url, str) and raw_url.strip() else "https://www.reuters.com/sitemap_news.xml"
+    return NewsConfig(
+        enabled=_normalize_bool(raw_news.get("enabled"), "news.enabled", False),
+        poll_interval_seconds=_coerce_min_int(
+            raw_news.get("poll_interval_seconds"),
+            "news.poll_interval_seconds",
+            30,
+            5,
+        ),
+        max_interval_seconds=_coerce_min_int(
+            raw_news.get("max_interval_seconds"),
+            "news.max_interval_seconds",
+            600,
+            30,
+        ),
+        reuters_url=reuters_url,
+        request_timeout_seconds=_coerce_float(
+            raw_news.get("request_timeout_seconds"),
+            "news.request_timeout_seconds",
+            10.0,
+        ),
+        retention_days=_coerce_min_int(
+            raw_news.get("retention_days"),
+            "news.retention_days",
+            30,
+            1,
+        ),
+        recent_limit=_coerce_min_int(
+            raw_news.get("recent_limit"),
+            "news.recent_limit",
+            50,
+            1,
         ),
     )
 
@@ -466,6 +524,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
     cache = parse_cache_config(data.get("cache", {}))
 
     agent = parse_agent_config(data.get("agent", {}))
+    news = parse_news_config(data.get("news", {}))
 
     return AppConfig(
         instruments=instruments,
@@ -473,6 +532,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         analysis=analysis,
         cache=cache,
         agent=agent,
+        news=news,
         source_path=source_path,
     )
 
@@ -497,6 +557,7 @@ def build_runtime_config(
         analysis=AnalysisConfig(),
         cache=CacheConfig(),
         agent=AgentConfig(),
+        news=NewsConfig(),
         source_path=None,
     )
 
@@ -512,5 +573,6 @@ def build_runtime_config(
         analysis=base.analysis,
         cache=base.cache,
         agent=base.agent,
+        news=base.news,
         source_path=base.source_path,
     )

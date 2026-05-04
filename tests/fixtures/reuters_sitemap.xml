@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+  <url>
+    <loc>https://www.reuters.com/world/europe/example-headline-1-2026-05-05/</loc>
+    <lastmod>2026-05-05T14:30:00Z</lastmod>
+    <news:news>
+      <news:publication>
+        <news:name>Reuters</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2026-05-05T14:25:00Z</news:publication_date>
+      <news:title>Example headline one about markets</news:title>
+      <news:keywords>Markets,Europe,Rates</news:keywords>
+    </news:news>
+  </url>
+  <url>
+    <loc>https://www.reuters.com/business/example-headline-2-2026-05-05/</loc>
+    <lastmod>2026-05-05T15:00:00Z</lastmod>
+    <news:news>
+      <news:publication>
+        <news:name>Reuters</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2026-05-05T14:55:00Z</news:publication_date>
+      <news:title>Example headline two about earnings</news:title>
+      <news:keywords>Earnings,Technology</news:keywords>
+    </news:news>
+  </url>
+</urlset>

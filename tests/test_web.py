@@ -722,6 +722,91 @@ class WebTests(unittest.TestCase):
         self.assertEqual(persisted.instruments[0].analysis_interval, "15m")
         self.assertIsNone(persisted.instruments[1].analysis_interval)
 
+    def test_news_endpoint_returns_empty_when_disabled(self) -> None:
+        """Verify /api/news and snapshot behave when news module is disabled."""
+        instrument = AlpacaInstrument("AAPL", "AAPL")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+        with TestClient(app) as client:
+            response = client.get("/api/news")
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload, {"news": [], "enabled": False})
+
+            refresh = client.post("/api/news/refresh")
+            self.assertEqual(refresh.status_code, 409)
+
+            state = client.get("/api/state").json()
+            self.assertIn("recentNews", state)
+            self.assertEqual(state["recentNews"], [])
+            self.assertFalse(state["config"]["news"]["enabled"])
+
+    def test_news_endpoint_returns_cached_items_when_enabled(self) -> None:
+        """Verify /api/news returns cached items and refresh calls the service."""
+        from mytradebot.config import NewsConfig
+        from mytradebot.news import NewsItem, NewsStore
+        from mytradebot.news.providers.reuters import FetchResult
+
+        instrument = AlpacaInstrument("AAPL", "AAPL")
+        app = create_app(
+            config=AppConfig(
+                instruments=tuple(),
+                display=DisplayConfig(),
+                news=NewsConfig(enabled=True),
+            ),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+        runtime = app.state.runtime
+        self.assertIsNotNone(runtime.news_service)
+
+        # Replace the default store with a fresh temp-backed one to isolate from other tests.
+        tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        runtime.news_service.store = NewsStore(Path(tmp_dir.name) / "news.sqlite3")
+
+        unique_url = f"https://r/{id(self)}"
+
+        class _FakeProvider:
+            source_name = "reuters"
+
+            async def fetch(self, *, etag=None, last_modified=None):
+                return FetchResult(
+                    status="ok",
+                    items=(
+                        NewsItem(
+                            url=unique_url,
+                            source="reuters",
+                            title="headline a",
+                            summary="",
+                            published_at_ms=1_700_000_000_000,
+                            fetched_at_ms=1_700_000_001_000,
+                            keywords=("Markets",),
+                        ),
+                    ),
+                    etag='"e"',
+                    last_modified="lm",
+                )
+
+        runtime.news_service.provider = _FakeProvider()
+
+        with TestClient(app) as client:
+            refresh = client.post("/api/news/refresh")
+            self.assertEqual(refresh.status_code, 200)
+            body = refresh.json()
+            self.assertEqual(body["status"], "ok")
+            self.assertEqual(body["inserted"], 1)
+            self.assertEqual(len(body["news"]), 1)
+
+            news = client.get("/api/news?limit=10").json()
+            self.assertEqual(len(news["news"]), 1)
+            self.assertEqual(news["news"][0]["title"], "headline a")
+
 
 if __name__ == "__main__":
     unittest.main()

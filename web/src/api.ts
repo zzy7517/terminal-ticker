@@ -7,6 +7,7 @@ import type {
   InstrumentSearchResult,
   Lesson,
   MarketState,
+  NewsItem,
   SecuritySearchResult,
   Trade,
   TradeDetailResponse,
@@ -285,4 +286,33 @@ export async function triggerTradeReview(limit = 3): Promise<Array<{
   }
   const payload = await response.json();
   return payload.results;
+}
+
+// Fetches the latest cached news items from the local store.
+export async function fetchNews(limit = 50): Promise<NewsItem[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const response = await fetch(`/api/news?${params}`);
+  if (!response.ok) {
+    throw await responseError(response, 'news fetch failed');
+  }
+  const payload = await response.json();
+  return payload.news as NewsItem[];
+}
+
+export interface NewsRefreshResponse {
+  status: string;
+  inserted: number;
+  totalRecent: number;
+  stale: boolean;
+  error: string | null;
+  news: NewsItem[];
+}
+
+// Triggers a synchronous news refresh; falls back to cache on timeout.
+export async function triggerNewsRefresh(): Promise<NewsRefreshResponse> {
+  const response = await fetch('/api/news/refresh', { method: 'POST' });
+  if (!response.ok) {
+    throw await responseError(response, 'news refresh failed');
+  }
+  return response.json();
 }

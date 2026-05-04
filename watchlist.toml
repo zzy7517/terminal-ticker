@@ -28,3 +28,12 @@ interval = "5m"
 lookback = 40
 poll_interval_seconds = 30
 stale_after_seconds = 420
+
+[news]
+enabled = false
+poll_interval_seconds = 30
+max_interval_seconds = 600
+reuters_url = "https://www.reuters.com/sitemap_news.xml"
+request_timeout_seconds = 10.0
+retention_days = 30
+recent_limit = 50
