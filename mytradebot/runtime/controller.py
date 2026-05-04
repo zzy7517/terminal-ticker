@@ -12,6 +12,9 @@ from .feed import FeedEvent, FeedWorker
 from ..domain.quotes import QuoteState
 from ..domain.price_action import merge_candles
 from ..market_data.router import MarketInstrument
+from ..trading.paper_broker import FillEvent, PaperBroker
+
+FILL_INTERVAL = "1m"
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,7 @@ class TickerController:
         config: AppConfig,
         instruments: tuple[MarketInstrument, ...],
         worker_factory: Callable[..., Any] = FeedWorker,
+        paper_broker: PaperBroker | None = None,
     ) -> None:
         """说明：初始化当前对象的运行状态。"""
         self.config = config
@@ -45,6 +49,9 @@ class TickerController:
             instruments=instruments,
             event_queue=self.event_queue,
         )
+        self.paper_broker = paper_broker
+        self.recent_fill_events: list[FillEvent] = []
+        self._last_fill_candle_time_ms: dict[str, int] = {}
 
     def start(self) -> None:
         """说明：启动后台运行时组件。"""
@@ -138,6 +145,7 @@ class TickerController:
             if key not in self.quotes:
                 return False
             incoming_candles = tuple(payload.get("candles", tuple()))
+            multi_tf_raw = payload.get("multi_timeframe_candles") or {}
             self.quotes[key].apply_candles(
                 candles=merge_candles(self.quotes[key].candles, incoming_candles)
                 if incoming_candles
@@ -147,16 +155,55 @@ class TickerController:
                 else None,
                 multi_timeframe_candles={
                     interval: tuple(candles)
-                    for interval, candles in payload.get("multi_timeframe_candles", {}).items()
+                    for interval, candles in multi_tf_raw.items()
                 }
                 if "multi_timeframe_candles" in payload
                 else None,
             )
             if payload.get("error"):
                 self.quotes[key].mark_error(str(payload["error"]))
+            self._drive_paper_broker(key, multi_tf_raw, incoming_candles)
             return True
 
         return False
+
+    def _drive_paper_broker(
+        self,
+        instrument_key: str,
+        multi_timeframe_candles: dict[str, Any],
+        primary_candles: tuple,
+    ) -> None:
+        """说明：把新的 1m K 线喂给 PaperBroker 做撮合。"""
+        broker = self.paper_broker
+        if broker is None:
+            return
+        fill_bars = multi_timeframe_candles.get(FILL_INTERVAL)
+        if not fill_bars and primary_candles:
+            primary_interval = getattr(self.config.analysis, "interval", None)
+            if primary_interval == FILL_INTERVAL:
+                fill_bars = primary_candles
+        if not fill_bars:
+            return
+        last_seen = self._last_fill_candle_time_ms.get(instrument_key)
+        fresh = [c for c in fill_bars if last_seen is None or c.open_time_ms > last_seen]
+        if not fresh:
+            return
+        try:
+            events = broker.process_candles(fresh)
+        except Exception:
+            # 撮合失败不应让行情流挂掉。
+            import logging
+            logging.getLogger(__name__).exception("paper broker failed on %s", instrument_key)
+            return
+        self._last_fill_candle_time_ms[instrument_key] = max(c.open_time_ms for c in fresh)
+        if events:
+            self.recent_fill_events.extend(events)
+
+    def consume_fill_events(self) -> tuple[FillEvent, ...]:
+        """说明：取出并清空 broker 自上次读取以来产生的 fill 事件。"""
+        events = tuple(self.recent_fill_events)
+        self.recent_fill_events.clear()
+        return events
 
     @staticmethod
     def _flash_direction(previous_price: float | None, current_price: float | None) -> int:

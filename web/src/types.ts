@@ -197,6 +197,70 @@ export interface MarketState {
   groups: Record<string, string[]>;
   quotes: Record<string, Quote>;
   agentAnalyses: Record<string, AgentAnalysis>;
+  openTrades: Trade[];
+}
+
+export type TradeDirection = 'long' | 'short';
+export type TradeStatus = 'planned' | 'open' | 'closed' | 'cancelled';
+export type FillKind = 'entry' | 'exit' | 'stop' | 'target';
+
+export interface TradeFill {
+  id: number;
+  tradeId: number;
+  kind: FillKind;
+  price: number;
+  quantity: number;
+  filledAtMs: number;
+  triggerReason: string;
+  fillSource: string;
+  fees: number;
+  externalOrderId: string | null;
+}
+
+export interface Trade {
+  id: number;
+  instrumentKey: string;
+  direction: TradeDirection;
+  status: TradeStatus;
+  size: number;
+  intentPrice: number | null;
+  stopPrice: number | null;
+  targetPrices: number[];
+  openedAtMs: number | null;
+  closedAtMs: number | null;
+  realizedPnl: number;
+  reasoningText: string;
+  sessionId: string | null;
+  snapshotId: number | null;
+  marketKind: string;
+  fillSource: string;
+  externalOrderId: string | null;
+  createdAtMs: number;
+  updatedAtMs: number;
+  fills: TradeFill[];
+}
+
+export interface TradeSnapshot {
+  id: number;
+  instrumentKey: string;
+  capturedAtMs: number;
+  payload: Record<string, unknown>;
+}
+
+export interface Lesson {
+  id: number;
+  tradeId: number | null;
+  instrumentKey: string;
+  createdAtMs: number;
+  category: string;
+  text: string;
+  tags: string[];
+}
+
+export interface TradeDetailResponse {
+  trade: Trade;
+  snapshot: TradeSnapshot | null;
+  lessons: Lesson[];
 }
 
 export interface InstrumentSearchResult {

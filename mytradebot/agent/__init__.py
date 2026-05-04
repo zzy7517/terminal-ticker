@@ -13,7 +13,15 @@ from .provider import (
     _result_from_text,
 )
 from .loop import AgentLoop, ChatResponse, LoopResult, LoopStep
-from .tools import ToolCall, ToolDefinition, ToolRegistry, ToolResult, build_market_tools
+from .tools import (
+    ToolCall,
+    ToolDefinition,
+    ToolRegistry,
+    ToolResult,
+    build_market_tools,
+    build_trading_tools,
+    merge_registries,
+)
 from .providers.codex import CodexProvider, _codex_request_headers, _read_codex_cli_credentials
 from .session_store import (
     AgentMessage,
@@ -42,6 +50,8 @@ __all__ = [
     "ToolResult",
     "build_agent_context",
     "build_market_tools",
+    "build_trading_tools",
+    "merge_registries",
     "create_llm_provider",
     "list_available_agent_models",
     "AgentMessage",

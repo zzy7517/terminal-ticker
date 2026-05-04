@@ -2,7 +2,7 @@
 import logging
 import unittest
 
-from terminal_ticker.logging_config import configure_logging
+from mytradebot.logging_config import configure_logging
 
 
 class LoggingConfigTests(unittest.TestCase):

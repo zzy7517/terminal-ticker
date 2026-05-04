@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from terminal_ticker.agent import (
+from mytradebot.agent import (
     AgentSessionStore,
     ToolCall,
     build_market_tools,
@@ -17,7 +17,7 @@ from terminal_ticker.agent import (
     _read_codex_cli_credentials,
     _result_from_text,
 )
-from terminal_ticker.agent.providers.codex import _collect_response_stream_full
+from mytradebot.agent.providers.codex import _collect_response_stream_full
 
 
 def _fake_jwt(claims: dict) -> str:

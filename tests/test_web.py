@@ -8,14 +8,14 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from terminal_ticker.agent import AgentAnalysisResult, AgentSessionStore, ChatResponse
-from terminal_ticker.config import AppConfig, DisplayConfig, load_config
-from terminal_ticker.runtime.controller import DrainResult
-from terminal_ticker.market_data.alpaca import AlpacaAsset, AlpacaInstrument
-from terminal_ticker.market_data.bitget import BitgetInstrument
-from terminal_ticker.domain.quotes import QuoteState
-from terminal_ticker.domain.price_action import Candle
-from terminal_ticker.api.app import PROJECT_ROOT, WEB_DIST, create_app, serialize_market_state
+from mytradebot.agent import AgentAnalysisResult, AgentSessionStore, ChatResponse
+from mytradebot.config import AppConfig, DisplayConfig, load_config
+from mytradebot.runtime.controller import DrainResult
+from mytradebot.market_data.alpaca import AlpacaAsset, AlpacaInstrument
+from mytradebot.market_data.bitget import BitgetInstrument
+from mytradebot.domain.quotes import QuoteState
+from mytradebot.domain.price_action import Candle
+from mytradebot.api.app import PROJECT_ROOT, WEB_DIST, create_app, serialize_market_state
 
 
 class DummyController:
@@ -208,7 +208,7 @@ class WebTests(unittest.TestCase):
         )
 
         with patch(
-            "terminal_ticker.api.app.search_alpaca_assets",
+            "mytradebot.api.app.search_alpaca_assets",
             return_value=(AlpacaAsset("AAPL", name="Apple Inc.", exchange="NASDAQ"),),
         ):
             with TestClient(app) as client:
@@ -236,7 +236,7 @@ class WebTests(unittest.TestCase):
         )
         spot = BitgetInstrument("BTCUSDT", "SPOT", "BTCUSDT", "BTC", "USDT", "spot")
 
-        with patch("terminal_ticker.api.app.search_bitget_instruments", return_value=(spot, instrument)):
+        with patch("mytradebot.api.app.search_bitget_instruments", return_value=(spot, instrument)):
             with TestClient(app) as client:
                 response = client.get(
                     "/api/instruments/search",
@@ -272,7 +272,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("terminal_ticker.api.app.resolve_instruments", return_value=(alpaca, bitget)):
+            with patch("mytradebot.api.app.resolve_instruments", return_value=(alpaca, bitget)):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/watchlist/bitget",
@@ -308,7 +308,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("terminal_ticker.api.app.resolve_instruments", return_value=(bitget, alpaca)):
+            with patch("mytradebot.api.app.resolve_instruments", return_value=(bitget, alpaca)):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/watchlist/alpaca",
@@ -345,7 +345,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("terminal_ticker.api.app.resolve_instruments", return_value=(alpaca,)):
+            with patch("mytradebot.api.app.resolve_instruments", return_value=(alpaca,)):
                 with TestClient(app) as client:
                     response = client.delete("/api/watchlist/instruments/USDT-FUTURES%3ABTCUSDT")
             persisted_text = config_path.read_text()
@@ -419,7 +419,7 @@ class WebTests(unittest.TestCase):
             )
             provider = FakeProvider()
 
-            with patch("terminal_ticker.api.app.create_llm_provider", return_value=provider):
+            with patch("mytradebot.api.app.create_llm_provider", return_value=provider):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/alpaca:AAPL/messages",
@@ -484,7 +484,7 @@ class WebTests(unittest.TestCase):
             )
             provider = FakeLoopProvider()
 
-            with patch("terminal_ticker.api.app.create_llm_provider", return_value=provider):
+            with patch("mytradebot.api.app.create_llm_provider", return_value=provider):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/alpaca:AAPL/messages",
@@ -529,7 +529,7 @@ class WebTests(unittest.TestCase):
                 candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
 
-            with patch("terminal_ticker.api.app.create_llm_provider", return_value=FailingLoopProvider()):
+            with patch("mytradebot.api.app.create_llm_provider", return_value=FailingLoopProvider()):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/alpaca:AAPL/messages",
@@ -568,7 +568,7 @@ class WebTests(unittest.TestCase):
                 candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
 
-            with patch("terminal_ticker.api.app.create_llm_provider", return_value=EmptyLoopProvider()):
+            with patch("mytradebot.api.app.create_llm_provider", return_value=EmptyLoopProvider()):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/alpaca:AAPL/messages",
@@ -592,7 +592,7 @@ class WebTests(unittest.TestCase):
         )
 
         with patch(
-            "terminal_ticker.api.app.list_available_agent_models",
+            "mytradebot.api.app.list_available_agent_models",
             return_value=[
                 {
                     "slug": "gpt-5.4-mini",

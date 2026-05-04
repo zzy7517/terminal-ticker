@@ -45,7 +45,7 @@ def _fetch_json(path: str, params: dict[str, str] | None = None) -> dict[str, An
     query = f"?{urlencode(params)}" if params else ""
     request = Request(
         f"{BITGET_API_BASE}{path}{query}",
-        headers={"User-Agent": "terminal-ticker/0.1"},
+        headers={"User-Agent": "mytradebot/0.1"},
     )
     with urlopen(request, timeout=15) as response:
         return json.load(response)

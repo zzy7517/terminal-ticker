@@ -11,7 +11,7 @@ import time
 import uuid
 
 DEFAULT_AGENT_SESSION_FILENAME = "agent_sessions.sqlite3"
-DEFAULT_CACHE_SUBDIR = "terminal-ticker"
+DEFAULT_CACHE_SUBDIR = "mytradebot"
 
 
 @dataclass(frozen=True)

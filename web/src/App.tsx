@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -43,6 +43,9 @@ import {
   fetchAgentSession,
   fetchAgentModels,
   fetchState,
+  getTradeDetail,
+  listLessons,
+  listTrades,
   loadOlderCandles,
   removeWatchlistInstrument,
   resetAgentSession,
@@ -50,6 +53,7 @@ import {
   saveInstrumentAnalysisInterval,
   searchInstruments,
   sendAgentMessage,
+  triggerTradeReview,
 } from './api';
 import type {
   AgentAnalysis,
@@ -60,9 +64,12 @@ import type {
   CandlePoint,
   Instrument,
   InstrumentSearchResult,
+  Lesson,
   LoopStep,
   MarketState,
   Quote,
+  Trade,
+  TradeDetailResponse,
 } from './types';
 import { useChartDrawings } from './chartDrawings';
 
@@ -78,7 +85,7 @@ const GROUP_LABELS: Record<string, string> = {
 const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
 const PROVIDERS_HASH = '#/settings/providers';
 const WATCHLIST_HASH = '#/settings/watchlist';
-const THEME_STORAGE_KEY = 'terminal-ticker-theme';
+const THEME_STORAGE_KEY = 'mytradebot-theme';
 const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
 type SettingsSection = 'providers' | 'watchlist';
 type SearchSource = 'bitget' | 'alpaca';
@@ -1491,7 +1498,7 @@ function WorkspaceView({
     Boolean(selectedInstrument && ['alpaca', 'bitget'].includes(selectedInstrument.source)) &&
     Boolean(historyKey && !exhaustedHistoryKeys.has(historyKey));
   const nextThemeName = nextTheme(theme);
-  const [activeTab, setActiveTab] = useState<'chart' | 'agent'>('chart');
+  const [activeTab, setActiveTab] = useState<'chart' | 'agent' | 'positions'>('chart');
 
   return (
     <main className="app-shell">
@@ -1512,7 +1519,7 @@ function WorkspaceView({
             </div>
             <div>
               <div className="eyebrow">Local Price Action Agent</div>
-              <h1>Terminal Ticker</h1>
+              <h1>mytradebot</h1>
             </div>
           </div>
         </div>
@@ -1644,6 +1651,15 @@ function WorkspaceView({
             >
               Agent
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'positions'}
+              className={`workspace-tab ${activeTab === 'positions' ? 'active' : ''}`}
+              onClick={() => setActiveTab('positions')}
+            >
+              Positions
+            </button>
           </div>
 
           {activeTab === 'chart' && (
@@ -1712,6 +1728,10 @@ function WorkspaceView({
                 onReset={resetAgentConversation}
               />
             </div>
+          )}
+
+          {activeTab === 'positions' && (
+            <PositionsPanel state={state} />
           )}
         </section>
       </section>
@@ -2328,5 +2348,234 @@ export default function App() {
       openSettings={() => navigateToRoute({ view: 'settings', section: 'providers' })}
       openWatchlistSettings={() => navigateToRoute({ view: 'settings', section: 'watchlist' })}
     />
+  );
+}
+
+// Read-only positions dashboard: shows open + historical paper trades plus reviewed lessons.
+function PositionsPanel({ state }: { state: MarketState | null }) {
+  const [allTrades, setAllTrades] = useState<Trade[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<TradeDetailResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busyReview, setBusyReview] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [trades, l] = await Promise.all([
+        listTrades({ limit: 100 }),
+        listLessons(undefined, 50),
+      ]);
+      setAllTrades(trades);
+      setLessons(l);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : 'load failed');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  // Prefer the WebSocket-pushed snapshot for open trades — it stays live without polling.
+  const openTrades = state?.openTrades ?? allTrades.filter(
+    (t) => t.status === 'planned' || t.status === 'open',
+  );
+  const closedTrades = allTrades.filter(
+    (t) => t.status === 'closed' || t.status === 'cancelled',
+  );
+
+  useEffect(() => {
+    if (selectedTradeId == null) {
+      setDetail(null);
+      return;
+    }
+    let cancelled = false;
+    getTradeDetail(selectedTradeId)
+      .then((d) => {
+        if (!cancelled) setDetail(d);
+      })
+      .catch((exc) => {
+        if (!cancelled) setError(exc instanceof Error ? exc.message : 'detail load failed');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTradeId]);
+
+  const runReview = async () => {
+    setBusyReview(true);
+    setError(null);
+    try {
+      await triggerTradeReview(5);
+      await refresh();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : 'review failed');
+    } finally {
+      setBusyReview(false);
+    }
+  };
+
+  const totalRealized = closedTrades.reduce((sum, t) => sum + t.realizedPnl, 0);
+
+  return (
+    <div className="agent-main-panel" style={{ gap: 16, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: 16 }}>
+          <div><strong>Open</strong> {openTrades.length}</div>
+          <div><strong>Closed</strong> {closedTrades.length}</div>
+          <div><strong>Realized PnL</strong> {totalRealized.toFixed(2)}</div>
+          <div><strong>Lessons</strong> {lessons.length}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" onClick={() => void refresh()} disabled={loading}>
+            {loading ? '刷新中…' : '刷新'}
+          </button>
+          <button type="button" onClick={runReview} disabled={busyReview}>
+            {busyReview ? '复盘中…' : '触发复盘'}
+          </button>
+        </div>
+      </div>
+
+      {error && <div style={{ color: '#e06c75' }}>{error}</div>}
+
+      <section>
+        <h3 style={{ margin: '4px 0' }}>Open / Planned</h3>
+        <TradeTable trades={openTrades} onSelect={(id) => setSelectedTradeId(id)} selectedId={selectedTradeId} />
+      </section>
+
+      <section>
+        <h3 style={{ margin: '4px 0' }}>History</h3>
+        <TradeTable trades={closedTrades} onSelect={(id) => setSelectedTradeId(id)} selectedId={selectedTradeId} />
+      </section>
+
+      {detail && (
+        <section style={{ border: '1px solid rgba(127,127,127,0.3)', borderRadius: 6, padding: 12 }}>
+          <h3 style={{ margin: '4px 0' }}>Trade #{detail.trade.id} · {detail.trade.instrumentKey}</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 8 }}>
+            <div><span>Direction</span><br/><strong>{detail.trade.direction}</strong></div>
+            <div><span>Status</span><br/><strong>{detail.trade.status}</strong></div>
+            <div><span>Size</span><br/><strong>{detail.trade.size}</strong></div>
+            <div><span>Realized PnL</span><br/><strong>{detail.trade.realizedPnl.toFixed(2)}</strong></div>
+          </div>
+          {detail.trade.reasoningText && (
+            <div style={{ marginTop: 8 }}>
+              <strong>Reasoning</strong>
+              <div style={{ whiteSpace: 'pre-wrap' }}>{detail.trade.reasoningText}</div>
+            </div>
+          )}
+          <div style={{ marginTop: 8 }}>
+            <strong>Fills</strong>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {detail.trade.fills.map((f) => (
+                <li key={f.id}>
+                  [{f.kind}] price={f.price} qty={f.quantity} · {f.triggerReason || '—'}
+                </li>
+              ))}
+              {detail.trade.fills.length === 0 && <li style={{ opacity: 0.6 }}>no fills yet</li>}
+            </ul>
+          </div>
+          {detail.lessons.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <strong>Lessons for this instrument</strong>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {detail.lessons.map((l) => (
+                  <li key={l.id}>
+                    [{l.category || 'general'}] {l.text}
+                    {l.tags.length > 0 && (
+                      <span style={{ opacity: 0.6 }}> · {l.tags.join(', ')}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {detail.snapshot && (
+            <details style={{ marginTop: 8 }}>
+              <summary>Frozen snapshot at open</summary>
+              <pre style={{ maxHeight: 260, overflow: 'auto', fontSize: 11 }}>
+                {JSON.stringify(detail.snapshot.payload, null, 2)}
+              </pre>
+            </details>
+          )}
+        </section>
+      )}
+
+      <section>
+        <h3 style={{ margin: '4px 0' }}>Recent Lessons</h3>
+        {lessons.length === 0 && <div style={{ opacity: 0.6 }}>尚未生成 lesson。完成一笔交易并触发复盘后会出现。</div>}
+        <ul style={{ margin: 0, paddingLeft: 18 }}>
+          {lessons.slice(0, 20).map((l) => (
+            <li key={l.id}>
+              <span style={{ opacity: 0.6 }}>{l.instrumentKey}</span> · [{l.category || 'general'}] {l.text}
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function TradeTable({
+  trades,
+  onSelect,
+  selectedId,
+}: {
+  trades: Trade[];
+  onSelect: (id: number) => void;
+  selectedId: number | null;
+}) {
+  if (trades.length === 0) {
+    return <div style={{ opacity: 0.6, padding: 6 }}>无记录</div>;
+  }
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <thead>
+        <tr>
+          <th style={{ textAlign: 'left' }}>ID</th>
+          <th style={{ textAlign: 'left' }}>Instrument</th>
+          <th style={{ textAlign: 'left' }}>Dir</th>
+          <th style={{ textAlign: 'right' }}>Size</th>
+          <th style={{ textAlign: 'right' }}>Entry</th>
+          <th style={{ textAlign: 'right' }}>Stop</th>
+          <th style={{ textAlign: 'right' }}>Targets</th>
+          <th style={{ textAlign: 'left' }}>Status</th>
+          <th style={{ textAlign: 'right' }}>PnL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {trades.map((t) => {
+          const entryFill = t.fills.find((f) => f.kind === 'entry');
+          const entryLabel = entryFill ? entryFill.price.toFixed(2) : (t.intentPrice?.toFixed(2) ?? '—');
+          return (
+            <tr
+              key={t.id}
+              onClick={() => onSelect(t.id)}
+              style={{
+                cursor: 'pointer',
+                background: selectedId === t.id ? 'rgba(127,127,127,0.15)' : 'transparent',
+              }}
+            >
+              <td>#{t.id}</td>
+              <td>{t.instrumentKey}</td>
+              <td>{t.direction}</td>
+              <td style={{ textAlign: 'right' }}>{t.size}</td>
+              <td style={{ textAlign: 'right' }}>{entryLabel}</td>
+              <td style={{ textAlign: 'right' }}>{t.stopPrice?.toFixed(2) ?? '—'}</td>
+              <td style={{ textAlign: 'right' }}>
+                {t.targetPrices.length === 0 ? '—' : t.targetPrices.map((p) => p.toFixed(2)).join(', ')}
+              </td>
+              <td>{t.status}</td>
+              <td style={{ textAlign: 'right' }}>{t.realizedPnl.toFixed(2)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

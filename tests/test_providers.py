@@ -2,10 +2,10 @@
 import unittest
 from unittest.mock import patch
 
-from terminal_ticker.market_data.alpaca import AlpacaInstrument
-from terminal_ticker.market_data.bitget import BitgetInstrument
-from terminal_ticker.config import InstrumentConfig
-from terminal_ticker.market_data.router import resolve_instruments
+from mytradebot.market_data.alpaca import AlpacaInstrument
+from mytradebot.market_data.bitget import BitgetInstrument
+from mytradebot.config import InstrumentConfig
+from mytradebot.market_data.router import resolve_instruments
 
 
 class ProviderTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class ProviderTests(unittest.TestCase):
             ),
         )
 
-        with patch("terminal_ticker.market_data.router.bitget.resolve_instruments") as bitget_resolve:
+        with patch("mytradebot.market_data.router.bitget.resolve_instruments") as bitget_resolve:
             instruments = resolve_instruments(configs)
 
         bitget_resolve.assert_not_called()
@@ -45,11 +45,11 @@ class ProviderTests(unittest.TestCase):
         )
 
         with patch(
-            "terminal_ticker.market_data.router.alpaca.resolve_instruments",
+            "mytradebot.market_data.router.alpaca.resolve_instruments",
             return_value=(alpaca_instrument,),
         ):
             with patch(
-                "terminal_ticker.market_data.router.bitget.resolve_instruments",
+                "mytradebot.market_data.router.bitget.resolve_instruments",
                 return_value=(bitget_instrument,),
             ):
                 instruments = resolve_instruments(configs)
