@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from ..config import AgentConfig
 from ..config.agent_models import (
     CODEX_PROVIDER,
+    OPENAI_PROVIDER,
     resolve_agent_model,
 )
 from ..domain.quotes import QuoteState
@@ -224,6 +225,10 @@ def create_llm_provider(config: AgentConfig) -> LLMProvider:
         from .providers.codex import CodexProvider
 
         return CodexProvider(config, profile)
+    if profile.provider == OPENAI_PROVIDER:
+        from .providers.openai_chat import OpenAIChatProvider
+
+        return OpenAIChatProvider(config, profile)
     raise LLMProviderUnavailable(f"Unsupported agent provider: {profile.provider}")
 
 
@@ -234,6 +239,10 @@ async def list_available_agent_models(config: AgentConfig) -> list[dict[str, Any
         from .providers.codex import CodexProvider
 
         return await CodexProvider(config, profile).list_models()
+    if profile.provider == OPENAI_PROVIDER:
+        from .providers.openai_chat import OpenAIChatProvider
+
+        return await OpenAIChatProvider(config, profile).list_models()
     raise LLMProviderUnavailable(f"Unsupported agent provider: {profile.provider}")
 
 

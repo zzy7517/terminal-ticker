@@ -56,6 +56,7 @@ import type {
   CandlePoint,
   Instrument,
   InstrumentSearchResult,
+  LoopStep,
   MarketState,
   Quote,
 } from './types';
@@ -1343,6 +1344,50 @@ function AgentAnalysisBlock({ analysis }: { analysis: AgentAnalysis }) {
   );
 }
 
+// Renders the tool call steps from an agent loop iteration.
+function AgentToolSteps({ steps }: { steps: LoopStep[] }) {
+  const toolSteps = steps.filter((s) => s.stepType === 'tool_call' || s.stepType === 'tool_result');
+  if (toolSteps.length === 0) return null;
+
+  const pairs: Array<{ call: LoopStep; result?: LoopStep }> = [];
+  for (const step of toolSteps) {
+    if (step.stepType === 'tool_call') {
+      pairs.push({ call: step });
+    } else if (step.stepType === 'tool_result' && pairs.length > 0) {
+      const last = pairs[pairs.length - 1];
+      if (!last.result) last.result = step;
+    }
+  }
+
+  return (
+    <div className="agent-tool-steps">
+      {pairs.map((pair, index) => (
+        <details key={index} className="agent-tool-step">
+          <summary>
+            <Zap size={12} />
+            <span className="tool-name">{pair.call.toolCall?.name ?? 'tool'}</span>
+            {pair.result?.toolResult?.error && <span className="tool-error-badge">error</span>}
+          </summary>
+          <div className="tool-step-detail">
+            {pair.call.toolCall?.arguments && Object.keys(pair.call.toolCall.arguments).length > 0 && (
+              <div className="tool-args">
+                <small>Arguments</small>
+                <pre>{JSON.stringify(pair.call.toolCall.arguments, null, 2)}</pre>
+              </div>
+            )}
+            {pair.result?.toolResult && (
+              <div className={`tool-output ${pair.result.toolResult.error ? 'error' : ''}`}>
+                <small>Output</small>
+                <pre>{pair.result.toolResult.output}</pre>
+              </div>
+            )}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 // Renders one persisted chat turn in the chart-agent transcript.
 function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
   const analysis = message.analysis;
@@ -1359,7 +1404,13 @@ function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
           <div className="session-analysis-head">
             <span className={`agent-bias ${tone}`}>{analysis.bias}</span>
             <small>{analysis.model}</small>
+            {analysis.loopResult && (
+              <small className="loop-info">
+                {analysis.loopResult.iterations} iter · {analysis.loopResult.steps.filter((s) => s.stepType === 'tool_call').length} tools
+              </small>
+            )}
           </div>
+          {analysis.loopResult && <AgentToolSteps steps={analysis.loopResult.steps} />}
           <AgentAnalysisBlock analysis={analysis} />
         </>
       ) : (
@@ -1779,6 +1830,8 @@ function ProviderSettingsPanel({
       timeoutSeconds: config.timeoutSeconds,
       maxCandles: config.maxCandles,
       reasoningEffort: config.reasoningEffort,
+      maxIterations: config.maxIterations,
+      useTools: config.useTools,
     });
   }, [configSignature]);
 
@@ -1980,6 +2033,27 @@ function ProviderSettingsPanel({
                       setDraft({ ...draft, maxCandles: Math.max(10, Number(event.target.value) || 10) })
                     }
                   />
+                </label>
+                <label>
+                  <span>Max Iterations</span>
+                  <input
+                    min={1}
+                    step={1}
+                    type="number"
+                    value={draft.maxIterations}
+                    onChange={(event) =>
+                      setDraft({ ...draft, maxIterations: Math.max(1, Number(event.target.value) || 1) })
+                    }
+                  />
+                </label>
+                <label className="switch-row provider-form-switch">
+                  <span>Use Tools</span>
+                  <input
+                    checked={draft.useTools}
+                    onChange={(event) => setDraft({ ...draft, useTools: event.target.checked })}
+                    type="checkbox"
+                  />
+                  <span className="switch-slider" />
                 </label>
               </div>
 

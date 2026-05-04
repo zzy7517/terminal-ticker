@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
@@ -16,13 +17,17 @@ from starlette.types import Scope
 
 from ..agent import (
     AgentAnalysisResult,
+    AgentLoop,
     AgentSessionStore,
     LLMProviderError,
     LLMProviderUnavailable,
     build_agent_context,
+    build_market_tools,
     create_llm_provider,
     list_available_agent_models,
 )
+from ..agent.provider import _result_from_text
+from ..agent.tools import ToolRegistry
 from ..config import (
     AgentConfig,
     AnalysisConfig,
@@ -214,6 +219,8 @@ def serialize_market_state(
                 "timeoutSeconds": config.agent.timeout_seconds,
                 "maxCandles": config.agent.max_candles,
                 "reasoningEffort": config.agent.reasoning_effort,
+                "maxIterations": config.agent.max_iterations,
+                "useTools": config.agent.use_tools,
             },
             "display": {
                 "refreshIntervalMs": config.display.refresh_interval_ms,
@@ -237,6 +244,25 @@ def serialize_market_state(
         },
         "agentAnalyses": agent_analyses or {},
     }
+
+
+class MarketContextProvider:
+    """为 agent tools 提供行情数据访问的适配器。"""
+
+    def __init__(self, runtime: "MarketRuntime") -> None:
+        self._runtime = runtime
+
+    def get_quote(self, instrument_key: str) -> QuoteState | None:
+        return self._runtime.controller.quotes.get(instrument_key)
+
+    def get_strategy_signal(self, instrument_key: str) -> dict[str, Any] | None:
+        quote = self.get_quote(instrument_key)
+        if quote is None or len(quote.candles) < 24:
+            return None
+        return _strategy_signal_payload(quote, self._runtime.config.analysis)
+
+    def list_instruments(self) -> tuple[MarketInstrument, ...]:
+        return self._runtime.instruments
 
 
 class MarketRuntime:
@@ -549,7 +575,7 @@ class MarketRuntime:
         instrument_key: str,
         prompt: str | None = None,
     ) -> dict[str, Any]:
-        """说明：对单个标的执行一次会话式 LLM 分析。"""
+        """说明：对单个标的执行一次会话式 LLM 分析，支持 agent loop with tools。"""
         instrument = self._instrument_by_key(instrument_key)
         quote = self.controller.quotes.get(instrument.key)
         if quote is None:
@@ -607,6 +633,19 @@ class MarketRuntime:
             session.id,
             limit=8,
         )
+
+        provider = create_llm_provider(self.config.agent)
+
+        if self.config.agent.use_tools and hasattr(provider, "chat"):
+            return await self._run_agent_loop(
+                instrument=instrument,
+                quote=quote,
+                session=session,
+                user_prompt=user_prompt,
+                history=history,
+                provider=provider,
+            )
+
         context = build_agent_context(
             instrument=instrument,
             quote=quote,
@@ -614,11 +653,77 @@ class MarketRuntime:
             max_candles=self.config.agent.max_candles,
             session_history=history,
         )
-        provider = create_llm_provider(self.config.agent)
         result = await provider.analyze(context)
         payload = result.to_payload()
         self.agent_analyses[instrument.key] = payload
         await self._record_agent_assistant_message(session.id, payload, context=context)
+        await self.broadcast()
+        return {
+            "result": payload,
+            "session": await self._agent_session_payload(session.id),
+            "state": self.snapshot(),
+        }
+
+    async def _run_agent_loop(
+        self,
+        *,
+        instrument: MarketInstrument,
+        quote: QuoteState,
+        session: Any,
+        user_prompt: str,
+        history: tuple[dict[str, Any], ...],
+        provider: Any,
+    ) -> dict[str, Any]:
+        """通过 agent loop 执行带工具调用的 LLM 分析。"""
+        context_provider = MarketContextProvider(self)
+        tools = build_market_tools(context_provider)
+        current_context = build_agent_context(
+            instrument=instrument,
+            quote=quote,
+            interval=instrument.analysis_interval or self.config.analysis.interval,
+            max_candles=self.config.agent.max_candles,
+            session_history=tuple(),
+        )
+
+        enriched_prompt = (
+            f"当前分析标的: {instrument.label} ({instrument.key})\n\n"
+            "当前行情上下文(JSON，工具返回值优先于这里的快照):\n"
+            f"{json.dumps(current_context, ensure_ascii=False, separators=(',', ':'))}\n\n"
+            f"{user_prompt}"
+        )
+
+        conversation_history = [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in history
+            if msg.get("role") in ("user", "assistant")
+        ]
+
+        loop = AgentLoop(
+            provider=provider,
+            tools=tools,
+            max_iterations=self.config.agent.max_iterations,
+        )
+
+        loop_result = await loop.run(
+            user_message=enriched_prompt,
+            conversation_history=conversation_history if conversation_history else None,
+        )
+
+        if loop_result.finished:
+            result = _result_from_text(
+                loop_result.content, provider=provider.name, model=provider.model,
+            )
+        else:
+            result = AgentAnalysisResult.unavailable(
+                provider=provider.name,
+                model=provider.model,
+                error=loop_result.error or "Agent loop did not finish.",
+                raw_text=loop_result.content or None,
+            )
+        payload = result.to_payload()
+        payload["loopResult"] = loop_result.to_payload()
+        self.agent_analyses[instrument.key] = payload
+        await self._record_agent_assistant_message(session.id, payload)
         await self.broadcast()
         return {
             "result": payload,
@@ -911,6 +1016,8 @@ def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) ->
         "timeout_seconds": current.timeout_seconds,
         "max_candles": current.max_candles,
         "reasoning_effort": current.reasoning_effort,
+        "max_iterations": current.max_iterations,
+        "use_tools": current.use_tools,
     }
     field_map = {
         "enabled": "enabled",
@@ -924,10 +1031,18 @@ def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) ->
         "max_candles": "max_candles",
         "reasoningEffort": "reasoning_effort",
         "reasoning_effort": "reasoning_effort",
+        "maxIterations": "max_iterations",
+        "max_iterations": "max_iterations",
+        "useTools": "use_tools",
+        "use_tools": "use_tools",
     }
     for incoming, normalized in field_map.items():
         if incoming in payload:
             raw[normalized] = payload[incoming]
+    incoming_provider = payload.get("provider")
+    if isinstance(incoming_provider, str) and incoming_provider.strip().lower() != current.provider:
+        if "apiMode" not in payload and "api_mode" not in payload:
+            raw["api_mode"] = None
     return parse_agent_config(raw)
 
 

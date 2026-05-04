@@ -93,6 +93,8 @@ class AgentConfig:
     timeout_seconds: float = 45.0
     max_candles: int = 40
     reasoning_effort: str = "medium"
+    max_iterations: int = 10
+    use_tools: bool = True
 
 
 @dataclass(frozen=True)
@@ -264,6 +266,10 @@ def parse_agent_config(raw_agent: dict[str, Any] | None) -> AgentConfig:
         ),
         max_candles=_coerce_min_int(raw_agent.get("max_candles"), "agent.max_candles", 40, 10),
         reasoning_effort=_normalize_reasoning_effort(raw_agent.get("reasoning_effort")),
+        max_iterations=_coerce_min_int(
+            raw_agent.get("max_iterations"), "agent.max_iterations", 10, 1,
+        ),
+        use_tools=_normalize_bool(raw_agent.get("use_tools"), "agent.use_tools", True),
     )
 
 

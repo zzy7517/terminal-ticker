@@ -1,4 +1,5 @@
 """Test LLM agent framework helpers."""
+import asyncio
 import base64
 import json
 import tempfile
@@ -13,6 +14,7 @@ from terminal_ticker.agent import (
     _read_codex_cli_credentials,
     _result_from_text,
 )
+from terminal_ticker.agent.providers.codex import _collect_response_stream_full
 
 
 def _fake_jwt(claims: dict) -> str:
@@ -84,6 +86,63 @@ class AgentTests(unittest.TestCase):
 
         self.assertEqual(headers["originator"], "codex_cli_rs")
         self.assertEqual(headers["ChatGPT-Account-ID"], "acct-direct")
+
+    def test_codex_stream_parser_uses_item_id_for_function_arguments(self) -> None:
+        """Verify Responses function-call argument events merge with their output item."""
+
+        class FakeResponse:
+            async def aiter_lines(self):
+                events = [
+                    {
+                        "type": "response.output_item.added",
+                        "output_index": 0,
+                        "item": {
+                            "type": "function_call",
+                            "id": "fc_1",
+                            "call_id": "call_1",
+                            "name": "get_quote",
+                            "arguments": "",
+                        },
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "item_id": "fc_1",
+                        "output_index": 0,
+                        "delta": "{\"instrument_key\":",
+                    },
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "item_id": "fc_1",
+                        "output_index": 0,
+                        "delta": "\"alpaca:AAPL\"}",
+                    },
+                    {
+                        "type": "response.function_call_arguments.done",
+                        "item_id": "fc_1",
+                        "output_index": 0,
+                        "arguments": "{\"instrument_key\":\"alpaca:AAPL\"}",
+                    },
+                    {
+                        "type": "response.output_item.done",
+                        "output_index": 0,
+                        "item": {
+                            "type": "function_call",
+                            "id": "fc_1",
+                            "call_id": "call_1",
+                            "name": "get_quote",
+                            "arguments": "{\"instrument_key\":\"alpaca:AAPL\"}",
+                        },
+                    },
+                ]
+                for event in events:
+                    yield "data: " + json.dumps(event)
+
+        response = asyncio.run(_collect_response_stream_full(FakeResponse()))
+
+        self.assertEqual(len(response.tool_calls), 1)
+        self.assertEqual(response.tool_calls[0].id, "call_1")
+        self.assertEqual(response.tool_calls[0].name, "get_quote")
+        self.assertEqual(response.tool_calls[0].arguments, {"instrument_key": "alpaca:AAPL"})
 
     def test_session_store_persists_active_conversation(self) -> None:
         """Verify local agent sessions survive store re-instantiation."""

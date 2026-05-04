@@ -12,6 +12,8 @@ from .provider import (
     list_available_agent_models,
     _result_from_text,
 )
+from .loop import AgentLoop, ChatResponse, LoopResult, LoopStep
+from .tools import ToolCall, ToolDefinition, ToolRegistry, ToolResult, build_market_tools
 from .providers.codex import CodexProvider, _codex_request_headers, _read_codex_cli_credentials
 from .session_store import (
     AgentMessage,
@@ -26,11 +28,20 @@ for _name in dir(_provider):
 
 __all__ = [
     "AgentAnalysisResult",
+    "AgentLoop",
+    "ChatResponse",
     "CodexProvider",
     "LLMProvider",
     "LLMProviderError",
     "LLMProviderUnavailable",
+    "LoopResult",
+    "LoopStep",
+    "ToolCall",
+    "ToolDefinition",
+    "ToolRegistry",
+    "ToolResult",
     "build_agent_context",
+    "build_market_tools",
     "create_llm_provider",
     "list_available_agent_models",
     "AgentMessage",

@@ -1,4 +1,5 @@
 """Test web state serialization and local API routes."""
+import json
 import tempfile
 import textwrap
 import unittest
@@ -7,7 +8,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from terminal_ticker.agent import AgentAnalysisResult, AgentSessionStore
+from terminal_ticker.agent import AgentAnalysisResult, AgentSessionStore, ChatResponse
 from terminal_ticker.config import AppConfig, DisplayConfig, load_config
 from terminal_ticker.runtime.controller import DrainResult
 from terminal_ticker.market_data.alpaca import AlpacaAsset, AlpacaInstrument
@@ -439,6 +440,102 @@ class WebTests(unittest.TestCase):
         )
         self.assertEqual(persisted_response.status_code, 200)
         self.assertEqual(persisted_payload["messages"][1]["analysis"]["summary"], "AAPL is trending.")
+
+    def test_agent_loop_prompt_includes_market_context_snapshot(self) -> None:
+        """Verify tool loop still gets authoritative market context before any tool calls."""
+        class FakeLoopProvider:
+            name = "codex"
+            model = "fake-loop"
+
+            async def chat(self, messages, tools=None):
+                self.messages = messages
+                self.tools = tools
+                return ChatResponse(
+                    content=json.dumps(
+                        {
+                            "summary": "AAPL context was available.",
+                            "bias": "neutral",
+                            "confidence": 55,
+                            "key_levels": [],
+                            "watch_plan": ["Wait for confirmation."],
+                            "invalidation": "No context.",
+                            "risk_notes": [],
+                        }
+                    )
+                )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            instrument = AlpacaInstrument("AAPL", "AAPL")
+            store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
+            app = create_app(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                agent_session_store=store,
+                auto_start=False,
+            )
+            quote = app.state.runtime.controller.quotes[instrument.key]
+            quote.apply_payload({"price": 201.25})
+            quote.apply_candles(
+                candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
+            )
+            provider = FakeLoopProvider()
+
+            with patch("terminal_ticker.api.app.create_llm_provider", return_value=provider):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/agent/sessions/alpaca:AAPL/messages",
+                        json={"message": "Analyze this."},
+                    )
+
+        payload = response.json()
+        prompt = provider.messages[-1]["content"]
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["result"]["available"])
+        self.assertIn("当前行情上下文", prompt)
+        self.assertIn('"instrument"', prompt)
+        self.assertIn('"candles"', prompt)
+        self.assertIn("alpaca:AAPL", prompt)
+        self.assertTrue(provider.tools)
+
+    def test_agent_loop_error_is_reported_without_json_parse_masking(self) -> None:
+        """Verify provider errors are surfaced instead of being replaced by JSON parse errors."""
+        class FailingLoopProvider:
+            name = "codex"
+            model = "fake-loop"
+
+            async def chat(self, messages, tools=None):
+                raise RuntimeError("provider exploded")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            instrument = AlpacaInstrument("AAPL", "AAPL")
+            store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
+            app = create_app(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                agent_session_store=store,
+                auto_start=False,
+            )
+            quote = app.state.runtime.controller.quotes[instrument.key]
+            quote.apply_payload({"price": 201.25})
+            quote.apply_candles(
+                candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
+            )
+
+            with patch("terminal_ticker.api.app.create_llm_provider", return_value=FailingLoopProvider()):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/agent/sessions/alpaca:AAPL/messages",
+                        json={"message": "Analyze this."},
+                    )
+
+        result = response.json()["result"]
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(result["available"])
+        self.assertIn("provider exploded", result["error"])
+        self.assertNotIn("JSON", result["error"])
+        self.assertEqual(result["loopResult"]["error"], "provider exploded")
 
     def test_agent_models_endpoint_returns_provider_models(self) -> None:
         """Verify model discovery endpoint forwards provider model metadata."""
