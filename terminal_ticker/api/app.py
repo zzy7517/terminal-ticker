@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
@@ -676,9 +677,18 @@ class MarketRuntime:
         """通过 agent loop 执行带工具调用的 LLM 分析。"""
         context_provider = MarketContextProvider(self)
         tools = build_market_tools(context_provider)
+        current_context = build_agent_context(
+            instrument=instrument,
+            quote=quote,
+            interval=instrument.analysis_interval or self.config.analysis.interval,
+            max_candles=self.config.agent.max_candles,
+            session_history=tuple(),
+        )
 
         enriched_prompt = (
             f"当前分析标的: {instrument.label} ({instrument.key})\n\n"
+            "当前行情上下文(JSON，工具返回值优先于这里的快照):\n"
+            f"{json.dumps(current_context, ensure_ascii=False, separators=(',', ':'))}\n\n"
             f"{user_prompt}"
         )
 
@@ -699,9 +709,17 @@ class MarketRuntime:
             conversation_history=conversation_history if conversation_history else None,
         )
 
-        result = _result_from_text(
-            loop_result.content, provider=provider.name, model=provider.model,
-        )
+        if loop_result.finished:
+            result = _result_from_text(
+                loop_result.content, provider=provider.name, model=provider.model,
+            )
+        else:
+            result = AgentAnalysisResult.unavailable(
+                provider=provider.name,
+                model=provider.model,
+                error=loop_result.error or "Agent loop did not finish.",
+                raw_text=loop_result.content or None,
+            )
         payload = result.to_payload()
         payload["loopResult"] = loop_result.to_payload()
         self.agent_analyses[instrument.key] = payload

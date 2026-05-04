@@ -1830,6 +1830,8 @@ function ProviderSettingsPanel({
       timeoutSeconds: config.timeoutSeconds,
       maxCandles: config.maxCandles,
       reasoningEffort: config.reasoningEffort,
+      maxIterations: config.maxIterations,
+      useTools: config.useTools,
     });
   }, [configSignature]);
 
@@ -2031,6 +2033,27 @@ function ProviderSettingsPanel({
                       setDraft({ ...draft, maxCandles: Math.max(10, Number(event.target.value) || 10) })
                     }
                   />
+                </label>
+                <label>
+                  <span>Max Iterations</span>
+                  <input
+                    min={1}
+                    step={1}
+                    type="number"
+                    value={draft.maxIterations}
+                    onChange={(event) =>
+                      setDraft({ ...draft, maxIterations: Math.max(1, Number(event.target.value) || 1) })
+                    }
+                  />
+                </label>
+                <label className="switch-row provider-form-switch">
+                  <span>Use Tools</span>
+                  <input
+                    checked={draft.useTools}
+                    onChange={(event) => setDraft({ ...draft, useTools: event.target.checked })}
+                    type="checkbox"
+                  />
+                  <span className="switch-slider" />
                 </label>
               </div>
 

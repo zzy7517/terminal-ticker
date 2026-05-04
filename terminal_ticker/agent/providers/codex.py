@@ -456,44 +456,66 @@ async def _collect_response_stream_full(response: httpx.Response) -> ChatRespons
             if isinstance(text, str):
                 done_text = text
         elif event_type == "response.function_call_arguments.delta":
-            call_id = event.get("call_id") or event.get("id") or ""
-            if call_id not in pending_fc:
-                pending_fc[call_id] = {"name": event.get("name", ""), "arguments": ""}
-            pending_fc[call_id]["arguments"] += event.get("delta", "")
+            call_key = _function_call_event_key(event)
+            if not call_key:
+                continue
+            if call_key not in pending_fc:
+                pending_fc[call_key] = {
+                    "call_id": event.get("call_id") or "",
+                    "name": event.get("name", ""),
+                    "arguments": "",
+                }
+            pending_fc[call_key]["arguments"] += event.get("delta", "")
         elif event_type == "response.function_call_arguments.done":
-            call_id = event.get("call_id") or event.get("id") or ""
-            if call_id in pending_fc:
-                pending_fc[call_id]["arguments"] = event.get("arguments", pending_fc[call_id]["arguments"])
+            call_key = _function_call_event_key(event)
+            if not call_key:
+                continue
+            if call_key in pending_fc:
+                if event.get("call_id"):
+                    pending_fc[call_key]["call_id"] = event["call_id"]
+                if event.get("name"):
+                    pending_fc[call_key]["name"] = event["name"]
+                pending_fc[call_key]["arguments"] = event.get("arguments", pending_fc[call_key]["arguments"])
             else:
-                pending_fc[call_id] = {
+                pending_fc[call_key] = {
+                    "call_id": event.get("call_id") or "",
                     "name": event.get("name", ""),
                     "arguments": event.get("arguments", "{}"),
                 }
         elif event_type in {"response.output_item.added", "response.output_item.done"}:
             item = event.get("item", {})
             if isinstance(item, dict) and item.get("type") == "function_call":
-                call_id = item.get("call_id") or item.get("id") or ""
-                if call_id not in pending_fc:
-                    pending_fc[call_id] = {
+                call_key = _function_call_item_key(item, event)
+                if not call_key:
+                    continue
+                if call_key not in pending_fc:
+                    pending_fc[call_key] = {
+                        "call_id": item.get("call_id") or item.get("id") or "",
                         "name": item.get("name", ""),
                         "arguments": item.get("arguments", "{}"),
                     }
                 else:
+                    if item.get("call_id"):
+                        pending_fc[call_key]["call_id"] = item["call_id"]
                     if item.get("name"):
-                        pending_fc[call_id]["name"] = item["name"]
+                        pending_fc[call_key]["name"] = item["name"]
                     if item.get("arguments"):
-                        pending_fc[call_id]["arguments"] = item["arguments"]
+                        pending_fc[call_key]["arguments"] = item["arguments"]
         elif event_type in {"response.failed", "response.incomplete", "error"}:
             raise LLMProviderError(_event_error_message(event))
 
-    for call_id, fc_data in pending_fc.items():
+    for call_key, fc_data in pending_fc.items():
+        name = str(fc_data.get("name") or "").strip()
+        if not name:
+            continue
+        call_id = str(fc_data.get("call_id") or call_key).strip()
         try:
             args = json.loads(fc_data["arguments"]) if fc_data["arguments"] else {}
         except json.JSONDecodeError:
             args = {}
         tool_calls.append(LoopToolCall(
             id=call_id,
-            name=fc_data["name"],
+            name=name,
             arguments=args,
         ))
 
@@ -504,6 +526,32 @@ async def _collect_response_stream_full(response: httpx.Response) -> ChatRespons
         tool_calls=tool_calls,
         finish_reason="tool_calls" if tool_calls else "stop",
     )
+
+
+def _function_call_event_key(event: dict[str, Any]) -> str:
+    """Return the stable key used by Responses function-call argument events."""
+    for key in ("item_id", "call_id", "id"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return value
+    output_index = event.get("output_index")
+    if isinstance(output_index, int):
+        return f"output:{output_index}"
+    return ""
+
+
+def _function_call_item_key(item: dict[str, Any], event: dict[str, Any]) -> str:
+    """Return the key shared by function_call output item and argument events."""
+    item_id = item.get("id")
+    if isinstance(item_id, str) and item_id:
+        return item_id
+    call_id = item.get("call_id")
+    if isinstance(call_id, str) and call_id:
+        return call_id
+    output_index = event.get("output_index")
+    if isinstance(output_index, int):
+        return f"output:{output_index}"
+    return ""
 
 
 def _extract_response_text(data: dict[str, Any]) -> str:
@@ -528,4 +576,3 @@ def _extract_response_text(data: dict[str, Any]) -> str:
                     if isinstance(text, str):
                         text_parts.append(text)
     return "".join(text_parts).strip()
-

@@ -1480,6 +1480,15 @@ h3 {
   width: 100%;
 }
 
+.provider-form-grid .provider-form-switch {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0 2px;
+}
+
 .models-panel {
   display: grid;
   gap: 14px;
