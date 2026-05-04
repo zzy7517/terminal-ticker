@@ -7,9 +7,7 @@ import {
   CircleDot,
   History,
   Loader2,
-  Minus,
   Moon,
-  MousePointer2,
   Plus,
   RefreshCw,
   Save,
@@ -18,7 +16,6 @@ import {
   Sparkles,
   Sun,
   Trash2,
-  TrendingUp,
   Wifi,
   WifiOff,
   Zap,
@@ -60,7 +57,6 @@ import type {
   MarketState,
   Quote,
 } from './types';
-import { svgPoint, useChartDrawings } from './chartDrawings';
 
 const GROUP_LABELS: Record<string, string> = {
   stocks: '美股',
@@ -560,7 +556,7 @@ function sparklinePoints(candles: CandlePoint[], width = 112, height = 34) {
     .join(' ');
 }
 
-// Owns the main K-line chart instance, incremental data updates, and drawing overlay.
+// Owns the main K-line chart instance and incremental data updates.
 function CandlestickPane({
   candles,
   chartKey,
@@ -579,28 +575,13 @@ function CandlestickPane({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const [chartApi, setChartApi] = useState<IChartApi | null>(null);
-  const [seriesApi, setSeriesApi] = useState<ISeriesApi<'Candlestick'> | null>(null);
   const dataRef = useRef<ChartCandle[]>([]);
   const signatureRef = useRef('');
   const chartKeyRef = useRef('');
-  const redrawFrameRef = useRef<number | null>(null);
   const canLoadOlderRef = useRef(canLoadOlder);
   const olderLoadingRef = useRef(olderLoading);
   const onLoadOlderRef = useRef(onLoadOlder);
   const initialThemeRef = useRef(CHART_THEMES[theme]);
-  const [, setRenderTick] = useState(0);
-  const {
-    activeTool,
-    clearDrawings,
-    hasDrawings,
-    setDrawingTool,
-    visibleTrendDrawings,
-  } = useChartDrawings({
-    chart: chartApi,
-    series: seriesApi,
-    chartKey,
-  });
 
   useEffect(() => {
     canLoadOlderRef.current = canLoadOlder;
@@ -625,15 +606,6 @@ function CandlestickPane({
       return;
     }
     onLoadOlderRef.current();
-  };
-
-  // Schedules a lightweight React render so SVG drawings follow chart movement.
-  const requestOverlayRender = () => {
-    if (redrawFrameRef.current !== null) return;
-    redrawFrameRef.current = window.requestAnimationFrame(() => {
-      redrawFrameRef.current = null;
-      setRenderTick((value) => value + 1);
-    });
   };
 
   useEffect(() => {
@@ -668,8 +640,6 @@ function CandlestickPane({
     const series = chart.addSeries(CandlestickSeries, visualTheme.series);
     chartRef.current = chart;
     seriesRef.current = series;
-    setChartApi(chart);
-    setSeriesApi(series);
 
     // Implements price-axis zooming while leaving normal chart scrolling intact.
     const handleWheel = (event: WheelEvent) => {
@@ -701,31 +671,17 @@ function CandlestickPane({
 
       chart.priceScale('right').setAutoScale(false);
       chart.priceScale('right').setVisibleRange({ from: nextFrom, to: nextTo });
-      requestOverlayRender();
     };
     container.addEventListener('wheel', handleWheel, { capture: true, passive: false });
-    container.addEventListener('pointermove', requestOverlayRender);
-    container.addEventListener('pointerup', requestOverlayRender);
-    container.addEventListener('dblclick', requestOverlayRender);
-    // Keeps overlays and historical pagination in sync with visible time changes.
+    // Triggers historical pagination in sync with visible time changes.
     const handleLogicalRange = (range: { from: number; to: number } | null) => {
-      requestOverlayRender();
       maybeLoadOlder(range);
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(handleLogicalRange);
-    chart.timeScale().subscribeSizeChange(requestOverlayRender);
 
     return () => {
       container.removeEventListener('wheel', handleWheel, { capture: true });
-      container.removeEventListener('pointermove', requestOverlayRender);
-      container.removeEventListener('pointerup', requestOverlayRender);
-      container.removeEventListener('dblclick', requestOverlayRender);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleLogicalRange);
-      chart.timeScale().unsubscribeSizeChange(requestOverlayRender);
-      if (redrawFrameRef.current !== null) {
-        window.cancelAnimationFrame(redrawFrameRef.current);
-        redrawFrameRef.current = null;
-      }
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -738,7 +694,6 @@ function CandlestickPane({
     const visualTheme = CHART_THEMES[theme];
     chart?.applyOptions(visualTheme.chart);
     series?.applyOptions(visualTheme.series);
-    requestOverlayRender();
   }, [theme]);
 
   useEffect(() => {
@@ -779,53 +734,15 @@ function CandlestickPane({
     dataRef.current = data;
     signatureRef.current = nextSignature;
     chartKeyRef.current = chartKey;
-    requestOverlayRender();
   }, [candles, chartKey]);
 
   return (
-    <div className={`chart-shell ${activeTool !== 'cursor' ? 'drawing-active' : ''}`}>
+    <div className="chart-shell">
       <div ref={containerRef} className="chart-canvas" />
-      <div className="drawing-toolbar" aria-label="Chart drawing tools">
-        <button
-          aria-label="Cursor"
-          className={`drawing-tool ${activeTool === 'cursor' ? 'active' : ''}`}
-          onClick={() => setDrawingTool('cursor')}
-          title="Cursor"
-          type="button"
-        >
-          <MousePointer2 size={15} />
-        </button>
-        <button
-          aria-label="Horizontal line"
-          className={`drawing-tool ${activeTool === 'horizontal' ? 'active' : ''}`}
-          onClick={() => setDrawingTool('horizontal')}
-          title="Horizontal line"
-          type="button"
-        >
-          <Minus size={16} />
-        </button>
-        <button
-          aria-label="Trend line"
-          className={`drawing-tool ${activeTool === 'trend' ? 'active' : ''}`}
-          onClick={() => setDrawingTool('trend')}
-          title="Trend line"
-          type="button"
-        >
-          <TrendingUp size={15} />
-        </button>
-        <button
-          aria-label="Clear drawings"
-          className="drawing-tool danger"
-          disabled={!hasDrawings}
-          onClick={clearDrawings}
-          title="Clear drawings"
-          type="button"
-        >
-          <Trash2 size={15} />
-        </button>
+      <div className="chart-overlay-toolbar" aria-label="Chart actions">
         <button
           aria-label="Load older candles"
-          className="drawing-tool"
+          className="chart-action-button"
           disabled={!canLoadOlder || olderLoading}
           onClick={onLoadOlder}
           title="Load older candles"
@@ -834,23 +751,6 @@ function CandlestickPane({
           {olderLoading ? <Loader2 className="spin" size={15} /> : <History size={15} />}
         </button>
       </div>
-      <svg aria-hidden="true" className="drawing-layer">
-        {visibleTrendDrawings.map((drawing) => {
-          const start = svgPoint(drawing.start, chartRef.current, seriesRef.current);
-          const end = svgPoint(drawing.end, chartRef.current, seriesRef.current);
-          if (!start || !end) return null;
-          return (
-            <line
-              className={`drawing-line trend ${drawing.id === 'preview' ? 'preview' : ''}`}
-              key={drawing.id}
-              x1={start.x}
-              x2={end.x}
-              y1={start.y}
-              y2={end.y}
-            />
-          );
-        })}
-      </svg>
       {candles.length === 0 && (
         <div className="chart-empty">
           <BarChart3 size={28} />
