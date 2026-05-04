@@ -497,6 +497,9 @@ class WebTests(unittest.TestCase):
         self.assertIn('"candles"', prompt)
         self.assertIn("alpaca:AAPL", prompt)
         self.assertTrue(provider.tools)
+        user_messages = [message for message in provider.messages if message["role"] == "user"]
+        self.assertEqual(len(user_messages), 1)
+        self.assertEqual(user_messages[0]["content"], prompt)
 
     def test_agent_loop_error_is_reported_without_json_parse_masking(self) -> None:
         """Verify provider errors are surfaced instead of being replaced by JSON parse errors."""
@@ -536,6 +539,44 @@ class WebTests(unittest.TestCase):
         self.assertIn("provider exploded", result["error"])
         self.assertNotIn("JSON", result["error"])
         self.assertEqual(result["loopResult"]["error"], "provider exploded")
+
+    def test_agent_loop_empty_output_reports_clear_error(self) -> None:
+        """Verify empty model output is not reported as a JSON parse failure."""
+        class EmptyLoopProvider:
+            name = "codex"
+            model = "fake-loop"
+
+            async def chat(self, messages, tools=None):
+                return ChatResponse(content="")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            instrument = AlpacaInstrument("AAPL", "AAPL")
+            store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
+            app = create_app(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                agent_session_store=store,
+                auto_start=False,
+            )
+            quote = app.state.runtime.controller.quotes[instrument.key]
+            quote.apply_payload({"price": 201.25})
+            quote.apply_candles(
+                candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
+            )
+
+            with patch("terminal_ticker.api.app.create_llm_provider", return_value=EmptyLoopProvider()):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/agent/sessions/alpaca:AAPL/messages",
+                        json={"message": "Analyze this."},
+                    )
+
+        result = response.json()["result"]
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(result["available"])
+        self.assertEqual(result["error"], "Agent returned no output text.")
+        self.assertNotIn("JSON", result["error"])
 
     def test_agent_models_endpoint_returns_provider_models(self) -> None:
         """Verify model discovery endpoint forwards provider model metadata."""

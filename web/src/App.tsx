@@ -1824,7 +1824,7 @@ function ProviderSettingsPanel({
     if (!config) return;
     setDraft({
       enabled: config.enabled,
-      provider: 'codex',
+      provider: config.provider,
       apiMode: config.apiMode,
       model: config.model,
       timeoutSeconds: config.timeoutSeconds,
@@ -1868,7 +1868,7 @@ function ProviderSettingsPanel({
     setSaving(true);
     setStatus('Saving provider settings...');
     try {
-      const nextState = await saveAgentConfig({ ...draft, provider: 'codex' });
+      const nextState = await saveAgentConfig(draft);
       onState(nextState);
       setStatus('All changes saved.');
     } catch (error) {
@@ -1882,7 +1882,10 @@ function ProviderSettingsPanel({
     return <div className="settings-loading">Loading settings...</div>;
   }
 
-  const providerVisible = 'codex'.includes(providerSearch.trim().toLowerCase());
+  const providerLabel = draft.provider === 'openai' ? 'OpenAI' : 'Codex';
+  const providerVisible = `${draft.provider} ${providerLabel}`.toLowerCase().includes(
+    providerSearch.trim().toLowerCase(),
+  );
   const modelOptions = models.some((model) => model.slug === draft.model)
     ? models
     : [
@@ -1948,7 +1951,7 @@ function ProviderSettingsPanel({
                       <Bot size={18} />
                     </div>
                     <div className="provider-item-copy">
-                      <strong>Codex</strong>
+                      <strong>{providerLabel}</strong>
                       <small>Responses adapter for chart analysis</small>
                     </div>
                     <span className="provider-item-dot" />
@@ -1963,12 +1966,14 @@ function ProviderSettingsPanel({
               <div className="provider-hero">
                 <div>
                   <div className="provider-hero-title">
-                    <h3>Codex</h3>
+                    <h3>{providerLabel}</h3>
                     <span className={`provider-state-badge ${draft.enabled ? 'active' : 'inactive'}`}>
                       {draft.enabled ? 'Active' : 'Disabled'}
                     </span>
                   </div>
-                  <p>Codex Responses adapter used by the chart agent for structured commentary and watch-plan output.</p>
+                  <p>{draft.provider === 'openai'
+                    ? 'OpenAI-compatible chat adapter used by the chart agent for structured commentary and watch-plan output.'
+                    : 'Codex Responses adapter used by the chart agent for structured commentary and watch-plan output.'}</p>
                 </div>
                 <label className="switch-row">
                   <span>Enabled</span>
@@ -1987,7 +1992,7 @@ function ProviderSettingsPanel({
                     <strong>Provider</strong>
                     <span className="provider-inline-badge">Locked</span>
                   </div>
-                  <div className="provider-fixed-field">codex</div>
+                  <div className="provider-fixed-field">{draft.provider}</div>
                 </div>
                 <div className="provider-section-card">
                   <div className="provider-section-head">
