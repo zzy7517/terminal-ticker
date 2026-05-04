@@ -124,7 +124,6 @@ textarea:focus-visible {
 }
 
 .eyebrow,
-.instrument-kicker,
 .panel-label {
   color: var(--text-muted);
   font-size: 10px;
@@ -588,107 +587,18 @@ textarea:focus-visible {
   overflow: auto;
 }
 
-/* ── Chart section (expandable/collapsible) ───────────────────────── */
+/* ── Chart section ────────────────────────────────────────────────── */
 .chart-section {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transition: max-height 300ms ease;
-}
-
-.chart-section.expanded {
-  max-height: 3000px;
-}
-
-.chart-section.collapsed {
-  max-height: 48px;
-}
-
-.chart-toggle-bar {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  color: var(--text-primary);
-  cursor: pointer;
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  min-height: 48px;
-  padding: 0 14px;
-  transition: background 100ms;
-  width: 100%;
-}
-
-.chart-toggle-bar:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-:root[data-theme="dark"] .chart-toggle-bar:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.chart-toggle-left {
-  align-items: center;
-  display: flex;
-  gap: 10px;
-  min-width: 0;
-}
-
-.chart-toggle-left > svg {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.chart-toggle-label {
-  font-size: 14px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chart-toggle-price {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-.chart-toggle-change {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.chart-toggle-right {
-  align-items: center;
-  color: var(--text-muted);
-  display: flex;
-  flex-shrink: 0;
-  gap: 8px;
-}
-
-.chart-toggle-interval {
-  background: var(--canvas);
-  border-radius: var(--radius-sm);
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 6px;
 }
 
 .chart-panel-inner {
-  animation: chart-expand 250ms ease both;
-  border-top: 1px solid var(--line-soft);
   display: flex;
   flex-direction: column;
   padding: 14px;
-}
-
-@keyframes chart-expand {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ── Chart header ─────────────────────────────────────────────────── */
@@ -698,32 +608,6 @@ textarea:focus-visible {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
-}
-
-.instrument-kicker {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.instrument-kicker span {
-  background: var(--canvas);
-  border-radius: var(--radius-sm);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-}
-
-.instrument-meta-row {
-  color: var(--text-muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 11px;
-  gap: 8px;
-  margin-top: 4px;
 }
 
 .price-readout {
@@ -751,81 +635,6 @@ textarea:focus-visible {
   font-size: 10px;
   margin-bottom: 2px;
   text-transform: uppercase;
-}
-
-/* ── Analysis strip ───────────────────────────────────────────────── */
-.analysis-strip {
-  align-items: center;
-  background: var(--canvas);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  min-height: 52px;
-  padding: 8px 12px;
-}
-
-.analysis-marker {
-  align-items: center;
-  background: var(--canvas);
-  border-radius: var(--radius-sm);
-  display: flex;
-  font-family: var(--mono);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  height: 36px;
-  justify-content: center;
-  min-width: 50px;
-}
-
-.analysis-strip strong,
-.analysis-strip span {
-  display: block;
-}
-
-.analysis-strip span {
-  color: var(--text-muted);
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.analysis-check {
-  color: var(--up);
-}
-
-.analysis-waiting {
-  color: var(--accent);
-}
-
-.marker,
-.analysis-marker {
-  border-radius: var(--radius-sm);
-}
-
-.marker {
-  background: var(--canvas);
-  color: var(--text-muted);
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  min-width: 30px;
-  padding: 2px 6px;
-  text-align: center;
-}
-
-.marker.up,
-.analysis-marker.up {
-  background: rgba(0, 176, 118, 0.1);
-  color: var(--up);
-}
-
-.marker.down,
-.analysis-marker.down {
-  background: rgba(255, 68, 102, 0.1);
-  color: var(--down);
 }
 
 /* ── Chart shell ──────────────────────────────────────────────────── */
@@ -2465,8 +2274,7 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .chart-header,
-  .analysis-strip {
+  .chart-header {
     align-items: flex-start;
     flex-direction: column;
   }
