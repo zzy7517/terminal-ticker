@@ -571,19 +571,23 @@ def _messages_to_codex_input(messages: list[dict[str, Any]]) -> list[dict[str, A
             content_text = msg.get("content", "")
             tool_calls = msg.get("tool_calls")
             if tool_calls:
-                items: list[dict[str, Any]] = []
                 if content_text:
-                    items.append({"type": "output_text", "text": content_text})
+                    codex_input.append({
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": content_text}],
+                    })
                 for tc in tool_calls:
                     func = tc.get("function", {})
-                    items.append({
+                    item = {
                         "type": "function_call",
-                        "id": tc.get("id", ""),
                         "call_id": tc.get("id", ""),
                         "name": func.get("name", ""),
                         "arguments": func.get("arguments", "{}"),
-                    })
-                codex_input.append({"role": "assistant", "content": items})
+                    }
+                    item_id = tc.get("id")
+                    if isinstance(item_id, str) and item_id.startswith("fc"):
+                        item["id"] = item_id
+                    codex_input.append(item)
             else:
                 codex_input.append({
                     "role": "assistant",
