@@ -19,6 +19,7 @@ from .tools import (
     ToolRegistry,
     ToolResult,
     build_market_tools,
+    build_news_tools,
     build_trading_tools,
     merge_registries,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "ToolResult",
     "build_agent_context",
     "build_market_tools",
+    "build_news_tools",
     "build_trading_tools",
     "merge_registries",
     "create_llm_provider",

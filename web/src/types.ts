@@ -173,6 +173,24 @@ export interface Instrument {
   analysisInterval: string;
 }
 
+export interface NewsItem {
+  url: string;
+  source: string;
+  title: string;
+  summary: string;
+  publishedAt: string;
+  publishedAtMs: number;
+  fetchedAtMs: number;
+  keywords: string[];
+}
+
+export interface NewsStatus {
+  enabled: boolean;
+  lastStatus?: string;
+  lastError?: string | null;
+  lastFetchedAtMs?: number | null;
+}
+
 export interface MarketState {
   type: 'state';
   updatedAt: string;
@@ -191,6 +209,12 @@ export interface MarketState {
       staleAfterSeconds: number;
       stockPollIntervalSeconds: number;
     };
+    news: {
+      enabled: boolean;
+      pollIntervalSeconds: number;
+      recentLimit: number;
+      reutersUrl: string;
+    };
     sourcePath: string | null;
   };
   instruments: Instrument[];
@@ -198,6 +222,8 @@ export interface MarketState {
   quotes: Record<string, Quote>;
   agentAnalyses: Record<string, AgentAnalysis>;
   openTrades: Trade[];
+  recentNews: NewsItem[];
+  newsStatus: NewsStatus;
 }
 
 export type TradeDirection = 'long' | 'short';
