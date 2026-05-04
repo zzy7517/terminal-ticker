@@ -17,7 +17,7 @@ from mytradebot.agent import (
     _read_codex_cli_credentials,
     _result_from_text,
 )
-from mytradebot.agent.providers.codex import _collect_response_stream_full
+from mytradebot.agent.providers.codex import _collect_response_stream_full, _messages_to_codex_input
 
 
 def _fake_jwt(claims: dict) -> str:
@@ -146,6 +146,48 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(response.tool_calls[0].id, "call_1")
         self.assertEqual(response.tool_calls[0].name, "get_quote")
         self.assertEqual(response.tool_calls[0].arguments, {"instrument_key": "alpaca:AAPL"})
+
+    def test_codex_history_keeps_function_calls_as_top_level_items(self) -> None:
+        """Verify replayed tool-call history uses Responses input item shape."""
+        messages = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "Check BTC."},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "get_candles",
+                            "arguments": "{\"instrument_key\":\"bitget:BTCUSDT\"}",
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": "[{\"close\": 65000}]",
+            },
+        ]
+
+        codex_input = _messages_to_codex_input(messages)
+
+        self.assertEqual(codex_input[0]["role"], "user")
+        self.assertEqual(codex_input[1]["type"], "function_call")
+        self.assertNotIn("id", codex_input[1])
+        self.assertEqual(codex_input[1]["call_id"], "call_1")
+        self.assertEqual(codex_input[1]["name"], "get_candles")
+        self.assertEqual(codex_input[2]["type"], "function_call_output")
+        assistant_content_types = [
+            part["type"]
+            for item in codex_input
+            if item.get("role") == "assistant"
+            for part in item.get("content", [])
+        ]
+        self.assertNotIn("function_call", assistant_content_types)
 
     def test_get_candles_clamps_requested_count(self) -> None:
         """Verify candle tool never returns the whole history for zero or negative counts."""
