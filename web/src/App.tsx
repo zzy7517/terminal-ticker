@@ -4,8 +4,6 @@ import {
   ArrowLeft,
   BarChart3,
   Bot,
-  ChevronDown,
-  ChevronUp,
   ChevronsLeft,
   ChevronsRight,
   ChartNoAxesCombined,
@@ -1441,9 +1439,7 @@ function WorkspaceView({
   olderBusyKey,
   exhaustedHistoryKeys,
   sidebarCollapsed,
-  chartExpanded,
   setSidebarCollapsed,
-  setChartExpanded,
   setActiveGroup,
   setSelectedKey,
   setState,
@@ -1473,9 +1469,7 @@ function WorkspaceView({
   olderBusyKey: string | null;
   exhaustedHistoryKeys: Set<string>;
   sidebarCollapsed: boolean;
-  chartExpanded: boolean;
   setSidebarCollapsed: (value: boolean) => void;
-  setChartExpanded: (value: boolean) => void;
   setActiveGroup: (value: string) => void;
   setSelectedKey: (value: string) => void;
   setState: (state: MarketState) => void;
@@ -1492,9 +1486,6 @@ function WorkspaceView({
   const collapsedKeys = state?.instruments.map((instrument) => instrument.key) ?? [];
   const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
   const candleDelta = closeDeltaPercent(selectedQuote?.candles ?? []);
-  const multiTimeframeLabel = selectedQuote?.multiTimeframeIntervals?.length
-    ? selectedQuote.multiTimeframeIntervals.join(' / ')
-    : currentInterval;
   const historyKey = selectedKey ? `${selectedKey}:${currentInterval}` : null;
   const canLoadOlder =
     Boolean(selectedInstrument && ['alpaca', 'bitget'].includes(selectedInstrument.source)) &&
@@ -1648,47 +1639,10 @@ function WorkspaceView({
         </aside>
 
         <section className="main-content">
-          <div className={`chart-section ${chartExpanded ? 'expanded' : 'collapsed'}`}>
-            <button
-              aria-controls="kline-chart-content"
-              aria-expanded={chartExpanded}
-              className="chart-toggle-bar"
-              onClick={() => setChartExpanded(!chartExpanded)}
-              type="button"
-            >
-              <div className="chart-toggle-left">
-                <BarChart3 size={16} />
-                <span className="chart-toggle-label">
-                  {selectedInstrument?.label ?? '选择标的'}
-                </span>
-                <span className={`chart-toggle-price ${changeClass(selectedQuote)}`}>
-                  {selectedQuote?.priceLabel ?? '-'}
-                </span>
-                <span className={`chart-toggle-change ${changeClass(selectedQuote)}`}>
-                  {selectedQuote?.percentLabel ?? '-'}
-                </span>
-              </div>
-              <div className="chart-toggle-right">
-                <span className="chart-toggle-interval">{currentInterval}</span>
-                {chartExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              </div>
-            </button>
-
-            <div id="kline-chart-content" className="chart-panel-inner" aria-hidden={!chartExpanded}>
+          <div className="chart-section">
+            <div className="chart-panel-inner">
               <div className="chart-header">
-                <div>
-                  <div className="instrument-kicker">
-                    <span>{sourceLabel(selectedInstrument)}</span>
-                    <span>{selectedInstrument?.symbol ?? '-'}</span>
-                    <span>{currentInterval}</span>
-                  </div>
-                  <h2>{selectedInstrument?.label ?? '选择标的'}</h2>
-                  <div className="instrument-meta-row">
-                    <span>{selectedQuote?.exchange || selectedQuote?.currency || 'local feed'}</span>
-                    <span>{selectedQuote?.candles.length ?? 0} candles</span>
-                    <span>{selectedQuote?.status ?? 'waiting'}</span>
-                  </div>
-                </div>
+                <h2>{selectedInstrument?.label ?? '选择标的'}</h2>
                 <div className="price-readout">
                   <span className="readout-label">Last</span>
                   <strong>{selectedQuote?.priceLabel ?? '-'}</strong>
@@ -1696,25 +1650,6 @@ function WorkspaceView({
                     {selectedQuote?.changeLabel ?? '-'} · {selectedQuote?.percentLabel ?? '-'}
                   </span>
                 </div>
-              </div>
-
-              <div className="analysis-strip">
-                <div className={`analysis-marker ${changeClass(selectedQuote)}`}>
-                  MTF
-                </div>
-                <div>
-                  <strong>
-                    {selectedQuote?.candles.length
-                      ? `Multi-timeframe context · ${multiTimeframeLabel}`
-                      : '等待多周期 K 线'}
-                  </strong>
-                  <span>
-                    {selectedAgent?.available
-                      ? selectedAgent.summary
-                      : 'Agent 直接读取多周期 OHLCV 上下文，不再依赖本地 strategy / regime 解析层。'}
-                  </span>
-                </div>
-                <Activity className={selectedQuote?.candles.length ? 'analysis-check' : 'analysis-waiting'} size={18} />
               </div>
 
               <CandlestickPane
@@ -2134,7 +2069,6 @@ export default function App() {
   const [olderBusyKey, setOlderBusyKey] = useState<string | null>(null);
   const [exhaustedHistoryKeys, setExhaustedHistoryKeys] = useState<Set<string>>(() => new Set());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [chartExpanded, setChartExpanded] = useState(true);
   const olderBusyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -2393,9 +2327,7 @@ export default function App() {
       olderBusyKey={olderBusyKey}
       exhaustedHistoryKeys={exhaustedHistoryKeys}
       sidebarCollapsed={sidebarCollapsed}
-      chartExpanded={chartExpanded}
       setSidebarCollapsed={setSidebarCollapsed}
-      setChartExpanded={setChartExpanded}
       setActiveGroup={setActiveGroup}
       setSelectedKey={setSelectedKey}
       setState={setState}
