@@ -1,4 +1,17 @@
-"""文件用途：Codex Agent provider，封装凭证、请求和模型发现。"""
+"""Codex provider for the Terminal Ticker analysis agent.
+
+本模块负责把本地生成的结构化行情上下文发送给 Codex 后端，并把返回文本
+转换成项目通用的 ``AgentAnalysisResult``。它的职责边界比较窄：
+
+- 凭证解析：优先读取 ``TERMINAL_TICKER_CODEX_API_KEY`` / ``CODEX_API_KEY``，
+  缺省时复用 Codex CLI 写入的 ``~/.codex/auth.json`` 登录态。
+- 分析请求：使用 Codex Responses 风格的 ``/responses`` 流式接口，发送紧凑
+  JSON 上下文，且设置 ``store=False``，避免服务端持久化本次分析输入。
+- 模型发现：从 ``/models`` 拉取当前账号可见模型，再规范化为前端配置页使用
+  的模型选项结构。
+- 错误边界：对外只暴露可读的 provider 错误信息，避免把 access token 等敏感
+  内容写入运行状态或 UI。
+"""
 from __future__ import annotations
 
 import base64
@@ -30,12 +43,26 @@ CODEX_ENV_API_KEYS = ("TERMINAL_TICKER_CODEX_API_KEY", "CODEX_API_KEY")
 
 
 class CodexProvider:
-    """说明：封装通过 Codex Responses 风格接口完成分析的 provider。"""
+    """通过 Codex Responses 风格接口完成行情分析的 LLM provider。
+
+    这个类实现 ``terminal_ticker.agent.provider`` 中约定的 provider 行为：
+    ``analyze`` 负责单次行情上下文分析，``list_models`` 负责给配置页刷新可用
+    模型。它不做 K 线特征计算、策略信号生成或结果结构修正；这些上游/下游逻辑
+    仍由 domain 层和通用解析函数负责。
+    """
 
     name = CODEX_PROVIDER
 
     def __init__(self, config: AgentConfig, profile: AgentModelProfile | None = None) -> None:
-        """说明：初始化当前对象的运行状态。"""
+        """初始化 provider 配置和模型配置。
+
+        Args:
+            config: Agent 运行配置，主要提供请求超时等运行时参数。
+            profile: 可选的已解析模型配置。未传入时会从 ``AgentConfig`` 中解析。
+
+        Raises:
+            LLMProviderUnavailable: 当前模型配置不是 Codex 支持的 api_mode 时抛出。
+        """
         self.config = config
         self.profile = profile or resolve_agent_model(config)
         if self.profile.api_mode != CODEX_API_MODE:
@@ -43,7 +70,16 @@ class CodexProvider:
         self.model = self.profile.model
 
     async def analyze(self, context: dict[str, Any]) -> AgentAnalysisResult:
-        """说明：分析一个结构化行情上下文。"""
+        """分析一次结构化行情上下文，并把异常降级为 unavailable 结果。
+
+        Args:
+            context: 已由 API 层组装好的行情/策略上下文，必须可被 JSON 序列化。
+
+        Returns:
+            ``AgentAnalysisResult``。成功时来自 Codex 输出文本解析；凭证缺失、
+            HTTP 错误、流式事件错误或空输出都会转换成 unavailable，避免实时
+            ticker 运行循环因为单次 LLM 调用失败而中断。
+        """
         try:
             credentials = _resolve_codex_credentials()
             response_data = await self._request_analysis(credentials, context)
@@ -73,7 +109,24 @@ class CodexProvider:
         credentials: dict[str, str],
         context: dict[str, Any],
     ) -> dict[str, Any]:
-        """说明：调用 Codex Responses 风格的流式分析接口。"""
+        """调用 Codex Responses 风格的流式分析接口。
+
+        请求体把系统分析指令放在 ``instructions``，把结构化行情上下文压缩成
+        单个 ``input_text``。这里显式使用 ``stream=True``，因为当前后端集成
+        依赖 SSE 事件中的 ``response.output_text.delta`` / ``done`` 文本。
+
+        Args:
+            credentials: ``_resolve_codex_credentials`` 返回的凭证字典，至少包含
+                ``api_key``，可能包含 ``account_id``。
+            context: 要发送给模型的结构化行情上下文。
+
+        Returns:
+            包含 ``output_text`` 的字典，形状与非流式 Responses 常见返回保持接近，
+            方便复用 ``_extract_response_text``。
+
+        Raises:
+            LLMProviderError: HTTP 非 2xx、流式事件报告失败或错误事件时抛出。
+        """
         api_root = DEFAULT_CODEX_BASE_URL.rstrip("/")
         payload: dict[str, Any] = {
             "model": self.model,
@@ -116,7 +169,16 @@ class CodexProvider:
         return {"output_text": output_text}
 
     async def list_models(self) -> list[dict[str, Any]]:
-        """说明：拉取当前账号可见的 Codex 模型列表。"""
+        """拉取当前账号可见的 Codex 模型列表，供前端配置页展示。
+
+        Returns:
+            已规范化的模型选项列表。每个元素都包含 slug、展示名、可用 reasoning
+            effort、上下文窗口等前端需要的字段。
+
+        Raises:
+            LLMProviderUnavailable: 无法解析 Codex 凭证时抛出。
+            LLMProviderError: ``/models`` 返回错误或返回结构不符合预期时抛出。
+        """
         credentials = _resolve_codex_credentials()
         api_root = DEFAULT_CODEX_BASE_URL.rstrip("/")
         headers = {
@@ -139,7 +201,22 @@ class CodexProvider:
 
 
 async def _collect_response_stream_text(response: httpx.Response) -> str:
-    """说明：收集响应流文本。"""
+    """从 SSE 响应流中收集最终文本。
+
+    Codex Responses 流会按行返回 ``data: ...`` 事件。正常文本可能以 delta 形式
+    分片到达，也可能在 done 事件里给出完整文本；这里优先拼接 delta，缺省时
+    回退到 done 文本。非 JSON 行、空 data 和 ``[DONE]`` 都按协议噪声跳过。
+
+    Args:
+        response: 已建立的 httpx 流式响应对象。
+
+    Returns:
+        去除首尾空白后的模型输出文本；如果没有任何可用文本则返回空字符串。
+
+    Raises:
+        LLMProviderError: 流中出现 ``response.failed``、``response.incomplete`` 或
+        ``error`` 事件时抛出。
+    """
     chunks: list[str] = []
     done_text: str | None = None
     async for line in response.aiter_lines():
@@ -172,7 +249,16 @@ async def _collect_response_stream_text(response: httpx.Response) -> str:
 
 
 def _response_error_message(status_code: int, body: str) -> str:
-    """说明：生成不泄露凭证的 provider 错误信息。"""
+    """把 HTTP 错误响应整理成不泄露凭证的 provider 错误信息。
+
+    Args:
+        status_code: HTTP 状态码。
+        body: 响应体文本，可能是 JSON，也可能是纯文本。
+
+    Returns:
+        形如 ``Codex request failed: HTTP 401: ...`` 的可读错误。这里只提取
+        detail/error/message 等服务端错误字段，不回显请求头、payload 或 token。
+    """
     detail = ""
     try:
         payload = json.loads(body)
@@ -189,7 +275,15 @@ def _response_error_message(status_code: int, body: str) -> str:
 
 
 def _event_error_message(event: dict[str, Any]) -> str:
-    """说明：规范化 Responses 流式事件中的错误信息。"""
+    """规范化 Responses 流式错误事件中的错误信息。
+
+    Args:
+        event: 已解析的 SSE JSON 事件。
+
+    Returns:
+        面向 UI/日志的短错误文案。优先使用服务端返回的 message，其次使用 code，
+        最后退回到事件 type，保证任何错误事件都有可展示的原因。
+    """
     error = event.get("error")
     if isinstance(error, dict):
         message = error.get("message") or error.get("code") or error
@@ -200,7 +294,18 @@ def _event_error_message(event: dict[str, Any]) -> str:
 
 
 def _codex_model_option(item: dict[str, Any]) -> dict[str, Any]:
-    """说明：把 Codex 模型对象规范化成前端选项。"""
+    """把 Codex ``/models`` 返回的单个模型对象规范化成前端选项。
+
+    原始模型结构可能缺字段或字段类型不稳定，所以这里统一做防御式转换：字符串
+    字段转成字符串，布尔字段转成布尔值，context window 只有在确认为整数时才
+    传给前端。这样配置页刷新模型时不会因为单个异常模型对象崩掉。
+
+    Args:
+        item: ``/models`` 数组中的单个模型对象。
+
+    Returns:
+        前端 ``Agent Config`` 页面直接消费的模型 option 字典。
+    """
     levels = item.get("supported_reasoning_levels")
     reasoning_efforts: list[str] = []
     if isinstance(levels, list):
@@ -221,7 +326,18 @@ def _codex_model_option(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _resolve_codex_credentials() -> dict[str, str]:
-    """说明：从环境变量或 Codex CLI 登录文件解析凭证。"""
+    """从环境变量或 Codex CLI 登录文件解析可用凭证。
+
+    解析顺序是有意设计的：显式环境变量优先，便于用户在当前进程或启动脚本中
+    指定临时 token；没有环境变量时再复用 Codex CLI 的本地登录态，减少重复配置。
+
+    Returns:
+        至少包含 ``api_key`` 的凭证字典；从 CLI 登录态读取时还会尽量附带
+        ``account_id``，供请求头构造使用。
+
+    Raises:
+        LLMProviderUnavailable: 环境变量和 CLI 登录态都不可用，或 CLI token 已过期。
+    """
     api_key = _first_env(CODEX_ENV_API_KEYS)
     if api_key:
         return {"api_key": api_key}
@@ -240,7 +356,14 @@ def _resolve_codex_credentials() -> dict[str, str]:
 
 
 def _first_env(names: tuple[str, ...]) -> str | None:
-    """说明：返回第一项非空环境变量。"""
+    """按顺序返回第一项非空环境变量值。
+
+    Args:
+        names: 要尝试读取的环境变量名，顺序代表优先级。
+
+    Returns:
+        去除首尾空白后的变量值；所有变量都不存在或为空时返回 ``None``。
+    """
     for name in names:
         value = os.getenv(name, "").strip()
         if value:
@@ -249,7 +372,14 @@ def _first_env(names: tuple[str, ...]) -> str | None:
 
 
 def _codex_auth_path() -> Path:
-    """说明：返回 Codex CLI 的 auth.json 路径。"""
+    """返回 Codex CLI 登录态文件路径。
+
+    ``CODEX_HOME`` 存在时优先使用它，方便测试或自定义安装目录；否则使用默认的
+    ``~/.codex/auth.json``。这里只计算路径，不检查文件是否存在。
+
+    Returns:
+        展开 ``~`` 后的 auth.json 路径。
+    """
     codex_home = os.getenv("CODEX_HOME", "").strip()
     if not codex_home:
         codex_home = str(Path.home() / ".codex")
@@ -257,7 +387,19 @@ def _codex_auth_path() -> Path:
 
 
 def _read_codex_cli_credentials() -> dict[str, str] | None:
-    """说明：读取 Codex CLI 本地登录凭证。"""
+    """读取 Codex CLI 本地登录凭证。
+
+    这个函数只接受当前已经可用的 access token：文件不存在、JSON 损坏、结构不符
+    或 token 为空都会返回 ``None``，让上层继续走“无凭证”降级。若 token 明确
+    已过期，则抛出可读错误，提示用户重新运行 Codex CLI 刷新登录态。
+
+    Returns:
+        成功时返回 ``{"api_key": access_token, "account_id": ...}``；无法读取到
+        可用登录态时返回 ``None``。
+
+    Raises:
+        LLMProviderUnavailable: access token 的 ``exp`` 已经过期时抛出。
+    """
     auth_path = _codex_auth_path()
     if not auth_path.is_file():
         return None
@@ -289,7 +431,16 @@ def _read_codex_cli_credentials() -> dict[str, str] | None:
 
 
 def _access_token_is_expiring(access_token: str, *, skew_seconds: int) -> bool:
-    """说明：判断 JWT access token 是否已经过期。"""
+    """判断 JWT access token 是否已经过期或即将过期。
+
+    Args:
+        access_token: Codex CLI auth.json 中的 JWT access token。
+        skew_seconds: 过期判断预留量。传 0 表示只判断是否已经过期。
+
+    Returns:
+        token 带有数值型 ``exp`` 且 ``exp <= 当前时间 + skew`` 时返回 ``True``。
+        无法解析 ``exp`` 时返回 ``False``，把最终有效性留给服务端判断。
+    """
     claims = _jwt_claims(access_token)
     exp = claims.get("exp")
     if not isinstance(exp, (int, float)):
@@ -298,7 +449,17 @@ def _access_token_is_expiring(access_token: str, *, skew_seconds: int) -> bool:
 
 
 def _jwt_claims(token: str) -> dict[str, Any]:
-    """说明：解析 JWT claims 供本地元数据使用。"""
+    """解析 JWT payload claims，供本地读取过期时间和账号 ID。
+
+    这里只做 base64url 解码和 JSON 解析，不做签名校验，也不把它当作安全决策的
+    唯一依据。解析失败时返回空字典，让调用方继续走保守分支。
+
+    Args:
+        token: JWT 字符串。
+
+    Returns:
+        JWT payload 中的 claims 字典；格式不合法或解析失败时返回空字典。
+    """
     try:
         parts = token.split(".")
         if len(parts) < 2:
@@ -311,7 +472,19 @@ def _jwt_claims(token: str) -> dict[str, Any]:
 
 
 def _codex_request_headers(access_token: str, account_id: str | None = None) -> dict[str, str]:
-    """说明：构造 Codex CLI 风格的请求头。"""
+    """构造 Codex CLI 风格的请求头。
+
+    Codex 后端除了 bearer token 外，还会用 originator/User-Agent 和可选的
+    ``ChatGPT-Account-ID`` 做账号上下文选择。调用方如果已经解析出 account_id，
+    这里直接使用；否则会尝试从 JWT claims 中补齐。
+
+    Args:
+        access_token: 用于请求的 access token，同时可作为账号 ID 的兜底来源。
+        account_id: 已解析出的 ChatGPT account id，可为空。
+
+    Returns:
+        可合并进 httpx 请求的 headers 字典；不会包含 Authorization。
+    """
     headers = {
         "User-Agent": "codex_cli_rs/0.0.0 (Terminal Ticker)",
         "originator": "codex_cli_rs",
@@ -330,7 +503,18 @@ def _codex_request_headers(access_token: str, account_id: str | None = None) -> 
 
 
 def _extract_response_text(data: dict[str, Any]) -> str:
-    """说明：从 Responses API 常见响应结构中提取文本。"""
+    """从 Responses 风格返回结构中提取文本。
+
+    当前流式路径会传入 ``{"output_text": ...}``，但这个函数也兼容常见的非流式
+    ``output[].content`` 结构，方便将来切换请求模式或复用解析逻辑。无法识别的
+    content 会被跳过，而不是抛异常。
+
+    Args:
+        data: Responses 风格的响应数据。
+
+    Returns:
+        拼接并去除首尾空白后的文本；没有可识别文本时返回空字符串。
+    """
     output_text = data.get("output_text")
     if isinstance(output_text, str) and output_text.strip():
         return output_text.strip()
