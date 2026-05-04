@@ -4,10 +4,14 @@ import {
   ArrowLeft,
   BarChart3,
   Bot,
+  ChartNoAxesCombined,
   CircleDot,
+  Eraser,
   History,
   Loader2,
+  Minus,
   Moon,
+  MousePointer2,
   Plus,
   RefreshCw,
   Save,
@@ -16,6 +20,7 @@ import {
   Sparkles,
   Sun,
   Trash2,
+  TrendingUp,
   Wifi,
   WifiOff,
   Zap,
@@ -57,6 +62,7 @@ import type {
   MarketState,
   Quote,
 } from './types';
+import { useChartDrawings } from './chartDrawings';
 
 const GROUP_LABELS: Record<string, string> = {
   stocks: '美股',
@@ -575,6 +581,8 @@ function CandlestickPane({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const [chartApi, setChartApi] = useState<IChartApi | null>(null);
+  const [seriesApi, setSeriesApi] = useState<ISeriesApi<'Candlestick'> | null>(null);
   const dataRef = useRef<ChartCandle[]>([]);
   const signatureRef = useRef('');
   const chartKeyRef = useRef('');
@@ -582,6 +590,20 @@ function CandlestickPane({
   const olderLoadingRef = useRef(olderLoading);
   const onLoadOlderRef = useRef(onLoadOlder);
   const initialThemeRef = useRef(CHART_THEMES[theme]);
+  const {
+    activeTool,
+    clearDrawings,
+    deleteSelectedDrawing,
+    hasDrawings,
+    hasSelectedDrawing,
+    setDrawingTool,
+  } = useChartDrawings({
+    chart: chartApi,
+    chartKey,
+    containerRef,
+    series: seriesApi,
+    theme,
+  });
 
   useEffect(() => {
     canLoadOlderRef.current = canLoadOlder;
@@ -640,6 +662,8 @@ function CandlestickPane({
     const series = chart.addSeries(CandlestickSeries, visualTheme.series);
     chartRef.current = chart;
     seriesRef.current = series;
+    setChartApi(chart);
+    setSeriesApi(series);
 
     // Implements price-axis zooming while leaving normal chart scrolling intact.
     const handleWheel = (event: WheelEvent) => {
@@ -685,6 +709,8 @@ function CandlestickPane({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      setChartApi(null);
+      setSeriesApi(null);
     };
   }, []);
 
@@ -737,9 +763,67 @@ function CandlestickPane({
   }, [candles, chartKey]);
 
   return (
-    <div className="chart-shell">
+    <div className={`chart-shell ${activeTool !== 'cursor' ? 'drawing-active' : ''}`}>
       <div ref={containerRef} className="chart-canvas" />
-      <div className="chart-overlay-toolbar" aria-label="Chart actions">
+      <div className="chart-overlay-toolbar" aria-label="Chart tools">
+        <button
+          aria-label="Cursor"
+          className={`chart-action-button ${activeTool === 'cursor' ? 'active' : ''}`}
+          onClick={() => setDrawingTool('cursor')}
+          title="Cursor"
+          type="button"
+        >
+          <MousePointer2 size={15} />
+        </button>
+        <button
+          aria-label="Horizontal line"
+          className={`chart-action-button ${activeTool === 'horizontal' ? 'active' : ''}`}
+          onClick={() => setDrawingTool('horizontal')}
+          title="Horizontal line"
+          type="button"
+        >
+          <Minus size={16} />
+        </button>
+        <button
+          aria-label="Trend line"
+          className={`chart-action-button ${activeTool === 'trend' ? 'active' : ''}`}
+          onClick={() => setDrawingTool('trend')}
+          title="Trend line"
+          type="button"
+        >
+          <TrendingUp size={15} />
+        </button>
+        <button
+          aria-label="Fibonacci retracement"
+          className={`chart-action-button ${activeTool === 'fibonacci' ? 'active' : ''}`}
+          onClick={() => setDrawingTool('fibonacci')}
+          title="Fibonacci retracement"
+          type="button"
+        >
+          <ChartNoAxesCombined size={15} />
+        </button>
+        <span aria-hidden="true" className="chart-tool-divider" />
+        <button
+          aria-label="Delete selected drawing"
+          className="chart-action-button danger"
+          disabled={!hasSelectedDrawing}
+          onClick={deleteSelectedDrawing}
+          title="Delete selected drawing"
+          type="button"
+        >
+          <Eraser size={15} />
+        </button>
+        <button
+          aria-label="Clear drawings"
+          className="chart-action-button danger"
+          disabled={!hasDrawings}
+          onClick={clearDrawings}
+          title="Clear drawings"
+          type="button"
+        >
+          <Trash2 size={15} />
+        </button>
+        <span aria-hidden="true" className="chart-tool-divider" />
         <button
           aria-label="Load older candles"
           className="chart-action-button"
