@@ -205,19 +205,22 @@ h3 {
 .workspace {
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(300px, 360px) minmax(520px, 1fr) minmax(260px, 330px);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
   margin: 0 auto;
-  max-width: 1500px;
+  max-width: 1740px;
+}
+
+.workspace.sidebar-collapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
 }
 
 .sidebar,
-.chart-panel,
-.agent-panel {
+.main-content {
   min-width: 0;
 }
 
 .sidebar,
-.chart-panel,
+.chart-section,
 .agent-card,
 .search-panel,
 .settings-frame,
@@ -234,6 +237,12 @@ h3 {
   flex-direction: column;
   max-height: calc(100vh - 96px);
   padding: 12px;
+  transition: width 280ms cubic-bezier(0.16, 1, 0.3, 1), padding 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sidebar.collapsed {
+  padding: 8px;
+  overflow: hidden;
 }
 
 .sidebar-head {
@@ -525,10 +534,9 @@ h3 {
   color: var(--down);
 }
 
-.chart-panel {
+.chart-panel-inner {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 96px);
   padding: 16px;
 }
 
@@ -710,7 +718,7 @@ h3 {
   margin-top: 5px;
 }
 
-.agent-panel {
+.agent-main-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1587,6 +1595,247 @@ h3 {
   transform: translateX(26px);
 }
 
+.topbar-left {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.sidebar-toggle-button {
+  align-items: center;
+  background: var(--surface-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  height: 40px;
+  justify-content: center;
+  transition: background 150ms ease-out, color 150ms ease-out, transform 120ms ease-out;
+  width: 40px;
+}
+
+.sidebar-toggle-button:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.sidebar-toggle-button:active {
+  transform: scale(0.95);
+}
+
+.sidebar-collapsed-content {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 8px;
+  min-height: 0;
+  width: 100%;
+}
+
+.sidebar-collapsed-icons {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.sidebar-collapsed-symbols {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  overflow: auto;
+  flex: 1;
+}
+
+.sidebar-collapsed-symbol {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  transition: background 140ms ease-out;
+  width: 100%;
+}
+
+.sidebar-collapsed-symbol:hover {
+  background: var(--surface-2);
+}
+
+.sidebar-collapsed-symbol.selected {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.collapsed-symbol-label {
+  font-size: 10px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+  text-align: center;
+}
+
+.collapsed-symbol-price {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+}
+
+.chart-section {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: max-height 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chart-section.expanded {
+  max-height: 2000px;
+}
+
+.chart-section.collapsed {
+  max-height: 52px;
+}
+
+.chart-section.collapsed .chart-panel-inner {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.chart-toggle-bar {
+  align-items: center;
+  background: var(--surface-1);
+  border: 0;
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 16px;
+  transition: background 150ms ease-out;
+  width: 100%;
+}
+
+.chart-toggle-bar:hover {
+  background: var(--surface-2);
+}
+
+.chart-toggle-left {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chart-toggle-label {
+  font-weight: 720;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chart-toggle-price {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.chart-toggle-change {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-toggle-right {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.chart-toggle-interval {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 780;
+  padding: 3px 8px;
+}
+
+.chart-panel-inner {
+  animation: chart-expand 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  padding: 16px;
+}
+
+@keyframes chart-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.agent-main-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 14px;
+  min-height: 0;
+}
+
+.agent-main-panel .agent-session-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 400px;
+  overflow: hidden;
+}
+
+.agent-main-panel .session-transcript {
+  flex: 1 1 auto;
+  max-height: clamp(220px, 42vh, 620px);
+}
+
+.agent-main-panel .session-compose {
+  flex: 0 0 auto;
+}
+
+.agent-info-strip {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: start;
+}
+
+.agent-info-strip .refresh-button {
+  align-self: stretch;
+}
+
 @keyframes spin {
   from {
     transform: rotate(0deg);
@@ -1598,16 +1847,6 @@ h3 {
 }
 
 @media (max-width: 1200px) {
-  .workspace {
-    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
-  }
-
-  .agent-panel {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .settings-frame,
   .provider-layout {
     grid-template-columns: 1fr;
@@ -1619,6 +1858,10 @@ h3 {
 
   .settings-nav-meta {
     margin-top: 0;
+  }
+
+  .agent-info-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1648,16 +1891,11 @@ h3 {
   }
 
   .sidebar,
-  .chart-panel {
+  .main-content {
     max-height: none;
     min-height: auto;
   }
 
-  .chart-panel {
-    min-height: 0;
-  }
-
-  .agent-panel,
   .provider-section,
   .provider-form-grid {
     grid-template-columns: 1fr;
@@ -1868,11 +2106,15 @@ h3 {
 
 .workspace {
   gap: 16px;
-  grid-template-columns: minmax(315px, 390px) minmax(560px, 1fr) minmax(310px, 380px);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+}
+
+.workspace.sidebar-collapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
 }
 
 .sidebar,
-.chart-panel,
+.chart-section,
 .agent-card,
 .search-panel,
 .settings-frame,
@@ -1889,7 +2131,7 @@ h3 {
 }
 
 .sidebar,
-.chart-panel {
+.main-content {
   max-height: calc(100vh - 124px);
 }
 
@@ -2097,11 +2339,53 @@ h3 {
   box-shadow: inset 0 0 0 1px var(--line-soft);
 }
 
-.chart-panel {
+.chart-panel-inner {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
     var(--canvas-2);
-  padding: 16px;
+}
+
+.sidebar-toggle-button {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+    var(--panel);
+  box-shadow:
+    inset 0 0 0 1px var(--line-soft),
+    0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.chart-toggle-bar {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+    var(--panel);
+  box-shadow:
+    inset 0 0 0 1px var(--line-soft),
+    0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.chart-toggle-bar:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.035)),
+    var(--panel-raised);
+}
+
+.chart-section {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
+    var(--canvas-2);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 0 0 1px var(--line-soft),
+    var(--shadow-soft);
+}
+
+.sidebar-collapsed-symbol.selected {
+  background: rgba(15, 124, 144, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(15, 124, 144, 0.22);
+}
+
+.sidebar-collapsed-symbol:hover {
+  background: rgba(15, 124, 144, 0.08);
 }
 
 .chart-header {
@@ -2242,11 +2526,8 @@ h3 {
   white-space: nowrap;
 }
 
-.agent-panel {
+.agent-main-panel {
   gap: 12px;
-  max-height: calc(100vh - 124px);
-  overflow: auto;
-  padding-right: 2px;
 }
 
 .agent-card {
@@ -2644,25 +2925,8 @@ h3 {
 }
 
 @media (max-width: 1320px) {
-  .workspace {
-    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
-  }
-
-  .agent-panel {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    max-height: none;
-    overflow: visible;
-    padding-right: 0;
-  }
-
-  .agent-readout {
-    grid-column: span 2;
-  }
-
-  .refresh-button {
-    min-height: 54px;
+  .agent-info-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2680,17 +2944,22 @@ h3 {
     flex-direction: column;
   }
 
-  .workspace {
+  .topbar-left {
+    width: 100%;
+  }
+
+  .workspace,
+  .workspace.sidebar-collapsed {
     grid-template-columns: 1fr;
   }
 
   .sidebar,
-  .chart-panel {
+  .main-content {
     max-height: none;
   }
 
-  .agent-panel {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .sidebar.collapsed {
+    display: none;
   }
 
   .chart-shell,
@@ -2700,6 +2969,10 @@ h3 {
 
   .stat-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .agent-info-strip {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -2738,8 +3011,7 @@ h3 {
   }
 
   .sidebar,
-  .chart-panel,
-  .agent-panel {
+  .main-content {
     max-width: 100%;
     min-width: 0;
     width: 100%;
@@ -2778,10 +3050,10 @@ h3 {
     grid-column: auto;
   }
 
-  .agent-panel,
   .stat-grid,
   .provider-section,
-  .provider-form-grid {
+  .provider-form-grid,
+  .agent-info-strip {
     grid-template-columns: 1fr;
   }
 
@@ -2902,13 +3174,15 @@ textarea:focus-visible {
 .refresh-button,
 .settings-back,
 .sidebar,
-.chart-panel,
+.chart-section,
 .agent-card,
 .search-panel,
 .settings-frame,
 .settings-nav,
 .provider-catalog,
-.provider-detail {
+.provider-detail,
+.sidebar-toggle-button,
+.chart-toggle-bar {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 250, 0.92)),
     var(--panel);
@@ -2941,7 +3215,8 @@ textarea:focus-visible {
 .agent-readout,
 .provider-hero,
 .provider-section-card,
-.models-panel {
+.models-panel,
+.chart-toggle-bar {
   background:
     linear-gradient(135deg, rgba(15, 124, 144, 0.075), rgba(255, 255, 255, 0.86)),
     #ffffff;
@@ -3164,7 +3439,7 @@ textarea:focus-visible {
 :root[data-theme="tokyo-night"] .refresh-button,
 :root[data-theme="tokyo-night"] .settings-back,
 :root[data-theme="tokyo-night"] .sidebar,
-:root[data-theme="tokyo-night"] .chart-panel,
+:root[data-theme="tokyo-night"] .chart-section,
 :root[data-theme="tokyo-night"] .agent-card,
 :root[data-theme="tokyo-night"] .search-panel,
 :root[data-theme="tokyo-night"] .settings-frame,
@@ -3173,7 +3448,9 @@ textarea:focus-visible {
 :root[data-theme="tokyo-night"] .provider-detail,
 :root[data-theme="tokyo-night"] .watchlist-current,
 :root[data-theme="tokyo-night"] .bulk-import-panel,
-:root[data-theme="tokyo-night"] .single-add-panel {
+:root[data-theme="tokyo-night"] .single-add-panel,
+:root[data-theme="tokyo-night"] .sidebar-toggle-button,
+:root[data-theme="tokyo-night"] .chart-toggle-bar {
   background:
     linear-gradient(180deg, rgba(192, 202, 245, 0.055), rgba(192, 202, 245, 0.018)),
     var(--panel);
@@ -3207,7 +3484,8 @@ textarea:focus-visible {
 :root[data-theme="tokyo-night"] .agent-readout,
 :root[data-theme="tokyo-night"] .provider-hero,
 :root[data-theme="tokyo-night"] .provider-section-card,
-:root[data-theme="tokyo-night"] .models-panel {
+:root[data-theme="tokyo-night"] .models-panel,
+:root[data-theme="tokyo-night"] .chart-toggle-bar {
   background:
     linear-gradient(135deg, rgba(122, 162, 247, 0.12), rgba(125, 207, 255, 0.035)),
     rgba(17, 18, 26, 0.74);

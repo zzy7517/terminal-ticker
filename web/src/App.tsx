@@ -4,6 +4,10 @@ import {
   ArrowLeft,
   BarChart3,
   Bot,
+  ChevronDown,
+  ChevronUp,
+  ChevronsLeft,
+  ChevronsRight,
   ChartNoAxesCombined,
   CircleDot,
   Eraser,
@@ -1514,6 +1518,10 @@ function WorkspaceView({
   analysisIntervalBusy,
   olderBusyKey,
   exhaustedHistoryKeys,
+  sidebarCollapsed,
+  chartExpanded,
+  setSidebarCollapsed,
+  setChartExpanded,
   setActiveGroup,
   setSelectedKey,
   setState,
@@ -1542,6 +1550,10 @@ function WorkspaceView({
   analysisIntervalBusy: boolean;
   olderBusyKey: string | null;
   exhaustedHistoryKeys: Set<string>;
+  sidebarCollapsed: boolean;
+  chartExpanded: boolean;
+  setSidebarCollapsed: (value: boolean) => void;
+  setChartExpanded: (value: boolean) => void;
   setActiveGroup: (value: string) => void;
   setSelectedKey: (value: string) => void;
   setState: (state: MarketState) => void;
@@ -1555,6 +1567,7 @@ function WorkspaceView({
   openWatchlistSettings: () => void;
 }) {
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
+  const collapsedKeys = state?.instruments.map((instrument) => instrument.key) ?? [];
   const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
   const candleDelta = closeDeltaPercent(selectedQuote?.candles ?? []);
   const multiTimeframeLabel = selectedQuote?.multiTimeframeIntervals?.length
@@ -1569,13 +1582,24 @@ function WorkspaceView({
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">
-            <Zap size={21} />
-          </div>
-          <div>
-            <div className="eyebrow">Local Price Action Agent</div>
-            <h1>Terminal Ticker</h1>
+        <div className="topbar-left">
+          <button
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="sidebar-toggle-button"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            type="button"
+          >
+            {sidebarCollapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+          </button>
+          <div className="brand-lockup">
+            <div className="brand-mark" aria-hidden="true">
+              <Zap size={21} />
+            </div>
+            <div>
+              <div className="eyebrow">Local Price Action Agent</div>
+              <h1>Terminal Ticker</h1>
+            </div>
           </div>
         </div>
         <div className="topbar-right">
@@ -1613,166 +1637,237 @@ function WorkspaceView({
         </div>
       </header>
 
-      <section className="workspace">
-        <aside className="sidebar">
-          <div className="sidebar-head">
-            <div>
-              <span>Watchlist</span>
-              <small>{state?.instruments.length ?? 0} symbols under watch</small>
+      <section className={`workspace ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+        <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+          {!sidebarCollapsed && (
+            <>
+              <div className="sidebar-head">
+                <div>
+                  <span>Watchlist</span>
+                  <small>{state?.instruments.length ?? 0} symbols under watch</small>
+                </div>
+                <button
+                  aria-label="Manage watchlist"
+                  className="sidebar-manage-button"
+                  onClick={openWatchlistSettings}
+                  type="button"
+                >
+                  <Settings size={16} />
+                </button>
+              </div>
+              <SidebarCompass state={state} />
+              <div className="group-tabs">
+                {groups.map((group) => (
+                  <button
+                    className={group === activeGroup ? 'active' : ''}
+                    key={group}
+                    type="button"
+                    onClick={() => setActiveGroup(group)}
+                  >
+                    {GROUP_LABELS[group] ?? group}
+                  </button>
+                ))}
+              </div>
+              <div className="watchlist">
+                {state &&
+                  activeKeys.map((key) => {
+                    const instrument = state.instruments.find((item) => item.key === key);
+                    if (!instrument) return null;
+                    return (
+                      <WatchlistRow
+                        key={key}
+                        instrument={instrument}
+                        quote={state.quotes[key]}
+                        selected={selectedKey === key}
+                        onSelect={() => setSelectedKey(key)}
+                      />
+                    );
+                  })}
+              </div>
+            </>
+          )}
+          {sidebarCollapsed && (
+            <div className="sidebar-collapsed-content">
+              <div className="sidebar-collapsed-icons">
+                <button
+                  aria-label="Manage watchlist"
+                  className="sidebar-manage-button"
+                  onClick={openWatchlistSettings}
+                  type="button"
+                  title="Manage watchlist"
+                >
+                  <Settings size={16} />
+                </button>
+              </div>
+              <div className="sidebar-collapsed-symbols">
+                {state &&
+                  collapsedKeys.map((key) => {
+                    const instrument = state.instruments.find((item) => item.key === key);
+                    if (!instrument) return null;
+                    return (
+                      <button
+                        key={key}
+                        className={`sidebar-collapsed-symbol ${selectedKey === key ? 'selected' : ''}`}
+                        onClick={() => setSelectedKey(key)}
+                        type="button"
+                        title={`${instrument.label} (${instrument.symbol})`}
+                      >
+                        <span className="collapsed-symbol-label">{instrument.label}</span>
+                        <span className={`collapsed-symbol-price ${changeClass(state.quotes[key])}`}>
+                          {state.quotes[key]?.percentLabel ?? '-'}
+                        </span>
+                      </button>
+                    );
+                  })}
+              </div>
             </div>
+          )}
+        </aside>
+
+        <section className="main-content">
+          <div className={`chart-section ${chartExpanded ? 'expanded' : 'collapsed'}`}>
             <button
-              aria-label="Manage watchlist"
-              className="sidebar-manage-button"
-              onClick={openWatchlistSettings}
+              aria-controls="kline-chart-content"
+              aria-expanded={chartExpanded}
+              className="chart-toggle-bar"
+              onClick={() => setChartExpanded(!chartExpanded)}
               type="button"
             >
-              <Settings size={16} />
+              <div className="chart-toggle-left">
+                <BarChart3 size={16} />
+                <span className="chart-toggle-label">
+                  {selectedInstrument?.label ?? '选择标的'}
+                </span>
+                <span className={`chart-toggle-price ${changeClass(selectedQuote)}`}>
+                  {selectedQuote?.priceLabel ?? '-'}
+                </span>
+                <span className={`chart-toggle-change ${changeClass(selectedQuote)}`}>
+                  {selectedQuote?.percentLabel ?? '-'}
+                </span>
+              </div>
+              <div className="chart-toggle-right">
+                <span className="chart-toggle-interval">{currentInterval}</span>
+                {chartExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </div>
             </button>
+
+            <div id="kline-chart-content" className="chart-panel-inner" aria-hidden={!chartExpanded}>
+              <div className="chart-header">
+                <div>
+                  <div className="instrument-kicker">
+                    <span>{sourceLabel(selectedInstrument)}</span>
+                    <span>{selectedInstrument?.symbol ?? '-'}</span>
+                    <span>{currentInterval}</span>
+                  </div>
+                  <h2>{selectedInstrument?.label ?? '选择标的'}</h2>
+                  <div className="instrument-meta-row">
+                    <span>{selectedQuote?.exchange || selectedQuote?.currency || 'local feed'}</span>
+                    <span>{selectedQuote?.candles.length ?? 0} candles</span>
+                    <span>{selectedQuote?.status ?? 'waiting'}</span>
+                  </div>
+                </div>
+                <div className="price-readout">
+                  <span className="readout-label">Last</span>
+                  <strong>{selectedQuote?.priceLabel ?? '-'}</strong>
+                  <span className={changeClass(selectedQuote)}>
+                    {selectedQuote?.changeLabel ?? '-'} · {selectedQuote?.percentLabel ?? '-'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="analysis-strip">
+                <div className={`analysis-marker ${changeClass(selectedQuote)}`}>
+                  MTF
+                </div>
+                <div>
+                  <strong>
+                    {selectedQuote?.candles.length
+                      ? `Multi-timeframe context · ${multiTimeframeLabel}`
+                      : '等待多周期 K 线'}
+                  </strong>
+                  <span>
+                    {selectedAgent?.available
+                      ? selectedAgent.summary
+                      : 'Agent 直接读取多周期 OHLCV 上下文，不再依赖本地 strategy / regime 解析层。'}
+                  </span>
+                </div>
+                <Activity className={selectedQuote?.candles.length ? 'analysis-check' : 'analysis-waiting'} size={18} />
+              </div>
+
+              <CandlestickPane
+                candles={selectedQuote?.candles ?? []}
+                canLoadOlder={canLoadOlder}
+                chartKey={`${selectedKey ?? 'none'}:${currentInterval}`}
+                theme={theme}
+                olderLoading={Boolean(historyKey && olderBusyKey === historyKey)}
+                onLoadOlder={loadOlderForSelected}
+              />
+
+              <div className="stat-grid">
+                <StatTile label="High" value={selectedQuote?.dayHigh?.toFixed(2) ?? '-'} />
+                <StatTile label="Low" value={selectedQuote?.dayLow?.toFixed(2) ?? '-'} />
+                <StatTile label="Volume" value={selectedQuote?.volumeLabel ?? '-'} />
+                <StatTile label="Range" value={candleRangeLabel(selectedQuote?.candles ?? [])} />
+                <StatTile label="Window" value={candleDelta == null ? '-' : `${formatSignedNumber(candleDelta)}%`} />
+                <StatTile label="Age" value={selectedQuote?.ageLabel ?? 'waiting'} />
+              </div>
+            </div>
           </div>
-          <SidebarCompass state={state} />
-          <div className="group-tabs">
-            {groups.map((group) => (
-              <button
-                className={group === activeGroup ? 'active' : ''}
-                key={group}
-                type="button"
-                onClick={() => setActiveGroup(group)}
-              >
-                {GROUP_LABELS[group] ?? group}
+
+          <div className="agent-main-panel">
+            <AgentSessionPanel
+              analysis={selectedAgent}
+              session={agentSession}
+              prompt={agentPrompt}
+              sessionLoading={agentSessionLoading}
+              busy={agentBusyKey === selectedKey}
+              disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
+              onPromptChange={setAgentPrompt}
+              onSend={runAgentAnalysis}
+              onReset={resetAgentConversation}
+            />
+            <div className="agent-info-strip">
+              <div className="agent-card dense">
+                <span className="panel-label">Feed</span>
+                <div className="kv-row">
+                  <span>Status</span>
+                  <strong>{state?.streamStatus ?? 'idle'}</strong>
+                </div>
+                <div className="kv-row">
+                  <span>Updated</span>
+                  <strong>{state ? new Date(state.updatedAt).toLocaleTimeString() : '-'}</strong>
+                </div>
+                <div className="kv-row">
+                  <span>Source</span>
+                  <strong>{sourceLabel(selectedInstrument)}</strong>
+                </div>
+              </div>
+              <div className="agent-card dense">
+                <span className="panel-label">Provider</span>
+                <div className="kv-row">
+                  <span>Current</span>
+                  <strong>{state?.config.agent.provider ?? 'codex'}</strong>
+                </div>
+                <div className="kv-row">
+                  <span>Model</span>
+                  <strong>{state?.config.agent.model ?? '-'}</strong>
+                </div>
+                <div className="kv-row">
+                  <span>Status</span>
+                  <strong>{state?.config.agent.enabled ? 'enabled' : 'disabled'}</strong>
+                </div>
+              </div>
+              <div className="agent-card dense">
+                <span className="panel-label">Boundary</span>
+                <p>本地监控和解释层，不下单、不管理仓位、不生成买卖按钮。</p>
+              </div>
+              <button className="refresh-button" type="button" onClick={() => fetchState().then(setState)}>
+                <RefreshCw size={16} />
+                Refresh snapshot
               </button>
-            ))}
-          </div>
-          <div className="watchlist">
-            {state &&
-              activeKeys.map((key) => {
-                const instrument = state.instruments.find((item) => item.key === key);
-                if (!instrument) return null;
-                return (
-                  <WatchlistRow
-                    key={key}
-                    instrument={instrument}
-                    quote={state.quotes[key]}
-                    selected={selectedKey === key}
-                    onSelect={() => setSelectedKey(key)}
-                  />
-                );
-              })}
-          </div>
-        </aside>
-
-        <section className="chart-panel">
-          <div className="chart-header">
-            <div>
-              <div className="instrument-kicker">
-                <span>{sourceLabel(selectedInstrument)}</span>
-                <span>{selectedInstrument?.symbol ?? '-'}</span>
-                <span>{currentInterval}</span>
-              </div>
-              <h2>{selectedInstrument?.label ?? '选择标的'}</h2>
-              <div className="instrument-meta-row">
-                <span>{selectedQuote?.exchange || selectedQuote?.currency || 'local feed'}</span>
-                <span>{selectedQuote?.candles.length ?? 0} candles</span>
-                <span>{selectedQuote?.status ?? 'waiting'}</span>
-              </div>
             </div>
-            <div className="price-readout">
-              <span className="readout-label">Last</span>
-              <strong>{selectedQuote?.priceLabel ?? '-'}</strong>
-              <span className={changeClass(selectedQuote)}>
-                {selectedQuote?.changeLabel ?? '-'} · {selectedQuote?.percentLabel ?? '-'}
-              </span>
-            </div>
-          </div>
-
-          <div className="analysis-strip">
-            <div className={`analysis-marker ${changeClass(selectedQuote)}`}>
-              MTF
-            </div>
-            <div>
-              <strong>
-                {selectedQuote?.candles.length
-                  ? `Multi-timeframe context · ${multiTimeframeLabel}`
-                  : '等待多周期 K 线'}
-              </strong>
-              <span>
-                {selectedAgent?.available
-                  ? selectedAgent.summary
-                  : 'Agent 直接读取多周期 OHLCV 上下文，不再依赖本地 strategy / regime 解析层。'}
-              </span>
-            </div>
-            <Activity className={selectedQuote?.candles.length ? 'analysis-check' : 'analysis-waiting'} size={18} />
-          </div>
-
-          <CandlestickPane
-            candles={selectedQuote?.candles ?? []}
-            canLoadOlder={canLoadOlder}
-            chartKey={`${selectedKey ?? 'none'}:${currentInterval}`}
-            theme={theme}
-            olderLoading={Boolean(historyKey && olderBusyKey === historyKey)}
-            onLoadOlder={loadOlderForSelected}
-          />
-
-          <div className="stat-grid">
-            <StatTile label="High" value={selectedQuote?.dayHigh?.toFixed(2) ?? '-'} />
-            <StatTile label="Low" value={selectedQuote?.dayLow?.toFixed(2) ?? '-'} />
-            <StatTile label="Volume" value={selectedQuote?.volumeLabel ?? '-'} />
-            <StatTile label="Range" value={candleRangeLabel(selectedQuote?.candles ?? [])} />
-            <StatTile label="Window" value={candleDelta == null ? '-' : `${formatSignedNumber(candleDelta)}%`} />
-            <StatTile label="Age" value={selectedQuote?.ageLabel ?? 'waiting'} />
           </div>
         </section>
-
-        <aside className="agent-panel">
-          <AgentSessionPanel
-            analysis={selectedAgent}
-            session={agentSession}
-            prompt={agentPrompt}
-            sessionLoading={agentSessionLoading}
-            busy={agentBusyKey === selectedKey}
-            disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
-            onPromptChange={setAgentPrompt}
-            onSend={runAgentAnalysis}
-            onReset={resetAgentConversation}
-          />
-          <div className="agent-card dense">
-            <span className="panel-label">Feed</span>
-            <div className="kv-row">
-              <span>Status</span>
-              <strong>{state?.streamStatus ?? 'idle'}</strong>
-            </div>
-            <div className="kv-row">
-              <span>Updated</span>
-              <strong>{state ? new Date(state.updatedAt).toLocaleTimeString() : '-'}</strong>
-            </div>
-            <div className="kv-row">
-              <span>Source</span>
-              <strong>{sourceLabel(selectedInstrument)}</strong>
-            </div>
-          </div>
-          <div className="agent-card dense">
-            <span className="panel-label">Provider</span>
-            <div className="kv-row">
-              <span>Current</span>
-              <strong>{state?.config.agent.provider ?? 'codex'}</strong>
-            </div>
-            <div className="kv-row">
-              <span>Model</span>
-              <strong>{state?.config.agent.model ?? '-'}</strong>
-            </div>
-            <div className="kv-row">
-              <span>Status</span>
-              <strong>{state?.config.agent.enabled ? 'enabled' : 'disabled'}</strong>
-            </div>
-          </div>
-          <div className="agent-card dense">
-            <span className="panel-label">Boundary</span>
-            <p>本地监控和解释层，不下单、不管理仓位、不生成买卖按钮。</p>
-          </div>
-          <button className="refresh-button" type="button" onClick={() => fetchState().then(setState)}>
-            <RefreshCw size={16} />
-            Refresh snapshot
-          </button>
-        </aside>
       </section>
     </main>
   );
@@ -2115,6 +2210,8 @@ export default function App() {
   const [analysisIntervalBusy, setAnalysisIntervalBusy] = useState(false);
   const [olderBusyKey, setOlderBusyKey] = useState<string | null>(null);
   const [exhaustedHistoryKeys, setExhaustedHistoryKeys] = useState<Set<string>>(() => new Set());
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [chartExpanded, setChartExpanded] = useState(true);
   const olderBusyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -2372,6 +2469,10 @@ export default function App() {
       analysisIntervalBusy={analysisIntervalBusy}
       olderBusyKey={olderBusyKey}
       exhaustedHistoryKeys={exhaustedHistoryKeys}
+      sidebarCollapsed={sidebarCollapsed}
+      chartExpanded={chartExpanded}
+      setSidebarCollapsed={setSidebarCollapsed}
+      setChartExpanded={setChartExpanded}
       setActiveGroup={setActiveGroup}
       setSelectedKey={setSelectedKey}
       setState={setState}
