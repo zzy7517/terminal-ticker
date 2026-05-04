@@ -214,14 +214,6 @@ function changeClass(quote: Quote | undefined) {
   return 'neutral';
 }
 
-// Maps local strategy side to the visual tone used by badges and rows.
-function signalTone(quote: Quote | undefined) {
-  const side = quote?.strategySignal?.side;
-  if (side === 'long') return 'up';
-  if (side === 'short') return 'down';
-  return 'neutral';
-}
-
 // Maps agent bias to the same visual tone vocabulary as market signals.
 function agentTone(analysis: AgentAnalysis | undefined) {
   const bias = analysis?.bias;
@@ -454,10 +446,9 @@ function marketPulse(state: MarketState | null) {
       if (quote.stale || quote.status === 'stale') acc.stale += 1;
       if ((quote.changePercent ?? 0) > 0) acc.up += 1;
       if ((quote.changePercent ?? 0) < 0) acc.down += 1;
-      if (quote.strategySignal?.available && quote.strategySignal.side !== 'flat') acc.signals += 1;
       return acc;
     },
-    { total: 0, up: 0, down: 0, stale: 0, signals: 0 },
+    { total: 0, up: 0, down: 0, stale: 0 },
   );
 }
 
@@ -899,8 +890,8 @@ function WatchlistRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const tone = signalTone(quote);
-  const signal = quote?.strategySignal;
+  const tone = changeClass(quote);
+  const candleCount = quote?.candles.length ?? 0;
   return (
     <button className={`watch-row ${selected ? 'selected' : ''}`} onClick={onSelect} type="button">
       <div className="watch-main">
@@ -910,7 +901,7 @@ function WatchlistRow({
             <small>{sourceLabel(instrument)}</small>
           </div>
           <div className="reason-line">
-            {signal?.available ? `${signal.side.toUpperCase()} · ${signal.regime}` : '等待 K 线'}
+            {candleCount > 0 ? `${instrument.analysisInterval} · ${candleCount} candles` : '等待 K 线'}
           </div>
         </div>
         <div className="price-stack">
@@ -920,7 +911,7 @@ function WatchlistRow({
       </div>
       <Sparkline candles={quote?.thumbnailCandles ?? quote?.candles ?? []} tone={changeClass(quote)} />
       <div className="watch-meta">
-        <span className={`marker ${tone}`}>{signal?.available ? signal.side.toUpperCase() : '--'}</span>
+        <span className={`marker ${tone}`}>{instrument.analysisInterval}</span>
         <span>{quote?.ageLabel ?? 'waiting'}</span>
       </div>
     </button>
@@ -1582,8 +1573,9 @@ function WorkspaceView({
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
   const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
   const candleDelta = closeDeltaPercent(selectedQuote?.candles ?? []);
-  const signal = selectedQuote?.strategySignal;
-  const tone = signalTone(selectedQuote);
+  const multiTimeframeLabel = selectedQuote?.multiTimeframeIntervals?.length
+    ? selectedQuote.multiTimeframeIntervals.join(' / ')
+    : currentInterval;
   const historyKey = selectedKey ? `${selectedKey}:${currentInterval}` : null;
   const canLoadOlder =
     Boolean(selectedInstrument && ['alpaca', 'bitget'].includes(selectedInstrument.source)) &&
@@ -1709,22 +1701,22 @@ function WorkspaceView({
           </div>
 
           <div className="analysis-strip">
-            <div className={`analysis-marker ${tone}`}>
-              {signal?.available ? signal.side.toUpperCase() : '--'}
+            <div className={`analysis-marker ${changeClass(selectedQuote)}`}>
+              MTF
             </div>
             <div>
               <strong>
-                {signal?.available
-                  ? `${signal.regime} · confidence ${Math.round(signal.confidence * 100)}%`
-                  : '等待 strategy context'}
+                {selectedQuote?.candles.length
+                  ? `Multi-timeframe context · ${multiTimeframeLabel}`
+                  : '等待多周期 K 线'}
               </strong>
               <span>
-                {signal?.available
-                  ? signal.reason
-                  : '需要足够 K 线后才生成 long / short / flat 研究信号'}
+                {selectedAgent?.available
+                  ? selectedAgent.summary
+                  : 'Agent 直接读取多周期 OHLCV 上下文，不再依赖本地 strategy / regime 解析层。'}
               </span>
             </div>
-            <Activity className={signal?.available ? 'analysis-check' : 'analysis-waiting'} size={18} />
+            <Activity className={selectedQuote?.candles.length ? 'analysis-check' : 'analysis-waiting'} size={18} />
           </div>
 
           <CandlestickPane

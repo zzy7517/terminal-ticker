@@ -44,7 +44,6 @@ from ..runtime.feed import CHART_CANDLE_LIMIT, OLDER_CANDLE_LIMIT
 from ..market_data.bitget import search_instruments as search_bitget_instruments
 from ..domain.quotes import QuoteState
 from ..domain.price_action import Candle, merge_candles
-from ..domain.strategy import StrategyConfig, generate_signal
 from ..market_data.router import MarketInstrument, resolve_instruments
 from ..config.watchlist_store import (
     append_alpaca_symbol_to_watchlist,
@@ -114,47 +113,10 @@ def _candle_payload(candle: Candle) -> dict[str, Any]:
     }
 
 
-def _strategy_signal_payload(quote: QuoteState, config: AnalysisConfig) -> dict[str, Any]:
-    """说明：把当前 K 线窗口转换成可展示的研究信号。"""
-    minimum_window = 24
-    if len(quote.candles) < minimum_window:
-        return {
-            "available": False,
-            "side": "flat",
-            "regime": "unclear",
-            "confidence": 0,
-            "reason": f"Waiting for at least {minimum_window} candles.",
-            "features": None,
-        }
-    window = min(len(quote.candles), max(minimum_window, min(config.lookback, 48)))
-    strategy_config = StrategyConfig(window=window, horizon=max(2, min(6, window // 8)))
-    signal = generate_signal(quote.candles, strategy_config)
-    return {
-        "available": True,
-        "side": signal.side,
-        "regime": signal.regime,
-        "confidence": signal.confidence,
-        "reason": signal.reason,
-        "features": {
-            "closeReturn": signal.features.close_return,
-            "rangeEfficiency": signal.features.range_efficiency,
-            "atrPercent": signal.features.atr_percent,
-            "realizedVolatility": signal.features.realized_volatility,
-            "trendScore": signal.features.trend_score,
-            "positionInRange": signal.features.position_in_range,
-            "volumeRatio": signal.features.volume_ratio,
-            "latestClose": signal.features.latest_close,
-            "recentHigh": signal.features.recent_high,
-            "recentLow": signal.features.recent_low,
-        },
-    }
-
-
 def _quote_payload(
     quote: QuoteState,
     *,
     stale_after_seconds: int,
-    analysis_config: AnalysisConfig,
 ) -> dict[str, Any]:
     """说明：把报价和图表 K 线序列化给前端。"""
     return {
@@ -178,7 +140,7 @@ def _quote_payload(
         "stale": quote.is_stale(stale_after_seconds),
         "lastError": quote.last_error,
         "updateCount": quote.update_count,
-        "strategySignal": _strategy_signal_payload(quote, analysis_config),
+        "multiTimeframeIntervals": sorted(quote.multi_timeframe_candles.keys()),
         "candles": [_candle_payload(candle) for candle in quote.candles],
         "thumbnailCandles": [
             _candle_payload(candle)
@@ -238,7 +200,6 @@ def serialize_market_state(
             key: _quote_payload(
                 quote,
                 stale_after_seconds=config.display.stale_after_seconds,
-                analysis_config=config.analysis,
             )
             for key, quote in quotes.items()
         },
@@ -255,11 +216,20 @@ class MarketContextProvider:
     def get_quote(self, instrument_key: str) -> QuoteState | None:
         return self._runtime.controller.quotes.get(instrument_key)
 
-    def get_strategy_signal(self, instrument_key: str) -> dict[str, Any] | None:
+    def get_candles(
+        self,
+        instrument_key: str,
+        *,
+        interval: str | None = None,
+    ) -> tuple[Candle, ...]:
         quote = self.get_quote(instrument_key)
-        if quote is None or len(quote.candles) < 24:
-            return None
-        return _strategy_signal_payload(quote, self._runtime.config.analysis)
+        if quote is None:
+            return tuple()
+        if interval:
+            return tuple(quote.multi_timeframe_candles.get(interval, tuple()))
+        instrument = self._runtime._instrument_by_key(instrument_key)
+        current_interval = instrument.analysis_interval or self._runtime.config.analysis.interval
+        return tuple(quote.multi_timeframe_candles.get(current_interval, quote.candles))
 
     def list_instruments(self) -> tuple[MarketInstrument, ...]:
         return self._runtime.instruments

@@ -35,6 +35,30 @@ THUMBNAIL_INTERVAL = "1H"
 THUMBNAIL_CANDLE_LIMIT = 60
 THUMBNAIL_RETENTION_SECONDS = THUMBNAIL_CANDLE_LIMIT * 60 * 60
 THUMBNAIL_CACHE_MAX_AGE_SECONDS = 15 * 60
+MULTI_TIMEFRAME_CANDLE_LIMIT = 120
+MULTI_TIMEFRAME_STACKS = {
+    "1m": ("1D", "4H", "1H", "15m", "5m", "1m"),
+    "3m": ("1D", "4H", "1H", "15m", "5m", "3m"),
+    "5m": ("1D", "4H", "1H", "15m", "5m"),
+    "15m": ("1D", "4H", "1H", "15m", "5m"),
+    "30m": ("1W", "1D", "4H", "1H", "30m"),
+    "1H": ("1W", "1D", "4H", "1H", "15m"),
+    "4H": ("1W", "1D", "4H", "1H"),
+    "6H": ("1W", "1D", "6H", "1H"),
+    "12H": ("1W", "1D", "12H", "4H"),
+    "1D": ("1M", "1W", "1D", "4H"),
+    "3D": ("1M", "1W", "3D", "1D"),
+    "1W": ("1M", "1W", "1D"),
+    "1M": ("1M", "1W"),
+}
+
+
+def related_analysis_intervals(primary_interval: str) -> tuple[str, ...]:
+    """说明：围绕当前主周期返回一组适合给 LLM 的多周期视图。"""
+    stack = MULTI_TIMEFRAME_STACKS.get(primary_interval)
+    if stack:
+        return stack
+    return (primary_interval,)
 
 
 @dataclass(frozen=True)
@@ -188,9 +212,10 @@ class FeedWorker(threading.Thread):
                     break
                 candles = tuple()
                 thumbnail_candles = None
+                multi_timeframe_candles: dict[str, tuple] = {}
                 error = None
+                interval = getattr(instrument, "analysis_interval", None) or self.config.analysis.interval
                 try:
-                    interval = getattr(instrument, "analysis_interval", None) or self.config.analysis.interval
                     candle_limit = max(self.config.analysis.lookback, CHART_CANDLE_LIMIT)
                     candles = await asyncio.to_thread(
                         self._fetch_candles,
@@ -202,7 +227,31 @@ class FeedWorker(threading.Thread):
                     raise
                 except Exception as exc:
                     error = str(exc) or exc.__class__.__name__
-                    interval = getattr(instrument, "analysis_interval", None) or self.config.analysis.interval
+
+                for timeframe in related_analysis_intervals(interval):
+                    try:
+                        if timeframe == interval and candles:
+                            multi_timeframe_candles[timeframe] = candles[-MULTI_TIMEFRAME_CANDLE_LIMIT:]
+                            continue
+                        timeframe_candles = await asyncio.to_thread(
+                            self._fetch_candles,
+                            instrument,
+                            interval=timeframe,
+                            limit=max(self.config.agent.max_candles, MULTI_TIMEFRAME_CANDLE_LIMIT),
+                        )
+                        if timeframe_candles:
+                            multi_timeframe_candles[timeframe] = timeframe_candles[
+                                -max(self.config.agent.max_candles, MULTI_TIMEFRAME_CANDLE_LIMIT) :
+                            ]
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        LOGGER.debug(
+                            "Multi-timeframe candles unavailable for %s %s: %s",
+                            instrument.key,
+                            timeframe,
+                            exc,
+                        )
 
                 try:
                     thumbnail_candles = await self._thumbnail_candles(instrument, candles, interval)
@@ -219,6 +268,7 @@ class FeedWorker(threading.Thread):
                 payload = {
                     "id": instrument.key,
                     "candles": candles,
+                    "multi_timeframe_candles": multi_timeframe_candles,
                 }
                 if error is not None:
                     payload["error"] = error

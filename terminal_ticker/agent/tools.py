@@ -140,13 +140,18 @@ def build_market_tools(context_provider: Any) -> ToolRegistry:
         handler=get_quote,
     ))
 
-    async def get_candles(instrument_key: str, count: int = 20) -> str:
+    async def get_candles(
+        instrument_key: str,
+        count: int = 20,
+        interval: str | None = None,
+    ) -> str:
         """获取指定标的的最近 K 线数据。"""
-        quote = context_provider.get_quote(instrument_key)
-        if quote is None:
-            return _json_output({"error": f"No candle data for {instrument_key}"})
+        candles = context_provider.get_candles(instrument_key, interval=interval)
+        if not candles:
+            target = f"{instrument_key} @ {interval}" if interval else instrument_key
+            return _json_output({"error": f"No candle data for {target}"})
         candle_count = max(1, min(int(count), 50))
-        candles = quote.candles[-candle_count:]
+        candles = candles[-candle_count:]
         return _json_output([{
             "time": c.open_time_ms // 1000,
             "open": c.open,
@@ -158,13 +163,17 @@ def build_market_tools(context_provider: Any) -> ToolRegistry:
 
     registry.register(ToolDefinition(
         name="get_candles",
-        description="获取指定标的最近的 OHLCV K 线数据，可指定返回数量（最多 50 根）。",
+        description="获取指定标的最近的 OHLCV K 线数据，可指定时间周期和返回数量（最多 50 根）。",
         parameters={
             "type": "object",
             "properties": {
                 "instrument_key": {
                     "type": "string",
                     "description": "标的唯一标识",
+                },
+                "interval": {
+                    "type": "string",
+                    "description": "可选时间周期，例如 5m、15m、1H、4H、1D；不传时使用当前主周期",
                 },
                 "count": {
                     "type": "integer",
@@ -177,29 +186,6 @@ def build_market_tools(context_provider: Any) -> ToolRegistry:
             "required": ["instrument_key"],
         },
         handler=get_candles,
-    ))
-
-    async def get_strategy_signal(instrument_key: str) -> str:
-        """获取指定标的当前的本地策略信号。"""
-        signal = context_provider.get_strategy_signal(instrument_key)
-        if signal is None:
-            return _json_output({"error": f"No strategy signal for {instrument_key}"})
-        return _json_output(signal)
-
-    registry.register(ToolDefinition(
-        name="get_strategy_signal",
-        description="获取指定标的的本地 regime/trend 策略分析信号，包括方向、regime、置信度和特征值。",
-        parameters={
-            "type": "object",
-            "properties": {
-                "instrument_key": {
-                    "type": "string",
-                    "description": "标的唯一标识",
-                },
-            },
-            "required": ["instrument_key"],
-        },
-        handler=get_strategy_signal,
     ))
 
     async def list_instruments() -> str:
