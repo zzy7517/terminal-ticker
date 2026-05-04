@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -85,7 +85,7 @@ const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '
 type SettingsSection = 'providers' | 'watchlist';
 type SearchSource = 'bitget' | 'alpaca';
 type SourceHint = SearchSource;
-type ThemeName = 'light' | 'tokyo-night';
+type ThemeName = 'light' | 'dark';
 
 type AppRoute =
   | { view: 'workspace' }
@@ -93,7 +93,7 @@ type AppRoute =
 
 const THEME_LABELS: Record<ThemeName, string> = {
   light: 'Light',
-  'tokyo-night': 'Tokyo Night',
+  dark: 'Dark',
 };
 
 const CHART_THEMES = {
@@ -130,36 +130,36 @@ const CHART_THEMES = {
       borderVisible: false,
     },
   },
-  'tokyo-night': {
+  dark: {
     chart: {
       layout: {
-        background: { type: ColorType.Solid, color: '#11121a' },
-        textColor: 'rgba(192, 202, 245, 0.72)',
+        background: { type: ColorType.Solid, color: '#0e0f11' },
+        textColor: 'rgba(186, 193, 204, 0.72)',
         fontFamily: 'Aptos, "Avenir Next", "Segoe UI", sans-serif',
       },
       grid: {
-        vertLines: { color: 'rgba(122, 162, 247, 0.10)' },
-        horzLines: { color: 'rgba(122, 162, 247, 0.12)' },
+        vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        horzLines: { color: 'rgba(255, 255, 255, 0.06)' },
       },
       rightPriceScale: {
-        borderColor: 'rgba(122, 162, 247, 0.22)',
+        borderColor: 'rgba(255, 255, 255, 0.08)',
         scaleMargins: { top: 0.12, bottom: 0.14 },
       },
       timeScale: {
-        borderColor: 'rgba(122, 162, 247, 0.22)',
+        borderColor: 'rgba(255, 255, 255, 0.08)',
         timeVisible: true,
         secondsVisible: false,
       },
       crosshair: {
-        vertLine: { color: 'rgba(125, 207, 255, 0.42)' },
-        horzLine: { color: 'rgba(125, 207, 255, 0.42)' },
+        vertLine: { color: 'rgba(79, 140, 255, 0.42)' },
+        horzLine: { color: 'rgba(79, 140, 255, 0.42)' },
       },
     },
     series: {
-      upColor: '#9ece6a',
-      downColor: '#f7768e',
-      wickUpColor: '#9ece6a',
-      wickDownColor: '#f7768e',
+      upColor: '#00b076',
+      downColor: '#ff4466',
+      wickUpColor: '#00b076',
+      wickDownColor: '#ff4466',
       borderVisible: false,
     },
   },
@@ -167,14 +167,14 @@ const CHART_THEMES = {
 
 function readInitialTheme(): ThemeName {
   try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'tokyo-night' ? 'tokyo-night' : 'light';
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
   } catch {
     return 'light';
   }
 }
 
 function nextTheme(theme: ThemeName): ThemeName {
-  return theme === 'tokyo-night' ? 'light' : 'tokyo-night';
+  return theme === 'dark' ? 'light' : 'dark';
 }
 
 // Converts the browser hash into the app's internal route shape.
@@ -443,20 +443,6 @@ function closeDeltaPercent(candles: CandlePoint[]) {
   return ((last - first) / Math.abs(first)) * 100;
 }
 
-// Aggregates watchlist quotes into the sidebar's market-bias summary.
-function marketPulse(state: MarketState | null) {
-  const quotes = state ? Object.values(state.quotes) : [];
-  return quotes.reduce(
-    (acc, quote) => {
-      acc.total += 1;
-      if (quote.stale || quote.status === 'stale') acc.stale += 1;
-      if ((quote.changePercent ?? 0) > 0) acc.up += 1;
-      if ((quote.changePercent ?? 0) < 0) acc.down += 1;
-      return acc;
-    },
-    { total: 0, up: 0, down: 0, stale: 0 },
-  );
-}
 
 // Renders the live/offline connection state for the top bar.
 function ConnectionBadge({ socketStatus, streamStatus }: { socketStatus: string; streamStatus: string }) {
@@ -550,21 +536,6 @@ function intervalOptions(currentInterval: string) {
   return [currentInterval, ...ANALYSIS_INTERVAL_OPTIONS];
 }
 
-// Projects recent closes into a compact SVG sparkline polyline.
-function sparklinePoints(candles: CandlePoint[], width = 112, height = 34) {
-  const closes = candles.slice(-60).map((item) => item.close).filter(Number.isFinite);
-  if (closes.length < 2) return '';
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const range = Math.max(max - min, Math.abs(max) * 0.002, 0.0001);
-  return closes
-    .map((close, index) => {
-      const x = (index / (closes.length - 1)) * width;
-      const y = height - ((close - min) / range) * height;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
-}
 
 // Owns the main K-line chart instance and incremental data updates.
 function CandlestickPane({
@@ -849,24 +820,8 @@ function CandlestickPane({
   );
 }
 
-// Renders a tiny trend preview for each watchlist row.
-function Sparkline({ candles, tone }: { candles: CandlePoint[]; tone: string }) {
-  const points = sparklinePoints(candles);
-  return (
-    <svg className={`sparkline ${tone}`} viewBox="0 0 112 34" aria-hidden="true">
-      {points ? (
-        <>
-          <polygon className="sparkline-area" points={`0,34 ${points} 112,34`} />
-          <polyline className="sparkline-line" points={points} />
-        </>
-      ) : (
-        <line className="sparkline-empty-line" x1="8" x2="104" y1="17" y2="17" />
-      )}
-    </svg>
-  );
-}
 
-// Renders one selectable symbol row with quote, signal, and sparkline state.
+// Renders one compact watchlist row: name/code, price, and 24h change.
 function WatchlistRow({
   instrument,
   quote,
@@ -878,53 +833,20 @@ function WatchlistRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const tone = changeClass(quote);
-  const candleCount = quote?.candles.length ?? 0;
   return (
     <button className={`watch-row ${selected ? 'selected' : ''}`} onClick={onSelect} type="button">
-      <div className="watch-main">
-        <div>
-          <div className="symbol-line">
-            <span>{instrument.label}</span>
-            <small>{sourceLabel(instrument)}</small>
-          </div>
-          <div className="reason-line">
-            {candleCount > 0 ? `${instrument.analysisInterval} · ${candleCount} candles` : '等待 K 线'}
-          </div>
-        </div>
-        <div className="price-stack">
-          <strong>{quote?.priceLabel ?? '-'}</strong>
-          <span className={changeClass(quote)}>{quote?.percentLabel ?? '-'}</span>
-        </div>
+      <div className="watch-left">
+        <span className="watch-label">{instrument.label}</span>
+        <small className="watch-code">{instrument.symbol}</small>
       </div>
-      <Sparkline candles={quote?.thumbnailCandles ?? quote?.candles ?? []} tone={changeClass(quote)} />
-      <div className="watch-meta">
-        <span className={`marker ${tone}`}>{instrument.analysisInterval}</span>
-        <span>{quote?.ageLabel ?? 'waiting'}</span>
+      <div className="watch-right">
+        <span className="watch-price">{quote?.priceLabel ?? '-'}</span>
+        <span className={`watch-change ${changeClass(quote)}`}>{quote?.percentLabel ?? '-'}</span>
       </div>
     </button>
   );
 }
 
-// Renders the watchlist-wide risk-on/risk-off summary.
-function SidebarCompass({ state }: { state: MarketState | null }) {
-  const pulse = marketPulse(state);
-  const total = pulse.total || 1;
-  return (
-    <div className="sidebar-compass">
-      <div
-        className="compass-ring"
-        style={{ '--share': `${(pulse.up / total) * 100}%` } as CSSProperties}
-        aria-hidden="true"
-      />
-      <div>
-        <span className="panel-label">Market Bias</span>
-        <strong>{pulse.up >= pulse.down ? 'Risk-on scan' : 'Defensive scan'}</strong>
-        <small>{pulse.up} advancing · {pulse.down} declining</small>
-      </div>
-    </div>
-  );
-}
 
 // Renders one compact chart statistic tile.
 function StatTile({ label, value }: { label: string; value: string }) {
@@ -1605,14 +1527,14 @@ function WorkspaceView({
         <div className="topbar-right">
           <ConnectionBadge socketStatus={socketStatus} streamStatus={state?.streamStatus ?? 'idle'} />
           <button
-            aria-label={`Switch to ${THEME_LABELS[nextThemeName]} skin`}
-            aria-pressed={theme === 'tokyo-night'}
+            aria-label={`Switch to ${THEME_LABELS[nextThemeName]} mode`}
+            aria-pressed={theme === 'dark'}
             className="shell-button theme-toggle"
             onClick={onThemeToggle}
             title={`Switch to ${THEME_LABELS[nextThemeName]}`}
             type="button"
           >
-            {theme === 'tokyo-night' ? <Sun size={16} /> : <Moon size={16} />}
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             <span>{THEME_LABELS[nextThemeName]}</span>
           </button>
           <label className="interval-pill interval-control">
@@ -1642,20 +1564,16 @@ function WorkspaceView({
           {!sidebarCollapsed && (
             <>
               <div className="sidebar-head">
-                <div>
-                  <span>Watchlist</span>
-                  <small>{state?.instruments.length ?? 0} symbols under watch</small>
-                </div>
+                <span className="sidebar-title">自选列表</span>
                 <button
                   aria-label="Manage watchlist"
                   className="sidebar-manage-button"
                   onClick={openWatchlistSettings}
                   type="button"
                 >
-                  <Settings size={16} />
+                  <Settings size={14} />
                 </button>
               </div>
-              <SidebarCompass state={state} />
               <div className="group-tabs">
                 {groups.map((group) => (
                   <button
@@ -1667,6 +1585,11 @@ function WorkspaceView({
                     {GROUP_LABELS[group] ?? group}
                   </button>
                 ))}
+              </div>
+              <div className="watchlist-header">
+                <span>名称/代码</span>
+                <span>最新价</span>
+                <span>涨跌幅</span>
               </div>
               <div className="watchlist">
                 {state &&

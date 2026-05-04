@@ -14,7 +14,7 @@ import {
 } from 'lightweight-charts';
 
 export type DrawingTool = 'cursor' | 'horizontal' | 'trend' | 'fibonacci';
-type DrawingTheme = 'light' | 'tokyo-night';
+type DrawingTheme = 'light' | 'dark';
 type DragPart = 'body' | 'price' | 'start' | 'end';
 
 export type DrawingPoint = {
@@ -92,14 +92,14 @@ const DRAWING_COLORS: Record<DrawingTheme, {
     selected: '#0f7c90',
     stroke: 'rgba(15, 124, 144, 0.82)',
   },
-  'tokyo-night': {
-    fill: 'rgba(125, 207, 255, 0.09)',
-    handleFill: '#11121a',
-    handleStroke: '#7dcfff',
-    labelText: 'rgba(205, 214, 244, 0.68)',
-    preview: 'rgba(125, 207, 255, 0.56)',
-    selected: '#7dcfff',
-    stroke: 'rgba(122, 162, 247, 0.84)',
+  dark: {
+    fill: 'rgba(79, 140, 255, 0.09)',
+    handleFill: '#0e0f11',
+    handleStroke: '#4f8cff',
+    labelText: 'rgba(186, 193, 204, 0.68)',
+    preview: 'rgba(79, 140, 255, 0.56)',
+    selected: '#4f8cff',
+    stroke: 'rgba(79, 140, 255, 0.82)',
   },
 };
 
