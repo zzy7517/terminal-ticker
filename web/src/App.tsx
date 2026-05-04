@@ -1491,6 +1491,7 @@ function WorkspaceView({
     Boolean(selectedInstrument && ['alpaca', 'bitget'].includes(selectedInstrument.source)) &&
     Boolean(historyKey && !exhaustedHistoryKeys.has(historyKey));
   const nextThemeName = nextTheme(theme);
+  const [activeTab, setActiveTab] = useState<'chart' | 'agent'>('chart');
 
   return (
     <main className="app-shell">
@@ -1528,21 +1529,6 @@ function WorkspaceView({
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             <span>{THEME_LABELS[nextThemeName]}</span>
           </button>
-          <label className="interval-pill interval-control">
-            <Activity size={15} />
-            <select
-              className="interval-select"
-              disabled={!state || !state.config.sourcePath || !selectedKey || analysisIntervalBusy}
-              onChange={(event) => updateAnalysisInterval(event.target.value)}
-              value={currentInterval}
-            >
-              {intervalOptions(currentInterval).map((interval) => (
-                <option key={interval} value={interval}>
-                  {interval}
-                </option>
-              ))}
-            </select>
-          </label>
           <button className="shell-button" type="button" onClick={openSettings}>
             <Settings size={16} />
             Settings
@@ -1639,92 +1625,94 @@ function WorkspaceView({
         </aside>
 
         <section className="main-content">
-          <div className="chart-section">
-            <div className="chart-panel-inner">
-              <div className="chart-header">
-                <h2>{selectedInstrument?.label ?? '选择标的'}</h2>
-                <div className="price-readout">
-                  <span className="readout-label">Last</span>
-                  <strong>{selectedQuote?.priceLabel ?? '-'}</strong>
-                  <span className={changeClass(selectedQuote)}>
-                    {selectedQuote?.changeLabel ?? '-'} · {selectedQuote?.percentLabel ?? '-'}
-                  </span>
+          <div className="workspace-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'chart'}
+              className={`workspace-tab ${activeTab === 'chart' ? 'active' : ''}`}
+              onClick={() => setActiveTab('chart')}
+            >
+              Chart
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'agent'}
+              className={`workspace-tab ${activeTab === 'agent' ? 'active' : ''}`}
+              onClick={() => setActiveTab('agent')}
+            >
+              Agent
+            </button>
+          </div>
+
+          {activeTab === 'chart' && (
+            <div className="chart-section">
+              <div className="chart-panel-inner">
+                <div className="chart-header">
+                  <h2>{selectedInstrument?.label ?? '选择标的'}</h2>
+                  <div className="chart-header-right">
+                    <label className="interval-pill interval-control">
+                      <Activity size={15} />
+                      <select
+                        className="interval-select"
+                        disabled={!state || !state.config.sourcePath || !selectedKey || analysisIntervalBusy}
+                        onChange={(event) => updateAnalysisInterval(event.target.value)}
+                        value={currentInterval}
+                      >
+                        {intervalOptions(currentInterval).map((interval) => (
+                          <option key={interval} value={interval}>
+                            {interval}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="price-readout">
+                      <span className="readout-label">Last</span>
+                      <strong>{selectedQuote?.priceLabel ?? '-'}</strong>
+                      <span className={changeClass(selectedQuote)}>
+                        {selectedQuote?.changeLabel ?? '-'} · {selectedQuote?.percentLabel ?? '-'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <CandlestickPane
+                  candles={selectedQuote?.candles ?? []}
+                  canLoadOlder={canLoadOlder}
+                  chartKey={`${selectedKey ?? 'none'}:${currentInterval}`}
+                  theme={theme}
+                  olderLoading={Boolean(historyKey && olderBusyKey === historyKey)}
+                  onLoadOlder={loadOlderForSelected}
+                />
+
+                <div className="stat-grid">
+                  <StatTile label="High" value={selectedQuote?.dayHigh?.toFixed(2) ?? '-'} />
+                  <StatTile label="Low" value={selectedQuote?.dayLow?.toFixed(2) ?? '-'} />
+                  <StatTile label="Volume" value={selectedQuote?.volumeLabel ?? '-'} />
+                  <StatTile label="Range" value={candleRangeLabel(selectedQuote?.candles ?? [])} />
+                  <StatTile label="Window" value={candleDelta == null ? '-' : `${formatSignedNumber(candleDelta)}%`} />
+                  <StatTile label="Age" value={selectedQuote?.ageLabel ?? 'waiting'} />
                 </div>
               </div>
+            </div>
+          )}
 
-              <CandlestickPane
-                candles={selectedQuote?.candles ?? []}
-                canLoadOlder={canLoadOlder}
-                chartKey={`${selectedKey ?? 'none'}:${currentInterval}`}
-                theme={theme}
-                olderLoading={Boolean(historyKey && olderBusyKey === historyKey)}
-                onLoadOlder={loadOlderForSelected}
+          {activeTab === 'agent' && (
+            <div className="agent-main-panel">
+              <AgentSessionPanel
+                analysis={selectedAgent}
+                session={agentSession}
+                prompt={agentPrompt}
+                sessionLoading={agentSessionLoading}
+                busy={agentBusyKey === selectedKey}
+                disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
+                onPromptChange={setAgentPrompt}
+                onSend={runAgentAnalysis}
+                onReset={resetAgentConversation}
               />
-
-              <div className="stat-grid">
-                <StatTile label="High" value={selectedQuote?.dayHigh?.toFixed(2) ?? '-'} />
-                <StatTile label="Low" value={selectedQuote?.dayLow?.toFixed(2) ?? '-'} />
-                <StatTile label="Volume" value={selectedQuote?.volumeLabel ?? '-'} />
-                <StatTile label="Range" value={candleRangeLabel(selectedQuote?.candles ?? [])} />
-                <StatTile label="Window" value={candleDelta == null ? '-' : `${formatSignedNumber(candleDelta)}%`} />
-                <StatTile label="Age" value={selectedQuote?.ageLabel ?? 'waiting'} />
-              </div>
             </div>
-          </div>
-
-          <div className="agent-main-panel">
-            <AgentSessionPanel
-              analysis={selectedAgent}
-              session={agentSession}
-              prompt={agentPrompt}
-              sessionLoading={agentSessionLoading}
-              busy={agentBusyKey === selectedKey}
-              disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
-              onPromptChange={setAgentPrompt}
-              onSend={runAgentAnalysis}
-              onReset={resetAgentConversation}
-            />
-            <div className="agent-info-strip">
-              <div className="agent-card dense">
-                <span className="panel-label">Feed</span>
-                <div className="kv-row">
-                  <span>Status</span>
-                  <strong>{state?.streamStatus ?? 'idle'}</strong>
-                </div>
-                <div className="kv-row">
-                  <span>Updated</span>
-                  <strong>{state ? new Date(state.updatedAt).toLocaleTimeString() : '-'}</strong>
-                </div>
-                <div className="kv-row">
-                  <span>Source</span>
-                  <strong>{sourceLabel(selectedInstrument)}</strong>
-                </div>
-              </div>
-              <div className="agent-card dense">
-                <span className="panel-label">Provider</span>
-                <div className="kv-row">
-                  <span>Current</span>
-                  <strong>{state?.config.agent.provider ?? 'codex'}</strong>
-                </div>
-                <div className="kv-row">
-                  <span>Model</span>
-                  <strong>{state?.config.agent.model ?? '-'}</strong>
-                </div>
-                <div className="kv-row">
-                  <span>Status</span>
-                  <strong>{state?.config.agent.enabled ? 'enabled' : 'disabled'}</strong>
-                </div>
-              </div>
-              <div className="agent-card dense">
-                <span className="panel-label">Boundary</span>
-                <p>本地监控和解释层，不下单、不管理仓位、不生成买卖按钮。</p>
-              </div>
-              <button className="refresh-button" type="button" onClick={() => fetchState().then(setState)}>
-                <RefreshCw size={16} />
-                Refresh snapshot
-              </button>
-            </div>
-          </div>
+          )}
         </section>
       </section>
     </main>

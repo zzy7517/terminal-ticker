@@ -12,7 +12,11 @@
   --text-muted: rgba(26, 29, 33, 0.40);
   --up: #00b076;
   --down: #ff4466;
-  --accent: #4f8cff;
+  --accent: #1a1d21;
+  --accent-contrast: #ffffff;
+  --accent-tint: rgba(0, 0, 0, 0.04);
+  --accent-tint-strong: rgba(0, 0, 0, 0.08);
+  --accent-ring: rgba(0, 0, 0, 0.16);
   --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
   --radius-sm: 4px;
@@ -37,7 +41,11 @@
   --text-muted: rgba(228, 230, 234, 0.36);
   --up: #00b076;
   --down: #ff4466;
-  --accent: #4f8cff;
+  --accent: #e4e6ea;
+  --accent-contrast: #0e0f11;
+  --accent-tint: rgba(255, 255, 255, 0.06);
+  --accent-tint-strong: rgba(255, 255, 255, 0.12);
+  --accent-ring: rgba(255, 255, 255, 0.22);
   --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
@@ -102,14 +110,14 @@ h3 {
 }
 
 ::selection {
-  background: rgba(79, 140, 255, 0.2);
+  background: var(--accent-tint-strong);
 }
 
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-ring);
   outline-offset: 2px;
 }
 
@@ -169,7 +177,7 @@ textarea:focus-visible {
   align-items: center;
   background: var(--accent);
   border-radius: 10px;
-  color: #fff;
+  color: var(--accent-contrast);
   display: inline-flex;
   height: 36px;
   justify-content: center;
@@ -250,7 +258,7 @@ textarea:focus-visible {
 .shell-button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .shell-button.primary:hover {
@@ -448,11 +456,11 @@ textarea:focus-visible {
 }
 
 .watch-row.selected {
-  background: rgba(79, 140, 255, 0.06);
+  background: var(--accent-tint);
 }
 
 :root[data-theme="dark"] .watch-row.selected {
-  background: rgba(79, 140, 255, 0.10);
+  background: var(--accent-tint-strong);
 }
 
 .watch-left {
@@ -558,7 +566,7 @@ textarea:focus-visible {
 }
 
 .sidebar-collapsed-symbol.selected {
-  background: rgba(79, 140, 255, 0.08);
+  background: var(--accent-tint-strong);
 }
 
 .collapsed-symbol-label {
@@ -587,6 +595,40 @@ textarea:focus-visible {
   overflow: auto;
 }
 
+.workspace-tabs {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  align-self: flex-start;
+}
+
+.workspace-tab {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  min-height: 30px;
+  padding: 0 14px;
+  transition: background 120ms, color 120ms;
+}
+
+.workspace-tab:hover {
+  color: var(--text-primary);
+}
+
+.workspace-tab.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
 /* ── Chart section ────────────────────────────────────────────────── */
 .chart-section {
   background: var(--panel);
@@ -608,6 +650,12 @@ textarea:focus-visible {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
+}
+
+.chart-header-right {
+  align-items: center;
+  display: flex;
+  gap: 12px;
 }
 
 .price-readout {
@@ -693,12 +741,12 @@ textarea:focus-visible {
 }
 
 .chart-action-button:hover {
-  background: rgba(79, 140, 255, 0.1);
+  background: var(--accent-tint-strong);
   color: var(--accent);
 }
 
 .chart-action-button.active {
-  background: rgba(79, 140, 255, 0.15);
+  background: var(--accent-ring);
   color: var(--accent);
 }
 
@@ -790,17 +838,6 @@ textarea:focus-visible {
   max-height: none;
 }
 
-.agent-info-strip {
-  align-items: start;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-}
-
-.agent-info-strip .refresh-button {
-  align-self: stretch;
-}
-
 /* ── Agent cards ──────────────────────────────────────────────────── */
 .agent-card {
   background: var(--panel);
@@ -821,10 +858,6 @@ textarea:focus-visible {
   font-size: 13px;
   line-height: 1.5;
   margin-top: 8px;
-}
-
-.agent-card.dense {
-  padding: 10px 12px;
 }
 
 .kv-row {
@@ -858,7 +891,7 @@ textarea:focus-visible {
 }
 
 .agent-readout {
-  border-color: rgba(79, 140, 255, 0.15);
+  border-color: var(--accent-ring);
 }
 
 .agent-bias {
@@ -935,11 +968,11 @@ textarea:focus-visible {
 }
 
 .session-message.user {
-  background: rgba(79, 140, 255, 0.06);
+  background: var(--accent-tint);
 }
 
 :root[data-theme="dark"] .session-message.user {
-  background: rgba(79, 140, 255, 0.10);
+  background: var(--accent-tint-strong);
 }
 
 .session-message-head,
@@ -1017,19 +1050,23 @@ textarea:focus-visible {
   background: var(--accent);
   border: 0;
   border-radius: var(--radius-md);
-  color: #fff;
+  color: var(--accent-contrast);
   cursor: pointer;
   display: inline-flex;
   font-weight: 600;
   gap: 8px;
   justify-content: center;
   min-height: 38px;
-  transition: opacity 120ms;
+  transition: opacity 120ms, transform 120ms;
   width: 100%;
 }
 
 .agent-action:hover:not(:disabled) {
-  opacity: 0.9;
+  opacity: 0.88;
+}
+
+.agent-action:active:not(:disabled) {
+  transform: scale(0.99);
 }
 
 .agent-action:disabled {
@@ -1159,7 +1196,7 @@ textarea:focus-visible {
 }
 
 .risk-notes {
-  background: rgba(79, 140, 255, 0.06);
+  background: var(--accent-tint);
   border-radius: var(--radius-md);
   display: grid;
   gap: 5px;
@@ -1416,7 +1453,7 @@ textarea:focus-visible {
 }
 
 .settings-nav-item.active {
-  background: rgba(79, 140, 255, 0.1);
+  background: var(--accent-tint-strong);
   color: var(--accent);
 }
 
@@ -1540,7 +1577,7 @@ textarea:focus-visible {
 
 .provider-item.selected,
 .provider-item:hover {
-  background: rgba(79, 140, 255, 0.06);
+  background: var(--accent-tint);
 }
 
 .provider-item:active {
@@ -1549,7 +1586,7 @@ textarea:focus-visible {
 
 .provider-item-icon {
   align-items: center;
-  background: rgba(79, 140, 255, 0.1);
+  background: var(--accent-tint-strong);
   border-radius: 12px;
   color: var(--accent);
   display: inline-flex;
@@ -1757,7 +1794,7 @@ textarea:focus-visible {
 
 .model-row.selected,
 .model-row:hover {
-  background: rgba(79, 140, 255, 0.06);
+  background: var(--accent-tint);
 }
 
 .model-row:active {
@@ -2016,7 +2053,7 @@ textarea:focus-visible {
 }
 
 .watchlist-source-head small {
-  background: rgba(79, 140, 255, 0.08);
+  background: var(--accent-tint-strong);
   border-radius: 999px;
   color: var(--accent);
   font-family: var(--mono);
@@ -2139,7 +2176,7 @@ textarea:focus-visible {
 }
 
 .bulk-preview-row.ready {
-  background: rgba(79, 140, 255, 0.06);
+  background: var(--accent-tint);
 }
 
 .bulk-preview-row span {
@@ -2174,7 +2211,7 @@ textarea:focus-visible {
 }
 
 .source-toggle button.active {
-  background: rgba(79, 140, 255, 0.1);
+  background: var(--accent-tint-strong);
   color: var(--accent);
 }
 
@@ -2194,10 +2231,6 @@ textarea:focus-visible {
 
 /* ── Responsive ───────────────────────────────────────────────────── */
 @media (max-width: 1200px) {
-  .agent-info-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .settings-frame,
   .provider-layout {
     grid-template-columns: 1fr;
@@ -2247,10 +2280,6 @@ textarea:focus-visible {
   .stat-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-
-  .agent-info-strip {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 640px) {
@@ -2269,8 +2298,7 @@ textarea:focus-visible {
 
   .stat-grid,
   .provider-section,
-  .provider-form-grid,
-  .agent-info-strip {
+  .provider-form-grid {
     grid-template-columns: 1fr;
   }
 
