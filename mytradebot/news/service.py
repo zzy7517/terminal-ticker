@@ -94,17 +94,19 @@ class NewsService:
 
     async def refresh_now(self, timeout_seconds: float = 10.0) -> RefreshOutcome:
         """说明：阻塞式手动刷新，带锁防并发、带超时降级。"""
-        async with self._refresh_lock:
-            try:
-                return await asyncio.wait_for(self._refresh_once(), timeout=timeout_seconds)
-            except asyncio.TimeoutError:
-                items = self.store.recent(limit=self.recent_limit)
-                return RefreshOutcome(
-                    status="timeout",
-                    inserted=0,
-                    total_recent=len(items),
-                    error=f"refresh timed out after {timeout_seconds:.1f}s",
-                )
+        try:
+            return await asyncio.wait_for(
+                self._refresh_once_with_lock(),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            items = self.store.recent(limit=self.recent_limit)
+            return RefreshOutcome(
+                status="timeout",
+                inserted=0,
+                total_recent=len(items),
+                error=f"refresh timed out after {timeout_seconds:.1f}s",
+            )
 
     def recent(self, limit: int | None = None) -> list[NewsItem]:
         """说明：读取最近的新闻（按发布时间倒序）。"""
@@ -115,8 +117,7 @@ class NewsService:
         """说明：后台循环。"""
         try:
             while not self._stop_event.is_set():
-                async with self._refresh_lock:
-                    await self._refresh_once()
+                await self._refresh_once_with_lock()
                 try:
                     await asyncio.wait_for(
                         self._stop_event.wait(),
@@ -128,6 +129,11 @@ class NewsService:
             raise
         except Exception:  # noqa: BLE001
             LOGGER.exception("news poll loop crashed")
+
+    async def _refresh_once_with_lock(self) -> RefreshOutcome:
+        """说明：串行化单次刷新，供后台轮询与手动刷新共用。"""
+        async with self._refresh_lock:
+            return await self._refresh_once()
 
     async def _refresh_once(self) -> RefreshOutcome:
         """说明：向 provider 请求一次并根据返回状态更新游标、退避。"""

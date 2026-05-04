@@ -867,6 +867,15 @@ function formatRelativeTime(iso: string): string {
   return `${diffDay}d ago`;
 }
 
+type LocalNewsItems = {
+  items: NewsItem[];
+  upstreamSignature: string;
+};
+
+function newsItemsSignature(items: NewsItem[]): string {
+  return items.map((item) => `${item.url}|${item.publishedAtMs}|${item.title}`).join('\n');
+}
+
 function NewsPanel({
   items,
   lastStatus,
@@ -877,9 +886,16 @@ function NewsPanel({
   lastError?: string | null;
 }) {
   const [loading, setLoading] = useState(false);
-  const [localItems, setLocalItems] = useState<NewsItem[] | null>(null);
+  const [localItems, setLocalItems] = useState<LocalNewsItems | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const displayItems = localItems ?? items;
+  const upstreamSignature = useMemo(() => newsItemsSignature(items), [items]);
+  const displayItems = localItems?.items ?? items;
+
+  useEffect(() => {
+    if (localItems && upstreamSignature !== localItems.upstreamSignature) {
+      setLocalItems(null);
+    }
+  }, [localItems, upstreamSignature]);
 
   const handleRefresh = useCallback(async () => {
     if (loading) return;
@@ -887,7 +903,10 @@ function NewsPanel({
     setFeedback(null);
     try {
       const result = await triggerNewsRefresh();
-      setLocalItems(result.news);
+      setLocalItems({
+        items: result.news,
+        upstreamSignature,
+      });
       if (result.error) {
         setFeedback(`${result.status}: ${result.error}`);
       } else if (result.stale) {
@@ -902,7 +921,7 @@ function NewsPanel({
     } finally {
       setLoading(false);
     }
-  }, [loading]);
+  }, [loading, upstreamSignature]);
 
   return (
     <div className="news-panel">

@@ -23,6 +23,21 @@ class FakeProvider:
         return FetchResult(status="not_modified")
 
 
+class BlockingProvider:
+    source_name = "reuters"
+
+    def __init__(self) -> None:
+        self.started: asyncio.Event | None = None
+        self.release: asyncio.Event | None = None
+
+    async def fetch(self, *, etag: str | None = None, last_modified: str | None = None) -> FetchResult:
+        assert self.started is not None
+        assert self.release is not None
+        self.started.set()
+        await self.release.wait()
+        return FetchResult(status="not_modified")
+
+
 def _item(url: str, ts: int) -> NewsItem:
     return NewsItem(
         url=url,
@@ -81,6 +96,29 @@ class NewsServiceTests(unittest.TestCase):
         self._run(service.refresh_now())
         self.assertEqual(service.last_status, "rate_limited")
         self.assertGreater(service._current_interval, 30.0)
+
+    def test_refresh_now_timeout_includes_waiting_for_refresh_lock(self) -> None:
+        provider = BlockingProvider()
+        service = NewsService(store=self.store, provider=provider)
+
+        async def scenario():
+            provider.started = asyncio.Event()
+            provider.release = asyncio.Event()
+            first = asyncio.create_task(service.refresh_now(timeout_seconds=1.0))
+            await provider.started.wait()
+            try:
+                return await asyncio.wait_for(
+                    service.refresh_now(timeout_seconds=0.01),
+                    timeout=0.2,
+                )
+            finally:
+                assert provider.release is not None
+                provider.release.set()
+                await first
+
+        outcome = self._run(scenario())
+        self.assertEqual(outcome.status, "timeout")
+        self.assertIn("timed out", outcome.error or "")
 
     def test_refresh_success_resets_backoff(self) -> None:
         provider = FakeProvider([
