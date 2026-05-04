@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 def parse_args() -> argparse.Namespace:
     """说明：解析命令行参数。"""
     parser = argparse.ArgumentParser(
-        prog="terminal_ticker",
+        prog="mytradebot",
         description="Local web UI for price action monitoring",
     )
     parser.add_argument(
@@ -63,7 +63,7 @@ def main() -> int:
     config = resolve_config(args)
     instruments = resolve_instruments(config.instruments)
     app = create_app(config=config, instruments=instruments)
-    LOGGER.info("Starting terminal_ticker on %s:%s with %s instruments", args.host, args.port, len(instruments))
+    LOGGER.info("Starting mytradebot on %s:%s with %s instruments", args.host, args.port, len(instruments))
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level.lower())
     return 0
 

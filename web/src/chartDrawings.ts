@@ -68,7 +68,7 @@ type DragState = {
   startPoint: DrawingPoint;
 };
 
-const STORAGE_KEY = 'terminal-ticker-chart-drawings:v1';
+const STORAGE_KEY = 'mytradebot-chart-drawings:v1';
 const EMPTY_DRAWINGS: ChartDrawing[] = [];
 const HIT_TOLERANCE = 8;
 const HANDLE_RADIUS = 5;

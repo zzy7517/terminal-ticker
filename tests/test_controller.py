@@ -1,11 +1,11 @@
 """Test ticker controller event handling."""
 import unittest
 
-from terminal_ticker.market_data.bitget import BitgetInstrument
-from terminal_ticker.config import AppConfig, DisplayConfig
-from terminal_ticker.runtime.controller import TickerController
-from terminal_ticker.runtime.feed import FeedEvent
-from terminal_ticker.domain.price_action import Candle
+from mytradebot.market_data.bitget import BitgetInstrument
+from mytradebot.config import AppConfig, DisplayConfig
+from mytradebot.runtime.controller import TickerController
+from mytradebot.runtime.feed import FeedEvent
+from mytradebot.domain.price_action import Candle
 
 
 class DummyWorker:

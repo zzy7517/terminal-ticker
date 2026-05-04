@@ -14,7 +14,7 @@ from ..provider import LLMProviderError, LLMProviderUnavailable
 
 OPENAI_CHAT_PROVIDER = "openai"
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
-OPENAI_ENV_API_KEYS = ("TERMINAL_TICKER_OPENAI_API_KEY", "OPENAI_API_KEY")
+OPENAI_ENV_API_KEYS = ("MYTRADEBOT_OPENAI_API_KEY", "OPENAI_API_KEY")
 
 
 class OpenAIChatProvider:
@@ -26,7 +26,7 @@ class OpenAIChatProvider:
         self.config = config
         self.model = config.model
         self._base_url = os.getenv(
-            "TERMINAL_TICKER_OPENAI_BASE_URL",
+            "MYTRADEBOT_OPENAI_BASE_URL",
             os.getenv("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL),
         ).rstrip("/")
 
@@ -122,7 +122,7 @@ def _resolve_openai_api_key() -> str:
         if value:
             return value
     raise LLMProviderUnavailable(
-        "No OpenAI API key found. Set TERMINAL_TICKER_OPENAI_API_KEY or OPENAI_API_KEY."
+        "No OpenAI API key found. Set MYTRADEBOT_OPENAI_API_KEY or OPENAI_API_KEY."
     )
 
 

@@ -1,4 +1,4 @@
-# Terminal Ticker
+# mytradebot
 
 一个本地优先的行情和研究 Web UI。后端用 Python 连接 Bitget 和 Alpaca，读取 OHLCV K 线并组织多周期上下文；前端用 React 和 Lightweight Charts 展示 watchlist、K 线图和 agent 解释面板。
 
@@ -17,7 +17,7 @@
 创建并激活虚拟环境：
 
 ```bash
-cd /path/to/terminal-ticker
+cd /path/to/mytradebot
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -46,7 +46,7 @@ $CODEX_HOME/auth.json，未设置 CODEX_HOME 时使用 ~/.codex/auth.json
 也可以用环境变量提供 Codex access token：
 
 ```bash
-export TERMINAL_TICKER_CODEX_API_KEY="你的 Codex access token"
+export MYTRADEBOT_CODEX_API_KEY="你的 Codex access token"
 ```
 
 开发模式需要两个终端。
@@ -54,7 +54,7 @@ export TERMINAL_TICKER_CODEX_API_KEY="你的 Codex access token"
 终端 1：启动 Python 后端：
 
 ```bash
-.venv/bin/python -m terminal_ticker --host 127.0.0.1 --port 8765
+.venv/bin/python -m mytradebot --host 127.0.0.1 --port 8765
 ```
 
 终端 2：启动 Vite 前端：
@@ -73,7 +73,7 @@ http://127.0.0.1:5173
 
 ```bash
 npm run build
-.venv/bin/python -m terminal_ticker --host 127.0.0.1 --port 8765
+.venv/bin/python -m mytradebot --host 127.0.0.1 --port 8765
 ```
 
 然后打开：
@@ -85,13 +85,13 @@ http://127.0.0.1:8765
 使用自定义配置：
 
 ```bash
-.venv/bin/python -m terminal_ticker --config my-watchlist.toml
+.venv/bin/python -m mytradebot --config my-watchlist.toml
 ```
 
 临时指定 Bitget 标的：
 
 ```bash
-.venv/bin/python -m terminal_ticker --symbols USDT-FUTURES:BTCUSDT USDT-FUTURES:ETHUSDT
+.venv/bin/python -m mytradebot --symbols USDT-FUTURES:BTCUSDT USDT-FUTURES:ETHUSDT
 ```
 
 ## 配置格式

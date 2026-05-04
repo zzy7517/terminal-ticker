@@ -11,7 +11,7 @@ from typing import Callable
 from ..config import CacheConfig
 from ..domain.price_action import Candle
 
-DEFAULT_CACHE_SUBDIR = "terminal-ticker"
+DEFAULT_CACHE_SUBDIR = "mytradebot"
 DEFAULT_CACHE_FILENAME = "candles.sqlite3"
 INTERVAL_SECONDS = {
     "1m": 60,

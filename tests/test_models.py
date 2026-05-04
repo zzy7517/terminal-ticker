@@ -2,8 +2,8 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from terminal_ticker.domain.quotes import QuoteState
-from terminal_ticker.domain.price_action import Candle
+from mytradebot.domain.quotes import QuoteState
+from mytradebot.domain.price_action import Candle
 
 
 class QuoteStateTests(unittest.TestCase):

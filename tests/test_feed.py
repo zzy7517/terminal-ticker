@@ -7,12 +7,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from terminal_ticker.market_data.candle_cache import CandleCache
-from terminal_ticker.config import AnalysisConfig, AppConfig, DisplayConfig
-from terminal_ticker.runtime.feed import FeedWorker, THUMBNAIL_CANDLE_LIMIT, THUMBNAIL_INTERVAL
-from terminal_ticker.market_data.alpaca import AlpacaInstrument
-from terminal_ticker.market_data.bitget import BitgetInstrument
-from terminal_ticker.domain.price_action import Candle
+from mytradebot.market_data.candle_cache import CandleCache
+from mytradebot.config import AnalysisConfig, AppConfig, DisplayConfig
+from mytradebot.runtime.feed import FeedWorker, THUMBNAIL_CANDLE_LIMIT, THUMBNAIL_INTERVAL
+from mytradebot.market_data.alpaca import AlpacaInstrument
+from mytradebot.market_data.bitget import BitgetInstrument
+from mytradebot.domain.price_action import Candle
 
 
 class FeedWorkerTests(unittest.TestCase):
@@ -48,7 +48,7 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch(
-                "terminal_ticker.runtime.feed.fetch_alpaca_snapshot_payloads",
+                "mytradebot.runtime.feed.fetch_alpaca_snapshot_payloads",
                 return_value={"alpaca:AAPL": {"id": "alpaca:AAPL", "price": 201.5}},
             ):
                 task = asyncio.create_task(worker._run_alpaca())
@@ -78,7 +78,7 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch(
-                "terminal_ticker.runtime.feed.fetch_alpaca_snapshot_payloads",
+                "mytradebot.runtime.feed.fetch_alpaca_snapshot_payloads",
                 side_effect=RuntimeError("missing credentials"),
             ):
                 task = asyncio.create_task(worker._run_alpaca())

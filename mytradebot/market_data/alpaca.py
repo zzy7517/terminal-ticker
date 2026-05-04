@@ -103,7 +103,7 @@ def _alpaca_headers() -> dict[str, str]:
     return {
         "APCA-API-KEY-ID": key,
         "APCA-API-SECRET-KEY": secret,
-        "User-Agent": "terminal-ticker/0.1",
+        "User-Agent": "mytradebot/0.1",
     }
 
 

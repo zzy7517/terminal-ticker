@@ -5,8 +5,11 @@ import type {
   AgentSessionResponse,
   AnalysisConfigUpdate,
   InstrumentSearchResult,
+  Lesson,
   MarketState,
   SecuritySearchResult,
+  Trade,
+  TradeDetailResponse,
 } from './types';
 
 // Builds a user-facing error while preserving FastAPI's structured detail when available.
@@ -221,4 +224,65 @@ export function connectStateSocket(onState: (state: MarketState) => void, onStat
     }
   });
   return socket;
+}
+
+// Lists trades with optional filters.
+export async function listTrades(params: {
+  instrumentKey?: string;
+  status?: string;
+  limit?: number;
+} = {}): Promise<Trade[]> {
+  const search = new URLSearchParams();
+  if (params.instrumentKey) search.set('instrument_key', params.instrumentKey);
+  if (params.status) search.set('status', params.status);
+  if (params.limit != null) search.set('limit', String(params.limit));
+  const query = search.toString();
+  const response = await fetch(`/api/trades${query ? `?${query}` : ''}`);
+  if (!response.ok) {
+    throw await responseError(response, 'list trades failed');
+  }
+  const payload = await response.json();
+  return payload.trades;
+}
+
+// Fetches a single trade including the frozen snapshot and related lessons.
+export async function getTradeDetail(tradeId: number): Promise<TradeDetailResponse> {
+  const response = await fetch(`/api/trades/${tradeId}`);
+  if (!response.ok) {
+    throw await responseError(response, 'trade detail failed');
+  }
+  return response.json();
+}
+
+// Lists lessons generated from post-trade reviews.
+export async function listLessons(instrumentKey?: string, limit?: number): Promise<Lesson[]> {
+  const search = new URLSearchParams();
+  if (instrumentKey) search.set('instrument_key', instrumentKey);
+  if (limit != null) search.set('limit', String(limit));
+  const query = search.toString();
+  const response = await fetch(`/api/lessons${query ? `?${query}` : ''}`);
+  if (!response.ok) {
+    throw await responseError(response, 'list lessons failed');
+  }
+  const payload = await response.json();
+  return payload.lessons;
+}
+
+// Triggers a manual review pass for recently-closed trades without a lesson yet.
+export async function triggerTradeReview(limit = 3): Promise<Array<{
+  tradeId: number;
+  lessonId: number | null;
+  success: boolean;
+  error: string | null;
+}>> {
+  const response = await fetch('/api/trades/review', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ limit }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'trade review failed');
+  }
+  const payload = await response.json();
+  return payload.results;
 }

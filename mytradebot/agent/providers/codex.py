@@ -1,9 +1,9 @@
-"""Codex provider for the Terminal Ticker analysis agent.
+"""Codex provider for the mytradebot analysis agent.
 
 本模块负责把本地生成的结构化行情上下文发送给 Codex 后端，并把返回文本
 转换成项目通用的 ``AgentAnalysisResult``。它的职责边界比较窄：
 
-- 凭证解析：优先读取 ``TERMINAL_TICKER_CODEX_API_KEY`` / ``CODEX_API_KEY``，
+- 凭证解析：优先读取 ``MYTRADEBOT_CODEX_API_KEY`` / ``CODEX_API_KEY``，
   缺省时复用 Codex CLI 写入的 ``~/.codex/auth.json`` 登录态。
 - 分析请求：使用 Codex Responses 风格的 ``/responses`` 流式接口，发送紧凑
   JSON 上下文，且设置 ``store=False``，避免服务端持久化本次分析输入。
@@ -40,13 +40,13 @@ from ..provider import (
     _result_from_text,
 )
 
-CODEX_ENV_API_KEYS = ("TERMINAL_TICKER_CODEX_API_KEY", "CODEX_API_KEY")
+CODEX_ENV_API_KEYS = ("MYTRADEBOT_CODEX_API_KEY", "CODEX_API_KEY")
 
 
 class CodexProvider:
     """通过 Codex Responses 风格接口完成行情分析的 LLM provider。
 
-    这个类实现 ``terminal_ticker.agent.provider`` 中约定的 provider 行为：
+    这个类实现 ``mytradebot.agent.provider`` 中约定的 provider 行为：
     ``analyze`` 负责单次行情上下文分析，``list_models`` 负责给配置页刷新可用
     模型。它不做 K 线特征计算、策略信号生成或结果结构修正；这些上游/下游逻辑
     仍由 domain 层和通用解析函数负责。
@@ -403,7 +403,7 @@ def _resolve_codex_credentials() -> dict[str, str]:
         }
 
     raise LLMProviderUnavailable(
-        "No Codex credential found. Set TERMINAL_TICKER_CODEX_API_KEY "
+        "No Codex credential found. Set MYTRADEBOT_CODEX_API_KEY "
         "or login with the Codex CLI so ~/.codex/auth.json contains valid tokens."
     )
 
@@ -539,7 +539,7 @@ def _codex_request_headers(access_token: str, account_id: str | None = None) -> 
         可合并进 httpx 请求的 headers 字典；不会包含 Authorization。
     """
     headers = {
-        "User-Agent": "codex_cli_rs/0.0.0 (Terminal Ticker)",
+        "User-Agent": "codex_cli_rs/0.0.0 (mytradebot)",
         "originator": "codex_cli_rs",
     }
     if isinstance(account_id, str) and account_id.strip():

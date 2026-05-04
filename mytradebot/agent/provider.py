@@ -349,7 +349,7 @@ _CODEX_COMPAT_EXPORTS = {
 
 
 def __getattr__(name: str) -> Any:
-    """说明：为旧的 terminal_ticker.agent.provider Codex 导入保留兼容。"""
+    """说明：为旧的 mytradebot.agent.provider Codex 导入保留兼容。"""
     if name in _CODEX_COMPAT_EXPORTS:
         from .providers import codex
 

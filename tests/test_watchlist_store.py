@@ -4,8 +4,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from terminal_ticker.config import AgentConfig, AnalysisConfig, load_config
-from terminal_ticker.config.watchlist_store import (
+from mytradebot.config import AgentConfig, AnalysisConfig, load_config
+from mytradebot.config.watchlist_store import (
     append_alpaca_symbol_to_watchlist,
     append_bitget_symbol_to_watchlist,
     remove_alpaca_symbol_from_watchlist,

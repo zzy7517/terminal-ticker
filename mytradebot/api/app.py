@@ -23,11 +23,16 @@ from ..agent import (
     LLMProviderUnavailable,
     build_agent_context,
     build_market_tools,
+    build_trading_tools,
     create_llm_provider,
     list_available_agent_models,
+    merge_registries,
 )
 from ..agent.provider import _result_from_text
 from ..agent.tools import ToolRegistry
+from ..trading import TradeStatus, TradeStore
+from ..trading.paper_broker import PaperBroker
+from ..trading.review import review_pending
 from ..config import (
     AgentConfig,
     AnalysisConfig,
@@ -156,6 +161,7 @@ def serialize_market_state(
     quotes: dict[str, QuoteState],
     stream_status: str,
     agent_analyses: dict[str, dict[str, Any]] | None = None,
+    open_trades: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """说明：构造浏览器需要的完整市场状态快照。"""
     groups: dict[str, list[str]] = {}
@@ -204,6 +210,7 @@ def serialize_market_state(
             for key, quote in quotes.items()
         },
         "agentAnalyses": agent_analyses or {},
+        "openTrades": open_trades or [],
     }
 
 
@@ -245,17 +252,33 @@ class MarketRuntime:
         instruments: tuple[MarketInstrument, ...],
         controller_factory: Callable[..., Any] = TickerController,
         agent_session_store: AgentSessionStore | None = None,
+        trade_store: TradeStore | None = None,
     ) -> None:
         """说明：初始化当前对象的运行状态。"""
         self.config = config
         self.instruments = instruments
         self.controller_factory = controller_factory
-        self.controller = controller_factory(config=config, instruments=instruments)
+        self.trade_store = trade_store or TradeStore()
+        self.paper_broker = PaperBroker(self.trade_store)
+        try:
+            self.controller = controller_factory(
+                config=config,
+                instruments=instruments,
+                paper_broker=self.paper_broker,
+            )
+        except TypeError:
+            # 兼容不支持 paper_broker 参数的测试替身
+            self.controller = controller_factory(
+                config=config,
+                instruments=instruments,
+            )
         self.clients: set[WebSocket] = set()
         self.pump_task: asyncio.Task[None] | None = None
+        self.review_task: asyncio.Task[None] | None = None
         self.running = False
         self.agent_analyses: dict[str, dict[str, Any]] = {}
         self.agent_session_store = agent_session_store or AgentSessionStore()
+        self._active_session_for_tools: str | None = None
 
     async def start(self) -> None:
         """说明：启动后台运行时组件。"""
@@ -264,6 +287,7 @@ class MarketRuntime:
         self.running = True
         self.controller.start()
         self.pump_task = asyncio.create_task(self._pump())
+        self.review_task = asyncio.create_task(self._run_review_loop())
 
     async def stop(self) -> None:
         """说明：停止后台运行时组件并释放连接。"""
@@ -273,6 +297,11 @@ class MarketRuntime:
             with suppress(asyncio.CancelledError):
                 await self.pump_task
             self.pump_task = None
+        if self.review_task is not None:
+            self.review_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self.review_task
+            self.review_task = None
         self.controller.stop()
         for websocket in tuple(self.clients):
             with suppress(Exception):
@@ -281,12 +310,19 @@ class MarketRuntime:
 
     def snapshot(self) -> dict[str, Any]:
         """说明：返回当前可序列化的市场状态快照。"""
+        open_trades = [
+            trade.to_payload()
+            for trade in self.trade_store.list_trades(
+                statuses=[TradeStatus.PLANNED, TradeStatus.OPEN],
+            )
+        ]
         return serialize_market_state(
             config=self.config,
             instruments=self.instruments,
             quotes=self.controller.quotes,
             stream_status=self.controller.stream_status,
             agent_analyses=self.agent_analyses,
+            open_trades=open_trades,
         )
 
     async def connect(self, websocket: WebSocket) -> None:
@@ -646,7 +682,16 @@ class MarketRuntime:
     ) -> dict[str, Any]:
         """通过 agent loop 执行带工具调用的 LLM 分析。"""
         context_provider = MarketContextProvider(self)
-        tools = build_market_tools(context_provider)
+        market_tools = build_market_tools(context_provider)
+
+        active_session_id = session.id
+        trading_tools = build_trading_tools(
+            store=self.trade_store,
+            snapshot_provider=lambda key: self._trading_snapshot_payload(key),
+            session_id_provider=lambda: active_session_id,
+        )
+        tools = merge_registries(market_tools, trading_tools)
+
         current_context = build_agent_context(
             instrument=instrument,
             quote=quote,
@@ -655,10 +700,27 @@ class MarketRuntime:
             session_history=tuple(),
         )
 
+        lessons = self.trade_store.list_lessons(
+            instrument_key=instrument.key,
+            limit=5,
+        )
+        lessons_block = ""
+        if lessons:
+            bullets = "\n".join(
+                f"- [{lesson['category'] or 'general'}] {lesson['text']}"
+                for lesson in lessons
+            )
+            lessons_block = (
+                "\n\n过去同标的交易复盘 (最多 5 条，时间倒序):\n"
+                f"{bullets}\n"
+                "在给出计划和开单前请参考上述教训，避免重复错误。\n"
+            )
+
         enriched_prompt = (
             f"当前分析标的: {instrument.label} ({instrument.key})\n\n"
             "当前行情上下文(JSON，工具返回值优先于这里的快照):\n"
-            f"{json.dumps(current_context, ensure_ascii=False, separators=(',', ':'))}\n\n"
+            f"{json.dumps(current_context, ensure_ascii=False, separators=(',', ':'))}"
+            f"{lessons_block}\n\n"
             f"{user_prompt}"
         )
 
@@ -816,11 +878,127 @@ class MarketRuntime:
         refresh_seconds = max(0.25, self.config.display.refresh_interval_ms / 1000)
         while self.running:
             result = self.controller.drain_events()
-            if result.dirty:
+            consume = getattr(self.controller, "consume_fill_events", None)
+            fills = tuple(consume()) if callable(consume) else ()
+            if result.dirty or fills:
                 await self.broadcast()
             await asyncio.sleep(refresh_seconds)
-            if not result.dirty:
+            if not (result.dirty or fills):
                 await self.broadcast()
+
+    async def _run_review_loop(self) -> None:
+        """说明：周期性扫描已关闭交易，用 LLM 生成 lesson 写入 store。"""
+        # 后台 review 节奏：每 15 分钟扫一次 pending closed trades。
+        review_interval_seconds = 15 * 60
+        while self.running:
+            try:
+                await asyncio.sleep(review_interval_seconds)
+            except asyncio.CancelledError:
+                break
+            if not self.config.agent.enabled:
+                continue
+            pending = self.trade_store.trade_ids_without_review(limit=1)
+            if not pending:
+                continue
+            try:
+                provider = create_llm_provider(self.config.agent)
+            except (LLMProviderUnavailable, LLMProviderError):
+                continue
+            except Exception:
+                continue
+
+            async def _reviewer(payload: dict[str, Any]) -> dict[str, Any]:
+                return await self._llm_generate_lesson(provider, payload)
+
+            try:
+                await review_pending(
+                    store=self.trade_store,
+                    llm=_reviewer,
+                    limit=3,
+                )
+            except Exception:
+                continue
+            await self.broadcast()
+
+    async def _llm_generate_lesson(
+        self,
+        provider: Any,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：把 review payload 丢给 LLM，返回解析后的 lesson dict。"""
+        prompt_text = (
+            "请基于下列 JSON 中的交易与当时快照做简短复盘，"
+            "输出严格 JSON，字段: lesson (string), category (string), tags (array of string)。\n\n"
+            f"{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
+        )
+        if hasattr(provider, "chat"):
+            response = await provider.chat(
+                messages=[
+                    {"role": "system", "content": "你是 price action 交易复盘助手，只输出 JSON。"},
+                    {"role": "user", "content": prompt_text},
+                ],
+                tools=None,
+            )
+            content = response.content or ""
+        else:
+            # 回退到 analyze pipeline（不会拿到结构化 lesson，这里尽力而为）
+            result = await provider.analyze({
+                "instructions": "请生成复盘 JSON，字段 lesson / category / tags。",
+                "payload": payload,
+            })
+            content = (result.summary or "") if hasattr(result, "summary") else ""
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            # 容忍 LLM 用代码块包裹的情况
+            text = content.strip()
+            if text.startswith("```"):
+                text = text.strip("`")
+                # 去掉可能的语言标识
+                if "\n" in text:
+                    text = text.split("\n", 1)[1]
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                return {"lesson": content.strip(), "category": "general", "tags": []}
+        if not isinstance(parsed, dict):
+            return {"lesson": str(parsed), "category": "general", "tags": []}
+        return parsed
+
+    def _trading_snapshot_payload(self, instrument_key: str) -> dict[str, Any]:
+        """说明：为 trade snapshot 打包多周期上下文 + 当前 agent reasoning。"""
+        instrument = None
+        for candidate in self.instruments:
+            if candidate.key == instrument_key:
+                instrument = candidate
+                break
+        if instrument is None:
+            return {}
+        quote = self.controller.quotes.get(instrument_key)
+        if quote is None:
+            return {}
+        try:
+            context = build_agent_context(
+                instrument=instrument,
+                quote=quote,
+                interval=instrument.analysis_interval or self.config.analysis.interval,
+                max_candles=self.config.agent.max_candles,
+                session_history=tuple(),
+            )
+        except Exception:
+            context = {}
+        current_analysis = self.agent_analyses.get(instrument_key)
+        return {
+            "capturedAt": _utc_now_iso(),
+            "instrument": {
+                "key": instrument.key,
+                "label": instrument.label,
+                "source": instrument.source,
+                "group": instrument.group,
+            },
+            "context": context,
+            "currentAnalysis": current_analysis,
+        }
 
     async def broadcast(self) -> None:
         """说明：向所有已连接 WebSocket 客户端推送最新状态。"""
@@ -863,7 +1041,7 @@ def create_app(
         finally:
             await runtime.stop()
 
-    app = FastAPI(title="Terminal Ticker Web", lifespan=lifespan)
+    app = FastAPI(title="mytradebot Web", lifespan=lifespan)
     app.state.runtime = runtime
     app.add_middleware(
         CORSMiddleware,
@@ -959,6 +1137,96 @@ def create_app(
     async def analyze_instrument_endpoint(instrument_key: str) -> dict[str, Any]:
         """说明：处理单个标的的手动 Agent 分析请求。"""
         return await runtime.analyze_instrument(instrument_key)
+
+    @app.get("/api/trades")
+    async def list_trades_endpoint(
+        instrument_key: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """说明：返回虚拟订单列表，支持按 instrument / status 过滤。"""
+        status_list: list[TradeStatus] | None = None
+        if status:
+            parts = [s.strip().lower() for s in status.split(",") if s.strip()]
+            parsed: list[TradeStatus] = []
+            for part in parts:
+                try:
+                    parsed.append(TradeStatus(part))
+                except ValueError:
+                    raise HTTPException(status_code=400, detail=f"invalid status: {part}")
+            status_list = parsed
+        trades = runtime.trade_store.list_trades(
+            instrument_key=instrument_key,
+            statuses=status_list,
+            limit=max(1, min(int(limit), 500)),
+        )
+        return {"trades": [trade.to_payload() for trade in trades]}
+
+    @app.get("/api/trades/{trade_id}")
+    async def get_trade_endpoint(trade_id: int) -> dict[str, Any]:
+        """说明：返回单笔订单及其成交和快照。"""
+        trade = runtime.trade_store.get_trade(int(trade_id))
+        if trade is None:
+            raise HTTPException(status_code=404, detail="trade not found")
+        snapshot = None
+        if trade.snapshot_id is not None:
+            snap = runtime.trade_store.get_snapshot(trade.snapshot_id)
+            snapshot = snap.to_payload() if snap else None
+        lessons = runtime.trade_store.list_lessons(
+            instrument_key=trade.instrument_key,
+            limit=5,
+        )
+        return {
+            "trade": trade.to_payload(),
+            "snapshot": snapshot,
+            "lessons": list(lessons),
+        }
+
+    @app.get("/api/lessons")
+    async def list_lessons_endpoint(
+        instrument_key: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """说明：返回 review 过程生成的 lesson 列表。"""
+        lessons = runtime.trade_store.list_lessons(
+            instrument_key=instrument_key,
+            limit=max(1, min(int(limit), 500)),
+        )
+        return {"lessons": list(lessons)}
+
+    @app.post("/api/trades/review")
+    async def trigger_trade_review_endpoint(
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """说明：手动触发 closed 交易复盘。"""
+        limit = int((payload or {}).get("limit", 3))
+        if not runtime.config.agent.enabled:
+            raise HTTPException(status_code=409, detail="agent disabled in config")
+        try:
+            provider = create_llm_provider(runtime.config.agent)
+        except (LLMProviderUnavailable, LLMProviderError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+
+        async def _reviewer(review_payload: dict[str, Any]) -> dict[str, Any]:
+            return await runtime._llm_generate_lesson(provider, review_payload)
+
+        results = await review_pending(
+            store=runtime.trade_store,
+            llm=_reviewer,
+            limit=max(1, min(limit, 20)),
+        )
+        await runtime.broadcast()
+        return {
+            "results": [
+                {
+                    "tradeId": r.trade_id,
+                    "lessonId": r.lesson_id,
+                    "success": r.success,
+                    "error": r.error,
+                }
+                for r in results
+            ],
+        }
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:

@@ -4,8 +4,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from terminal_ticker.config import build_runtime_config, load_config, parse_config
-from terminal_ticker.config.agent_models import DEFAULT_CODEX_MODEL
+from mytradebot.config import build_runtime_config, load_config, parse_config
+from mytradebot.config.agent_models import DEFAULT_CODEX_MODEL
 
 
 class ConfigTests(unittest.TestCase):
@@ -128,14 +128,14 @@ class ConfigTests(unittest.TestCase):
                 "symbols": ["SPOT:BTCUSDT"],
                 "cache": {
                     "enabled": False,
-                    "path": "~/tmp/terminal-ticker-cache.sqlite3",
+                    "path": "~/tmp/mytradebot-cache.sqlite3",
                     "candle_retention_seconds": 3_600,
                 },
             }
         )
 
         self.assertFalse(config.cache.enabled)
-        self.assertEqual(config.cache.path, Path("~/tmp/terminal-ticker-cache.sqlite3").expanduser())
+        self.assertEqual(config.cache.path, Path("~/tmp/mytradebot-cache.sqlite3").expanduser())
         self.assertEqual(config.cache.candle_retention_seconds, 3_600)
 
     def test_parse_config_supports_per_symbol_analysis_interval(self) -> None:
