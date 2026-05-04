@@ -602,6 +602,10 @@ h3 {
   width: 100%;
 }
 
+.chart-shell.drawing-active .chart-canvas {
+  cursor: crosshair;
+}
+
 .chart-overlay-toolbar {
   align-items: center;
   background: rgba(10, 11, 10, 0.82);
@@ -636,6 +640,11 @@ h3 {
   color: #d8e7ff;
 }
 
+.chart-action-button.active {
+  background: rgba(123, 168, 239, 0.24);
+  color: #e9f3ff;
+}
+
 .chart-action-button:active {
   transform: scale(0.95);
 }
@@ -644,6 +653,18 @@ h3 {
   color: var(--text-muted);
   cursor: default;
   opacity: 0.42;
+}
+
+.chart-action-button.danger:hover:not(:disabled) {
+  background: rgba(200, 122, 99, 0.16);
+  color: var(--down);
+}
+
+.chart-tool-divider {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  height: 20px;
+  width: 1px;
 }
 
 .chart-empty {
@@ -3047,6 +3068,15 @@ textarea:focus-visible {
   color: var(--accent-strong);
 }
 
+.chart-action-button.active {
+  background: rgba(15, 124, 144, 0.16);
+  color: var(--accent-strong);
+}
+
+.chart-tool-divider {
+  background: rgba(42, 66, 70, 0.14);
+}
+
 .confidence-track {
   background: rgba(42, 66, 70, 0.1);
 }
@@ -3311,6 +3341,15 @@ textarea:focus-visible {
 :root[data-theme="tokyo-night"] .chart-action-button:hover {
   background: rgba(125, 207, 255, 0.12);
   color: var(--accent);
+}
+
+:root[data-theme="tokyo-night"] .chart-action-button.active {
+  background: rgba(125, 207, 255, 0.16);
+  color: var(--accent);
+}
+
+:root[data-theme="tokyo-night"] .chart-tool-divider {
+  background: rgba(122, 162, 247, 0.18);
 }
 
 :root[data-theme="tokyo-night"] .confidence-track {
