@@ -86,26 +86,6 @@ export interface AgentSessionResponse {
   messages: AgentMessage[];
 }
 
-export interface StrategySignal {
-  available: boolean;
-  side: 'long' | 'short' | 'flat';
-  regime: 'trend' | 'range' | 'high_vol' | 'low_vol' | 'transition' | 'unclear';
-  confidence: number;
-  reason: string;
-  features: {
-    closeReturn: number;
-    rangeEfficiency: number;
-    atrPercent: number;
-    realizedVolatility: number;
-    trendScore: number;
-    positionInRange: number;
-    volumeRatio: number;
-    latestClose: number;
-    recentHigh: number;
-    recentLow: number;
-  } | null;
-}
-
 export interface AgentConfig {
   enabled: boolean;
   provider: string;
@@ -178,7 +158,7 @@ export interface Quote {
   stale: boolean;
   lastError: string | null;
   updateCount: number;
-  strategySignal: StrategySignal;
+  multiTimeframeIntervals: string[];
   candles: CandlePoint[];
   thumbnailCandles: CandlePoint[];
 }

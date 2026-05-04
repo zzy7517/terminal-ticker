@@ -14,7 +14,6 @@ from ..config.agent_models import (
 )
 from ..domain.quotes import QuoteState
 from ..domain.price_action import Candle
-from ..domain.strategy import StrategyConfig, generate_signal
 from ..market_data.router import MarketInstrument
 
 AGENT_INSTRUCTIONS = """你是一个本地运行的 price action trading assistant。
@@ -29,6 +28,10 @@ watch_plan: array of string
 invalidation: string
 risk_notes: array of string
 """
+
+# TODO: add chart snapshot export and structured drawing instructions for a future
+# vision-enabled agent pass, so the model can inspect the rendered chart and
+# propose drawings without taking over the front-end rendering itself.
 
 
 class LLMProviderUnavailable(RuntimeError):
@@ -122,51 +125,29 @@ def _short_candle(candle: Candle) -> dict[str, Any]:
     }
 
 
-def _candle_facts(candles: tuple[Candle, ...]) -> dict[str, Any]:
-    """说明：计算 LLM 上下文需要的近期 K 线事实。"""
-    if not candles:
-        return {}
-    recent = candles[-min(10, len(candles)):]
-    latest = candles[-1]
-    previous = candles[:-1]
-    facts: dict[str, Any] = {
-        "latest_close": latest.close,
-        "latest_body": abs(latest.close - latest.open),
-        "latest_range": latest.range,
-        "recent_high": max(candle.high for candle in recent),
-        "recent_low": min(candle.low for candle in recent),
-        "recent_volume_avg": sum(candle.volume for candle in recent) / len(recent),
-    }
-    if previous:
-        previous_slice = previous[-min(9, len(previous)):]
-        facts["previous_high"] = max(candle.high for candle in previous_slice)
-        facts["previous_low"] = min(candle.low for candle in previous_slice)
-    return facts
-
-
-def _strategy_signal_dict(candles: tuple[Candle, ...]) -> dict[str, Any] | None:
-    """说明：把本地 regime/context filter 结果转换成 Agent 输入。"""
-    if len(candles) < 24:
-        return None
-    config = StrategyConfig(window=min(len(candles), 48))
-    signal = generate_signal(candles, config)
-    return {
-        "side": signal.side,
-        "regime": signal.regime,
-        "confidence": signal.confidence,
-        "reason": signal.reason,
-        "features": {
-            "close_return": signal.features.close_return,
-            "range_efficiency": signal.features.range_efficiency,
-            "atr_percent": signal.features.atr_percent,
-            "realized_volatility": signal.features.realized_volatility,
-            "trend_score": signal.features.trend_score,
-            "position_in_range": signal.features.position_in_range,
-            "volume_ratio": signal.features.volume_ratio,
-            "recent_high": signal.features.recent_high,
-            "recent_low": signal.features.recent_low,
-        },
-    }
+def _serialized_timeframes(
+    quote: QuoteState,
+    *,
+    primary_interval: str,
+    max_candles: int,
+) -> list[dict[str, Any]]:
+    """说明：把多周期 K 线压缩成可直接传给 LLM 的时间框架列表。"""
+    ordered: list[str] = []
+    if primary_interval in quote.multi_timeframe_candles:
+        ordered.append(primary_interval)
+    for interval in quote.multi_timeframe_candles:
+        if interval not in ordered:
+            ordered.append(interval)
+    timeframes: list[dict[str, Any]] = []
+    for interval in ordered:
+        candles = tuple(quote.multi_timeframe_candles.get(interval, tuple()))[-max_candles:]
+        if not candles:
+            continue
+        timeframes.append({
+            "interval": interval,
+            "candles": [_short_candle(candle) for candle in candles],
+        })
+    return timeframes
 
 
 def build_agent_context(
@@ -179,6 +160,11 @@ def build_agent_context(
 ) -> dict[str, Any]:
     """说明：构造发送给 LLM provider 的结构化行情上下文。"""
     candles = tuple(quote.candles[-max_candles:])
+    timeframes = _serialized_timeframes(
+        quote,
+        primary_interval=interval,
+        max_candles=max_candles,
+    )
     return {
         "instrument": {
             "key": instrument.key,
@@ -203,16 +189,16 @@ def build_agent_context(
             "last_error": quote.last_error,
         },
         "analysis": {
-            "interval": interval,
-            "candle_facts": _candle_facts(candles),
-            "strategy_signal": _strategy_signal_dict(candles),
+            "primary_interval": interval,
+            "available_intervals": [item["interval"] for item in timeframes],
         },
         "candles": [_short_candle(candle) for candle in candles],
+        "timeframes": timeframes,
         "session": {
             "recent_history": list(session_history),
             "instruction": (
                 "Use recent_history only as prior discussion context. "
-                "Current market data and candles are authoritative."
+                "Current market data and multi-timeframe candles are authoritative."
             ),
         },
     }

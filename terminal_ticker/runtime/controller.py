@@ -145,6 +145,12 @@ class TickerController:
                 thumbnail_candles=tuple(payload["thumbnail_candles"])
                 if "thumbnail_candles" in payload
                 else None,
+                multi_timeframe_candles={
+                    interval: tuple(candles)
+                    for interval, candles in payload.get("multi_timeframe_candles", {}).items()
+                }
+                if "multi_timeframe_candles" in payload
+                else None,
             )
             if payload.get("error"):
                 self.quotes[key].mark_error(str(payload["error"]))

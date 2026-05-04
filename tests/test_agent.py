@@ -163,7 +163,7 @@ class AgentTests(unittest.TestCase):
         quote = SimpleNamespace(candles=candles)
         context_provider = SimpleNamespace(
             get_quote=lambda instrument_key: quote if instrument_key == "alpaca:AAPL" else None,
-            get_strategy_signal=lambda instrument_key: None,
+            get_candles=lambda instrument_key, interval=None: candles if instrument_key == "alpaca:AAPL" else tuple(),
             list_instruments=lambda: tuple(),
         )
         tools = build_market_tools(context_provider)
@@ -184,6 +184,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(len(json.loads(large_result.output)), 5)
         self.assertEqual(tools.get("get_candles").parameters["properties"]["count"]["minimum"], 1)
         self.assertEqual(tools.get("get_candles").parameters["properties"]["count"]["maximum"], 50)
+        self.assertIn("interval", tools.get("get_candles").parameters["properties"])
 
     def test_session_store_persists_active_conversation(self) -> None:
         """Verify local agent sessions survive store re-instantiation."""

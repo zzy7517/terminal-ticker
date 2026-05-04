@@ -108,6 +108,12 @@ class QuoteState:
     last_error: str | None = None
     candles: tuple[Candle, ...] = tuple()
     thumbnail_candles: tuple[Candle, ...] = tuple()
+    multi_timeframe_candles: dict[str, tuple[Candle, ...]] = None
+
+    def __post_init__(self) -> None:
+        """说明：初始化可变字段的默认容器。"""
+        if self.multi_timeframe_candles is None:
+            self.multi_timeframe_candles = {}
 
     @classmethod
     def placeholder(cls, symbol: str) -> "QuoteState":
@@ -170,11 +176,14 @@ class QuoteState:
         *,
         candles: tuple[Candle, ...] = tuple(),
         thumbnail_candles: tuple[Candle, ...] | None = None,
+        multi_timeframe_candles: dict[str, tuple[Candle, ...]] | None = None,
     ) -> None:
         """说明：把图表 K 线写入报价状态。"""
         self.candles = candles
         if thumbnail_candles is not None:
             self.thumbnail_candles = thumbnail_candles
+        if multi_timeframe_candles is not None:
+            self.multi_timeframe_candles = dict(multi_timeframe_candles)
 
     def is_stale(self, stale_after_seconds: int, *, now: datetime | None = None) -> bool:
         """说明：判断当前数据是否超过新鲜度阈值。"""

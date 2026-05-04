@@ -1,14 +1,13 @@
 # Terminal Ticker
 
-一个本地优先的行情和策略研究 Web UI。后端用 Python 连接 Bitget 和 Alpaca，读取 OHLCV K 线并生成 regime/context 信号；前端用 React 和 Lightweight Charts 展示 watchlist、K 线图和 agent 解释面板。
+一个本地优先的行情和研究 Web UI。后端用 Python 连接 Bitget 和 Alpaca，读取 OHLCV K 线并组织多周期上下文；前端用 React 和 Lightweight Charts 展示 watchlist、K 线图和 agent 解释面板。
 
 ## 功能
 
 - 按 `watchlist.toml` 显示 Bitget、Alpaca 美股和 ETF 标的。
-- 通过本地 WebSocket 推送实时 quote、K 线和策略状态更新。
-- 使用结构化 OHLCV 数据生成 `long` / `short` / `flat` 研究信号、regime 和 confidence。
-- 展示选中标的的 K 线图、价格、涨跌幅、成交量和 strategy context。
-- 提供会话式 K 线 Agent 解读入口，把当前 K 线、策略信号、本地特征和最近问答历史转成结构化市场解读；Codex 只是当前默认的 LLM provider adapter。
+- 通过本地 WebSocket 推送实时 quote、K 线和多周期上下文更新。
+- 展示选中标的的 K 线图、价格、涨跌幅、成交量和多周期市场视图。
+- 提供会话式 K 线 Agent 解读入口，把当前 K 线、多周期 OHLCV 上下文和最近问答历史转成结构化市场解读；Codex 只是当前默认的 LLM provider adapter。
 - 美股页内搜索 Alpaca 标的，并写入本地 watchlist。
 - Alpaca 凭证只从环境变量读取，不写入配置文件。
 - 不包含 PySide/Qt 浮窗、折叠行情条或滚动 ticker。
@@ -139,7 +138,7 @@ reasoning_effort = "medium"
 - 没有写 `group` 时会自动归类：Bitget 到 `crypto`，Alpaca 到 `stocks`。
 - `refresh_interval_ms` 控制后端向 WebSocket 客户端刷新状态的心跳。
 - `stock_poll_interval_seconds` 控制 Alpaca 股票 quote 快照拉取间隔。
-- `[analysis]` 控制本地 K 线拉取和 strategy context 刷新。当前对 Bitget 和 Alpaca 标的拉取 OHLCV K 线，并基于 K 线生成 `long` / `short` / `flat` 研究信号。
+- `[analysis]` 控制本地 K 线拉取和多周期上下文刷新。当前对 Bitget 和 Alpaca 标的拉取 OHLCV K 线，并围绕当前主周期组织一组适合给 LLM 使用的多周期视图。
 - `analysis.interval` 是 K 线周期，默认 `5m`。
 - `analysis.lookback` 是每次拉取和策略上下文使用的最近 K 线数量，最小值是 `10`。
 - `analysis.poll_interval_seconds` 控制 K 线刷新间隔。
@@ -153,31 +152,15 @@ reasoning_effort = "medium"
 - `agent.reasoning_effort` 支持 `low`、`medium`、`high`、`xhigh`。
 - 旧配置里的 `show_collapsed` 会被解析以保持兼容，但 Web UI 不再使用折叠行情条。
 
-## Strategy Context
+## Multi-timeframe Context
 
-本地策略层不再输出 `TR+`、`BO+`、`RG` 这类固定 price-action 标签，而是直接读取交易所返回的 OHLCV 数据，提取 regime/context filter 特征：
+当前系统不再输出本地 `strategy signal` / `regime` 解析层，而是直接读取交易所返回的 OHLCV 数据，并围绕当前主周期整理多周期视图，例如：
 
-- `O`：开盘价
-- `H`：最高价
-- `L`：最低价
-- `C`：收盘价
-- `V`：成交量
+- 高周期：提供更大的趋势背景
+- 当前周期：提供当前主观察窗口
+- 低周期：提供更细的执行细节
 
-当前策略信号：
-
-- `long`：结构化特征支持做多观察
-- `short`：结构化特征支持做空观察
-- `flat`：趋势置信度不足，或者当前 regime 更适合空仓/等待
-
-本地特征包括近期涨跌幅、range efficiency、ATR 百分比、realized volatility、EMA trend score、价格在区间里的位置和成交量相对均值。这个信号是研究信号，不会下单、不会管理仓位，也不会给出买卖按钮。
-
-可以用离线脚本把历史数据切成前半段和后半段：前半段搜索参数，后半段做样本外验证。
-
-```bash
-.venv/bin/python scripts/research_strategy.py --symbol BTCUSDT --inst-type USDT-FUTURES --interval 5m --limit 1000 --refresh
-```
-
-输出会包含训练段和验证段的 `trades`、`hit_rate`、`average_trade_return`、`total_return`、`max_drawdown`、`sharpe_like` 等指标。抓到的 K 线会保存到 `data/strategy/*.csv`，后续不加 `--refresh` 时会复用本地数据。
+后端仍然只传结构化数据，不会下单、不会管理仓位，也不会给出买卖按钮。
 
 ## Agent 会话解读
 
@@ -185,10 +168,10 @@ Web UI 右侧的 `Ask Agent` 会把用户问题追加到当前标的的本地会
 
 - 标的信息和实时 quote。
 - 最近 OHLCV K 线。
-- 本地 strategy signal、regime、confidence 和近期高低点、最新实体、最新振幅、成交量均值等事实。
+- 围绕当前主周期组织好的多周期 OHLCV K 线视图。
 - 当前标的最近的用户问题和 Agent 回复摘要，用于延续会话。
 
-LLM provider 必须返回结构化 JSON，Web UI 会展示摘要、方向、置信度、关键价位、观察计划和失效条件。会话消息会持久化到本机 SQLite cache，按标的保留 active session；没有 K 线、provider 凭证缺失、token 过期或 provider 请求失败时，只会显示不可用状态，不影响行情和本地 strategy signal。
+LLM provider 必须返回结构化 JSON，Web UI 会展示摘要、方向、置信度、关键价位、观察计划和失效条件。会话消息会持久化到本机 SQLite cache，按标的保留 active session；没有 K 线、provider 凭证缺失、token 过期或 provider 请求失败时，只会显示不可用状态，不影响行情和多周期 K 线展示。
 
 ## 添加和移除美股
 
