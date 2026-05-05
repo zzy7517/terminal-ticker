@@ -2656,6 +2656,9 @@ function SocialSettingsPanel({
   const [savingConfig, setSavingConfig] = useState(false);
   const [testing, setTesting] = useState(false);
   const [feedPreview, setFeedPreview] = useState<SocialFeedItem[]>([]);
+  const [recentLimitInput, setRecentLimitInput] = useState('');
+  const [retentionDaysInput, setRetentionDaysInput] = useState('');
+  const [maxItemsInput, setMaxItemsInput] = useState('');
   const [status, setStatus] = useState('Save X cookies locally, then enable the social feed reader.');
 
   useEffect(() => {
@@ -2676,6 +2679,9 @@ function SocialSettingsPanel({
 
   useEffect(() => {
     if (!config) return;
+    setRecentLimitInput(String(config.recentLimit));
+    setRetentionDaysInput(String(config.retentionDays));
+    setMaxItemsInput(String(config.maxItems));
     setStatus(config.enabled ? 'Social feed reader is enabled.' : 'Social feed reader is disabled.');
   }, [configSignature]);
 
@@ -2687,6 +2693,36 @@ function SocialSettingsPanel({
       const nextState = await saveSocialFeedConfig({ enabled: nextEnabled });
       onState(nextState);
       setStatus(nextEnabled ? 'Social feed reader enabled.' : 'Social feed reader disabled.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Save failed.');
+    } finally {
+      setSavingConfig(false);
+    }
+  }
+
+  async function persistCacheSettings() {
+    if (!config) return;
+    const recentLimit = Number.parseInt(recentLimitInput, 10);
+    const retentionDays = Number.parseInt(retentionDaysInput, 10);
+    const maxItems = Number.parseInt(maxItemsInput, 10);
+    if (!Number.isFinite(recentLimit) || recentLimit < 1 || recentLimit > 200) {
+      setStatus('Recent limit must be between 1 and 200.');
+      return;
+    }
+    if (!Number.isFinite(retentionDays) || retentionDays < 1 || retentionDays > 365) {
+      setStatus('Retention must be between 1 and 365 days.');
+      return;
+    }
+    if (!Number.isFinite(maxItems) || maxItems < 100) {
+      setStatus('Max cached items must be at least 100.');
+      return;
+    }
+    setSavingConfig(true);
+    setStatus('Saving social cache settings...');
+    try {
+      const nextState = await saveSocialFeedConfig({ recentLimit, retentionDays, maxItems });
+      onState(nextState);
+      setStatus('Social cache settings saved.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Save failed.');
     } finally {
@@ -2764,6 +2800,22 @@ function SocialSettingsPanel({
   const hasUsableAuth = Boolean(authStatus?.hasSavedAuth || authStatus?.envAvailable);
   const savedAt = authStatus?.savedAtMs ? new Date(authStatus.savedAtMs).toLocaleString() : '—';
   const canSaveAuth = authToken.trim().length > 0 && ct0.trim().length > 0 && !savingAuth;
+  const parsedRecentLimit = Number.parseInt(recentLimitInput, 10);
+  const parsedRetentionDays = Number.parseInt(retentionDaysInput, 10);
+  const parsedMaxItems = Number.parseInt(maxItemsInput, 10);
+  const cacheSettingsValid =
+    Number.isFinite(parsedRecentLimit) &&
+    parsedRecentLimit >= 1 &&
+    parsedRecentLimit <= 200 &&
+    Number.isFinite(parsedRetentionDays) &&
+    parsedRetentionDays >= 1 &&
+    parsedRetentionDays <= 365 &&
+    Number.isFinite(parsedMaxItems) &&
+    parsedMaxItems >= 100;
+  const cacheSettingsChanged =
+    parsedRecentLimit !== config.recentLimit ||
+    parsedRetentionDays !== config.retentionDays ||
+    parsedMaxItems !== config.maxItems;
 
   return (
     <>
@@ -2916,19 +2968,57 @@ function SocialSettingsPanel({
             </button>
           </label>
 
-          <div className="settings-readonly-grid">
-            <div>
+          <div className="social-cache-form">
+            <label>
               <span className="panel-label">Recent limit</span>
-              <strong>{config.recentLimit}</strong>
-            </div>
-            <div>
+              <input
+                value={recentLimitInput}
+                onChange={(event) => setRecentLimitInput(event.target.value)}
+                type="number"
+                min={1}
+                max={200}
+                step={1}
+              />
+              <small>Default number of cached items returned for recent-feed reads.</small>
+            </label>
+            <label>
               <span className="panel-label">Retention</span>
-              <strong>{config.retentionDays} days</strong>
-            </div>
-            <div>
+              <input
+                value={retentionDaysInput}
+                onChange={(event) => setRetentionDaysInput(event.target.value)}
+                type="number"
+                min={1}
+                max={365}
+                step={1}
+              />
+              <small>Deletes cached tweets older than this many days after each refresh.</small>
+            </label>
+            <label>
               <span className="panel-label">Max cached items</span>
-              <strong>{config.maxItems}</strong>
-            </div>
+              <input
+                value={maxItemsInput}
+                onChange={(event) => setMaxItemsInput(event.target.value)}
+                type="number"
+                min={100}
+                step={100}
+              />
+              <small>Caps total local SQLite feed rows after each refresh.</small>
+            </label>
+          </div>
+
+          <div className="settings-action-row">
+            <button
+              className="shell-button primary"
+              type="button"
+              disabled={savingConfig || !cacheSettingsValid || !cacheSettingsChanged}
+              onClick={persistCacheSettings}
+            >
+              {savingConfig ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
+              Save cache settings
+            </button>
+          </div>
+
+          <div className="settings-readonly-grid compact">
             <div>
               <span className="panel-label">Auth source</span>
               <strong>

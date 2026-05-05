@@ -2805,6 +2805,10 @@ textarea:focus-visible {
   word-break: break-all;
 }
 
+.settings-readonly-grid.compact {
+  margin-top: 4px;
+}
+
 .settings-hint {
   color: var(--text-muted);
   font-size: 12px;
@@ -2893,6 +2897,37 @@ textarea:focus-visible {
 
 .social-auth-form input::placeholder {
   color: var(--text-muted);
+}
+
+.social-cache-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.social-cache-form label {
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.social-cache-form input {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--mono);
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.social-cache-form small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .settings-action-row {
