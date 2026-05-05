@@ -1,131 +1,97 @@
 # mytradebot
 
-一个本地优先的行情和研究 Web UI。后端用 Python 连接 Bitget 和 Alpaca，读取 OHLCV K 线并组织多周期上下文；前端用 React 和 Lightweight Charts 展示 watchlist、K 线图和 agent 解释面板。
+mytradebot 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Alpaca 行情、React 图表、LLM Agent、paper trading、Reuters 新闻和本地 SQLite 记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
 
-## 功能
+它不是生产级交易终端，也不会连接真实券商账户下单。当前的交易能力只在本地 paper broker 里模拟成交、止损、止盈、复盘和 lessons。
 
-- 按 `watchlist.toml` 显示 Bitget、Alpaca 美股和 ETF 标的。
-- 通过本地 WebSocket 推送实时 quote、K 线和多周期上下文更新。
-- 展示选中标的的 K 线图、价格、涨跌幅、成交量和多周期市场视图。
-- 提供会话式 K 线 Agent 解读入口，把当前 K 线、多周期 OHLCV 上下文和最近问答历史转成结构化市场解读；LLM provider 当前可选 Codex 或 Anthropic。
-- 美股页内搜索 Alpaca 标的，并写入本地 watchlist。
-- Alpaca 凭证只从环境变量读取，不写入配置文件。
-- 不包含 PySide/Qt 浮窗、折叠行情条或滚动 ticker。
+## 现在它能做什么
 
-## 快速开始
+- **行情监控**：订阅 Bitget spot / USDT futures，拉取 Alpaca 美股和 ETF 快照、K 线与 extended stats。
+- **多周期图表**：前端展示 watchlist、实时价格、K 线、成交量、均线、VWAP、布林带、RSI、MACD、ATR，并支持图表画线。
+- **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Alpaca 标的，也可以直接编辑 `watchlist.toml`。
+- **Agent 分析**：支持 Codex Responses provider 和 Anthropic Messages provider。Agent 可以读取行情、K 线、新闻和 paper trades，并返回结构化交易观察。
+- **会话持久化**：每个标的都有独立 Agent session，历史记录保存在本地 SQLite，可以 resume、reset 或删除。
+- **Paper trading**：Agent 或用户可以创建 planned/open 模拟交易，本地 broker 会用 1m K 线推进成交、止损、止盈和关闭状态。
+- **交易复盘**：Positions 页面可以查看 open/planned/history/fills/lessons，也可以手动触发 review。
+- **新闻流**：Reuters sitemap provider 会拉取新闻，写入本地 SQLite，并通过 Web UI 展示最新新闻。
+- **新闻驱动分析**：可选的 `news_analyst` 会筛选新闻、结合 1H/15m 行情和 lessons 调用 LLM，只在通过 gate 后创建 paper trade。
 
-创建并激活虚拟环境：
+## 架构
+
+```text
+Bitget / Alpaca / Reuters
+        |
+        v
+FastAPI backend  <---->  SQLite stores
+        |
+        +-- feed worker
+        +-- agent runtime
+        +-- paper broker
+        +-- news analyst
+        |
+        v
+React + Vite frontend
+```
+
+核心代码路径：
+
+- `mytradebot/api/app.py`：HTTP API、WebSocket、后台 worker 生命周期。
+- `mytradebot/runtime/feed.py`：watchlist 行情循环、多周期 K 线、缓存与 provider 路由。
+- `mytradebot/market_data/`：Bitget、Alpaca、catalog 和 candle provider。
+- `mytradebot/agent/`：LLM provider、agent loop、工具和 session 存储。
+- `mytradebot/trading/`：paper trade 数据模型、SQLite store、模拟 broker、review controller。
+- `mytradebot/news/`：Reuters 新闻抓取、存储和 API 数据源。
+- `mytradebot/news_analyst/`：新闻筛选、LLM 分析、交易 gate 和 paper trade 创建。
+- `web/src/App.tsx`：主 UI，包含 Chart、Agent、Positions 和设置页面。
+
+## 快速启动
+
+后端使用 Python，前端使用 Vite。开发时通常开两个进程：
 
 ```bash
-cd /path/to/mytradebot
+python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-安装前端依赖：
-
-```bash
 npm install
-```
-
-设置 Alpaca API 凭证。Paper trading 账户也可以用于 market data：
-
-```bash
-export APCA_API_KEY_ID="你的 Alpaca Key"
-export APCA_API_SECRET_KEY="你的 Alpaca Secret"
-export APCA_API_BASE_URL="https://paper-api.alpaca.markets"
-export ALPACA_DATA_FEED="iex"
-export ALPACA_EXTENDED_STATS_FEED="delayed_sip"
-```
-
-LLM provider 二选一配置即可。Codex provider adapter 默认读取本机 Codex CLI 登录态：
-
-```text
-$CODEX_HOME/auth.json，未设置 CODEX_HOME 时使用 ~/.codex/auth.json
-```
-
-也可以用环境变量提供 Codex access token：
-
-```bash
-export MYTRADEBOT_CODEX_API_KEY="你的 Codex access token"
-```
-
-Anthropic provider 默认按下面这个 endpoint 发送 Messages 请求，协议形态等价于：
-`POST /api/v1/messages` + `x-api-key`。
-
-```text
-https://claude-proxy.p1.cn/api/v1/messages
-```
-
-对应你已有的 proxy token：
-
-```bash
-export ANTHROPIC_AUTH_TOKEN="你的 Anthropic proxy token"
-```
-
-如果要覆盖 endpoint，可以设置 base URL 或完整 messages URL：
-
-```bash
-export MYTRADEBOT_ANTHROPIC_BASE_URL="https://claude-proxy.p1.cn/api"
-# 或：
-export MYTRADEBOT_ANTHROPIC_BASE_URL="https://claude-proxy.p1.cn/api/v1/messages"
-```
-
-开发模式需要两个终端。
-
-终端 1：启动 Python 后端：
-
-```bash
-.venv/bin/python -m mytradebot --host 127.0.0.1 --port 8765
-```
-
-终端 2：启动 Vite 前端：
-
-```bash
 npm run dev
 ```
 
-打开：
-
-```text
-http://127.0.0.1:5173
-```
-
-生产/单进程模式：
+另一个终端启动后端：
 
 ```bash
-npm run build
-.venv/bin/python -m mytradebot --host 127.0.0.1 --port 8765
+source .venv/bin/activate
+python -m mytradebot --config watchlist.toml --host 127.0.0.1 --port 8765
 ```
 
 然后打开：
 
 ```text
-http://127.0.0.1:8765
+http://127.0.0.1:5173
 ```
 
-使用自定义配置：
+如果要用单进程模式，先构建前端：
 
 ```bash
-.venv/bin/python -m mytradebot --config my-watchlist.toml
+npm run build
+python -m mytradebot --config watchlist.toml --host 127.0.0.1 --port 8765
 ```
 
-临时指定 Bitget 标的：
+这种模式下 FastAPI 会直接服务 `web/dist`。
 
-```bash
-.venv/bin/python -m mytradebot --symbols USDT-FUTURES:BTCUSDT USDT-FUTURES:ETHUSDT
-```
+## 配置
 
-## 配置格式
+默认配置文件是 `watchlist.toml`。如果不传 `--config`，程序会读取当前目录下的 `watchlist.toml`。
 
-默认配置文件是 [`watchlist.toml`](watchlist.toml)。
+一个接近当前功能面的示例：
 
 ```toml
 symbols = [
+  { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC Perp", group = "crypto", analysis_interval = "15m", show_collapsed = true },
+  { symbol = "ETHUSDT", source = "bitget", inst_type = "SPOT", label = "ETH Spot", group = "crypto" },
+  { symbol = "SPY", source = "alpaca", label = "SPY", group = "stocks", analysis_interval = "1H" },
   { symbol = "AAPL", source = "alpaca", label = "AAPL", group = "stocks" },
-  { symbol = "SPY", source = "alpaca", label = "SPY", group = "stocks" },
-  { symbol = "BTCUSDT", inst_type = "USDT-FUTURES", label = "BTC", group = "crypto" },
-  { symbol = "ETHUSDT", inst_type = "USDT-FUTURES", label = "ETH", group = "crypto" },
+  "USDT-FUTURES:SOLUSDT"
 ]
 
 [display]
@@ -136,130 +102,237 @@ stock_poll_interval_seconds = 5
 
 [analysis]
 enabled = true
-interval = "5m"
+interval = "15m"
 lookback = 40
 poll_interval_seconds = 30
 stale_after_seconds = 420
 
-[agent]
+[cache]
 enabled = true
-provider = "codex"
-api_mode = "codex_responses"
-model = "gpt-5.4-mini"
-timeout_seconds = 45
-max_candles = 40
-reasoning_effort = "medium"
-```
+candle_retention_seconds = 86400
 
-Anthropic 示例：
-
-```toml
 [agent]
 enabled = true
 provider = "anthropic"
 api_mode = "anthropic_messages"
 model = "global.anthropic.claude-opus-4-6-v1"
+use_tools = true
 timeout_seconds = 45
 max_candles = 40
+max_iterations = 10
+
+[news]
+enabled = true
+poll_interval_seconds = 300
+retention_days = 30
+recent_limit = 50
+
+[news_analyst]
+enabled = false
+min_confidence = 0.7
+max_entry_distance_pct = 0.5
+default_size = 1.0
+llm_timeout_seconds = 20
+cooldown_minutes = 30
+
+[[news_analyst.universe]]
+instrument_key = "alpaca:SPY"
+aliases = ["S&P 500", "SPX", "SPY"]
 ```
 
-配置说明：
+`symbols` 支持两种写法：
 
-- `source` 默认是 `bitget`，所以旧的字符串写法和旧的 Bitget table 写法仍然可用。
-- Bitget 标的如果同时存在于 Spot 和 Futures，需要写明 `inst_type`，例如 `BTCUSDT`。
-- Alpaca 标的使用 `source = "alpaca"`，美股格式是 `AAPL`、`SPY`；旧的 `AAPL.US` 会自动兼容成 `AAPL`。
-- `group` 控制 Web UI 左侧 watchlist 分组。常用值包括 `stocks`、`crypto`、`metals`、`indices`、`watchlist`。
-- 没有写 `group` 时会自动归类：Bitget 到 `crypto`，Alpaca 到 `stocks`。
-- `refresh_interval_ms` 控制后端向 WebSocket 客户端刷新状态的心跳。
-- `stock_poll_interval_seconds` 控制 Alpaca 股票 quote 快照拉取间隔。
-- `[analysis]` 控制本地 K 线拉取和多周期上下文刷新。当前对 Bitget 和 Alpaca 标的拉取 OHLCV K 线，并围绕当前主周期组织一组适合给 LLM 使用的多周期视图。
-- `analysis.interval` 是 K 线周期，默认 `5m`。
-- `analysis.lookback` 是每次拉取和策略上下文使用的最近 K 线数量，最小值是 `10`。
-- `analysis.poll_interval_seconds` 控制 K 线刷新间隔。
-- `analysis.stale_after_seconds` 控制最新行情多久后视为过期。
-- `[agent]` 控制 LLM provider 层。当前支持 `provider = "codex"` 和 `provider = "anthropic"`，产品侧的核心概念是 K 线 Agent 会话，不是绑定某一个模型品牌。
-- `agent.api_mode` 随 provider 变化：Codex 使用 `codex_responses`，Anthropic 使用 `anthropic_messages`。
-- Codex provider adapter 会直接读取 Codex CLI 的 `auth.json`，不会读取 Hermes 的 auth store，也不会导入 Hermes runtime。
-- Codex provider adapter 不再支持通过配置文件或环境变量覆盖 base URL；当前只走内置 Codex backend。
-- Anthropic provider adapter 使用 `x-api-key` 请求 Messages API，默认读取 `MYTRADEBOT_ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN` 或 `ANTHROPIC_API_KEY`。
-- Web UI 的 Providers 设置页可以选择 provider 和模型，保存后会写回配置文件。
-- `agent.max_candles` 控制每次发送给 LLM 的最近 K 线数量，最小值是 `10`。
-- `agent.reasoning_effort` 支持 `low`、`medium`、`high`、`xhigh`；当前只有 Codex provider 会实际使用，Anthropic provider 会忽略这个字段。
-- 旧配置里的 `show_collapsed` 会被解析以保持兼容，但 Web UI 不再使用折叠行情条。
+- 字符串：`"BTCUSDT"` 或 `"USDT-FUTURES:BTCUSDT"`，默认按 Bitget 解析。
+- inline table：可以显式配置 `source`、`inst_type`、`label`、`group`、`analysis_interval`、`show_collapsed`。
+- Alpaca 标的需要写成 inline table，并显式设置 `source = "alpaca"`。
 
-## Multi-timeframe Context
+常用 `analysis_interval`：
 
-当前系统不再输出本地 `strategy signal` / `regime` 解析层，而是直接读取交易所返回的 OHLCV 数据，并围绕当前主周期整理多周期视图，例如：
+```text
+1m, 3m, 5m, 15m, 30m, 1H, 4H, 6H, 12H, 1D, 3D, 1W, 1M
+```
 
-- 高周期：提供更大的趋势背景
-- 当前周期：提供当前主观察窗口
-- 低周期：提供更细的执行细节
+## 行情数据
 
-后端仍然只传结构化数据，不会下单、不会管理仓位，也不会给出买卖按钮。
+Bitget：
 
-## Agent 会话解读
+- `source = "bitget"`
+- spot 标的使用 `inst_type = "SPOT"`
+- U 本位合约使用 `inst_type = "USDT-FUTURES"`
+- catalog 和历史 K 线走 REST，实时报价走 public WebSocket。
 
-Web UI 右侧的 `Ask Agent` 会把用户问题追加到当前标的的本地会话，并触发一次手动分析。后端发送给 LLM provider 的不是截图，而是当前标的的结构化上下文：
+Alpaca：
 
-- 标的信息和实时 quote。
-- 最近 OHLCV K 线。
-- 围绕当前主周期组织好的多周期 OHLCV K 线视图。
-- 当前标的最近的用户问题和 Agent 回复摘要，用于延续会话。
-
-LLM provider 必须返回结构化 JSON，Web UI 会展示摘要、方向、置信度、关键价位、观察计划和失效条件。会话消息会持久化到本机 SQLite cache，按标的保留 active session；没有 K 线、provider 凭证缺失、token 过期或 provider 请求失败时，只会显示不可用状态，不影响行情和多周期 K 线展示。
-
-## 添加和移除美股
-
-Web UI 左侧搜索框可以输入代码或名称，例如 `NVDA`、`AAPL`、`Apple`。
-
-搜索结果不在 watchlist 时，动作按钮显示“添加”：
-
-- 立即把标的加入当前运行状态并开始拉行情。
-- 写入当前启动使用的 `watchlist.toml`，下次启动仍然保留。
-
-搜索结果已经在 watchlist 时，动作按钮显示“移除”：
-
-- 立即从当前运行状态移除这个 Alpaca 标的。
-- 从当前启动使用的 `watchlist.toml` 删除精确匹配的 `source = "alpaca"` 行，不会删除 Bitget 标的。
-
-Alpaca 免费 Basic market data 的 REST 限制约为 `200 requests/min`，实时股票 feed 是 `IEX`，历史数据最新 15 分钟有权限限制。项目默认给 bars 请求留出 16 分钟窗口，并用 `delayed_sip` 拉取盘前盘后统计；如果账号权限不支持，会自动回退到 snapshot 自带的 RTH 统计。这个数据适合分钟级研究和本地指标，不适合当全市场实时 tick 源。
-
-## zsh 配置示例
-
-如果你希望每次开终端都自动带上 Alpaca 凭证，可以把下面几行加到 `~/.zshrc`：
+- `source = "alpaca"`
+- 适合美股和 ETF。
+- API key 只从环境变量读取，不写入 `watchlist.toml`。
 
 ```bash
-export APCA_API_KEY_ID="你的 Alpaca Key"
-export APCA_API_SECRET_KEY="你的 Alpaca Secret"
+export APCA_API_KEY_ID="..."
+export APCA_API_SECRET_KEY="..."
 export APCA_API_BASE_URL="https://paper-api.alpaca.markets"
 export ALPACA_DATA_FEED="iex"
 export ALPACA_EXTENDED_STATS_FEED="delayed_sip"
 ```
 
-然后让当前终端生效：
+Alpaca Basic 常见限制是 IEX/default feed 和 delayed SIP 数据，UI 中的 extended stats 会按当前可用 feed 返回。
 
-```bash
-source ~/.zshrc
+## Agent Provider
+
+当前内置两个 provider：`codex` 和 `anthropic`。OpenAI provider 路径已经不再作为独立 provider 暴露。
+
+Anthropic provider 使用 Messages API 形态，默认 base URL 是：
+
+```text
+https://claude-proxy.p1.cn/api
 ```
 
-检查环境变量是否存在时，不要把密钥完整打印出来。可以这样看：
+实际请求会发到：
+
+```text
+https://claude-proxy.p1.cn/api/v1/messages
+```
+
+认证 header 使用：
+
+```text
+x-api-key: <token>
+content-type: application/json
+```
+
+环境变量：
 
 ```bash
-printenv APCA_API_KEY_ID
-printenv APCA_API_SECRET_KEY | cut -c1-8
+export ANTHROPIC_AUTH_TOKEN="..."
+# 也可以用：
+export MYTRADEBOT_ANTHROPIC_API_KEY="..."
+export ANTHROPIC_API_KEY="..."
+
+# 可选
+export MYTRADEBOT_ANTHROPIC_BASE_URL="https://claude-proxy.p1.cn/api"
+export ANTHROPIC_BASE_URL="https://claude-proxy.p1.cn/api"
+export MYTRADEBOT_ANTHROPIC_MODELS="global.anthropic.claude-opus-4-6-v1,global.anthropic.claude-sonnet-4-5-v1"
+export MYTRADEBOT_ANTHROPIC_MAX_TOKENS="1200"
 ```
+
+Codex provider 会优先读取 `CODEX_HOME/auth.json`，也支持环境变量：
+
+```bash
+export MYTRADEBOT_CODEX_API_KEY="..."
+export CODEX_API_KEY="..."
+```
+
+Web 设置页可以切换 provider、刷新模型列表并保存到本地配置。
+
+## Agent 工具
+
+Agent 不是只看一段 prompt。打开 `agent.use_tools = true` 后，它可以调用本地工具读取真实工作台状态：
+
+- `get_quote`：读取当前报价和日内统计。
+- `get_candles`：读取指定周期 K 线。
+- `list_instruments`：列出 watchlist 当前标的。
+- `get_recent_news` / `refresh_news`：读取或刷新新闻。
+- `open_paper_trade`：创建本地模拟交易。
+- `list_open_trades`：查看 open/planned 交易。
+- `cancel_paper_trade` / `adjust_paper_trade`：取消或调整模拟交易。
+- `get_trade_history`：读取历史交易、fills 和 lessons。
+- `web_search` / `web_fetch`：受限制的网页搜索和读取工具，会拒绝 localhost、内网地址和不安全 scheme。
+
+Agent 输出会被解析成结构化结果，核心字段包括 `summary`、`bias`、`confidence`、`key_levels`、`watch_plan`、`invalidation` 和 `risk_notes`。
+
+## Paper Trading
+
+Paper trading 只在本地 SQLite 里模拟，不会触发真实订单。
+
+流程大致是：
+
+1. Agent 或 API 创建 planned/open trade。
+2. feed worker 持续拉取 1m K 线。
+3. paper broker 用 K 线推进成交、止损、止盈和关闭状态。
+4. review controller 定期或手动复盘交易，并把 lessons 写回本地。
+
+Positions 页面可以看到：
+
+- open / planned 交易。
+- 已关闭和取消的历史交易。
+- 每笔交易的 fills、snapshot 和 lesson。
+- 手动 review 按钮。
+
+## 新闻和 News Analyst
+
+新闻模块默认从 Reuters sitemap 拉取新闻，写入本地 store，并通过 `/api/news` 给前端展示。
+
+`news_analyst` 是独立的可选模块。启用后，它会：
+
+1. 从最近新闻里筛出候选 headline。
+2. 映射到配置里的交易 universe。
+3. 读取对应标的的 1H / 15m K 线和本地 lessons。
+4. 调用 `[agent]` 里选定的 LLM provider 生成方向、置信度、入场、止损、止盈。
+5. 通过 confidence、entry distance、cooldown 等 gate 后，创建 paper trade。
+
+它仍然只创建模拟交易，不会真实下单。
+
+## Web UI
+
+主界面分几块：
+
+- **Watchlist**：左侧标的列表、分组、搜索、价格和涨跌幅。
+- **Chart**：主 K 线图，支持周期切换、指标显示和本地画线。
+- **Agent**：按标的发起分析，查看和恢复历史 session。
+- **Positions**：查看 paper trades、fills、history、lessons 和手动复盘。
+- **Settings**：管理 Providers、Watchlist 和 News 配置。
+
+画线数据保存在浏览器 localStorage，不会写入后端数据库。
+
+## 本地数据
+
+默认本地状态主要在这些地方：
+
+- `watchlist.toml`：watchlist、display、agent、news、cache 配置。
+- `~/.cache/mytradebot/agent_sessions.sqlite3`：Agent session 和消息历史。
+- `~/.cache/mytradebot/trades.sqlite3`：paper trades、fills、snapshots、lessons。
+- `~/.cache/mytradebot/news.sqlite3`：新闻、新闻决策和处理状态。
+- `~/.cache/mytradebot/candles.sqlite3`：默认 K 线 cache；如果设置了 `XDG_CACHE_HOME` 或 `[cache].path`，会使用对应路径。
+- 浏览器 localStorage：图表画线和部分前端偏好。
+
+这些数据都是本地优先，没有服务端账号体系。
+
+## API 概览
+
+常用接口：
+
+- `GET /api/state`：当前 watchlist、报价、K 线、provider 状态。
+- `GET /api/instruments/search`：搜索可添加标的。
+- `POST /api/watchlist/bitget` / `POST /api/watchlist/alpaca`：添加标的。
+- `GET /api/agent/models`：当前 provider 可用模型。
+- `GET /api/agent/config` / `PUT /api/agent/config`：读取和更新 Agent 配置。
+- `POST /api/agent/analyze/{instrument_key}`：对某个标的发起 Agent 分析。
+- `GET /api/agent/sessions/{instrument_key}`：读取某个标的的 session 列表。
+- `GET /api/trades`：读取 paper trades。
+- `POST /api/trades/review`：手动触发交易复盘。
+- `GET /api/news`：读取新闻。
+- `POST /api/news/refresh`：手动刷新新闻。
+- `GET /api/news/decisions`：读取 news analyst 决策记录。
+- `GET /ws`：前端实时状态推送。
 
 ## 验证
 
+后端测试：
+
 ```bash
-python -m pytest
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+前端构建：
+
+```bash
 npm run build
 ```
 
-## 限制
+## 当前边界
 
-- 这是个人行情监控工具，不是生产级行情终端。
-- 当前 Alpaca provider 接美股和 ETF quote/K 线，免费档使用 IEX feed，数据和全市场 SIP 可能有差异。
-- 当前不做指数、MT5 或商品期货接入。
-- 当前不做自动交易、订单执行、仓位管理或风险控制。
-- 当前 Web UI 是本地产品形态，不包含桌面托盘、置顶窗口或原生 macOS 封装。
+- 不做真实下单，不连接真实券商交易接口。
+- paper trading 的成交由本地 1m K 线模拟，不能代表真实滑点、排队和流动性。
+- Agent 和 news analyst 适合做研究辅助，不应该直接当作交易信号执行。
+- Alpaca 数据能力取决于账号权限和 feed 配置。
+- 新闻来源目前以 Reuters sitemap provider 为主。
