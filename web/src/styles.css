@@ -1629,6 +1629,16 @@ textarea:focus-visible {
   padding: 20px;
 }
 
+/* News 设置页右栏：Module 和 News Analyst 两个 detail 纵向叠加，共享右栏滚动，
+   整体跟其他设置页一样贴满 .provider-layout 的高度 */
+.news-settings-detail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .provider-hero {
   background: var(--canvas);
   border-radius: var(--radius-lg);

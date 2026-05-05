@@ -2360,6 +2360,7 @@ function NewsSettingsPanel({
           </div>
         </section>
 
+        <div className="news-settings-detail-stack">
         <section className="provider-detail">
           <div className="provider-section-head">
             <strong>Module</strong>
@@ -2426,9 +2427,10 @@ function NewsSettingsPanel({
 
           <div className="provider-status-bar">{status}</div>
         </section>
-      </div>
 
-      <NewsAnalystSettingsSection state={state} />
+        <NewsAnalystSettingsSection state={state} />
+        </div>
+      </div>
     </>
   );
 }
@@ -2442,8 +2444,7 @@ function NewsAnalystSettingsSection({ state }: { state: MarketState | null }) {
   }
 
   return (
-    <div className="provider-layout" style={{ marginTop: 24 }}>
-      <section className="provider-detail" style={{ gridColumn: '1 / -1' }}>
+    <section className="provider-detail">
         <div className="provider-section-head">
           <strong>News Analyst (auto paper trading)</strong>
           <span className={`provider-inline-badge ${analystConfig.enabled ? 'positive' : ''}`}>
@@ -2507,8 +2508,7 @@ function NewsAnalystSettingsSection({ state }: { state: MarketState | null }) {
           Universe and gating thresholds are read-only here. Edit the [news_analyst] block in
           watchlist.toml and restart the backend to change them.
         </div>
-      </section>
-    </div>
+    </section>
   );
 }
 
