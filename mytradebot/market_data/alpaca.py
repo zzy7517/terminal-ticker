@@ -18,10 +18,14 @@ from ..domain.price_action import Candle
 ALPACA_DATA_BASE = "https://data.alpaca.markets"
 ALPACA_TRADING_BASE = "https://paper-api.alpaca.markets"
 DEFAULT_ALPACA_FEED = "iex"
+DEFAULT_ALPACA_EXTENDED_STATS_FEED = "delayed_sip"
 ASSET_CACHE_TTL_SECONDS = 15 * 60
 BAR_DELAY_MINUTES = 16
 US_EQUITY_TZ = ZoneInfo("America/New_York")
 EXTENDED_HOURS_START_HOUR_ET = 4  # US equities pre-market opens at 04:00 ET.
+REGULAR_HOURS_START_HOUR_ET = 9
+REGULAR_HOURS_START_MINUTE_ET = 30
+REGULAR_HOURS_END_HOUR_ET = 16
 _asset_cache: tuple[float, tuple["AlpacaAsset", ...]] | None = None
 
 
@@ -123,6 +127,15 @@ def _trading_base_url() -> str:
 def _data_feed() -> str:
     """说明：返回 Alpaca market data feed，免费档默认 IEX。"""
     return os.environ.get("ALPACA_DATA_FEED", DEFAULT_ALPACA_FEED).strip().lower() or DEFAULT_ALPACA_FEED
+
+
+def _extended_stats_feed() -> str:
+    """说明：返回盘前盘后统计使用的数据 feed，默认用延迟 SIP 以避免 IEX-only 口径。"""
+    feed = os.environ.get("ALPACA_EXTENDED_STATS_FEED")
+    if feed is not None:
+        return feed.strip().lower() or DEFAULT_ALPACA_EXTENDED_STATS_FEED
+    data_feed = _data_feed()
+    return "sip" if data_feed == "sip" else DEFAULT_ALPACA_EXTENDED_STATS_FEED
 
 
 def _fetch_json(base_url: str, path: str, params: dict[str, str] | None = None) -> Any:
@@ -465,10 +478,12 @@ def _merge_session_stats(
     low_candidates = [value for value in (rth_low, extended_low, latest_price) if value is not None]
     day_high = max(high_candidates) if high_candidates else None
     day_low = min(low_candidates) if low_candidates else None
-    if extended_volume is not None:
-        day_volume = extended_volume  # 1m 聚合已覆盖 RTH+盘前盘后。
-    else:
+    if extended_volume is None:
         day_volume = rth_volume
+    elif rth_volume is None:
+        day_volume = extended_volume
+    else:
+        day_volume = rth_volume + extended_volume
     return day_high, day_low, day_volume
 
 
@@ -535,18 +550,31 @@ def _fetch_extended_hours_day_stats(
         "start": _format_iso(start_time),
         "end": _format_iso(end_time),
         "limit": "10000",
-        "feed": _data_feed(),
+        "feed": _extended_stats_feed(),
         "adjustment": "raw",
         "sort": "asc",
     }
-    payload = _fetch_json(_data_base_url(), "/v2/stocks/bars", params)
-    if not isinstance(payload, dict):
-        return {}
-    bars = payload.get("bars")
-    if not isinstance(bars, dict):
-        return {}
-
     stats: dict[str, dict[str, float]] = {}
+    while True:
+        payload = _fetch_json(_data_base_url(), "/v2/stocks/bars", params)
+        if not isinstance(payload, dict):
+            return stats
+        bars = payload.get("bars")
+        if isinstance(bars, dict):
+            _accumulate_extended_hours_stats(stats, bars)
+
+        next_page_token = payload.get("next_page_token")
+        if not next_page_token:
+            break
+        params["page_token"] = str(next_page_token)
+    return stats
+
+
+def _accumulate_extended_hours_stats(
+    stats: dict[str, dict[str, float]],
+    bars: dict[str, Any],
+) -> None:
+    """说明：把一页 bars 中真正属于盘前/盘后的成交合并进累计统计。"""
     for raw_symbol, rows in bars.items():
         if not isinstance(rows, list) or not rows:
             continue
@@ -557,6 +585,9 @@ def _fetch_extended_hours_day_stats(
         for row in rows:
             if not isinstance(row, dict):
                 continue
+            row_time_ms = _timestamp_to_ms(row.get("t"))
+            if row_time_ms is None or not _is_extended_hours_bar(row_time_ms):
+                continue
             high = _as_float(row.get("h"))
             low = _as_float(row.get("l"))
             volume = _as_float(row.get("v"))
@@ -566,21 +597,37 @@ def _fetch_extended_hours_day_stats(
                 lows.append(low)
             if volume is not None:
                 volume_total += volume
-            row_time_ms = _timestamp_to_ms(row.get("t"))
-            if row_time_ms is not None and (last_time_ms is None or row_time_ms > last_time_ms):
+            if last_time_ms is None or row_time_ms > last_time_ms:
                 last_time_ms = row_time_ms
         if not highs and not lows and volume_total == 0.0:
             continue
-        symbol_stats: dict[str, float] = {}
+        symbol_key = str(raw_symbol).upper()
+        symbol_stats = stats.setdefault(symbol_key, {})
         if highs:
-            symbol_stats["high"] = max(highs)
+            page_high = max(highs)
+            current_high = symbol_stats.get("high")
+            symbol_stats["high"] = page_high if current_high is None else max(current_high, page_high)
         if lows:
-            symbol_stats["low"] = min(lows)
-        symbol_stats["volume"] = volume_total
+            page_low = min(lows)
+            current_low = symbol_stats.get("low")
+            symbol_stats["low"] = page_low if current_low is None else min(current_low, page_low)
+        symbol_stats["volume"] = symbol_stats.get("volume", 0.0) + volume_total
         if last_time_ms is not None:
-            symbol_stats["last_time_ms"] = float(last_time_ms)
-        stats[str(raw_symbol).upper()] = symbol_stats
-    return stats
+            current_last_time = symbol_stats.get("last_time_ms")
+            symbol_stats["last_time_ms"] = (
+                float(last_time_ms)
+                if current_last_time is None
+                else max(current_last_time, float(last_time_ms))
+            )
+
+
+def _is_extended_hours_bar(open_time_ms: int) -> bool:
+    """说明：判断 1m bar 是否属于美股盘前或盘后时段。"""
+    local_time = datetime.fromtimestamp(open_time_ms / 1000, tz=timezone.utc).astimezone(US_EQUITY_TZ)
+    minutes = local_time.hour * 60 + local_time.minute
+    regular_start = REGULAR_HOURS_START_HOUR_ET * 60 + REGULAR_HOURS_START_MINUTE_ET
+    regular_end = REGULAR_HOURS_END_HOUR_ET * 60
+    return minutes < regular_start or minutes >= regular_end
 
 
 def _extended_hours_session_start(reference_utc: datetime) -> datetime:

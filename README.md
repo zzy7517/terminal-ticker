@@ -35,6 +35,7 @@ export APCA_API_KEY_ID="你的 Alpaca Key"
 export APCA_API_SECRET_KEY="你的 Alpaca Secret"
 export APCA_API_BASE_URL="https://paper-api.alpaca.markets"
 export ALPACA_DATA_FEED="iex"
+export ALPACA_EXTENDED_STATS_FEED="delayed_sip"
 ```
 
 当前 Codex provider adapter 默认读取本机 Codex CLI 登录态：
@@ -187,7 +188,7 @@ Web UI 左侧搜索框可以输入代码或名称，例如 `NVDA`、`AAPL`、`Ap
 - 立即从当前运行状态移除这个 Alpaca 标的。
 - 从当前启动使用的 `watchlist.toml` 删除精确匹配的 `source = "alpaca"` 行，不会删除 Bitget 标的。
 
-Alpaca 免费 Basic market data 的 REST 限制约为 `200 requests/min`，实时股票 feed 是 `IEX`，历史数据最新 15 分钟有权限限制。项目默认给 bars 请求留出 16 分钟窗口，适合分钟级研究和本地指标，不适合当全市场实时 tick 源。
+Alpaca 免费 Basic market data 的 REST 限制约为 `200 requests/min`，实时股票 feed 是 `IEX`，历史数据最新 15 分钟有权限限制。项目默认给 bars 请求留出 16 分钟窗口，并用 `delayed_sip` 拉取盘前盘后统计；如果账号权限不支持，会自动回退到 snapshot 自带的 RTH 统计。这个数据适合分钟级研究和本地指标，不适合当全市场实时 tick 源。
 
 ## zsh 配置示例
 
@@ -198,6 +199,7 @@ export APCA_API_KEY_ID="你的 Alpaca Key"
 export APCA_API_SECRET_KEY="你的 Alpaca Secret"
 export APCA_API_BASE_URL="https://paper-api.alpaca.markets"
 export ALPACA_DATA_FEED="iex"
+export ALPACA_EXTENDED_STATS_FEED="delayed_sip"
 ```
 
 然后让当前终端生效：
