@@ -946,9 +946,138 @@ textarea:focus-visible {
   color: var(--text-primary);
 }
 
+.session-icon-action:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.session-icon-action.danger:hover:not(:disabled) {
+  border-color: rgba(220, 38, 38, 0.32);
+  color: var(--down);
+}
+
 .session-icon-action:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+.session-history {
+  border-bottom: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.session-history-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-history-head span {
+  align-items: center;
+  color: var(--text-primary);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.session-history-head small {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.session-history-list {
+  display: grid;
+  gap: 6px;
+}
+
+.session-history-row {
+  align-items: center;
+  background: var(--canvas);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 6px;
+}
+
+.session-history-row.active {
+  background: var(--accent-tint);
+  border-color: var(--accent-ring);
+}
+
+.session-history-main {
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 2px 4px;
+  text-align: left;
+}
+
+.session-history-main:disabled {
+  cursor: default;
+}
+
+.session-history-main span,
+.session-history-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-history-main span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-history-main small {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.session-history-actions {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.session-history-badge {
+  background: var(--canvas-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  max-width: 64px;
+  overflow: hidden;
+  padding: 5px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-history-badge.active {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.session-history-empty {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  justify-content: center;
+  min-height: 42px;
 }
 
 .session-transcript {

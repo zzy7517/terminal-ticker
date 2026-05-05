@@ -28,6 +28,7 @@ from .providers.codex import CodexProvider, _codex_request_headers, _read_codex_
 from .session_store import (
     AgentMessage,
     AgentSession,
+    AgentSessionSummary,
     AgentSessionStore,
     default_agent_session_path,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "list_available_agent_models",
     "AgentMessage",
     "AgentSession",
+    "AgentSessionSummary",
     "AgentSessionStore",
     "default_agent_session_path",
     "_codex_request_headers",

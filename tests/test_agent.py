@@ -238,6 +238,10 @@ class AgentTests(unittest.TestCase):
                 title="AAPL · AAPL",
                 provider="codex",
                 model="gpt-test",
+                api_mode="codex_responses",
+                reasoning_effort="medium",
+                max_iterations=6,
+                use_tools=True,
             )
             store.append_message(
                 session_id=session.id,
@@ -265,24 +269,54 @@ class AgentTests(unittest.TestCase):
                 title="AAPL · AAPL",
                 provider="codex",
                 model="gpt-next",
+                api_mode="codex_responses",
+                reasoning_effort="high",
+                max_iterations=8,
+                use_tools=False,
             )
             next_session = reopened.create_session(
                 instrument_key="alpaca:AAPL",
                 title="AAPL · AAPL",
                 provider="codex",
                 model="gpt-test",
+                api_mode="codex_responses",
+                reasoning_effort="medium",
+                max_iterations=6,
+                use_tools=True,
             )
             previous_payload = reopened.session_payload(session.id)
+            history_rows = reopened.list_sessions("alpaca:AAPL")
+            resumed = reopened.activate_session(
+                instrument_key="alpaca:AAPL",
+                session_id=session.id,
+            )
+            active_after_delete = reopened.delete_session(
+                instrument_key="alpaca:AAPL",
+                session_id=session.id,
+            )
+            deleted_payload = reopened.session_payload(session.id)
 
         self.assertIsNotNone(payload)
         self.assertEqual(payload["session"]["id"], session.id)
+        self.assertEqual(payload["session"]["apiMode"], "codex_responses")
+        self.assertEqual(payload["session"]["reasoningEffort"], "medium")
+        self.assertEqual(payload["session"]["maxIterations"], 6)
+        self.assertTrue(payload["session"]["useTools"])
         self.assertEqual([message["role"] for message in payload["messages"]], ["user", "assistant"])
         self.assertEqual(payload["messages"][1]["analysis"]["summary"], "Trend is constructive.")
         self.assertEqual(history[-1]["analysis"]["watch_plan"], ["Wait for a pullback."])
         self.assertEqual(refreshed_session.id, session.id)
         self.assertEqual(refreshed_session.model, "gpt-next")
+        self.assertEqual(refreshed_session.reasoning_effort, "high")
+        self.assertFalse(refreshed_session.use_tools)
         self.assertEqual(next_session.instrument_key, "alpaca:AAPL")
         self.assertFalse(previous_payload["session"]["active"])
+        self.assertEqual(len(history_rows), 2)
+        self.assertEqual(history_rows[1].preview, "How does this K-line window look?")
+        self.assertEqual(history_rows[1].message_count, 2)
+        self.assertEqual(resumed.id, session.id)
+        self.assertEqual(active_after_delete.id, next_session.id)
+        self.assertIsNone(deleted_payload)
 
 
 if __name__ == "__main__":

@@ -97,6 +97,16 @@ def _agent_session_title(instrument: MarketInstrument) -> str:
     return f"{instrument.label} · {instrument.symbol}"
 
 
+def _agent_session_config_kwargs(config: AgentConfig) -> dict[str, Any]:
+    """说明：把当前 Agent 配置压缩成会话元数据快照。"""
+    return {
+        "api_mode": config.api_mode,
+        "reasoning_effort": config.reasoning_effort,
+        "max_iterations": config.max_iterations,
+        "use_tools": config.use_tools,
+    }
+
+
 def _normalize_agent_prompt(prompt: str | None) -> str:
     """说明：规范化用户发给 Agent 的问题。"""
     text = (prompt or "").strip()
@@ -751,10 +761,72 @@ class MarketRuntime:
             title=_agent_session_title(instrument),
             provider=self.config.agent.provider,
             model=self.config.agent.model,
+            **_agent_session_config_kwargs(self.config.agent),
         )
         self.agent_analyses.pop(instrument.key, None)
         await self.broadcast()
-        return await self._agent_session_payload(session.id)
+        return {
+            **(await self._agent_session_payload(session.id)),
+            "history": await self._agent_session_history_payload(instrument.key),
+        }
+
+    async def list_agent_session_history(self, instrument_key: str) -> dict[str, Any]:
+        """说明：列出某个标的的本地 Agent 历史会话。"""
+        instrument = self._instrument_by_key(instrument_key)
+        return await self._agent_session_history_payload(instrument.key)
+
+    async def resume_agent_session(self, instrument_key: str, session_id: str) -> dict[str, Any]:
+        """说明：恢复某个历史 Agent 会话为 active。"""
+        instrument = self._instrument_by_key(instrument_key)
+        try:
+            session = await asyncio.to_thread(
+                self.agent_session_store.activate_session,
+                instrument_key=instrument.key,
+                session_id=session_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        session_payload = await self._agent_session_payload(session.id)
+        analysis = _latest_session_analysis(session_payload)
+        if analysis is None:
+            self.agent_analyses.pop(instrument.key, None)
+        else:
+            self.agent_analyses[instrument.key] = analysis
+        await self.broadcast()
+        return {
+            "session": session_payload,
+            "history": await self._agent_session_history_payload(instrument.key),
+            "state": self.snapshot(),
+        }
+
+    async def delete_agent_session(self, instrument_key: str, session_id: str) -> dict[str, Any]:
+        """说明：删除某个历史 Agent 会话。"""
+        instrument = self._instrument_by_key(instrument_key)
+        try:
+            next_session = await asyncio.to_thread(
+                self.agent_session_store.delete_session,
+                instrument_key=instrument.key,
+                session_id=session_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if next_session is None:
+            session_payload = {"session": None, "messages": []}
+            self.agent_analyses.pop(instrument.key, None)
+        else:
+            session_payload = await self._agent_session_payload(next_session.id)
+            analysis = _latest_session_analysis(session_payload)
+            if analysis is None:
+                self.agent_analyses.pop(instrument.key, None)
+            else:
+                self.agent_analyses[instrument.key] = analysis
+        await self.broadcast()
+        return {
+            "deleted": True,
+            "session": session_payload,
+            "history": await self._agent_session_history_payload(instrument.key),
+            "state": self.snapshot(),
+        }
 
     async def analyze_instrument(
         self,
@@ -773,6 +845,7 @@ class MarketRuntime:
             title=_agent_session_title(instrument),
             provider=self.config.agent.provider,
             model=self.config.agent.model,
+            **_agent_session_config_kwargs(self.config.agent),
         )
         user_prompt = _normalize_agent_prompt(prompt)
         await asyncio.to_thread(
@@ -795,6 +868,7 @@ class MarketRuntime:
             return {
                 "result": payload,
                 "session": await self._agent_session_payload(session.id),
+                "history": await self._agent_session_history_payload(instrument.key),
                 "state": self.snapshot(),
             }
 
@@ -811,6 +885,7 @@ class MarketRuntime:
             return {
                 "result": payload,
                 "session": await self._agent_session_payload(session.id),
+                "history": await self._agent_session_history_payload(instrument.key),
                 "state": self.snapshot(),
             }
 
@@ -847,6 +922,7 @@ class MarketRuntime:
         return {
             "result": payload,
             "session": await self._agent_session_payload(session.id),
+            "history": await self._agent_session_history_payload(instrument.key),
             "state": self.snapshot(),
         }
 
@@ -947,6 +1023,7 @@ class MarketRuntime:
         return {
             "result": payload,
             "session": await self._agent_session_payload(session.id),
+            "history": await self._agent_session_history_payload(instrument.key),
             "state": self.snapshot(),
         }
 
@@ -976,6 +1053,14 @@ class MarketRuntime:
         """说明：异步读取一个 session payload。"""
         payload = await asyncio.to_thread(self.agent_session_store.session_payload, session_id)
         return payload or {"session": None, "messages": []}
+
+    async def _agent_session_history_payload(self, instrument_key: str) -> dict[str, Any]:
+        """说明：异步读取某个标的的 session 历史列表。"""
+        sessions = await asyncio.to_thread(
+            self.agent_session_store.list_sessions,
+            instrument_key,
+        )
+        return {"sessions": [session.to_payload() for session in sessions]}
 
     async def load_older_candles(self, instrument_key: str) -> dict[str, Any]:
         """说明：为图表继续向前加载一批历史 K 线。"""
@@ -1283,6 +1368,21 @@ def create_app(
         """说明：读取某个标的当前 active Agent 会话。"""
         return await runtime.get_agent_session(instrument_key)
 
+    @app.get("/api/agent/sessions/{instrument_key}/history")
+    async def list_agent_session_history_endpoint(instrument_key: str) -> dict[str, Any]:
+        """说明：列出某个标的的历史 Agent 会话。"""
+        return await runtime.list_agent_session_history(instrument_key)
+
+    @app.post("/api/agent/sessions/{instrument_key}/history/{session_id}/resume")
+    async def resume_agent_session_endpoint(instrument_key: str, session_id: str) -> dict[str, Any]:
+        """说明：恢复某个历史 Agent 会话。"""
+        return await runtime.resume_agent_session(instrument_key, session_id)
+
+    @app.delete("/api/agent/sessions/{instrument_key}/history/{session_id}")
+    async def delete_agent_session_endpoint(instrument_key: str, session_id: str) -> dict[str, Any]:
+        """说明：删除某个历史 Agent 会话。"""
+        return await runtime.delete_agent_session(instrument_key, session_id)
+
     @app.post("/api/agent/sessions/{instrument_key}/messages")
     async def append_agent_session_message_endpoint(
         instrument_key: str,
@@ -1528,6 +1628,20 @@ def _agent_loop_history_without_current_turn(
         for msg in history_items
         if msg.get("role") in ("user", "assistant")
     ]
+
+
+def _latest_session_analysis(session_payload: dict[str, Any]) -> dict[str, Any] | None:
+    """说明：从 session payload 中提取最近一次 assistant 分析结果。"""
+    messages = session_payload.get("messages")
+    if not isinstance(messages, list):
+        return None
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        analysis = message.get("analysis")
+        if isinstance(analysis, dict):
+            return analysis
+    return None
 
 
 def _analysis_config_from_payload(current: AnalysisConfig, payload: dict[str, Any]) -> AnalysisConfig:

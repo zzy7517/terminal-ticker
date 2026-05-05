@@ -2,6 +2,8 @@ import type {
   AgentAnalysis,
   AgentConfigUpdate,
   AgentModelsResponse,
+  AgentSessionHistoryResponse,
+  AgentSessionMutationResponse,
   AgentSessionResponse,
   AnalysisConfigUpdate,
   InstrumentSearchResult,
@@ -123,11 +125,49 @@ export async function fetchAgentSession(key: string): Promise<AgentSessionRespon
   return response.json();
 }
 
+// Lists saved chart-agent sessions for one instrument.
+export async function fetchAgentSessionHistory(key: string): Promise<AgentSessionHistoryResponse> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/history`);
+  if (!response.ok) {
+    throw await responseError(response, 'agent session history fetch failed');
+  }
+  return response.json();
+}
+
+// Restores a saved chart-agent session as the active session for one instrument.
+export async function resumeAgentSession(key: string, sessionId: string): Promise<AgentSessionMutationResponse> {
+  const response = await fetch(
+    `/api/agent/sessions/${encodeURIComponent(key)}/history/${encodeURIComponent(sessionId)}/resume`,
+    { method: 'POST' },
+  );
+  if (!response.ok) {
+    throw await responseError(response, 'agent session resume failed');
+  }
+  return response.json();
+}
+
+// Deletes a saved chart-agent session and returns the next active session state.
+export async function deleteAgentSession(key: string, sessionId: string): Promise<AgentSessionMutationResponse> {
+  const response = await fetch(
+    `/api/agent/sessions/${encodeURIComponent(key)}/history/${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE' },
+  );
+  if (!response.ok) {
+    throw await responseError(response, 'agent session delete failed');
+  }
+  return response.json();
+}
+
 // Appends a user turn to the active chart-agent session and waits for the provider result.
 export async function sendAgentMessage(
   key: string,
   message: string,
-): Promise<{ result: AgentAnalysis; session: AgentSessionResponse; state: MarketState }> {
+): Promise<{
+  result: AgentAnalysis;
+  session: AgentSessionResponse;
+  history: AgentSessionHistoryResponse;
+  state: MarketState;
+}> {
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -140,7 +180,9 @@ export async function sendAgentMessage(
 }
 
 // Starts a clean active chart-agent session without deleting historical sessions.
-export async function resetAgentSession(key: string): Promise<AgentSessionResponse> {
+export async function resetAgentSession(
+  key: string,
+): Promise<AgentSessionResponse & { history: AgentSessionHistoryResponse }> {
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/reset`, {
     method: 'POST',
   });
