@@ -4,3 +4,4 @@ python-socks>=2.7.2,<3.0.0
 fastapi>=0.115.0,<1.0.0
 uvicorn[standard]>=0.34.0,<1.0.0
 httpx>=0.28.0,<1.0.0
+curl_cffi>=0.7,<1.0

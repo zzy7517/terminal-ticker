@@ -1,4 +1,12 @@
-"""文件用途：新闻抓取服务，封装轮询、退避、手动刷新。"""
+"""文件用途：新闻抓取服务，封装轮询、退避、手动刷新。
+
+TODO(news-latency): 当前默认轮询 30s。Reuters 服务端 Cache-Control: max-age=6，
+所以理论上 6–10s 轮询能拿到几乎实时的头条；但实测 Reuters 不响应 If-None-Match /
+If-Modified-Since（每次都 200 + full body ~80KB），所以更频繁的轮询不是零成本，
+还会增加被 Cloudflare 反爬留意的概率。后续要降到 <30s 需要：
+  1) 监控 401/403 比率，必要时加 jitter
+  2) 评估多 sitemap（asia / business / world 子分类）轮换抓取代替每次全量
+"""
 from __future__ import annotations
 
 import asyncio
