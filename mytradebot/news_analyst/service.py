@@ -5,9 +5,10 @@
 # - [x] Cooldown 表 (TODO-B)：(instrument_key, direction) → last_open_ms, 内存
 # - [x] K 线印证 (TODO-C)：1H+15m candles 序列化进 prompt，LLM 据此印证或反驳
 # - [x] Lessons 注入 (TODO-D)：trade_store.list_lessons 最近 5 条进 prompt
+# - [x] WebSocket+API recent_news_decisions (TODO-E)：snapshot.recentNewsDecisions
+#       + GET /api/news/decisions + config.newsAnalyst section
 
 # 后续 TODO（按优先级）
-# - [ ] WebSocket 推 newsDecisions：让前端 News 卡片挂"已分析/已下单"badge。
 # - [ ] OpenAI Chat provider 兼容：当前只走 codex provider.chat()。
 """
 from __future__ import annotations

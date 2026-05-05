@@ -171,6 +171,7 @@ def serialize_market_state(
     open_trades: list[dict[str, Any]] | None = None,
     recent_news: list[dict[str, Any]] | None = None,
     news_status: dict[str, Any] | None = None,
+    recent_news_decisions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """说明：构造浏览器需要的完整市场状态快照。"""
     groups: dict[str, list[str]] = {}
@@ -213,6 +214,20 @@ def serialize_market_state(
                 "requestTimeoutSeconds": config.news.request_timeout_seconds,
                 "retentionDays": config.news.retention_days,
             },
+            "newsAnalyst": {
+                "enabled": config.news_analyst.enabled,
+                "minConfidence": config.news_analyst.min_confidence,
+                "maxEntryDistancePct": config.news_analyst.max_entry_distance_pct,
+                "defaultSize": config.news_analyst.default_size,
+                "cooldownMinutes": config.news_analyst.cooldown_minutes,
+                "universe": [
+                    {
+                        "instrumentKey": e.instrument_key,
+                        "aliases": list(e.aliases),
+                    }
+                    for e in config.news_analyst.universe
+                ],
+            },
             "sourcePath": str(config.source_path) if config.source_path else None,
         },
         "instruments": [
@@ -231,6 +246,7 @@ def serialize_market_state(
         "openTrades": open_trades or [],
         "recentNews": recent_news or [],
         "newsStatus": news_status or {},
+        "recentNewsDecisions": recent_news_decisions or [],
     }
 
 
@@ -422,6 +438,9 @@ class MarketRuntime:
                 "lastError": self.news_service.last_error,
                 "lastFetchedAtMs": self.news_service.last_fetched_at_ms,
             })
+        recent_news_decisions: list[dict[str, Any]] = []
+        if self.news_analyst is not None:
+            recent_news_decisions = self.news_analyst.decision_store.recent(limit=50)
         return serialize_market_state(
             config=self.config,
             instruments=self.instruments,
@@ -431,6 +450,7 @@ class MarketRuntime:
             open_trades=open_trades,
             recent_news=recent_news,
             news_status=news_status,
+            recent_news_decisions=recent_news_decisions,
         )
 
     async def connect(self, websocket: WebSocket) -> None:
@@ -1391,6 +1411,17 @@ def create_app(
         resolved = max(1, min(int(limit), 200))
         items = runtime.news_service.recent(limit=resolved)
         return {"news": [item.to_payload() for item in items], "enabled": True}
+
+    @app.get("/api/news/decisions")
+    async def get_news_decisions_endpoint(limit: int = 50) -> dict[str, Any]:
+        """说明：读取最近的 news_analyst 决策日志（含已下单 + skip）。"""
+        if runtime.news_analyst is None:
+            return {"decisions": [], "enabled": False}
+        resolved = max(1, min(int(limit), 200))
+        return {
+            "decisions": runtime.news_analyst.decision_store.recent(limit=resolved),
+            "enabled": True,
+        }
 
     @app.post("/api/news/config")
     async def update_news_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
