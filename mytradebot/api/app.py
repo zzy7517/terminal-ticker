@@ -27,6 +27,7 @@ from ..agent import (
     build_market_tools,
     build_news_tools,
     build_trading_tools,
+    build_web_tools,
     create_llm_provider,
     list_available_agent_models,
     merge_registries,
@@ -870,7 +871,8 @@ class MarketRuntime:
             session_id_provider=lambda: active_session_id,
         )
         news_tools = build_news_tools(self.news_service)
-        tools = merge_registries(market_tools, trading_tools, news_tools)
+        web_tools = build_web_tools()
+        tools = merge_registries(market_tools, trading_tools, news_tools, web_tools)
 
         current_context = build_agent_context(
             instrument=instrument,

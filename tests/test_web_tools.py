@@ -1,0 +1,231 @@
+"""web_tools 单元测试：DDG 解析 / search / fetch / registry 集成。"""
+import asyncio
+import json
+import unittest
+from unittest.mock import patch
+
+from mytradebot.agent import build_web_tools
+from mytradebot.agent.web_tools import (
+    _parse_ddg_html,
+    _strip_html,
+    _unwrap_ddg_redirect,
+)
+
+
+class HelperTests(unittest.TestCase):
+    def test_strip_html_basic(self) -> None:
+        self.assertEqual(_strip_html("<b>Hello&nbsp;World</b>"), "Hello\xa0World")
+
+    def test_unwrap_ddg_redirect(self) -> None:
+        href = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa&rut=x"
+        self.assertEqual(_unwrap_ddg_redirect(href), "https://example.com/a")
+
+    def test_unwrap_passthrough_for_normal_href(self) -> None:
+        self.assertEqual(_unwrap_ddg_redirect("https://example.com/x"), "https://example.com/x")
+
+    def test_unwrap_protocol_relative(self) -> None:
+        self.assertEqual(_unwrap_ddg_redirect("//example.com/x"), "https://example.com/x")
+
+    def test_parse_ddg_html_extracts_results(self) -> None:
+        html = """
+        <html><body>
+          <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fa.com%2F1">Title One</a>
+          <a class="result__snippet" href="x">Snippet one</a>
+          <a class="result__a" href="https://b.com/2">Title Two &amp; Co</a>
+          <a class="result__snippet" href="x">Snippet <b>two</b></a>
+        </body></html>
+        """
+        out = _parse_ddg_html(html, limit=5)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["url"], "https://a.com/1")
+        self.assertEqual(out[0]["title"], "Title One")
+        self.assertEqual(out[0]["snippet"], "Snippet one")
+        self.assertEqual(out[1]["url"], "https://b.com/2")
+        self.assertEqual(out[1]["title"], "Title Two & Co")
+        self.assertEqual(out[1]["snippet"], "Snippet two")
+
+    def test_parse_ddg_respects_limit(self) -> None:
+        html = "".join(
+            f'<a class="result__a" href="https://x/{i}">T{i}</a>'
+            f'<a class="result__snippet" href="x">S{i}</a>'
+            for i in range(10)
+        )
+        self.assertEqual(len(_parse_ddg_html(html, limit=3)), 3)
+
+
+class WebSearchTests(unittest.TestCase):
+    def _run(self, coro):
+        return asyncio.run(coro)
+
+    def test_search_happy_path(self) -> None:
+        sample_html = (
+            '<a class="result__a" href="https://reuters.com/x">Fed rate news</a>'
+            '<a class="result__snippet" href="x">Fed cuts rates by 50bp</a>'
+        )
+
+        async def fake_post(query, timeout):
+            self.assertEqual(query, "fed rate cut")
+            return 200, sample_html
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
+            tool = registry.get("web_search")
+            assert tool is not None
+            out = self._run(tool.handler(query="fed rate cut", limit=5))
+        data = json.loads(out)
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["results"][0]["url"], "https://reuters.com/x")
+        self.assertEqual(data["results"][0]["title"], "Fed rate news")
+
+    def test_search_empty_query_returns_error(self) -> None:
+        registry = build_web_tools()
+        tool = registry.get("web_search")
+        out = self._run(tool.handler(query="   ", limit=5))
+        self.assertIn("query is empty", out)
+
+    def test_search_http_error_returns_error_json(self) -> None:
+        async def fake_post(query, timeout):
+            return 502, ""
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
+            out = self._run(registry.get("web_search").handler(query="x"))
+        data = json.loads(out)
+        self.assertEqual(data["error"], "HTTP 502")
+
+    def test_search_zero_results_includes_note(self) -> None:
+        async def fake_post(query, timeout):
+            return 200, "<html><body>no matches</body></html>"
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
+            out = self._run(registry.get("web_search").handler(query="x"))
+        data = json.loads(out)
+        self.assertEqual(data["count"], 0)
+        self.assertIn("rate-limited", data["note"])
+
+    def test_search_exception_softfails(self) -> None:
+        async def fake_post(query, timeout):
+            raise RuntimeError("connection refused")
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
+            out = self._run(registry.get("web_search").handler(query="x"))
+        data = json.loads(out)
+        self.assertIn("connection refused", data["error"])
+
+    def test_search_clamps_limit(self) -> None:
+        captured: dict = {}
+
+        async def fake_post(query, timeout):
+            return 200, ""
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
+            # limit=999 should be clamped silently and return 0 results
+            out = self._run(registry.get("web_search").handler(query="x", limit=999))
+        # 不抛异常，正常返回 0 结果
+        self.assertEqual(json.loads(out)["count"], 0)
+
+
+class WebFetchTests(unittest.TestCase):
+    def _run(self, coro):
+        return asyncio.run(coro)
+
+    def test_fetch_happy_path_strips_scripts_and_tags(self) -> None:
+        async def fake_get(url, timeout):
+            body = (
+                "<html><head><script>var x=1;</script>"
+                "<style>body{color:red}</style></head>"
+                "<body><p>Hello <b>World</b></p></body></html>"
+            )
+            return 200, "text/html; charset=utf-8", body
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_get", fake_get):
+            out = self._run(registry.get("web_fetch").handler(url="https://example.com/p"))
+        data = json.loads(out)
+        self.assertEqual(data["status"], 200)
+        self.assertIn("text/html", data["contentType"])
+        self.assertEqual(data["text"], "Hello World")
+        self.assertFalse(data["truncated"])
+
+    def test_fetch_rejects_empty_url(self) -> None:
+        registry = build_web_tools()
+        out = self._run(registry.get("web_fetch").handler(url=""))
+        self.assertIn("url is empty", out)
+
+    def test_fetch_rejects_non_http_scheme(self) -> None:
+        registry = build_web_tools()
+        out = self._run(registry.get("web_fetch").handler(url="file:///etc/passwd"))
+        data = json.loads(out)
+        self.assertIn("unsupported scheme", data["error"])
+
+    def test_fetch_rejects_missing_host(self) -> None:
+        registry = build_web_tools()
+        out = self._run(registry.get("web_fetch").handler(url="https:///nohost"))
+        data = json.loads(out)
+        self.assertIn("missing host", data["error"])
+
+    def test_fetch_truncates_at_max_chars(self) -> None:
+        big_text = "<p>" + ("X" * 5000) + "</p>"
+
+        async def fake_get(url, timeout):
+            return 200, "text/html", big_text
+
+        registry = build_web_tools(body_limit=8000)
+        with patch("mytradebot.agent.web_tools._http_get", fake_get):
+            out = self._run(
+                registry.get("web_fetch").handler(url="https://example.com/x", max_chars=500)
+            )
+        data = json.loads(out)
+        self.assertEqual(len(data["text"]), 500)
+        self.assertTrue(data["truncated"])
+        self.assertEqual(data["length"], 5000)
+
+    def test_fetch_http_error_returns_error_json(self) -> None:
+        async def fake_get(url, timeout):
+            return 404, "text/html", "not found"
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_get", fake_get):
+            out = self._run(registry.get("web_fetch").handler(url="https://example.com/x"))
+        data = json.loads(out)
+        self.assertEqual(data["error"], "HTTP 404")
+
+    def test_fetch_exception_softfails(self) -> None:
+        async def fake_get(url, timeout):
+            raise RuntimeError("dns boom")
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_get", fake_get):
+            out = self._run(registry.get("web_fetch").handler(url="https://example.com/x"))
+        data = json.loads(out)
+        self.assertIn("dns boom", data["error"])
+
+
+class RegistryIntegrationTests(unittest.TestCase):
+    """build_web_tools 的 ToolDefinition 元数据是否能被现有 ToolRegistry 消费。"""
+
+    def test_registry_lists_both_tools_with_schema(self) -> None:
+        registry = build_web_tools()
+        names = sorted(t.name for t in registry.list_tools())
+        self.assertEqual(names, ["web_fetch", "web_search"])
+        for tool in registry.list_tools():
+            self.assertIn("type", tool.parameters)
+            self.assertEqual(tool.parameters["type"], "object")
+            self.assertIn("required", tool.parameters)
+            self.assertTrue(callable(tool.handler))
+
+    def test_merge_with_other_registries(self) -> None:
+        from mytradebot.agent import merge_registries, build_news_tools
+
+        merged = merge_registries(build_web_tools(), build_news_tools(news_service=None))
+        names = sorted(t.name for t in merged.list_tools())
+        self.assertIn("web_search", names)
+        self.assertIn("web_fetch", names)
+        self.assertIn("get_recent_news", names)
+
+
+if __name__ == "__main__":
+    unittest.main()
