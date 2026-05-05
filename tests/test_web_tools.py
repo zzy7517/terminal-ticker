@@ -193,6 +193,60 @@ class WebFetchTests(unittest.TestCase):
         data = json.loads(out)
         self.assertEqual(data["error"], "HTTP 404")
 
+    def test_fetch_pdf_short_circuits_with_error(self) -> None:
+        """PDF 拒绝处理，返回 error JSON 让 LLM 另寻它路。"""
+        async def fake_get(url, timeout):
+            return 200, "application/pdf", "%PDF-1.6 \x00\x01\x02 binary garbage"
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_get", fake_get):
+            out = self._run(
+                registry.get("web_fetch").handler(url="https://example.com/x.pdf")
+            )
+        data = json.loads(out)
+        self.assertIn("non-text content", data["error"])
+        self.assertEqual(data["contentType"], "application/pdf")
+        # text 字段不应存在（避免 LLM 看到二进制乱码）
+        self.assertNotIn("text", data)
+
+    def test_fetch_image_rejected(self) -> None:
+        async def fake_get(url, timeout):
+            return 200, "image/png", "\x89PNG\r\n"
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_get", fake_get):
+            out = self._run(
+                registry.get("web_fetch").handler(url="https://example.com/x.png")
+            )
+        self.assertIn("non-text content", json.loads(out)["error"])
+
+    def test_fetch_json_is_readable(self) -> None:
+        async def fake_get(url, timeout):
+            return 200, "application/json", '{"k": "v"}'
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_get", fake_get):
+            out = self._run(
+                registry.get("web_fetch").handler(url="https://api.example.com/x")
+            )
+        data = json.loads(out)
+        self.assertNotIn("error", data)
+        self.assertIn('"k"', data["text"])
+
+    def test_fetch_missing_content_type_assumed_html(self) -> None:
+        """很多老站点不发 Content-Type；仍尝试解析（不要无谓 short-circuit）。"""
+        async def fake_get(url, timeout):
+            return 200, "", "<p>plain html</p>"
+
+        registry = build_web_tools()
+        with patch("mytradebot.agent.web_tools._http_get", fake_get):
+            out = self._run(
+                registry.get("web_fetch").handler(url="https://example.com/x")
+            )
+        data = json.loads(out)
+        self.assertNotIn("error", data)
+        self.assertEqual(data["text"], "plain html")
+
     def test_fetch_exception_softfails(self) -> None:
         async def fake_get(url, timeout):
             raise RuntimeError("dns boom")

@@ -53,6 +53,24 @@ def _json_output(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
+def _is_readable_content_type(content_type_lower: str) -> bool:
+    """说明：判断 contentType 是否值得 web_fetch 处理。
+
+    text/* 和 application/json / xhtml / xml 都是 LLM 能消费的；
+    application/pdf, image/*, video/*, audio/*, application/octet-stream 等
+    走二进制流，剥标签会产生乱码，LLM 拿到无用信息且消耗 token。
+    contentType 缺省 (空串) 时假设是 HTML（很多老站点不发 Content-Type）。
+    """
+    if not content_type_lower:
+        return True
+    if content_type_lower.startswith("text/"):
+        return True
+    return any(
+        marker in content_type_lower
+        for marker in ("json", "xml", "xhtml", "javascript", "ecmascript")
+    )
+
+
 def _strip_html(html: str) -> str:
     """剥 HTML 标签 + 解码实体，返回紧凑文本。"""
     text = _HTML_TAG_RE.sub("", html)
@@ -198,6 +216,21 @@ def build_web_tools(
         if status >= 400:
             return _json_output({"error": f"HTTP {status}", "url": target})
 
+        # 二进制/不可读类型直接短路：HTML 剥标签对 PDF/图片/视频毫无用处，
+        # 返回的 "%PDF-1.6 %����" 这种乱码只会污染 LLM context。让模型知情后另寻它路。
+        normalized_ct = (content_type or "").lower()
+        if not _is_readable_content_type(normalized_ct):
+            return _json_output({
+                "error": (
+                    f"non-text content ({content_type or 'unknown'}); "
+                    f"web_fetch can only return HTML/text/json. Try a different URL."
+                ),
+                "url": target,
+                "status": status,
+                "contentType": content_type,
+                "length": len(body),
+            })
+
         # 剥 <script>/<style> + 标签，给 LLM 干净文本
         cleaned = re.sub(r"<script[^>]*>.*?</script>", "", body, flags=re.DOTALL | re.IGNORECASE)
         cleaned = re.sub(r"<style[^>]*>.*?</style>", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
@@ -221,7 +254,11 @@ def build_web_tools(
         description=(
             "Fetch a single URL and return its readable text (HTML stripped). "
             "Use after web_search when you want the full body of a hit. "
-            "Truncated at ~8KB by default to keep LLM context lean."
+            "Truncated at ~8KB by default to keep LLM context lean. "
+            "Limitations: only handles text/HTML/JSON/XML responses (PDFs and "
+            "binary content return an error). Some major news sites (e.g. "
+            "Reuters main pages) sit behind Cloudflare and may return HTTP 401/403; "
+            "in that case rely on the web_search snippet or pick another source."
         ),
         parameters={
             "type": "object",
