@@ -7,9 +7,12 @@ from unittest.mock import patch
 
 from mytradebot.agent import build_web_tools
 from mytradebot.agent.web_tools import (
+    _extract_exa_mcp_text,
     _http_get,
+    _parse_exa_mcp_results,
     _parse_ddg_html,
     _strip_html,
+    _normalize_search_backend,
     _unwrap_ddg_redirect,
 )
 
@@ -54,10 +57,45 @@ class HelperTests(unittest.TestCase):
         )
         self.assertEqual(len(_parse_ddg_html(html, limit=3)), 3)
 
+    def test_normalize_search_backend_aliases(self) -> None:
+        self.assertEqual(_normalize_search_backend(""), "auto")
+        self.assertEqual(_normalize_search_backend("ddg"), "duckduckgo")
+        self.assertEqual(_normalize_search_backend("exa"), "exa_mcp")
+
+    def test_extract_exa_mcp_text_from_sse(self) -> None:
+        body = (
+            'event: message\n'
+            'data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"hello"}]}}\n\n'
+        )
+        self.assertEqual(_extract_exa_mcp_text(body), "hello")
+
+    def test_parse_exa_mcp_results(self) -> None:
+        text = (
+            "Title: Source One\n"
+            "URL: https://example.com/one\n"
+            "Text: First result body.\n"
+            "---\n"
+            "Title: Source Two\n"
+            "URL: https://example.com/two\n"
+            "Highlights:\n"
+            "Second result body.\n"
+        )
+        out = _parse_exa_mcp_results(text, limit=5)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["url"], "https://example.com/one")
+        self.assertEqual(out[0]["title"], "Source One")
+        self.assertEqual(out[0]["snippet"], "First result body.")
+
 
 class WebSearchTests(unittest.TestCase):
     def _run(self, coro):
         return asyncio.run(coro)
+
+    def _duckduckgo_backend(self):
+        return patch.dict("os.environ", {"MYTRADEBOT_WEB_SEARCH_BACKEND": "duckduckgo"}, clear=False)
+
+    def _auto_backend(self):
+        return patch.dict("os.environ", {"MYTRADEBOT_WEB_SEARCH_BACKEND": "auto"}, clear=False)
 
     def test_search_happy_path(self) -> None:
         sample_html = (
@@ -70,7 +108,7 @@ class WebSearchTests(unittest.TestCase):
             return 200, sample_html
 
         registry = build_web_tools()
-        with patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
+        with self._duckduckgo_backend(), patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
             tool = registry.get("web_search")
             assert tool is not None
             out = self._run(tool.handler(query="fed rate cut", limit=5))
@@ -78,6 +116,70 @@ class WebSearchTests(unittest.TestCase):
         self.assertEqual(data["count"], 1)
         self.assertEqual(data["results"][0]["url"], "https://reuters.com/x")
         self.assertEqual(data["results"][0]["title"], "Fed rate news")
+        self.assertEqual(data["engine"], "duckduckgo")
+
+    def test_search_auto_uses_exa_mcp_first(self) -> None:
+        body = (
+            'data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":'
+            '"Title: Fed rate news\\nURL: https://reuters.com/x\\nText: Fed cuts rates by 50bp.\\n---"}]}}\n\n'
+        )
+
+        async def fake_exa(query, limit, timeout):
+            self.assertEqual(query, "fed rate cut")
+            self.assertEqual(limit, 5)
+            return 200, body
+
+        async def fail_ddg(query, timeout):
+            raise AssertionError("DDG should not be called when Exa MCP returns results")
+
+        registry = build_web_tools()
+        with (
+            self._auto_backend(),
+            patch("mytradebot.agent.web_tools._http_post_exa_mcp", fake_exa),
+            patch("mytradebot.agent.web_tools._http_post_ddg", fail_ddg),
+        ):
+            out = self._run(registry.get("web_search").handler(query="fed rate cut", limit=5))
+        data = json.loads(out)
+        self.assertEqual(data["engine"], "exa_mcp")
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["results"][0]["snippet"], "Fed cuts rates by 50bp.")
+
+    def test_search_auto_falls_back_to_ddg_when_exa_fails(self) -> None:
+        async def fake_exa(query, limit, timeout):
+            raise RuntimeError("exa unavailable")
+
+        async def fake_ddg(query, timeout):
+            return 200, '<a class="result__a" href="https://reuters.com/x">Fed</a>'
+
+        registry = build_web_tools()
+        with (
+            self._auto_backend(),
+            patch("mytradebot.agent.web_tools._http_post_exa_mcp", fake_exa),
+            patch("mytradebot.agent.web_tools._http_post_ddg", fake_ddg),
+        ):
+            out = self._run(registry.get("web_search").handler(query="fed", limit=5))
+        data = json.loads(out)
+        self.assertEqual(data["engine"], "duckduckgo")
+        self.assertEqual(data["fallbackFrom"], "exa_mcp")
+        self.assertIn("exa unavailable", data["fallbackReason"])
+
+    def test_search_explicit_exa_mcp_does_not_fallback(self) -> None:
+        async def fake_exa(query, limit, timeout):
+            raise RuntimeError("exa unavailable")
+
+        async def fail_ddg(query, timeout):
+            raise AssertionError("DDG should not be called when backend is exa_mcp")
+
+        registry = build_web_tools()
+        with (
+            patch.dict("os.environ", {"MYTRADEBOT_WEB_SEARCH_BACKEND": "exa_mcp"}, clear=False),
+            patch("mytradebot.agent.web_tools._http_post_exa_mcp", fake_exa),
+            patch("mytradebot.agent.web_tools._http_post_ddg", fail_ddg),
+        ):
+            out = self._run(registry.get("web_search").handler(query="fed", limit=5))
+        data = json.loads(out)
+        self.assertEqual(data["engine"], "exa_mcp")
+        self.assertIn("exa unavailable", data["error"])
 
     def test_search_empty_query_returns_error(self) -> None:
         registry = build_web_tools()
@@ -90,7 +192,7 @@ class WebSearchTests(unittest.TestCase):
             return 502, ""
 
         registry = build_web_tools()
-        with patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
+        with self._duckduckgo_backend(), patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
             out = self._run(registry.get("web_search").handler(query="x"))
         data = json.loads(out)
         self.assertEqual(data["error"], "HTTP 502")
@@ -100,7 +202,7 @@ class WebSearchTests(unittest.TestCase):
             return 200, "<html><body>no matches</body></html>"
 
         registry = build_web_tools()
-        with patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
+        with self._duckduckgo_backend(), patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
             out = self._run(registry.get("web_search").handler(query="x"))
         data = json.loads(out)
         self.assertEqual(data["count"], 0)
@@ -111,7 +213,7 @@ class WebSearchTests(unittest.TestCase):
             raise RuntimeError("connection refused")
 
         registry = build_web_tools()
-        with patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
+        with self._duckduckgo_backend(), patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
             out = self._run(registry.get("web_search").handler(query="x"))
         data = json.loads(out)
         self.assertIn("connection refused", data["error"])
@@ -121,7 +223,7 @@ class WebSearchTests(unittest.TestCase):
             return 200, ""
 
         registry = build_web_tools()
-        with patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
+        with self._duckduckgo_backend(), patch("mytradebot.agent.web_tools._http_post_ddg", fake_post):
             # limit=999 should be clamped silently and return 0 results
             out = self._run(registry.get("web_search").handler(query="x", limit=999))
         # 不抛异常，正常返回 0 结果
