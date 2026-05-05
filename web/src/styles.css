@@ -2523,6 +2523,57 @@ textarea:focus-visible {
   color: #c44d4d;
 }
 
+/* News Analyst settings: 只读 universe 列表 */
+.news-analyst-universe {
+  margin-top: 16px;
+}
+.news-analyst-universe__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.news-analyst-universe__item {
+  display: grid;
+  grid-template-columns: 60px minmax(140px, 200px) 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--panel-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+.news-analyst-universe__symbol {
+  font-size: 14px;
+  font-weight: 600;
+}
+.news-analyst-universe__key {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+.news-analyst-universe__aliases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.news-analyst-universe__alias {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-tint);
+  color: var(--accent);
+  border: 1px solid var(--line-soft);
+}
+@media (max-width: 720px) {
+  .news-analyst-universe__item {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
 /* Agent tab + News 同区布局 (左 60% Agent / 右 40% News) */
 .agent-with-news {
   display: grid;

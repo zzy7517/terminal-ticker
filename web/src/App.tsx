@@ -2427,7 +2427,88 @@ function NewsSettingsPanel({
           <div className="provider-status-bar">{status}</div>
         </section>
       </div>
+
+      <NewsAnalystSettingsSection state={state} />
     </>
+  );
+}
+
+// 只读展示 [news_analyst] section: enabled / universe (5 个品种各自 alias 列表) /
+// gating 阈值 / cooldown。修改入口仍是 watchlist.toml + 重启 (跟 News module 一致)。
+function NewsAnalystSettingsSection({ state }: { state: MarketState | null }) {
+  const analystConfig = state?.config.newsAnalyst;
+  if (!analystConfig) {
+    return null;
+  }
+
+  return (
+    <div className="provider-layout" style={{ marginTop: 24 }}>
+      <section className="provider-detail" style={{ gridColumn: '1 / -1' }}>
+        <div className="provider-section-head">
+          <strong>News Analyst (auto paper trading)</strong>
+          <span className={`provider-inline-badge ${analystConfig.enabled ? 'positive' : ''}`}>
+            {analystConfig.enabled ? 'On' : 'Off'}
+          </span>
+        </div>
+
+        <p className="settings-hint" style={{ marginTop: 0 }}>
+          New Reuters headlines whose title or summary matches a universe alias trigger an LLM
+          decision (direction / confidence / entry / stop / target). Confident, well-aligned
+          signals open a paper trade automatically. Cooldown prevents repeat entries.
+        </p>
+
+        <div className="settings-readonly-grid">
+          <div>
+            <span className="panel-label">Min confidence</span>
+            <strong>{analystConfig.minConfidence.toFixed(2)}</strong>
+          </div>
+          <div>
+            <span className="panel-label">Max entry distance</span>
+            <strong>{analystConfig.maxEntryDistancePct.toFixed(2)}%</strong>
+          </div>
+          <div>
+            <span className="panel-label">Default size</span>
+            <strong>{analystConfig.defaultSize}</strong>
+          </div>
+          <div>
+            <span className="panel-label">Cooldown</span>
+            <strong>{analystConfig.cooldownMinutes} min</strong>
+          </div>
+        </div>
+
+        <div className="news-analyst-universe">
+          <div className="panel-label" style={{ marginBottom: 8 }}>
+            Universe ({analystConfig.universe.length} instrument
+            {analystConfig.universe.length === 1 ? '' : 's'})
+          </div>
+          {analystConfig.universe.length === 0 ? (
+            <div className="news-panel__empty">No universe entries configured.</div>
+          ) : (
+            <ul className="news-analyst-universe__list">
+              {analystConfig.universe.map((entry) => {
+                const symbol = entry.instrumentKey.split(':').pop() ?? entry.instrumentKey;
+                return (
+                  <li key={entry.instrumentKey} className="news-analyst-universe__item">
+                    <strong className="news-analyst-universe__symbol">{symbol}</strong>
+                    <span className="news-analyst-universe__key">{entry.instrumentKey}</span>
+                    <div className="news-analyst-universe__aliases">
+                      {entry.aliases.map((alias) => (
+                        <span key={alias} className="news-analyst-universe__alias">{alias}</span>
+                      ))}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className="settings-hint">
+          Universe and gating thresholds are read-only here. Edit the [news_analyst] block in
+          watchlist.toml and restart the backend to change them.
+        </div>
+      </section>
+    </div>
   );
 }
 

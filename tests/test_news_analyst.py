@@ -542,5 +542,71 @@ class LessonsInjectionTests(unittest.TestCase):
         self.assertNotIn("Past lessons", user_prompt)
 
 
+class OpenAIProviderCompatTests(unittest.TestCase):
+    """证明 news_analyst 能用 OpenAI provider 驱动（不仅是 codex）。
+
+    OpenAI Chat Completions 响应被 _parse_chat_response 转成 ChatResponse
+    (.content: str)，跟 codex 同构。这里用 httpx MockTransport 发回一个
+    真实的 OpenAI shape JSON，证明 NewsAnalyst 完整 pipeline 能跑通。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "trades.sqlite3"
+
+    def test_openai_chat_response_drives_news_analyst(self) -> None:
+        from mytradebot.agent.providers.openai_chat import _parse_chat_response
+
+        # 构造一个 OpenAI Chat Completions 真实响应 shape。
+        openai_response = {
+            "id": "chatcmpl-x",
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": (
+                            '{"direction":"long","confidence":0.85,'
+                            '"entry":500.5,"stop":495,"target":510,'
+                            '"reason":"Fed dovish + 1H trend up"}'
+                        ),
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+        }
+        # 走 _parse_chat_response 的路径，确保跟 OpenAI 真实 wire 兼容
+        chat_response = _parse_chat_response(openai_response)
+        self.assertEqual(chat_response.finish_reason, "stop")
+        self.assertIn("long", chat_response.content)
+
+        async def openai_chat_fn(messages):
+            # 模拟 OpenAIChatProvider.chat() 返回，由 _parse_chat_response 产出
+            return chat_response
+
+        trade_store = TradeStore(self.path)
+        decision_store = NewsDecisionStore(self.path)
+        config = NewsAnalystConfig(
+            enabled=True,
+            universe=(NewsUniverseEntry(instrument_key="alpaca:SPY", aliases=("SPY",)),),
+            min_confidence=0.7, max_entry_distance_pct=5.0,
+            default_size=1.0, llm_timeout_seconds=5.0, cooldown_minutes=0,
+        )
+        analyst = NewsAnalyst(
+            config=config, decision_store=decision_store,
+            trade_store=trade_store, llm_chat=openai_chat_fn,
+            current_price_provider=lambda key: 500.0,
+        )
+        item = _make_item("Fed cuts: SPY surges")
+        decisions = asyncio.run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(decisions[0].step, "opened")
+        self.assertEqual(decisions[0].direction, "long")
+        self.assertIsNotNone(decisions[0].trade_id)
+
+
 if __name__ == "__main__":
     unittest.main()

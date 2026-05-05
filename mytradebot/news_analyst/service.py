@@ -9,10 +9,19 @@
 #       + GET /api/news/decisions + config.newsAnalyst section
 # - [x] 前端 UI (TODO-F+G)：News 卡片显示 summary 与决策 badge；
 #       面板从 sidebar 挪到 Agent tab 右侧栏 (60%/40% 分屏，窄屏堆叠)
+# - [x] OpenAI Chat provider 兼容 (TODO-H)：openai_chat.chat() 已存在且与
+#       codex 同构，create_llm_provider 已支持 OPENAI_PROVIDER 分支；删除
+#       _wire_news_analyst 中的 dead hasattr(chat) 检查 + 加 OpenAI 响应
+#       e2e 测试证明 pipeline 跑通。
+# - [x] News 设置页加 newsAnalyst section (TODO-I)：只读展示 enabled /
+#       universe / gating 阈值 / cooldown，跟现有 News module 设置一致；
+#       修改入口仍是 watchlist.toml + 重启 (universe 持久化 + 实时 reload
+#       是单独的大工作，按 YAGNI 不做)。
 
-# 后续 TODO（按优先级）
-# - [ ] OpenAI Chat provider 兼容：当前只走 codex provider.chat()。
-# - [ ] News 设置页加 universe 编辑 UI（当前只能改 watchlist.toml 后重启）
+# 真正剩下的事 (主动选择不做)
+# - 写入式 universe 编辑：会涉及 watchlist_store 的扩展、provider live
+#   reload、SQLite 持久化策略，跟 [agent] / [news] 现有 read-only 设置页
+#   保持对称更合理。等用户实际反馈"改 toml 太麻烦"再加。
 """
 from __future__ import annotations
 
