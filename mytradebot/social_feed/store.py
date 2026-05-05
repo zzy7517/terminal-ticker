@@ -273,11 +273,11 @@ class SocialFeedStore:
                     """
                     SELECT *
                     FROM social_memories
-                    WHERE tags_json LIKE ?
+                    WHERE tags_json LIKE ? ESCAPE '\\'
                     ORDER BY created_at_ms DESC
                     LIMIT ?
                     """,
-                    (f"%{tag}%", resolved_limit),
+                    (f"%{self._escape_like(json.dumps(tag, ensure_ascii=False))}%", resolved_limit),
                 ).fetchall()
             else:
                 rows = connection.execute(
@@ -332,6 +332,11 @@ class SocialFeedStore:
             raw = json.loads(row["raw_json"]) or {}
         except (TypeError, ValueError, json.JSONDecodeError):
             raw = {}
+        try:
+            quoted_raw = json.loads(row["quoted_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            quoted_raw = None
+        quoted_item = SocialFeedStore._payload_to_item(quoted_raw) if isinstance(quoted_raw, dict) else None
         return SocialFeedItem(
             source=row["source"],
             external_id=row["external_id"],
@@ -358,8 +363,48 @@ class SocialFeedStore:
             lang=row["lang"],
             is_repost=bool(row["is_repost"]),
             reposted_by=row["reposted_by"],
+            quoted_item=quoted_item,
             raw=raw,
         )
+
+    @staticmethod
+    def _payload_to_item(payload: dict[str, Any]) -> SocialFeedItem:
+        author_raw = payload.get("author") if isinstance(payload.get("author"), dict) else {}
+        metrics_raw = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
+        quoted_raw = payload.get("quotedItem") if isinstance(payload.get("quotedItem"), dict) else None
+        return SocialFeedItem(
+            source=str(payload.get("source") or "x"),
+            external_id=str(payload.get("externalId") or ""),
+            url=str(payload.get("url") or ""),
+            author=SocialAuthor(
+                id=str(author_raw.get("id") or ""),
+                name=str(author_raw.get("name") or ""),
+                handle=str(author_raw.get("handle") or ""),
+                profile_image_url=str(author_raw.get("profileImageUrl") or ""),
+                verified=bool(author_raw.get("verified")),
+            ),
+            text=str(payload.get("text") or ""),
+            created_at_ms=int(payload.get("createdAtMs") or 0),
+            fetched_at_ms=int(payload.get("fetchedAtMs") or 0),
+            metrics=SocialMetrics(
+                likes=int(metrics_raw.get("likes") or 0),
+                reposts=int(metrics_raw.get("reposts") or 0),
+                replies=int(metrics_raw.get("replies") or 0),
+                quotes=int(metrics_raw.get("quotes") or 0),
+                views=int(metrics_raw.get("views") or 0),
+                bookmarks=int(metrics_raw.get("bookmarks") or 0),
+            ),
+            urls=tuple(payload.get("urls") or ()),
+            lang=str(payload.get("lang") or ""),
+            is_repost=bool(payload.get("isRepost")),
+            reposted_by=payload.get("repostedBy"),
+            quoted_item=SocialFeedStore._payload_to_item(quoted_raw) if quoted_raw else None,
+            raw={},
+        )
+
+    @staticmethod
+    def _escape_like(value: str) -> str:
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     @staticmethod
     def _row_to_memory(row: sqlite3.Row) -> SocialFeedMemory:

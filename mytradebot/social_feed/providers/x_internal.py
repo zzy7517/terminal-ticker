@@ -13,6 +13,7 @@ import json
 import logging
 import math
 import os
+import platform
 import random
 import re
 import sys
@@ -202,6 +203,15 @@ def _get_sec_ch_ua_platform() -> str:
     if sys.platform.startswith("win"):
         return '"Windows"'
     return '"Linux"'
+
+
+def _get_sec_ch_ua_arch() -> str:
+    machine = (platform.machine() or os.environ.get("PROCESSOR_ARCHITECTURE", "")).lower()
+    if "arm" in machine or "aarch" in machine:
+        return '"arm"'
+    if any(token in machine for token in ("86", "amd64", "x64")):
+        return '"x86"'
+    return '""'
 
 
 def _build_graphql_url(
@@ -485,9 +495,10 @@ class XInternalClient:
             raise
 
     def _resolve_query_id(self, operation_name: str, *, prefer_fallback: bool) -> str:
-        if operation_name in _QUERY_ID_CACHE:
-            return _QUERY_ID_CACHE[operation_name]
         fallback = FALLBACK_QUERY_IDS.get(operation_name)
+        cached = _QUERY_ID_CACHE.get(operation_name)
+        if cached and (prefer_fallback or cached != fallback):
+            return cached
         if prefer_fallback and fallback:
             _QUERY_ID_CACHE[operation_name] = fallback
             return fallback
@@ -571,7 +582,7 @@ class XInternalClient:
             "sec-ch-ua": _get_sec_ch_ua(),
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": _get_sec_ch_ua_platform(),
-            "sec-ch-ua-arch": '"arm"' if "arm" in os.uname().machine.lower() else '"x86"',
+            "sec-ch-ua-arch": _get_sec_ch_ua_arch(),
             "sec-ch-ua-bitness": '"64"',
             "sec-ch-ua-full-version": f'"{_CHROME_VERSION}.0.0.0"',
             "sec-ch-ua-full-version-list": (

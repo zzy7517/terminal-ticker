@@ -76,7 +76,7 @@ class SocialFeedService:
             self.last_error = None
             self.last_fetched_at_ms = max(
                 (item.fetched_at_ms for item in items),
-                default=self.last_fetched_at_ms or 0,
+                default=self.last_fetched_at_ms or int(time.time() * 1000),
             )
             if inserted:
                 LOGGER.info("social feed: fetched %d new X items", len(inserted))

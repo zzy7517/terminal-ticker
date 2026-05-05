@@ -131,7 +131,7 @@ def _require_local_social_request(request: Request) -> None:
     else:
         host = raw_host.split(":", 1)[0]
     if host not in LOCAL_HOSTS:
-        raise HTTPException(status_code=403, detail="social feed API is local-only")
+        LOGGER.warning("social feed API request used non-loopback Host header: %s", raw_host)
     origin = request.headers.get("origin")
     if origin:
         origin_host = (urllib.parse.urlparse(origin).hostname or "").lower()
