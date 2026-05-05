@@ -74,6 +74,76 @@ class AlpacaProviderTests(unittest.TestCase):
         self.assertEqual(payloads["alpaca:AAPL"]["exchange"], "Alpaca IEX")
         self.assertEqual(payloads["alpaca:SPY"]["price"], 500.25)
 
+    def test_fetch_snapshot_payloads_merges_extended_hours_day_stats(self) -> None:
+        """Verify pre-/post-market 1m bars expand day_high/low/volume beyond RTH."""
+        instruments = (AlpacaInstrument("AAPL", "AAPL"),)
+        calls: list[tuple[str, dict[str, str]]] = []
+
+        def fake_fetch(_base_url, path, params):
+            calls.append((path, params))
+            if path == "/v2/stocks/snapshots":
+                return {
+                    "snapshots": {
+                        "AAPL": {
+                            "latestTrade": {"p": 207.0, "t": "2026-04-28T11:55:00Z"},
+                            "dailyBar": {"h": 202.0, "l": 199.8, "v": 100000},
+                            "prevDailyBar": {"c": 200.0},
+                        },
+                    }
+                }
+            # /v2/stocks/bars -- return a pre-market high above the RTH high.
+            return {
+                "bars": {
+                    "AAPL": [
+                        {"t": "2026-04-28T08:30:00Z", "h": 205.5, "l": 198.0, "v": 4500},
+                        {"t": "2026-04-28T11:00:00Z", "h": 203.0, "l": 200.5, "v": 6000},
+                    ]
+                }
+            }
+
+        with patch("mytradebot.market_data.alpaca._fetch_json", side_effect=fake_fetch):
+            payloads = fetch_snapshot_payloads(instruments)
+
+        bars_calls = [call for call in calls if call[0] == "/v2/stocks/bars"]
+        self.assertEqual(len(bars_calls), 1)
+        self.assertEqual(bars_calls[0][1]["timeframe"], "1Min")
+        self.assertEqual(bars_calls[0][1]["symbols"], "AAPL")
+
+        payload = payloads["alpaca:AAPL"]
+        # latestTrade@207 beats the pre-market high of 205.5, so day_high reflects it.
+        self.assertEqual(payload["day_high"], 207.0)
+        # Pre-market low of 198.0 is below the RTH low of 199.8.
+        self.assertEqual(payload["day_low"], 198.0)
+        # day_volume should be the 1m aggregate, not the RTH-only dailyBar volume.
+        self.assertEqual(payload["day_volume"], 10500)
+        self.assertEqual(payload["volume"], 10500)
+
+    def test_fetch_snapshot_payloads_falls_back_when_bars_fetch_fails(self) -> None:
+        """Verify snapshot endpoint still returns RTH-only stats if bars fetch errors."""
+        instruments = (AlpacaInstrument("AAPL", "AAPL"),)
+
+        def fake_fetch(_base_url, path, _params):
+            if path == "/v2/stocks/snapshots":
+                return {
+                    "snapshots": {
+                        "AAPL": {
+                            "latestTrade": {"p": 201.5, "t": "2026-04-28T19:55:00Z"},
+                            "dailyBar": {"h": 202.0, "l": 199.8, "v": 123456},
+                            "prevDailyBar": {"c": 200.25},
+                        },
+                    }
+                }
+            raise RuntimeError("bars endpoint down")
+
+        with patch("mytradebot.market_data.alpaca._fetch_json", side_effect=fake_fetch):
+            payloads = fetch_snapshot_payloads(instruments)
+
+        payload = payloads["alpaca:AAPL"]
+        # Falls back to RTH dailyBar, but latestTrade still widens day_high if higher.
+        self.assertEqual(payload["day_high"], 202.0)
+        self.assertEqual(payload["day_low"], 199.8)
+        self.assertEqual(payload["day_volume"], 123456)
+
     def test_fetch_candles_normalizes_alpaca_bars(self) -> None:
         """Verify Alpaca bars normalize into standard candles."""
         captured = []

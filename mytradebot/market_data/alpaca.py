@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import json
 import os
 import time
@@ -19,6 +20,8 @@ ALPACA_TRADING_BASE = "https://paper-api.alpaca.markets"
 DEFAULT_ALPACA_FEED = "iex"
 ASSET_CACHE_TTL_SECONDS = 15 * 60
 BAR_DELAY_MINUTES = 16
+US_EQUITY_TZ = ZoneInfo("America/New_York")
+EXTENDED_HOURS_START_HOUR_ET = 4  # US equities pre-market opens at 04:00 ET.
 _asset_cache: tuple[float, tuple["AlpacaAsset", ...]] | None = None
 
 
@@ -396,6 +399,8 @@ def fetch_candles(
 def _normalize_snapshot_payload(
     item: dict[str, Any],
     instrument: AlpacaInstrument,
+    *,
+    extended_stats: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """说明：把 Alpaca snapshot 转换成应用报价载荷。"""
     latest_trade = item.get("latestTrade") if isinstance(item.get("latestTrade"), dict) else {}
@@ -413,6 +418,17 @@ def _normalize_snapshot_payload(
         change = price - previous_close
         change_percent = (change / previous_close) * 100
 
+    rth_high = _as_float(daily_bar.get("h"))
+    rth_low = _as_float(daily_bar.get("l"))
+    rth_volume = _as_float(daily_bar.get("v"))
+    day_high, day_low, day_volume = _merge_session_stats(
+        rth_high=rth_high,
+        rth_low=rth_low,
+        rth_volume=rth_volume,
+        latest_price=price,
+        extended_stats=extended_stats,
+    )
+
     return {
         "id": instrument.key,
         "short_name": instrument.label,
@@ -421,15 +437,39 @@ def _normalize_snapshot_payload(
         "change": change,
         "change_percent": change_percent,
         "previous_close": previous_close,
-        "day_high": _as_float(daily_bar.get("h")),
-        "day_low": _as_float(daily_bar.get("l")),
-        "day_volume": _as_float(daily_bar.get("v")),
-        "volume": _as_float(daily_bar.get("v")),
+        "day_high": day_high,
+        "day_low": day_low,
+        "day_volume": day_volume,
+        "volume": day_volume,
         "currency": "USD",
         "exchange": f"Alpaca {_data_feed().upper()}",
         "status": "alpaca",
         "time": _timestamp_to_epoch(latest_trade.get("t") or minute_bar.get("t") or daily_bar.get("t")),
     }
+
+
+def _merge_session_stats(
+    *,
+    rth_high: float | None,
+    rth_low: float | None,
+    rth_volume: float | None,
+    latest_price: float | None,
+    extended_stats: dict[str, float] | None,
+) -> tuple[float | None, float | None, float | None]:
+    """说明：把 RTH dailyBar、盘前盘后聚合和最新成交合并为当日 high/low/volume。"""
+    extended_high = extended_stats.get("high") if extended_stats else None
+    extended_low = extended_stats.get("low") if extended_stats else None
+    extended_volume = extended_stats.get("volume") if extended_stats else None
+
+    high_candidates = [value for value in (rth_high, extended_high, latest_price) if value is not None]
+    low_candidates = [value for value in (rth_low, extended_low, latest_price) if value is not None]
+    day_high = max(high_candidates) if high_candidates else None
+    day_low = min(low_candidates) if low_candidates else None
+    if extended_volume is not None:
+        day_volume = extended_volume  # 1m 聚合已覆盖 RTH+盘前盘后。
+    else:
+        day_volume = rth_volume
+    return day_high, day_low, day_volume
 
 
 def fetch_snapshot_payloads(
@@ -452,8 +492,109 @@ def fetch_snapshot_payloads(
     if not isinstance(snapshots, dict):
         raise RuntimeError("Alpaca snapshots returned unexpected payload")
 
+    extended_by_symbol = _safe_fetch_extended_hours_day_stats(tuple(by_symbol))
     for symbol, item in snapshots.items():
         instrument = by_symbol.get(str(symbol).upper())
         if instrument is not None and isinstance(item, dict):
-            payloads[instrument.key] = _normalize_snapshot_payload(item, instrument)
+            payloads[instrument.key] = _normalize_snapshot_payload(
+                item,
+                instrument,
+                extended_stats=extended_by_symbol.get(instrument.symbol),
+            )
     return payloads
+
+
+def _safe_fetch_extended_hours_day_stats(
+    symbols: tuple[str, ...],
+) -> dict[str, dict[str, float]]:
+    """说明：拉取盘前盘后 1m bars 聚合，失败时降级返回空 dict 而不是抛错。"""
+    if not symbols:
+        return {}
+    try:
+        return _fetch_extended_hours_day_stats(symbols)
+    except Exception:
+        # 盘前盘后增强不应阻塞主 snapshot 链路；失败时回退到 RTH-only。
+        return {}
+
+
+def _fetch_extended_hours_day_stats(
+    symbols: tuple[str, ...],
+    *,
+    now: datetime | None = None,
+) -> dict[str, dict[str, float]]:
+    """说明：批量拉取当日 4:00 ET 起的 1m bars 并聚合成 high/low/volume/last_time。"""
+    current_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    end_time = current_utc - timedelta(minutes=BAR_DELAY_MINUTES)
+    start_time = _extended_hours_session_start(current_utc)
+    if start_time >= end_time:
+        return {}
+
+    params = {
+        "symbols": ",".join(symbols),
+        "timeframe": "1Min",
+        "start": _format_iso(start_time),
+        "end": _format_iso(end_time),
+        "limit": "10000",
+        "feed": _data_feed(),
+        "adjustment": "raw",
+        "sort": "asc",
+    }
+    payload = _fetch_json(_data_base_url(), "/v2/stocks/bars", params)
+    if not isinstance(payload, dict):
+        return {}
+    bars = payload.get("bars")
+    if not isinstance(bars, dict):
+        return {}
+
+    stats: dict[str, dict[str, float]] = {}
+    for raw_symbol, rows in bars.items():
+        if not isinstance(rows, list) or not rows:
+            continue
+        highs: list[float] = []
+        lows: list[float] = []
+        volume_total = 0.0
+        last_time_ms: int | None = None
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            high = _as_float(row.get("h"))
+            low = _as_float(row.get("l"))
+            volume = _as_float(row.get("v"))
+            if high is not None:
+                highs.append(high)
+            if low is not None:
+                lows.append(low)
+            if volume is not None:
+                volume_total += volume
+            row_time_ms = _timestamp_to_ms(row.get("t"))
+            if row_time_ms is not None and (last_time_ms is None or row_time_ms > last_time_ms):
+                last_time_ms = row_time_ms
+        if not highs and not lows and volume_total == 0.0:
+            continue
+        symbol_stats: dict[str, float] = {}
+        if highs:
+            symbol_stats["high"] = max(highs)
+        if lows:
+            symbol_stats["low"] = min(lows)
+        symbol_stats["volume"] = volume_total
+        if last_time_ms is not None:
+            symbol_stats["last_time_ms"] = float(last_time_ms)
+        stats[str(raw_symbol).upper()] = symbol_stats
+    return stats
+
+
+def _extended_hours_session_start(reference_utc: datetime) -> datetime:
+    """说明：返回 reference 当天美东 04:00 对应的 UTC 时刻。"""
+    local_now = reference_utc.astimezone(US_EQUITY_TZ)
+    local_session_start = local_now.replace(
+        hour=EXTENDED_HOURS_START_HOUR_ET,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    return local_session_start.astimezone(timezone.utc)
+
+
+def _format_iso(value: datetime) -> str:
+    """说明：把 UTC 时间格式化成 Alpaca 期望的 RFC3339 字符串。"""
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
