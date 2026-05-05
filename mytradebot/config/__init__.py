@@ -18,6 +18,19 @@ BITGET_SOURCE = "bitget"
 ALPACA_SOURCE = "alpaca"
 SUPPORTED_SOURCES = {BITGET_SOURCE, ALPACA_SOURCE}
 SUPPORTED_INST_TYPES = {"SPOT", "USDT-FUTURES"}
+
+# Reuters 现役新闻 sitemap。老的 /sitemap_news.xml 已下线（401/404）。
+# 这里和 mytradebot.news.providers.reuters.DEFAULT_SITEMAP_URL 必须一致。
+_DEFAULT_REUTERS_URL = "https://www.reuters.com/arc/outboundfeeds/news-sitemap/?outputType=xml"
+
+# 旧 URL 集合——从用户 TOML 里读到这些会自动迁移到新 URL，
+# 避免老 watchlist.toml 升级后一直 404。
+_DEPRECATED_REUTERS_URLS = frozenset(
+    {
+        "https://www.reuters.com/sitemap_news.xml",
+        "http://www.reuters.com/sitemap_news.xml",
+    }
+)
 SUPPORTED_ANALYSIS_INTERVALS = {
     "1m",
     "3m",
@@ -103,7 +116,7 @@ class NewsConfig:
     enabled: bool = False
     poll_interval_seconds: int = 30
     max_interval_seconds: int = 600
-    reuters_url: str = "https://www.reuters.com/sitemap_news.xml"
+    reuters_url: str = _DEFAULT_REUTERS_URL
     request_timeout_seconds: float = 10.0
     retention_days: int = 30
     recent_limit: int = 50
@@ -318,7 +331,10 @@ def parse_news_config(raw_news: dict[str, Any] | None) -> NewsConfig:
     raw_url = raw_news.get("reuters_url")
     if raw_url is not None and not isinstance(raw_url, str):
         raise ValueError("news.reuters_url must be a string")
-    reuters_url = raw_url.strip() if isinstance(raw_url, str) and raw_url.strip() else "https://www.reuters.com/sitemap_news.xml"
+    reuters_url = raw_url.strip() if isinstance(raw_url, str) and raw_url.strip() else _DEFAULT_REUTERS_URL
+    if reuters_url in _DEPRECATED_REUTERS_URLS:
+        # 老 URL 已被 Reuters 下线，自动迁移到新 endpoint。
+        reuters_url = _DEFAULT_REUTERS_URL
     return NewsConfig(
         enabled=_normalize_bool(raw_news.get("enabled"), "news.enabled", False),
         poll_interval_seconds=_coerce_min_int(
