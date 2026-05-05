@@ -13,7 +13,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Awaitable, Callable, Protocol
 
 from .providers.reuters import FetchResult, ReutersSitemapProvider
 from .store import NewsStore
@@ -74,6 +74,10 @@ class NewsService:
         self.last_status: str = "idle"
         self.last_error: str | None = None
         self.last_fetched_at_ms: int | None = None
+        # news_analyst hook: 顶部头条 url 变化时触发。MVP 用 fire-and-forget；
+        # 回调应自己处理异常，不应让新闻轮询失败。
+        self.on_top_changed: Callable[[NewsItem], Awaitable[None]] | None = None
+        self._last_top_url: str | None = None
 
     async def start(self) -> None:
         """说明：启动后台轮询任务，并做一次启动清理。"""
@@ -159,6 +163,12 @@ class NewsService:
             self.last_error = None
             if inserted:
                 LOGGER.info("news: fetched %d new items from %s", len(inserted), source)
+            # 顶部头条变化 → 触发 news_analyst 回调（fire-and-forget，不阻塞轮询）。
+            if result.items and self.on_top_changed is not None:
+                top = result.items[0]
+                if top.url != self._last_top_url:
+                    self._last_top_url = top.url
+                    asyncio.create_task(self._safe_invoke_top_changed(top))
             return RefreshOutcome(
                 status="ok",
                 inserted=len(inserted),
@@ -196,6 +206,16 @@ class NewsService:
             total_recent=len(self.store.recent(limit=self.recent_limit)),
             error=result.error,
         )
+
+    async def _safe_invoke_top_changed(self, item: NewsItem) -> None:
+        """说明：吞掉回调里的所有异常，避免污染轮询循环。"""
+        callback = self.on_top_changed
+        if callback is None:
+            return
+        try:
+            await callback(item)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("news: on_top_changed callback failed")
 
     def _reset_backoff(self) -> None:
         """说明：成功后重置轮询间隔。"""

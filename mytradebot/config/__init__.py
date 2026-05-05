@@ -123,6 +123,24 @@ class NewsConfig:
 
 
 @dataclass(frozen=True)
+class NewsAnalystConfig:
+    """说明：news → LLM → 自动 paper trade 的 MVP 配置。
+
+    MVP 范围：只支持单品种 (默认 SPY)、不接 lessons、不做 cooldown 表。
+    扩展方向见 mytradebot/news_analyst/service.py 顶部 TODO。
+    """
+    enabled: bool = False
+    instrument_key: str = "alpaca:SPY"
+    aliases: tuple[str, ...] = (
+        "S&P 500", "S&P500", "SPX", "标普", "S&P", "SPY",
+    )
+    min_confidence: float = 0.7
+    max_entry_distance_pct: float = 0.5  # entry 离当前价的允许偏离 (%)
+    default_size: float = 1.0            # paper trade 头寸大小
+    llm_timeout_seconds: float = 20.0
+
+
+@dataclass(frozen=True)
 class InstrumentConfig:
     """说明：封装 watchlist 中尚未解析到 provider 的标的配置。"""
     symbol: str
@@ -164,6 +182,7 @@ class AppConfig:
     cache: CacheConfig = CacheConfig()
     agent: AgentConfig = AgentConfig()
     news: NewsConfig = NewsConfig()
+    news_analyst: NewsAnalystConfig = NewsAnalystConfig()
 
 
 def _normalize_inst_type(raw_value: Any) -> str | None:
@@ -370,6 +389,54 @@ def parse_news_config(raw_news: dict[str, Any] | None) -> NewsConfig:
     )
 
 
+def parse_news_analyst_config(raw: dict[str, Any] | None) -> NewsAnalystConfig:
+    """说明：把 [news_analyst] section 解析成 NewsAnalystConfig。"""
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("news_analyst must be a table")
+    defaults = NewsAnalystConfig()
+
+    raw_aliases = raw.get("aliases")
+    if raw_aliases is None:
+        aliases = defaults.aliases
+    elif isinstance(raw_aliases, list):
+        aliases = tuple(
+            str(a).strip() for a in raw_aliases if isinstance(a, str) and a.strip()
+        )
+        if not aliases:
+            aliases = defaults.aliases
+    else:
+        raise ValueError("news_analyst.aliases must be a list of strings")
+
+    instrument_key = raw.get("instrument_key")
+    if instrument_key is not None and not isinstance(instrument_key, str):
+        raise ValueError("news_analyst.instrument_key must be a string")
+    resolved_key = (instrument_key or defaults.instrument_key).strip() or defaults.instrument_key
+
+    return NewsAnalystConfig(
+        enabled=_normalize_bool(raw.get("enabled"), "news_analyst.enabled", defaults.enabled),
+        instrument_key=resolved_key,
+        aliases=aliases,
+        min_confidence=_coerce_float(
+            raw.get("min_confidence"), "news_analyst.min_confidence", defaults.min_confidence,
+        ),
+        max_entry_distance_pct=_coerce_float(
+            raw.get("max_entry_distance_pct"),
+            "news_analyst.max_entry_distance_pct",
+            defaults.max_entry_distance_pct,
+        ),
+        default_size=_coerce_float(
+            raw.get("default_size"), "news_analyst.default_size", defaults.default_size,
+        ),
+        llm_timeout_seconds=_coerce_float(
+            raw.get("llm_timeout_seconds"),
+            "news_analyst.llm_timeout_seconds",
+            defaults.llm_timeout_seconds,
+        ),
+    )
+
+
 def parse_cache_config(raw_cache: dict[str, Any] | None) -> CacheConfig:
     """说明：把原始缓存配置解析为 CacheConfig。"""
     if raw_cache is None:
@@ -541,6 +608,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
 
     agent = parse_agent_config(data.get("agent", {}))
     news = parse_news_config(data.get("news", {}))
+    news_analyst = parse_news_analyst_config(data.get("news_analyst", {}))
 
     return AppConfig(
         instruments=instruments,
@@ -549,6 +617,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         cache=cache,
         agent=agent,
         news=news,
+        news_analyst=news_analyst,
         source_path=source_path,
     )
 

@@ -300,6 +300,7 @@ class MarketRuntime:
         self.agent_session_store = agent_session_store or AgentSessionStore()
         self._active_session_for_tools: str | None = None
         self.news_service: NewsService | None = None
+        self.news_analyst = None  # type: ignore[var-annotated]  # NewsAnalyst | None, lazy import below
         if config.news.enabled:
             news_store = NewsStore()
             news_provider = ReutersSitemapProvider(
@@ -314,6 +315,52 @@ class MarketRuntime:
                 retention_days=config.news.retention_days,
                 recent_limit=config.news.recent_limit,
             )
+            if config.news_analyst.enabled:
+                self._wire_news_analyst()
+
+    def _wire_news_analyst(self) -> None:
+        """说明：把 NewsAnalyst 接到 NewsService.on_top_changed。
+
+        延迟 import 避免顶层循环依赖。当前价从 controller.quotes 取；
+        LLM 用 codex provider.chat()（按 agent config 决定 model/effort）。
+        """
+        from ..agent.provider import create_llm_provider, LLMProviderUnavailable
+        from ..news_analyst import NewsAnalyst, NewsDecisionStore
+
+        try:
+            llm_provider = create_llm_provider(self.config.agent)
+        except LLMProviderUnavailable as exc:
+            LOGGER.warning("news_analyst disabled: %s", exc)
+            return
+        if not hasattr(llm_provider, "chat"):
+            LOGGER.warning("news_analyst disabled: provider %r has no chat()", llm_provider.name)
+            return
+
+        decision_store = NewsDecisionStore(self.trade_store.path)
+
+        def _current_price(instrument_key: str) -> float | None:
+            quote = self.controller.quotes.get(instrument_key)
+            return quote.price if quote is not None else None
+
+        async def _llm_chat(messages: list[dict[str, Any]]) -> Any:
+            return await llm_provider.chat(messages)
+
+        analyst = NewsAnalyst(
+            config=self.config.news_analyst,
+            decision_store=decision_store,
+            trade_store=self.trade_store,
+            llm_chat=_llm_chat,
+            current_price_provider=_current_price,
+        )
+        self.news_analyst = analyst
+        assert self.news_service is not None
+        self.news_service.on_top_changed = analyst.on_top_changed
+        LOGGER.info(
+            "news_analyst enabled: instrument=%s aliases=%d min_confidence=%.2f",
+            self.config.news_analyst.instrument_key,
+            len(self.config.news_analyst.aliases),
+            self.config.news_analyst.min_confidence,
+        )
 
     async def start(self) -> None:
         """说明：启动后台运行时组件。"""
