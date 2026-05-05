@@ -4,9 +4,9 @@
 # - [x] 多品种白名单 (TODO-A)：universe 中每个 entry 独立 filter+verify+gate
 # - [x] Cooldown 表 (TODO-B)：(instrument_key, direction) → last_open_ms, 内存
 # - [x] K 线印证 (TODO-C)：1H+15m candles 序列化进 prompt，LLM 据此印证或反驳
+# - [x] Lessons 注入 (TODO-D)：trade_store.list_lessons 最近 5 条进 prompt
 
 # 后续 TODO（按优先级）
-# - [ ] Lessons 注入：verify prompt 头部塞 trade_store.list_lessons(instrument_key=...) 最近 5 条。
 # - [ ] WebSocket 推 newsDecisions：让前端 News 卡片挂"已分析/已下单"badge。
 # - [ ] OpenAI Chat provider 兼容：当前只走 codex provider.chat()。
 """
@@ -167,6 +167,7 @@ Rules:
     * 0.3-0.6 : ambiguous news OR candles contradict
     * <0.3 : weak signal
 - confidence ≤ 0.5 if candles are missing or empty (you have no way to verify)
+- If "Past lessons" are provided, treat them as hard-won regret from prior trades on the same instrument. Avoid repeating the same mistakes; lower confidence if the current setup matches a past failure pattern.
 """
 
 
@@ -186,14 +187,17 @@ async def _verify(
     llm_chat: LLMChatFn,
     timeout_seconds: float,
     candles_by_tf: dict[str, tuple[Candle, ...]] | None = None,
+    lessons: tuple[dict[str, Any], ...] = (),
 ) -> _Verdict | None:
     """说明：调 LLM，解析 JSON。失败/超时返回 None（service 把它当 llm_error）。"""
     candles_section = _format_candles_section(candles_by_tf or {})
+    lessons_section = _format_lessons_section(lessons)
     user_prompt = (
         f"Instrument: {instrument_key}\n"
         f"News title: {item.title}\n"
         f"News summary: {item.summary or '(none)'}\n"
-        f"\n{candles_section}"
+        f"\n{candles_section}\n"
+        f"\n{lessons_section}"
     )
     messages = [
         {"role": "system", "content": _VERIFY_SYSTEM_PROMPT},
@@ -236,6 +240,20 @@ async def _verify(
         target=_safe_float(data.get("target")),
         reason=str(data.get("reason", ""))[:500],
     )
+
+
+def _format_lessons_section(lessons: tuple[dict[str, Any], ...]) -> str:
+    """说明：把最近的 lesson 序列化成 prompt 段。空时不输出。"""
+    if not lessons:
+        return ""
+    parts = ["Past lessons (most recent first, learned from prior closed trades):"]
+    for lesson in lessons:
+        text = (lesson.get("text") or "").strip()
+        category = lesson.get("category") or ""
+        if not text:
+            continue
+        parts.append(f"  - [{category}] {text}")
+    return "\n".join(parts) if len(parts) > 1 else ""
 
 
 def _format_candles_section(candles_by_tf: dict[str, tuple[Candle, ...]]) -> str:
@@ -358,6 +376,17 @@ class NewsAnalyst:
             decisions.append(decision)
         return tuple(decisions)
 
+    def _fetch_lessons(self, instrument_key: str) -> tuple[dict[str, Any], ...]:
+        """说明：拉同品种最近 5 条 lesson；trade_store 失败时返回空。"""
+        try:
+            return self.trade_store.list_lessons(instrument_key=instrument_key, limit=5)
+        except Exception:  # noqa: BLE001
+            LOGGER.warning(
+                "news_analyst: list_lessons failed for %s",
+                instrument_key, exc_info=True,
+            )
+            return ()
+
     def _fetch_candles(self, instrument_key: str) -> dict[str, tuple[Candle, ...]]:
         """说明：从 candle_provider 拉多 timeframe K 线，失败时返回空 dict。"""
         if self.candle_provider is None:
@@ -381,10 +410,12 @@ class NewsAnalyst:
         """说明：对单个命中品种跑 verify → gate → 下单。"""
         instrument_key = entry.instrument_key
         candles_by_tf = self._fetch_candles(instrument_key)
+        lessons = self._fetch_lessons(instrument_key)
 
         verdict = await _verify(
             item, instrument_key, self.llm_chat, self.config.llm_timeout_seconds,
             candles_by_tf=candles_by_tf,
+            lessons=lessons,
         )
         if verdict is None:
             decision = NewsDecision(

@@ -472,5 +472,75 @@ class CandleVerificationTests(unittest.TestCase):
         self.assertEqual(decisions[0].step, "opened")  # 仍然能下单
 
 
+class LessonsInjectionTests(unittest.TestCase):
+    """trade_store.list_lessons 内容应出现在 LLM 的 prompt 里。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        path = Path(self._tmp.name) / "trades.sqlite3"
+        self.trade_store = TradeStore(path)
+        self.decision_store = NewsDecisionStore(path)
+        self.config = NewsAnalystConfig(
+            enabled=True,
+            universe=(NewsUniverseEntry(instrument_key="alpaca:SPY", aliases=("SPY",)),),
+            min_confidence=0.7, max_entry_distance_pct=5.0,
+            default_size=1.0, llm_timeout_seconds=5.0, cooldown_minutes=0,
+        )
+
+    def test_existing_lessons_appear_in_prompt(self) -> None:
+        # 先在 trade_store 里写两条 lesson
+        self.trade_store.save_lesson(
+            trade_id=None, instrument_key="alpaca:SPY",
+            category="entry", text="Avoid chasing breakouts on Fed days",
+        )
+        self.trade_store.save_lesson(
+            trade_id=None, instrument_key="alpaca:SPY",
+            category="risk", text="Stop too tight at ATR/4 caused premature exits",
+        )
+
+        captured: list[list[dict]] = []
+
+        async def capture_chat(messages):
+            captured.append(messages)
+            return _FakeChatResponse(
+                '{"direction":"long","confidence":0.85,"entry":500,"stop":495,'
+                '"target":510,"reason":"news bullish"}'
+            )
+
+        analyst = NewsAnalyst(
+            config=self.config, decision_store=self.decision_store,
+            trade_store=self.trade_store, llm_chat=capture_chat,
+            current_price_provider=lambda key: 500.0,
+        )
+        item = _make_item("Fed cuts: SPY rallies")
+        asyncio.run(analyst.on_top_changed(item))
+        user_prompt = next(m["content"] for m in captured[0] if m["role"] == "user")
+        self.assertIn("Past lessons", user_prompt)
+        self.assertIn("Avoid chasing breakouts on Fed days", user_prompt)
+        self.assertIn("Stop too tight", user_prompt)
+
+    def test_no_lessons_omits_section(self) -> None:
+        # 未保存任何 lesson → prompt 里不应出现 "Past lessons" 段
+        captured: list[list[dict]] = []
+
+        async def capture_chat(messages):
+            captured.append(messages)
+            return _FakeChatResponse(
+                '{"direction":"long","confidence":0.85,"entry":500,"stop":495,'
+                '"target":510,"reason":"news bullish"}'
+            )
+
+        analyst = NewsAnalyst(
+            config=self.config, decision_store=self.decision_store,
+            trade_store=self.trade_store, llm_chat=capture_chat,
+            current_price_provider=lambda key: 500.0,
+        )
+        item = _make_item("SPY headline")
+        asyncio.run(analyst.on_top_changed(item))
+        user_prompt = next(m["content"] for m in captured[0] if m["role"] == "user")
+        self.assertNotIn("Past lessons", user_prompt)
+
+
 if __name__ == "__main__":
     unittest.main()
