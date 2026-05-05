@@ -1,4 +1,5 @@
 """Test web state serialization and local API routes."""
+import asyncio
 import json
 import tempfile
 import textwrap
@@ -9,13 +10,27 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from mytradebot.agent import AgentAnalysisResult, AgentSessionStore, ChatResponse
-from mytradebot.config import AppConfig, DisplayConfig, load_config
+from mytradebot.config import (
+    AppConfig,
+    DisplayConfig,
+    NewsAnalystConfig,
+    NewsConfig,
+    NewsUniverseEntry,
+    load_config,
+)
 from mytradebot.runtime.controller import DrainResult
 from mytradebot.market_data.alpaca import AlpacaAsset, AlpacaInstrument
 from mytradebot.market_data.bitget import BitgetInstrument
 from mytradebot.domain.quotes import QuoteState
 from mytradebot.domain.price_action import Candle
-from mytradebot.api.app import PROJECT_ROOT, WEB_DIST, create_app, serialize_market_state
+from mytradebot.api.app import (
+    PROJECT_ROOT,
+    WEB_DIST,
+    MarketRuntime,
+    create_app,
+    serialize_market_state,
+)
+from mytradebot.trading.store import TradeStore
 
 
 class DummyController:
@@ -143,6 +158,72 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["instruments"][0]["key"], "alpaca:AAPL")
+
+    def test_runtime_wires_news_analyst_at_startup(self) -> None:
+        """Verify enabling news analyst does not crash on startup."""
+        class FakeProvider:
+            async def chat(self, messages):
+                return ChatResponse(content="")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            instrument = AlpacaInstrument("SPY", "SPY")
+            config = AppConfig(
+                instruments=tuple(),
+                display=DisplayConfig(),
+                news=NewsConfig(enabled=True),
+                news_analyst=NewsAnalystConfig(
+                    enabled=True,
+                    universe=(NewsUniverseEntry("alpaca:SPY", ("SPY",)),),
+                ),
+            )
+
+            with patch("mytradebot.agent.provider.create_llm_provider", return_value=FakeProvider()):
+                runtime = MarketRuntime(
+                    config=config,
+                    instruments=(instrument,),
+                    controller_factory=DummyController,
+                    trade_store=TradeStore(Path(tmp_dir) / "trades.sqlite3"),
+                )
+                payload = runtime.snapshot()
+
+        self.assertIsNotNone(runtime.news_analyst)
+        self.assertIsNotNone(runtime.news_service)
+        self.assertIsNotNone(runtime.news_service.on_top_changed)
+        self.assertEqual(
+            payload["config"]["newsAnalyst"]["universe"][0]["instrumentKey"],
+            "alpaca:SPY",
+        )
+
+    def test_enabling_news_service_wires_news_analyst_hook(self) -> None:
+        """Verify runtime NewsService rebuilds keep the analyst callback attached."""
+        class FakeProvider:
+            async def chat(self, messages):
+                return ChatResponse(content="")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            instrument = AlpacaInstrument("SPY", "SPY")
+            config = AppConfig(
+                instruments=tuple(),
+                display=DisplayConfig(),
+                news=NewsConfig(enabled=False),
+                news_analyst=NewsAnalystConfig(
+                    enabled=True,
+                    universe=(NewsUniverseEntry("alpaca:SPY", ("SPY",)),),
+                ),
+            )
+            runtime = MarketRuntime(
+                config=config,
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                trade_store=TradeStore(Path(tmp_dir) / "trades.sqlite3"),
+            )
+
+            with patch("mytradebot.agent.provider.create_llm_provider", return_value=FakeProvider()):
+                asyncio.run(runtime._apply_news_service_state(NewsConfig(enabled=True)))
+
+        self.assertIsNotNone(runtime.news_analyst)
+        self.assertIsNotNone(runtime.news_service)
+        self.assertIsNotNone(runtime.news_service.on_top_changed)
 
     def test_load_older_candles_endpoint_merges_history(self) -> None:
         """Verify browser can request earlier candles for the selected chart."""

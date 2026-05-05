@@ -211,6 +211,19 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.news.retention_days, 7)
         self.assertEqual(config.news.reuters_url, "https://example/sitemap.xml")
 
+    def test_parse_config_news_analyst_empty_universe_stays_empty(self) -> None:
+        """Verify an explicit empty news analyst universe disables alias matching."""
+        config = parse_config({
+            "symbols": [{"symbol": "SPY", "source": "alpaca"}],
+            "news_analyst": {
+                "enabled": True,
+                "universe": [],
+            },
+        })
+
+        self.assertTrue(config.news_analyst.enabled)
+        self.assertEqual(config.news_analyst.universe, tuple())
+
     def test_build_runtime_requires_symbols(self) -> None:
         """Verify build runtime requires symbols."""
         with self.assertRaises(ValueError):

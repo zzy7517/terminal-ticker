@@ -324,6 +324,16 @@ def _gate(
         return _GateOutcome(False, "missing stop")
     if verdict.entry is None:
         return _GateOutcome(False, "missing entry")
+    if verdict.direction == "long":
+        if verdict.stop >= verdict.entry:
+            return _GateOutcome(False, "invalid long risk levels: stop >= entry")
+        if verdict.target is not None and verdict.target <= verdict.entry:
+            return _GateOutcome(False, "invalid long risk levels: target <= entry")
+    if verdict.direction == "short":
+        if verdict.stop <= verdict.entry:
+            return _GateOutcome(False, "invalid short risk levels: stop <= entry")
+        if verdict.target is not None and verdict.target >= verdict.entry:
+            return _GateOutcome(False, "invalid short risk levels: target >= entry")
     # 距当前价过远，意味着 LLM 可能在乱编价格。
     if current_price is not None and current_price > 0:
         deviation_pct = abs(verdict.entry - current_price) / current_price * 100.0

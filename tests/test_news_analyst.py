@@ -212,6 +212,34 @@ class NewsAnalystServiceTests(unittest.TestCase):
         self.assertEqual(decision.direction, "none")
         self.assertIsNone(decision.trade_id)
 
+    def test_reversed_long_risk_levels_block(self) -> None:
+        analyst = self._make_analyst(
+            llm_response='{"direction":"long","confidence":0.9,"entry":500,'
+                         '"stop":505,"target":490,"reason":"bad risk levels"}',
+            current_price=500.0,
+        )
+        item = _make_item("Fed cuts rates, SPY rallies")
+        decisions = self._run(analyst.on_top_changed(item))
+        decision = decisions[0]
+        self.assertEqual(decision.step, "gated")
+        self.assertIn("invalid long risk levels", decision.reason)
+        self.assertIsNone(decision.trade_id)
+        self.assertEqual(self.trade_store.list_trades(), tuple())
+
+    def test_reversed_short_risk_levels_block(self) -> None:
+        analyst = self._make_analyst(
+            llm_response='{"direction":"short","confidence":0.9,"entry":500,'
+                         '"stop":495,"target":510,"reason":"bad risk levels"}',
+            current_price=500.0,
+        )
+        item = _make_item("Hawkish Fed comments hit SPY")
+        decisions = self._run(analyst.on_top_changed(item))
+        decision = decisions[0]
+        self.assertEqual(decision.step, "gated")
+        self.assertIn("invalid short risk levels", decision.reason)
+        self.assertIsNone(decision.trade_id)
+        self.assertEqual(self.trade_store.list_trades(), tuple())
+
     def test_garbage_llm_output(self) -> None:
         analyst = self._make_analyst(llm_response="I am thinking very hard about this...")
         item = _make_item("S&P 500 something happened")

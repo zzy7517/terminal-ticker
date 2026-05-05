@@ -472,7 +472,7 @@ def parse_news_analyst_config(raw: dict[str, Any] | None) -> NewsAnalystConfig:
 def _parse_news_universe(
     raw: dict[str, Any], defaults: NewsAnalystConfig,
 ) -> tuple[NewsUniverseEntry, ...]:
-    """说明：解析 universe，新/老格式都支持，空值退默认 5 品种。"""
+    """说明：解析 universe，新/老格式都支持；缺省才退默认 5 品种。"""
     raw_universe = raw.get("universe")
     if raw_universe is not None:
         if not isinstance(raw_universe, list):
@@ -497,8 +497,7 @@ def _parse_news_universe(
                     f"news_analyst.universe[{idx}].aliases must contain at least one alias"
                 )
             entries.append(NewsUniverseEntry(instrument_key=key.strip(), aliases=aliases))
-        if entries:
-            return tuple(entries)
+        return tuple(entries)
 
     # 老格式兼容: instrument_key + aliases 平铺。
     legacy_key = raw.get("instrument_key")
