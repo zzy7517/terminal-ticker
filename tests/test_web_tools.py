@@ -151,7 +151,7 @@ class WebFetchTests(unittest.TestCase):
                 "<style>body{color:red}</style></head>"
                 "<body><p>Hello <b>World</b></p></body></html>"
             )
-            return 200, "text/html; charset=utf-8", body
+            return 200, "text/html; charset=utf-8", body, False
 
         registry = build_web_tools()
         with self._allow_fetch_validation(), patch("mytradebot.agent.web_tools._http_get", fake_get):
@@ -222,7 +222,7 @@ class WebFetchTests(unittest.TestCase):
         big_text = "<p>" + ("X" * 5000) + "</p>"
 
         async def fake_get(url, timeout):
-            return 200, "text/html", big_text
+            return 200, "text/html", big_text, False
 
         registry = build_web_tools(body_limit=8000)
         with self._allow_fetch_validation(), patch("mytradebot.agent.web_tools._http_get", fake_get):
@@ -236,7 +236,7 @@ class WebFetchTests(unittest.TestCase):
 
     def test_fetch_http_error_returns_error_json(self) -> None:
         async def fake_get(url, timeout):
-            return 404, "text/html", "not found"
+            return 404, "text/html", "not found", False
 
         registry = build_web_tools()
         with self._allow_fetch_validation(), patch("mytradebot.agent.web_tools._http_get", fake_get):
@@ -247,7 +247,7 @@ class WebFetchTests(unittest.TestCase):
     def test_fetch_pdf_short_circuits_with_error(self) -> None:
         """PDF 拒绝处理，返回 error JSON 让 LLM 另寻它路。"""
         async def fake_get(url, timeout):
-            return 200, "application/pdf", "%PDF-1.6 \x00\x01\x02 binary garbage"
+            return 200, "application/pdf", "%PDF-1.6 \x00\x01\x02 binary garbage", False
 
         registry = build_web_tools()
         with self._allow_fetch_validation(), patch("mytradebot.agent.web_tools._http_get", fake_get):
@@ -262,7 +262,7 @@ class WebFetchTests(unittest.TestCase):
 
     def test_fetch_image_rejected(self) -> None:
         async def fake_get(url, timeout):
-            return 200, "image/png", "\x89PNG\r\n"
+            return 200, "image/png", "\x89PNG\r\n", False
 
         registry = build_web_tools()
         with self._allow_fetch_validation(), patch("mytradebot.agent.web_tools._http_get", fake_get):
@@ -273,7 +273,7 @@ class WebFetchTests(unittest.TestCase):
 
     def test_fetch_json_is_readable(self) -> None:
         async def fake_get(url, timeout):
-            return 200, "application/json", '{"k": "v"}'
+            return 200, "application/json", '{"k": "v"}', False
 
         registry = build_web_tools()
         with self._allow_fetch_validation(), patch("mytradebot.agent.web_tools._http_get", fake_get):
@@ -287,7 +287,7 @@ class WebFetchTests(unittest.TestCase):
     def test_fetch_missing_content_type_assumed_html(self) -> None:
         """很多老站点不发 Content-Type；仍尝试解析（不要无谓 short-circuit）。"""
         async def fake_get(url, timeout):
-            return 200, "", "<p>plain html</p>"
+            return 200, "", "<p>plain html</p>", False
 
         registry = build_web_tools()
         with self._allow_fetch_validation(), patch("mytradebot.agent.web_tools._http_get", fake_get):
@@ -310,7 +310,7 @@ class WebFetchTests(unittest.TestCase):
 
     def test_fetch_bad_max_chars_softfails_as_json(self) -> None:
         async def fake_get(url, timeout):
-            return 200, "text/html", "<p>Hello</p>"
+            return 200, "text/html", "<p>Hello</p>", False
 
         registry = build_web_tools()
         with self._allow_fetch_validation(), patch("mytradebot.agent.web_tools._http_get", fake_get):
@@ -328,6 +328,13 @@ class WebFetchTests(unittest.TestCase):
             headers = {"location": "http://127.0.0.1/private"}
             text = ""
 
+        class FakeStream:
+            async def __aenter__(self):
+                return FakeResponse()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
         class FakeSession:
             def __init__(self, *args, **kwargs):
                 pass
@@ -338,13 +345,56 @@ class WebFetchTests(unittest.TestCase):
             async def __aexit__(self, exc_type, exc, tb):
                 return None
 
-            async def get(self, url, allow_redirects):
+            def stream(self, method, url, allow_redirects):
+                case.assertEqual(method, "GET")
                 case.assertEqual(allow_redirects, False)
-                return FakeResponse()
+                return FakeStream()
 
         with patch("mytradebot.agent.web_tools._CurlAsyncSession", FakeSession):
             with self.assertRaisesRegex(ValueError, "blocked redirect target"):
                 self._run(_http_get("https://example.com/start", timeout=1))
+
+    def test_http_get_stops_reading_after_byte_limit(self) -> None:
+        class FakeResponse:
+            status_code = 200
+            headers = {"content-type": "text/html"}
+            encoding = "utf-8"
+
+            async def aiter_content(self):
+                yield b"hello"
+                yield b"world"
+
+        class FakeStream:
+            async def __aenter__(self):
+                return FakeResponse()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        class FakeSession:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            def stream(self, method, url, allow_redirects):
+                return FakeStream()
+
+        with (
+            patch("mytradebot.agent.web_tools._CurlAsyncSession", FakeSession),
+            patch("mytradebot.agent.web_tools._FETCH_READ_LIMIT_BYTES", 5),
+        ):
+            status, content_type, body, truncated = self._run(
+                _http_get("https://example.com/start", timeout=1)
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/html")
+        self.assertEqual(body, "hello")
+        self.assertTrue(truncated)
 
 
 class RegistryIntegrationTests(unittest.TestCase):

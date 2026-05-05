@@ -38,6 +38,7 @@ DDG_HTML_URL = "https://html.duckduckgo.com/html/"
 _IMPERSONATE_TARGET = "safari17_0"
 _DEFAULT_TIMEOUT = 15.0
 _FETCH_BODY_LIMIT = 8000   # 单次 fetch 返回的纯文本上限（避免 LLM context 爆炸）
+_FETCH_READ_LIMIT_BYTES = _FETCH_BODY_LIMIT * 4
 _MAX_FETCH_REDIRECTS = 5
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 
@@ -121,6 +122,33 @@ def _resolve_host_ips(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6A
     return out
 
 
+def _decode_limited_body(response: Any, body: bytes) -> str:
+    encoding = getattr(response, "encoding", None) or "utf-8"
+    try:
+        return body.decode(str(encoding), errors="replace")
+    except LookupError:
+        return body.decode("utf-8", errors="replace")
+
+
+async def _read_limited_body(response: Any, byte_limit: int) -> tuple[str, bool]:
+    chunks: list[bytes] = []
+    total = 0
+    truncated = False
+    async for chunk in response.aiter_content():
+        if not chunk:
+            continue
+        chunk_bytes = bytes(chunk)
+        remaining = byte_limit - total
+        if len(chunk_bytes) > remaining:
+            if remaining > 0:
+                chunks.append(chunk_bytes[:remaining])
+            truncated = True
+            break
+        chunks.append(chunk_bytes)
+        total += len(chunk_bytes)
+    return _decode_limited_body(response, b"".join(chunks)), truncated
+
+
 async def _fetch_target_validation_error(url: str) -> str | None:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
@@ -197,27 +225,28 @@ async def _http_post_ddg(query: str, timeout: float) -> tuple[int, str]:
         return int(r.status_code), str(r.text or "")
 
 
-async def _http_get(url: str, timeout: float) -> tuple[int, str, str]:
-    """说明：拉单个 URL 的内容。返回 (status_code, content_type, body)。"""
+async def _http_get(url: str, timeout: float) -> tuple[int, str, str, bool]:
+    """说明：拉单个 URL 的内容。返回 (status_code, content_type, body, truncated)。"""
     if _CurlAsyncSession is None:
         raise RuntimeError("curl_cffi not installed; web_fetch requires it")
     current_url = url
     async with _CurlAsyncSession(impersonate=_IMPERSONATE_TARGET, timeout=timeout) as s:
         for _ in range(_MAX_FETCH_REDIRECTS + 1):
-            r = await s.get(current_url, allow_redirects=False)
-            status = int(r.status_code)
-            if status in _REDIRECT_STATUSES:
-                location = r.headers.get("location", "") or r.headers.get("Location", "")
-                if not location:
-                    break
-                next_url = urljoin(current_url, str(location))
-                validation_error = await _fetch_target_validation_error(next_url)
-                if validation_error:
-                    raise ValueError(f"blocked redirect target: {validation_error}")
-                current_url = next_url
-                continue
-            ct = r.headers.get("content-type", "") or r.headers.get("Content-Type", "")
-            return status, str(ct), str(r.text or "")
+            async with s.stream("GET", current_url, allow_redirects=False) as r:
+                status = int(r.status_code)
+                if status in _REDIRECT_STATUSES:
+                    location = r.headers.get("location", "") or r.headers.get("Location", "")
+                    if not location:
+                        break
+                    next_url = urljoin(current_url, str(location))
+                    validation_error = await _fetch_target_validation_error(next_url)
+                    if validation_error:
+                        raise ValueError(f"blocked redirect target: {validation_error}")
+                    current_url = next_url
+                    continue
+                ct = r.headers.get("content-type", "") or r.headers.get("Content-Type", "")
+                body, truncated = await _read_limited_body(r, _FETCH_READ_LIMIT_BYTES)
+                return status, str(ct), body, truncated
     raise RuntimeError("too many redirects")
 
 
@@ -301,7 +330,10 @@ def build_web_tools(
             return _json_output({"error": validation_error, "url": target})
 
         try:
-            status, content_type, body = await _http_get(target, timeout_seconds)
+            status, content_type, body, body_truncated = await _http_get(
+                target,
+                timeout_seconds,
+            )
         except _CurlRequestException as exc:
             return _json_output({"error": f"http error: {exc}", "url": target})
         except Exception as exc:  # noqa: BLE001
@@ -352,7 +384,7 @@ def build_web_tools(
             "status": status,
             "contentType": content_type,
             "length": len(text),
-            "truncated": len(text) > cap,
+            "truncated": body_truncated or len(text) > cap,
             "text": truncated,
         })
 
