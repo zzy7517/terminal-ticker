@@ -1072,11 +1072,6 @@ function SettingsFrame({
       <section className="settings-frame">
         <aside className="settings-nav">
           <div className="settings-nav-top">
-            <div className="settings-window-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
             <div>
               <div className="eyebrow">System Settings</div>
               <h3>Settings</h3>

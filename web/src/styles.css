@@ -1417,22 +1417,6 @@ textarea:focus-visible {
   gap: 14px;
 }
 
-.settings-window-dots {
-  display: inline-flex;
-  gap: 8px;
-}
-
-.settings-window-dots span {
-  border-radius: 999px;
-  display: block;
-  height: 12px;
-  width: 12px;
-}
-
-.settings-window-dots span:nth-child(1) { background: #ff5f57; }
-.settings-window-dots span:nth-child(2) { background: #16a394; }
-.settings-window-dots span:nth-child(3) { background: #28c840; }
-
 .settings-nav-group {
   display: grid;
   gap: 6px;
