@@ -533,6 +533,182 @@ def build_news_tools(news_service: Any) -> ToolRegistry:
     return registry
 
 
+def build_social_feed_tools(social_feed_service: Any) -> ToolRegistry:
+    """构建社交流相关工具集。"""
+    registry = ToolRegistry()
+
+    def _disabled_reply(action: str) -> str:
+        return _json_output({
+            "enabled": False,
+            "error": f"social feed module disabled; cannot {action}",
+        })
+
+    def _item_payload(item: Any) -> dict[str, Any]:
+        payload = item.to_payload()
+        return {
+            "source": payload.get("source"),
+            "externalId": payload.get("externalId"),
+            "url": payload.get("url"),
+            "author": payload.get("author"),
+            "text": payload.get("text"),
+            "createdAt": payload.get("createdAt"),
+            "metrics": payload.get("metrics"),
+            "urls": payload.get("urls", []),
+            "isRepost": payload.get("isRepost"),
+            "repostedBy": payload.get("repostedBy"),
+        }
+
+    async def refresh_x_following_feed(count: int = 20) -> str:
+        """触发一次 X Following feed 拉取并写入本地缓存。"""
+        if social_feed_service is None:
+            return _disabled_reply("refresh X following feed")
+        resolved_count = max(1, min(int(count or 20), 100))
+        outcome = await social_feed_service.refresh_x_following(count=resolved_count)
+        return _json_output({
+            "status": outcome.status,
+            "inserted": outcome.inserted,
+            "totalRecent": outcome.total_recent,
+            "error": outcome.error,
+        })
+
+    registry.register(ToolDefinition(
+        name="refresh_x_following_feed",
+        description=(
+            "低频读取用户 X/Twitter Following 信息流并写入本地缓存。"
+            "需要环境变量 TWITTER_AUTH_TOKEN 和 TWITTER_CT0。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "count": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
+            },
+        },
+        handler=refresh_x_following_feed,
+    ))
+
+    async def get_recent_social_feed(
+        limit: int = 20,
+        since_minutes: int | None = 24 * 60,
+        query: str | None = None,
+    ) -> str:
+        """读取本地缓存的社交流条目。"""
+        if social_feed_service is None:
+            return _disabled_reply("get recent social feed")
+        import time as _time
+
+        resolved_limit = max(1, min(int(limit or 20), 100))
+        since_ms = None
+        if since_minutes is not None and int(since_minutes) > 0:
+            since_ms = int(_time.time() * 1000) - int(since_minutes) * 60_000
+        items = social_feed_service.recent_items(
+            limit=resolved_limit,
+            since_ms=since_ms,
+            query=query,
+        )
+        return _json_output({
+            "count": len(items),
+            "items": [_item_payload(item) for item in items],
+        })
+
+    registry.register(ToolDefinition(
+        name="get_recent_social_feed",
+        description=(
+            "读取本地缓存的 X/Twitter Following 信息流，按发布时间倒序。"
+            "可按最近分钟数和关键词过滤，用于交易信息流回顾。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
+                "since_minutes": {"type": ["integer", "null"], "default": 1440, "minimum": 1},
+                "query": {"type": ["string", "null"], "description": "可选关键词过滤"},
+            },
+        },
+        handler=get_recent_social_feed,
+    ))
+
+    async def remember_social_observation(
+        memory: str,
+        external_id: str | None = None,
+        source: str = "x_following",
+        tags: list[str] | None = None,
+        importance: int = 3,
+    ) -> str:
+        """把从社交流里学到的观察写入记忆表。"""
+        if social_feed_service is None:
+            return _disabled_reply("remember social observation")
+        store = social_feed_service.store
+        resolved_source = (source or "x_following").strip()
+        resolved_external_id = (external_id or "").strip() or None
+        if resolved_external_id:
+            item = store.get_item(source=resolved_source, external_id=resolved_external_id)
+            if item is None:
+                return _json_output({
+                    "error": f"social feed item not found: {resolved_source}:{resolved_external_id}",
+                })
+        try:
+            saved = store.add_memory(
+                text=memory,
+                source=resolved_source if resolved_external_id else None,
+                external_id=resolved_external_id,
+                tags=tags or (),
+                importance=importance,
+            )
+        except ValueError as exc:
+            return _json_output({"error": str(exc)})
+        return _json_output({"ok": True, "memory": saved.to_payload()})
+
+    registry.register(ToolDefinition(
+        name="remember_social_observation",
+        description=(
+            "把交易相关推文中可复用的观察、账户偏好、信息源判断或市场线索写入本地记忆。"
+            "可以关联某条推文 external_id，也可以写成独立记忆。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "memory": {"type": "string", "description": "要保存的简短记忆"},
+                "external_id": {"type": ["string", "null"], "description": "可选推文 ID"},
+                "source": {"type": "string", "default": "x_following"},
+                "tags": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                    "description": "可选标签，如 BTC、macro、liquidity",
+                },
+                "importance": {"type": "integer", "default": 3, "minimum": 1, "maximum": 5},
+            },
+            "required": ["memory"],
+        },
+        handler=remember_social_observation,
+    ))
+
+    async def get_social_memories(limit: int = 20, tag: str | None = None) -> str:
+        """读取最近社交流记忆。"""
+        if social_feed_service is None:
+            return _disabled_reply("get social memories")
+        resolved_limit = max(1, min(int(limit or 20), 100))
+        memories = social_feed_service.store.recent_memories(limit=resolved_limit, tag=tag)
+        return _json_output({
+            "count": len(memories),
+            "memories": [memory.to_payload() for memory in memories],
+        })
+
+    registry.register(ToolDefinition(
+        name="get_social_memories",
+        description="读取最近保存的 X/Twitter 交易信息流记忆，可选按标签过滤。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
+                "tag": {"type": ["string", "null"], "description": "可选标签过滤"},
+            },
+        },
+        handler=get_social_memories,
+    ))
+
+    return registry
+
+
 def merge_registries(*registries: ToolRegistry) -> ToolRegistry:
     """合并多个工具注册表到一个新注册表。"""
     merged = ToolRegistry()

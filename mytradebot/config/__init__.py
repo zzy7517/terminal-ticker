@@ -123,6 +123,16 @@ class NewsConfig:
 
 
 @dataclass(frozen=True)
+class SocialFeedConfig:
+    """说明：封装社交流读取与本地缓存配置。"""
+
+    enabled: bool = False
+    recent_limit: int = 100
+    retention_days: int = 30
+    max_items: int = 2000
+
+
+@dataclass(frozen=True)
 class NewsUniverseEntry:
     """说明：news_analyst 白名单的一个品种条目。"""
     instrument_key: str
@@ -213,6 +223,7 @@ class AppConfig:
     cache: CacheConfig = CacheConfig()
     agent: AgentConfig = AgentConfig()
     news: NewsConfig = NewsConfig()
+    social_feed: SocialFeedConfig = SocialFeedConfig()
     news_analyst: NewsAnalystConfig = NewsAnalystConfig()
 
 
@@ -416,6 +427,35 @@ def parse_news_config(raw_news: dict[str, Any] | None) -> NewsConfig:
             "news.recent_limit",
             50,
             1,
+        ),
+    )
+
+
+def parse_social_feed_config(raw_social_feed: dict[str, Any] | None) -> SocialFeedConfig:
+    """说明：把原始 social_feed 配置解析为 SocialFeedConfig。"""
+    if raw_social_feed is None:
+        raw_social_feed = {}
+    if not isinstance(raw_social_feed, dict):
+        raise ValueError("social_feed must be a table")
+    return SocialFeedConfig(
+        enabled=_normalize_bool(raw_social_feed.get("enabled"), "social_feed.enabled", False),
+        recent_limit=_coerce_min_int(
+            raw_social_feed.get("recent_limit"),
+            "social_feed.recent_limit",
+            100,
+            1,
+        ),
+        retention_days=_coerce_min_int(
+            raw_social_feed.get("retention_days"),
+            "social_feed.retention_days",
+            30,
+            1,
+        ),
+        max_items=_coerce_min_int(
+            raw_social_feed.get("max_items"),
+            "social_feed.max_items",
+            2000,
+            100,
         ),
     )
 
@@ -689,6 +729,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
 
     agent = parse_agent_config(data.get("agent", {}))
     news = parse_news_config(data.get("news", {}))
+    social_feed = parse_social_feed_config(data.get("social_feed", {}))
     news_analyst = parse_news_analyst_config(data.get("news_analyst", {}))
 
     return AppConfig(
@@ -698,6 +739,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         cache=cache,
         agent=agent,
         news=news,
+        social_feed=social_feed,
         news_analyst=news_analyst,
         source_path=source_path,
     )
@@ -724,6 +766,7 @@ def build_runtime_config(
         cache=CacheConfig(),
         agent=AgentConfig(),
         news=NewsConfig(),
+        social_feed=SocialFeedConfig(),
         source_path=None,
     )
 
@@ -740,5 +783,6 @@ def build_runtime_config(
         cache=base.cache,
         agent=base.agent,
         news=base.news,
+        social_feed=base.social_feed,
         source_path=base.source_path,
     )

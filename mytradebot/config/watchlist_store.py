@@ -9,6 +9,7 @@ from . import (
     AgentConfig,
     AnalysisConfig,
     NewsConfig,
+    SocialFeedConfig,
     ALPACA_SOURCE,
     BITGET_SOURCE,
     GROUP_ALIASES,
@@ -465,6 +466,28 @@ def update_news_config_in_watchlist(path: str | Path, config: NewsConfig) -> boo
     source_path = Path(path).expanduser().resolve()
     text = source_path.read_text()
     rendered = _replace_top_level_table(text, "news", _format_news_config(config))
+    if rendered == text:
+        return False
+    source_path.write_text(rendered)
+    return True
+
+
+def _format_social_feed_config(config: SocialFeedConfig) -> list[str]:
+    """说明：把 SocialFeedConfig 渲染成顶层 TOML 表。"""
+    return [
+        "[social_feed]",
+        f"enabled = {'true' if config.enabled else 'false'}",
+        f"recent_limit = {config.recent_limit}",
+        f"retention_days = {config.retention_days}",
+        f"max_items = {config.max_items}",
+    ]
+
+
+def update_social_feed_config_in_watchlist(path: str | Path, config: SocialFeedConfig) -> bool:
+    """说明：在 watchlist 文件中插入或替换 social_feed 配置表。"""
+    source_path = Path(path).expanduser().resolve()
+    text = source_path.read_text()
+    rendered = _replace_top_level_table(text, "social_feed", _format_social_feed_config(config))
     if rendered == text:
         return False
     source_path.write_text(rendered)

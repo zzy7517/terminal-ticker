@@ -20,6 +20,7 @@ from .tools import (
     ToolResult,
     build_market_tools,
     build_news_tools,
+    build_social_feed_tools,
     build_trading_tools,
     merge_registries,
 )
@@ -56,6 +57,7 @@ __all__ = [
     "build_agent_context",
     "build_market_tools",
     "build_news_tools",
+    "build_social_feed_tools",
     "build_trading_tools",
     "build_web_tools",
     "merge_registries",

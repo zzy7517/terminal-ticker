@@ -147,6 +147,26 @@ export interface NewsConfigUpdate {
   recentLimit?: number;
 }
 
+export interface SocialFeedConfig {
+  enabled: boolean;
+  recentLimit: number;
+  retentionDays: number;
+  maxItems: number;
+}
+
+export interface SocialFeedConfigUpdate {
+  enabled?: boolean;
+  recentLimit?: number;
+  retentionDays?: number;
+  maxItems?: number;
+}
+
+export interface SocialAuthStatus {
+  hasSavedAuth: boolean;
+  savedAtMs: number | null;
+  envAvailable: boolean;
+}
+
 export interface AgentModelOption {
   slug: string;
   displayName: string;
@@ -292,6 +312,7 @@ export interface MarketState {
       requestTimeoutSeconds: number;
       retentionDays: number;
     };
+    socialFeed: SocialFeedConfig;
     newsAnalyst?: NewsAnalystConfig;
     sourcePath: string | null;
   };
