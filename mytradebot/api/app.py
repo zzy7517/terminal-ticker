@@ -1691,31 +1691,6 @@ def create_app(
         memories = runtime.social_feed_service.store.recent_memories(limit=resolved, tag=tag)
         return {"memories": [memory.to_payload() for memory in memories], "enabled": True}
 
-    @app.post("/api/social/memories")
-    async def create_social_memory_endpoint(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
-        """说明：写入一条社交流记忆。"""
-        _require_local_social_request(request)
-        if runtime.social_feed_service is None:
-            raise HTTPException(status_code=409, detail="social feed module disabled")
-        memory_text = str(payload.get("memory") or payload.get("text") or "").strip()
-        source = payload.get("source")
-        external_id = payload.get("externalId", payload.get("external_id"))
-        tags_raw = payload.get("tags") or []
-        if tags_raw is not None and not isinstance(tags_raw, list):
-            raise HTTPException(status_code=400, detail="tags must be a list")
-        try:
-            memory = runtime.social_feed_service.store.add_memory(
-                text=memory_text,
-                source=str(source).strip() if source else None,
-                external_id=str(external_id).strip() if external_id else None,
-                tags=tags_raw,
-                importance=int(payload.get("importance") or 3),
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        await runtime.broadcast()
-        return {"memory": memory.to_payload()}
-
     @app.get("/api/social/auth")
     async def get_social_auth_endpoint(request: Request) -> dict[str, Any]:
         """说明：读取 X auth 保存状态，不返回明文。"""

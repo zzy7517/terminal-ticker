@@ -2932,8 +2932,7 @@ textarea:focus-visible {
   gap: 8px;
 }
 
-.social-test-preview__item,
-.social-test-memory {
+.social-test-preview__item {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
@@ -2942,13 +2941,11 @@ textarea:focus-visible {
   padding: 10px 12px;
 }
 
-.social-test-preview__item strong,
-.social-test-memory strong {
+.social-test-preview__item strong {
   font-size: 12px;
 }
 
-.social-test-preview__item span,
-.social-test-memory span:not(.panel-label) {
+.social-test-preview__item span {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.45;

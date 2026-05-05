@@ -627,61 +627,6 @@ def build_social_feed_tools(social_feed_service: Any) -> ToolRegistry:
         handler=get_recent_social_feed,
     ))
 
-    async def remember_social_observation(
-        memory: str,
-        external_id: str | None = None,
-        source: str = "x_following",
-        tags: list[str] | None = None,
-        importance: int = 3,
-    ) -> str:
-        """把从社交流里学到的观察写入记忆表。"""
-        if social_feed_service is None:
-            return _disabled_reply("remember social observation")
-        store = social_feed_service.store
-        resolved_source = (source or "x_following").strip()
-        resolved_external_id = (external_id or "").strip() or None
-        if resolved_external_id:
-            item = store.get_item(source=resolved_source, external_id=resolved_external_id)
-            if item is None:
-                return _json_output({
-                    "error": f"social feed item not found: {resolved_source}:{resolved_external_id}",
-                })
-        try:
-            saved = store.add_memory(
-                text=memory,
-                source=resolved_source if resolved_external_id else None,
-                external_id=resolved_external_id,
-                tags=tags or (),
-                importance=importance,
-            )
-        except ValueError as exc:
-            return _json_output({"error": str(exc)})
-        return _json_output({"ok": True, "memory": saved.to_payload()})
-
-    registry.register(ToolDefinition(
-        name="remember_social_observation",
-        description=(
-            "把交易相关推文中可复用的观察、账户偏好、信息源判断或市场线索写入本地记忆。"
-            "可以关联某条推文 external_id，也可以写成独立记忆。"
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "memory": {"type": "string", "description": "要保存的简短记忆"},
-                "external_id": {"type": ["string", "null"], "description": "可选推文 ID"},
-                "source": {"type": "string", "default": "x_following"},
-                "tags": {
-                    "type": ["array", "null"],
-                    "items": {"type": "string"},
-                    "description": "可选标签，如 BTC、macro、liquidity",
-                },
-                "importance": {"type": "integer", "default": 3, "minimum": 1, "maximum": 5},
-            },
-            "required": ["memory"],
-        },
-        handler=remember_social_observation,
-    ))
-
     async def get_social_memories(limit: int = 20, tag: str | None = None) -> str:
         """读取最近社交流记忆。"""
         if social_feed_service is None:

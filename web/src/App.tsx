@@ -44,13 +44,11 @@ import {
   addAlpacaSymbol,
   addBitgetSymbol,
   connectStateSocket,
-  createSocialMemory,
   deleteAgentSession,
   fetchAgentSession,
   fetchAgentSessionHistory,
   fetchRecentSocialFeed,
   fetchSocialAuthStatus,
-  fetchSocialMemories,
   fetchAgentModels,
   fetchState,
   getTradeDetail,
@@ -91,7 +89,6 @@ import type {
   Quote,
   SocialAuthStatus,
   SocialFeedItem,
-  SocialMemory,
   Trade,
   TradeDetailResponse,
 } from './types';
@@ -2659,7 +2656,6 @@ function SocialSettingsPanel({
   const [savingConfig, setSavingConfig] = useState(false);
   const [testing, setTesting] = useState(false);
   const [feedPreview, setFeedPreview] = useState<SocialFeedItem[]>([]);
-  const [memoryPreview, setMemoryPreview] = useState<SocialMemory | null>(null);
   const [status, setStatus] = useState('Save X cookies locally, then enable the social feed reader.');
 
   useEffect(() => {
@@ -2756,25 +2752,6 @@ function SocialSettingsPanel({
       setStatus(items.length ? `Loaded ${items.length} cached item(s).` : 'No cached feed items yet.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Cached feed load failed.');
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  async function testMemoryWrite() {
-    setTesting(true);
-    setStatus('Writing a test social memory...');
-    try {
-      const memory = await createSocialMemory({
-        memory: `Social settings memory test (${new Date().toLocaleString()})`,
-        tags: ['settings-test'],
-        importance: 1,
-      });
-      setMemoryPreview(memory);
-      const memories = await fetchSocialMemories(1);
-      setStatus(`Memory test saved. Latest memory id: ${memories[0]?.id ?? memory.id}.`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Memory test failed.');
     } finally {
       setTesting(false);
     }
@@ -2902,15 +2879,6 @@ function SocialSettingsPanel({
                 <Search size={15} />
                 Read cache
               </button>
-              <button
-                className="shell-button"
-                type="button"
-                disabled={!config.enabled || testing}
-                onClick={testMemoryWrite}
-              >
-                <Save size={15} />
-                Write memory
-              </button>
             </div>
             {feedPreview.length > 0 && (
               <div className="social-test-preview">
@@ -2920,13 +2888,6 @@ function SocialSettingsPanel({
                     <span>{item.text.slice(0, 160) || '(empty tweet)'}</span>
                   </div>
                 ))}
-              </div>
-            )}
-            {memoryPreview && (
-              <div className="social-test-memory">
-                <span className="panel-label">Latest test memory</span>
-                <strong>#{memoryPreview.id}</strong>
-                <span>{memoryPreview.text}</span>
               </div>
             )}
           </div>

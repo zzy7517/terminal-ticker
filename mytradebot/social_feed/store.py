@@ -259,49 +259,6 @@ class SocialFeedStore:
             connection.commit()
             return cursor.rowcount or 0
 
-    def add_memory(
-        self,
-        *,
-        text: str,
-        source: str | None = None,
-        external_id: str | None = None,
-        tags: Iterable[str] = (),
-        importance: int = 3,
-    ) -> SocialFeedMemory:
-        """写入一条社交流记忆。"""
-        memory_text = text.strip()
-        if not memory_text:
-            raise ValueError("memory text cannot be blank")
-        resolved_tags = tuple(str(tag).strip() for tag in tags if str(tag).strip())
-        resolved_importance = max(1, min(int(importance), 5))
-        created_at_ms = _now_ms()
-        with self._connect() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO social_memories(source, external_id, text, tags_json, importance, created_at_ms)
-                VALUES(?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    source,
-                    external_id,
-                    memory_text,
-                    json.dumps(list(resolved_tags), ensure_ascii=False, separators=(",", ":")),
-                    resolved_importance,
-                    created_at_ms,
-                ),
-            )
-            memory_id = int(cursor.lastrowid)
-            connection.commit()
-        return SocialFeedMemory(
-            id=memory_id,
-            text=memory_text,
-            source=source,
-            external_id=external_id,
-            tags=resolved_tags,
-            importance=resolved_importance,
-            created_at_ms=created_at_ms,
-        )
-
     def recent_memories(
         self,
         *,
