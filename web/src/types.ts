@@ -118,6 +118,16 @@ export interface AnalysisConfigUpdate {
   staleAfterSeconds?: number;
 }
 
+export interface NewsConfigUpdate {
+  enabled?: boolean;
+  pollIntervalSeconds?: number;
+  maxIntervalSeconds?: number;
+  reutersUrl?: string;
+  requestTimeoutSeconds?: number;
+  retentionDays?: number;
+  recentLimit?: number;
+}
+
 export interface AgentModelOption {
   slug: string;
   displayName: string;
@@ -212,8 +222,11 @@ export interface MarketState {
     news: {
       enabled: boolean;
       pollIntervalSeconds: number;
+      maxIntervalSeconds: number;
       recentLimit: number;
       reutersUrl: string;
+      requestTimeoutSeconds: number;
+      retentionDays: number;
     };
     sourcePath: string | null;
   };

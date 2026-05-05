@@ -5,6 +5,7 @@ import asyncio
 import json
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -42,9 +43,11 @@ from ..config import (
     ALPACA_SOURCE,
     AppConfig,
     BITGET_SOURCE,
+    NewsConfig,
     load_config,
     parse_agent_config,
     parse_analysis_config,
+    parse_news_config,
 )
 from ..market_data.alpaca import search_assets as search_alpaca_assets
 from ..runtime.controller import TickerController
@@ -61,6 +64,7 @@ from ..config.watchlist_store import (
     update_agent_config_in_watchlist,
     update_analysis_config_in_watchlist,
     update_instrument_analysis_interval_in_watchlist,
+    update_news_config_in_watchlist,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -203,8 +207,11 @@ def serialize_market_state(
             "news": {
                 "enabled": config.news.enabled,
                 "pollIntervalSeconds": config.news.poll_interval_seconds,
+                "maxIntervalSeconds": config.news.max_interval_seconds,
                 "recentLimit": config.news.recent_limit,
                 "reutersUrl": config.news.reuters_url,
+                "requestTimeoutSeconds": config.news.request_timeout_seconds,
+                "retentionDays": config.news.retention_days,
             },
             "sourcePath": str(config.source_path) if config.source_path else None,
         },
@@ -559,6 +566,52 @@ class MarketRuntime:
         else:
             await self.broadcast()
         return {"changed": changed, "state": self.snapshot()}
+
+    async def update_news_config(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：持久化 news 配置并按需启停 NewsService。"""
+        source_path = self._require_source_path()
+        try:
+            next_config = _news_config_from_payload(self.config.news, payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        changed = await asyncio.to_thread(
+            update_news_config_in_watchlist,
+            source_path,
+            next_config,
+        )
+        # 替换内存 config.news（保持其他字段）。
+        self.config = replace(self.config, news=next_config)
+        await self._apply_news_service_state(next_config)
+        await self.broadcast()
+        return {"changed": changed, "state": self.snapshot()}
+
+    async def _apply_news_service_state(self, next_config: NewsConfig) -> None:
+        """说明：根据新配置启停或重建 NewsService。"""
+        if not next_config.enabled:
+            if self.news_service is not None:
+                await self.news_service.stop()
+                self.news_service = None
+            return
+        # 已启用：若未实例化则创建并启动；若已存在则重建以应用新参数。
+        if self.news_service is not None:
+            await self.news_service.stop()
+            self.news_service = None
+        store = NewsStore()
+        provider = ReutersSitemapProvider(
+            url=next_config.reuters_url,
+            timeout_seconds=next_config.request_timeout_seconds,
+        )
+        service = NewsService(
+            store=store,
+            provider=provider,
+            poll_interval_seconds=next_config.poll_interval_seconds,
+            max_interval_seconds=next_config.max_interval_seconds,
+            retention_days=next_config.retention_days,
+            recent_limit=next_config.recent_limit,
+        )
+        self.news_service = service
+        if self.running:
+            await service.start()
 
     async def update_instrument_analysis_interval(
         self,
@@ -1281,6 +1334,11 @@ def create_app(
         items = runtime.news_service.recent(limit=resolved)
         return {"news": [item.to_payload() for item in items], "enabled": True}
 
+    @app.post("/api/news/config")
+    async def update_news_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：处理 News 配置更新请求。"""
+        return await runtime.update_news_config(payload)
+
     @app.post("/api/news/refresh")
     async def refresh_news_endpoint() -> dict[str, Any]:
         """说明：手动触发一次新闻抓取，超时降级返回缓存。"""
@@ -1398,3 +1456,35 @@ def _analysis_config_from_payload(current: AnalysisConfig, payload: dict[str, An
         if incoming in payload:
             raw[normalized] = payload[incoming]
     return parse_analysis_config(raw)
+
+
+def _news_config_from_payload(current: NewsConfig, payload: dict[str, Any]) -> NewsConfig:
+    """说明：合并前端 news 设置并重新规范化。"""
+    raw: dict[str, Any] = {
+        "enabled": current.enabled,
+        "poll_interval_seconds": current.poll_interval_seconds,
+        "max_interval_seconds": current.max_interval_seconds,
+        "reuters_url": current.reuters_url,
+        "request_timeout_seconds": current.request_timeout_seconds,
+        "retention_days": current.retention_days,
+        "recent_limit": current.recent_limit,
+    }
+    field_map = {
+        "enabled": "enabled",
+        "pollIntervalSeconds": "poll_interval_seconds",
+        "poll_interval_seconds": "poll_interval_seconds",
+        "maxIntervalSeconds": "max_interval_seconds",
+        "max_interval_seconds": "max_interval_seconds",
+        "reutersUrl": "reuters_url",
+        "reuters_url": "reuters_url",
+        "requestTimeoutSeconds": "request_timeout_seconds",
+        "request_timeout_seconds": "request_timeout_seconds",
+        "retentionDays": "retention_days",
+        "retention_days": "retention_days",
+        "recentLimit": "recent_limit",
+        "recent_limit": "recent_limit",
+    }
+    for incoming, normalized in field_map.items():
+        if incoming in payload:
+            raw[normalized] = payload[incoming]
+    return parse_news_config(raw)

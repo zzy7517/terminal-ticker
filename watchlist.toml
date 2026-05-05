@@ -30,7 +30,7 @@ poll_interval_seconds = 30
 stale_after_seconds = 420
 
 [news]
-enabled = false
+enabled = true
 poll_interval_seconds = 30
 max_interval_seconds = 600
 reuters_url = "https://www.reuters.com/sitemap_news.xml"

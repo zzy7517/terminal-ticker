@@ -7,6 +7,7 @@ import type {
   InstrumentSearchResult,
   Lesson,
   MarketState,
+  NewsConfigUpdate,
   NewsItem,
   SecuritySearchResult,
   Trade,
@@ -181,6 +182,20 @@ export async function saveAnalysisConfig(config: AnalysisConfigUpdate): Promise<
   });
   if (!response.ok) {
     throw await responseError(response, 'analysis config save failed');
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
+// Saves news-module settings (enabled flag, polling, etc.) and returns the updated state.
+export async function saveNewsConfig(config: NewsConfigUpdate): Promise<MarketState> {
+  const response = await fetch('/api/news/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'news config save failed');
   }
   const payload = await response.json();
   return payload.state;

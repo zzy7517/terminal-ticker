@@ -8,6 +8,7 @@ import tomllib
 from . import (
     AgentConfig,
     AnalysisConfig,
+    NewsConfig,
     ALPACA_SOURCE,
     BITGET_SOURCE,
     GROUP_ALIASES,
@@ -439,6 +440,31 @@ def update_analysis_config_in_watchlist(path: str | Path, config: AnalysisConfig
     source_path = Path(path).expanduser().resolve()
     text = source_path.read_text()
     rendered = _replace_top_level_table(text, "analysis", _format_analysis_config(config))
+    if rendered == text:
+        return False
+    source_path.write_text(rendered)
+    return True
+
+
+def _format_news_config(config: NewsConfig) -> list[str]:
+    """说明：把 NewsConfig 渲染成顶层 TOML 表。"""
+    return [
+        "[news]",
+        f"enabled = {'true' if config.enabled else 'false'}",
+        f"poll_interval_seconds = {config.poll_interval_seconds}",
+        f"max_interval_seconds = {config.max_interval_seconds}",
+        f"reuters_url = {_toml_string(config.reuters_url)}",
+        f"request_timeout_seconds = {config.request_timeout_seconds:g}",
+        f"retention_days = {config.retention_days}",
+        f"recent_limit = {config.recent_limit}",
+    ]
+
+
+def update_news_config_in_watchlist(path: str | Path, config: NewsConfig) -> bool:
+    """说明：在 watchlist 文件中插入或替换 news 配置表。"""
+    source_path = Path(path).expanduser().resolve()
+    text = source_path.read_text()
+    rendered = _replace_top_level_table(text, "news", _format_news_config(config))
     if rendered == text:
         return False
     source_path.write_text(rendered)

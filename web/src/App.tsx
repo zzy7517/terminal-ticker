@@ -14,6 +14,7 @@ import {
   Minus,
   Moon,
   MousePointer2,
+  Newspaper,
   Plus,
   RefreshCw,
   Save,
@@ -51,6 +52,7 @@ import {
   resetAgentSession,
   saveAgentConfig,
   saveInstrumentAnalysisInterval,
+  saveNewsConfig,
   searchInstruments,
   sendAgentMessage,
   triggerNewsRefresh,
@@ -68,6 +70,7 @@ import type {
   Lesson,
   LoopStep,
   MarketState,
+  NewsConfigUpdate,
   NewsItem,
   Quote,
   Trade,
@@ -87,9 +90,10 @@ const GROUP_LABELS: Record<string, string> = {
 const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
 const PROVIDERS_HASH = '#/settings/providers';
 const WATCHLIST_HASH = '#/settings/watchlist';
+const NEWS_HASH = '#/settings/news';
 const THEME_STORAGE_KEY = 'mytradebot-theme';
 const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
-type SettingsSection = 'providers' | 'watchlist';
+type SettingsSection = 'providers' | 'watchlist' | 'news';
 type SearchSource = 'bitget' | 'alpaca';
 type SourceHint = SearchSource;
 type ThemeName = 'light' | 'dark';
@@ -186,6 +190,9 @@ function nextTheme(theme: ThemeName): ThemeName {
 
 // Converts the browser hash into the app's internal route shape.
 function readRouteFromHash(): AppRoute {
+  if (window.location.hash.startsWith(NEWS_HASH)) {
+    return { view: 'settings', section: 'news' };
+  }
   if (window.location.hash.startsWith(WATCHLIST_HASH)) {
     return { view: 'settings', section: 'watchlist' };
   }
@@ -198,7 +205,13 @@ function readRouteFromHash(): AppRoute {
 // Updates the browser hash while keeping the workspace route hash-free.
 function navigateToRoute(route: AppRoute) {
   if (route.view === 'settings') {
-    window.location.hash = route.section === 'watchlist' ? WATCHLIST_HASH : PROVIDERS_HASH;
+    const hash =
+      route.section === 'news'
+        ? NEWS_HASH
+        : route.section === 'watchlist'
+          ? WATCHLIST_HASH
+          : PROVIDERS_HASH;
+    window.location.hash = hash;
     return;
   }
   if (window.location.hash) {
@@ -1024,6 +1037,14 @@ function SettingsFrame({
             >
               <CircleDot size={18} />
               <span>Watchlist</span>
+            </button>
+            <button
+              className={`settings-nav-item ${section === 'news' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('news')}
+            >
+              <Newspaper size={18} />
+              <span>News</span>
             </button>
           </div>
 
@@ -2183,6 +2204,165 @@ function ProviderSettingsPanel({
   );
 }
 
+// Settings panel for the news-ingestion module. Shows module state plus the writable enabled toggle.
+function NewsSettingsPanel({
+  state,
+  onState,
+}: {
+  state: MarketState | null;
+  onState: (state: MarketState) => void;
+}) {
+  const config = state?.config.news;
+  const configSignature = config ? JSON.stringify(config) : '';
+  const [draft, setDraft] = useState<NewsConfigUpdate | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState('Toggle news ingestion on to start polling Reuters.');
+
+  useEffect(() => {
+    if (!config) return;
+    setDraft({ enabled: config.enabled });
+  }, [configSignature]);
+
+  async function persistConfig(nextEnabled: boolean) {
+    setSaving(true);
+    setStatus(nextEnabled ? 'Starting news service...' : 'Stopping news service...');
+    try {
+      const nextState = await saveNewsConfig({ enabled: nextEnabled });
+      onState(nextState);
+      setDraft({ enabled: nextEnabled });
+      setStatus(nextEnabled ? 'News ingestion enabled.' : 'News ingestion disabled.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Save failed.');
+      // Revert the toggle on failure so the UI mirrors backend truth.
+      if (config) setDraft({ enabled: config.enabled });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!config || !draft) {
+    return <div className="settings-loading">Loading settings...</div>;
+  }
+
+  const newsStatus = state?.newsStatus;
+  const lastFetched = newsStatus?.lastFetchedAtMs
+    ? new Date(newsStatus.lastFetchedAtMs).toLocaleString()
+    : '—';
+
+  return (
+    <>
+      <header className="settings-stage-head">
+        <div>
+          <div className="eyebrow">Configuration</div>
+          <h2>News</h2>
+        </div>
+        <div className="settings-stage-actions">
+          <span className="provider-inline-badge">{config.enabled ? 'Active' : 'Disabled'}</span>
+        </div>
+      </header>
+
+      <div className="provider-layout">
+        <section className="provider-catalog">
+          <div className="provider-section-head">
+            <strong>Sources</strong>
+            <span className="provider-inline-badge">1 active</span>
+          </div>
+          <div className="provider-list">
+            <button className="provider-item selected" type="button" disabled>
+              <div className="provider-item-icon">
+                <Newspaper size={18} />
+              </div>
+              <div className="provider-item-body">
+                <strong>Reuters</strong>
+                <small>Sitemap poller — news.reuters.com</small>
+              </div>
+              <span className={`provider-inline-badge ${config.enabled ? 'positive' : ''}`}>
+                {config.enabled ? 'On' : 'Off'}
+              </span>
+            </button>
+            <div className="provider-item" aria-disabled>
+              <div className="provider-item-icon">
+                <Plus size={16} />
+              </div>
+              <div className="provider-item-body">
+                <strong>Add source</strong>
+                <small>More providers coming soon.</small>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="provider-detail">
+          <div className="provider-section-head">
+            <strong>Module</strong>
+          </div>
+
+          <label className="settings-toggle-row">
+            <div>
+              <strong>Enable news ingestion</strong>
+              <small>
+                Controls the [news] block in watchlist.toml and start/stops the background poller.
+              </small>
+            </div>
+            <button
+              className={`settings-toggle ${draft.enabled ? 'on' : ''}`}
+              type="button"
+              disabled={saving}
+              onClick={() => persistConfig(!draft.enabled)}
+              aria-pressed={!!draft.enabled}
+            >
+              <span />
+            </button>
+          </label>
+
+          <div className="settings-readonly-grid">
+            <div>
+              <span className="panel-label">Source URL</span>
+              <strong>{config.reutersUrl}</strong>
+            </div>
+            <div>
+              <span className="panel-label">Poll interval</span>
+              <strong>{config.pollIntervalSeconds}s (max {config.maxIntervalSeconds}s)</strong>
+            </div>
+            <div>
+              <span className="panel-label">Request timeout</span>
+              <strong>{config.requestTimeoutSeconds}s</strong>
+            </div>
+            <div>
+              <span className="panel-label">Retention</span>
+              <strong>{config.retentionDays} days</strong>
+            </div>
+            <div>
+              <span className="panel-label">Recent limit</span>
+              <strong>{config.recentLimit}</strong>
+            </div>
+            <div>
+              <span className="panel-label">Last fetch status</span>
+              <strong>{newsStatus?.lastStatus ?? 'idle'}</strong>
+            </div>
+            <div>
+              <span className="panel-label">Last fetched at</span>
+              <strong>{lastFetched}</strong>
+            </div>
+            {newsStatus?.lastError && (
+              <div>
+                <span className="panel-label">Last error</span>
+                <strong>{newsStatus.lastError}</strong>
+              </div>
+            )}
+          </div>
+          <div className="settings-hint">
+            Tip: polling/retention/url are read-only here. Edit watchlist.toml and restart the
+            backend to change them.
+          </div>
+
+          <div className="provider-status-bar">{status}</div>
+        </section>
+      </div>
+    </>
+  );
+}
+
 // Coordinates top-level routing, live state hydration, and workspace actions.
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => readRouteFromHash());
@@ -2431,6 +2611,8 @@ export default function App() {
       >
         {route.section === 'providers' ? (
           <ProviderSettingsPanel state={state} onState={setState} />
+        ) : route.section === 'news' ? (
+          <NewsSettingsPanel state={state} onState={setState} />
         ) : (
           <WatchlistSettingsPanel state={state} onState={setState} />
         )}
