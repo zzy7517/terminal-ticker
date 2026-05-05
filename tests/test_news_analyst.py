@@ -6,7 +6,7 @@ import unittest
 from dataclasses import dataclass
 from pathlib import Path
 
-from mytradebot.config import NewsAnalystConfig
+from mytradebot.config import NewsAnalystConfig, NewsUniverseEntry
 from mytradebot.news.types import NewsItem
 from mytradebot.news_analyst.service import (
     NewsAnalyst,
@@ -77,8 +77,12 @@ class NewsAnalystServiceTests(unittest.TestCase):
         self.decision_store = NewsDecisionStore(self.trade_db_path)
         self.config = NewsAnalystConfig(
             enabled=True,
-            instrument_key="alpaca:SPY",
-            aliases=("SPY", "S&P 500", "标普"),
+            universe=(
+                NewsUniverseEntry(
+                    instrument_key="alpaca:SPY",
+                    aliases=("SPY", "S&P 500", "标普"),
+                ),
+            ),
             min_confidence=0.7,
             max_entry_distance_pct=0.5,
             default_size=1.0,
@@ -111,7 +115,9 @@ class NewsAnalystServiceTests(unittest.TestCase):
     def test_filter_miss_no_llm_no_trade(self) -> None:
         analyst = self._make_analyst(llm_response="UNREACHED")
         item = _make_item("Cricket: India beats Australia in Sydney")
-        decision = self._run(analyst.on_top_changed(item))
+        decisions = self._run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        decision = decisions[0]
         self.assertEqual(decision.step, "filter_miss")
         self.assertIsNone(decision.trade_id)
         # 落库
@@ -122,7 +128,9 @@ class NewsAnalystServiceTests(unittest.TestCase):
     def test_llm_error_skips_trade(self) -> None:
         analyst = self._make_analyst(llm_raises=RuntimeError("api boom"))
         item = _make_item("Fed cuts SPY rallies hard")
-        decision = self._run(analyst.on_top_changed(item))
+        decisions = self._run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        decision = decisions[0]
         self.assertEqual(decision.step, "llm_error")
         self.assertIsNone(decision.trade_id)
 
@@ -132,7 +140,9 @@ class NewsAnalystServiceTests(unittest.TestCase):
                          '"stop":495,"target":510,"reason":"weak signal"}',
         )
         item = _make_item("S&P 500 unchanged after some random Fed comment")
-        decision = self._run(analyst.on_top_changed(item))
+        decisions = self._run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        decision = decisions[0]
         self.assertEqual(decision.step, "low_confidence")
         self.assertEqual(decision.direction, "long")
         self.assertIsNone(decision.trade_id)
@@ -145,7 +155,9 @@ class NewsAnalystServiceTests(unittest.TestCase):
             current_price=500.0,
         )
         item = _make_item("Fed surprise rate cut, SPY explodes")
-        decision = self._run(analyst.on_top_changed(item))
+        decisions = self._run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        decision = decisions[0]
         self.assertEqual(decision.step, "entry_too_far")
         self.assertIsNone(decision.trade_id)
 
@@ -156,7 +168,9 @@ class NewsAnalystServiceTests(unittest.TestCase):
             current_price=500.0,
         )
         item = _make_item("Fed cuts rates 50bp, SPY futures jump 2%")
-        decision = self._run(analyst.on_top_changed(item))
+        decisions = self._run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        decision = decisions[0]
         self.assertEqual(decision.step, "opened")
         self.assertEqual(decision.direction, "long")
         self.assertAlmostEqual(decision.confidence or 0, 0.85)
@@ -178,7 +192,9 @@ class NewsAnalystServiceTests(unittest.TestCase):
         )
         analyst = self._make_analyst(llm_response=wrapped, current_price=500.0)
         item = _make_item("Fed signals more hikes, SPY tumbles")
-        decision = self._run(analyst.on_top_changed(item))
+        decisions = self._run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        decision = decisions[0]
         self.assertEqual(decision.step, "opened")
         self.assertEqual(decision.direction, "short")
 
@@ -188,7 +204,9 @@ class NewsAnalystServiceTests(unittest.TestCase):
                          '"stop":null,"target":null,"reason":"not market-moving"}',
         )
         item = _make_item("Trump tweets about S&P 500 historical performance")
-        decision = self._run(analyst.on_top_changed(item))
+        decisions = self._run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        decision = decisions[0]
         self.assertEqual(decision.step, "gated")
         self.assertEqual(decision.direction, "none")
         self.assertIsNone(decision.trade_id)
@@ -196,9 +214,80 @@ class NewsAnalystServiceTests(unittest.TestCase):
     def test_garbage_llm_output(self) -> None:
         analyst = self._make_analyst(llm_response="I am thinking very hard about this...")
         item = _make_item("S&P 500 something happened")
-        decision = self._run(analyst.on_top_changed(item))
+        decisions = self._run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        decision = decisions[0]
         self.assertEqual(decision.step, "llm_error")
         self.assertIsNone(decision.trade_id)
+
+
+class MultiUniverseTests(unittest.TestCase):
+    """新闻同时命中多个品种时，每个品种独立跑决策流。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        path = Path(self._tmp.name) / "trades.sqlite3"
+        self.trade_store = TradeStore(path)
+        self.decision_store = NewsDecisionStore(path)
+        self.config = NewsAnalystConfig(
+            enabled=True,
+            universe=(
+                NewsUniverseEntry(instrument_key="alpaca:SPY", aliases=("S&P 500", "SPY")),
+                NewsUniverseEntry(instrument_key="alpaca:QQQ", aliases=("Nasdaq", "QQQ")),
+                NewsUniverseEntry(instrument_key="alpaca:GLD", aliases=("gold", "黄金")),
+            ),
+            min_confidence=0.7, max_entry_distance_pct=0.5,
+            default_size=1.0, llm_timeout_seconds=5.0,
+        )
+
+    def test_news_hits_two_universe_entries_independent_decisions(self) -> None:
+        # 同时提到 S&P 500 和 Nasdaq → SPY 和 QQQ 都命中，GLD 不命中
+        # SPY: LLM 给高置信度 long → 开单
+        # QQQ: LLM 给低置信度 → 拦
+        async def fake_chat(messages):
+            user_msg = next(m["content"] for m in messages if m["role"] == "user")
+            if "alpaca:SPY" in user_msg:
+                return _FakeChatResponse(
+                    '{"direction":"long","confidence":0.9,"entry":500,"stop":495,'
+                    '"target":510,"reason":"strong"}'
+                )
+            if "alpaca:QQQ" in user_msg:
+                return _FakeChatResponse(
+                    '{"direction":"long","confidence":0.4,"entry":400,"stop":395,'
+                    '"target":410,"reason":"weak"}'
+                )
+            return _FakeChatResponse('{"direction":"none","confidence":0,"entry":null,'
+                                     '"stop":null,"target":null,"reason":"n/a"}')
+
+        analyst = NewsAnalyst(
+            config=self.config, decision_store=self.decision_store,
+            trade_store=self.trade_store, llm_chat=fake_chat,
+            current_price_provider=lambda key: 500.0 if key == "alpaca:SPY" else 400.0,
+        )
+        item = _make_item("Fed cuts rates: S&P 500 and Nasdaq surge")
+        decisions = asyncio.run(analyst.on_top_changed(item))
+        # 两个品种命中，所以应该有 2 条 decision
+        self.assertEqual(len(decisions), 2)
+        spy = next(d for d in decisions if d.instrument_key == "alpaca:SPY")
+        qqq = next(d for d in decisions if d.instrument_key == "alpaca:QQQ")
+        self.assertEqual(spy.step, "opened")
+        self.assertIsNotNone(spy.trade_id)
+        self.assertEqual(qqq.step, "low_confidence")
+        self.assertIsNone(qqq.trade_id)
+
+    def test_no_universe_hit_records_filter_miss_once(self) -> None:
+        async def fake_chat(messages):
+            return _FakeChatResponse("UNREACHED")
+
+        analyst = NewsAnalyst(
+            config=self.config, decision_store=self.decision_store,
+            trade_store=self.trade_store, llm_chat=fake_chat,
+        )
+        item = _make_item("Cricket: India beats Australia in Sydney")
+        decisions = asyncio.run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(decisions[0].step, "filter_miss")
 
 
 if __name__ == "__main__":

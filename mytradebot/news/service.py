@@ -13,7 +13,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Protocol
+from typing import Any, Awaitable, Callable, Protocol
 
 from .providers.reuters import FetchResult, ReutersSitemapProvider
 from .store import NewsStore
@@ -75,8 +75,8 @@ class NewsService:
         self.last_error: str | None = None
         self.last_fetched_at_ms: int | None = None
         # news_analyst hook: 顶部头条 url 变化时触发。MVP 用 fire-and-forget；
-        # 回调应自己处理异常，不应让新闻轮询失败。
-        self.on_top_changed: Callable[[NewsItem], Awaitable[None]] | None = None
+        # 回调应自己处理异常，不应让新闻轮询失败。返回值会被忽略。
+        self.on_top_changed: Callable[[NewsItem], Awaitable[Any]] | None = None
         self._last_top_url: str | None = None
 
     async def start(self) -> None:

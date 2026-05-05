@@ -123,17 +123,47 @@ class NewsConfig:
 
 
 @dataclass(frozen=True)
-class NewsAnalystConfig:
-    """说明：news → LLM → 自动 paper trade 的 MVP 配置。
+class NewsUniverseEntry:
+    """说明：news_analyst 白名单的一个品种条目。"""
+    instrument_key: str
+    aliases: tuple[str, ...]
 
-    MVP 范围：只支持单品种 (默认 SPY)、不接 lessons、不做 cooldown 表。
-    扩展方向见 mytradebot/news_analyst/service.py 顶部 TODO。
+
+_DEFAULT_NEWS_UNIVERSE: tuple[NewsUniverseEntry, ...] = (
+    NewsUniverseEntry(
+        instrument_key="alpaca:SPY",
+        aliases=("S&P 500", "S&P500", "SPX", "标普", "S&P", "SPY"),
+    ),
+    NewsUniverseEntry(
+        instrument_key="alpaca:QQQ",
+        aliases=("Nasdaq", "Nasdaq 100", "Nasdaq100", "NDX", "纳指", "纳斯达克", "QQQ"),
+    ),
+    NewsUniverseEntry(
+        instrument_key="alpaca:GLD",
+        aliases=("gold", "黄金", "XAU", "bullion", "GLD"),
+    ),
+    NewsUniverseEntry(
+        instrument_key="alpaca:SLV",
+        aliases=("silver", "白银", "XAG", "SLV"),
+    ),
+    NewsUniverseEntry(
+        instrument_key="alpaca:USO",
+        aliases=("oil", "原油", "WTI", "Brent", "crude", "OPEC", "USO"),
+    ),
+)
+
+
+@dataclass(frozen=True)
+class NewsAnalystConfig:
+    """说明：news → LLM → 自动 paper trade 的配置。
+
+    universe 是品种白名单。一条新闻可能同时命中多个品种 (例如"美联储降息"
+    可能影响 SPY 和 QQQ)，每个命中品种独立跑 verify+gate+下单。
+
+    扩展 TODO 见 mytradebot/news_analyst/service.py 顶部。
     """
     enabled: bool = False
-    instrument_key: str = "alpaca:SPY"
-    aliases: tuple[str, ...] = (
-        "S&P 500", "S&P500", "SPX", "标普", "S&P", "SPY",
-    )
+    universe: tuple[NewsUniverseEntry, ...] = _DEFAULT_NEWS_UNIVERSE
     min_confidence: float = 0.7
     max_entry_distance_pct: float = 0.5  # entry 离当前价的允许偏离 (%)
     default_size: float = 1.0            # paper trade 头寸大小
@@ -390,34 +420,29 @@ def parse_news_config(raw_news: dict[str, Any] | None) -> NewsConfig:
 
 
 def parse_news_analyst_config(raw: dict[str, Any] | None) -> NewsAnalystConfig:
-    """说明：把 [news_analyst] section 解析成 NewsAnalystConfig。"""
+    """说明：把 [news_analyst] section 解析成 NewsAnalystConfig。
+
+    支持两种 universe 格式（向后兼容）：
+    1) 新格式（多品种）:
+        [[news_analyst.universe]]
+        instrument_key = "alpaca:SPY"
+        aliases = ["SPX","S&P 500"]
+    2) 旧格式（MVP 单品种）:
+        instrument_key = "alpaca:SPY"
+        aliases = ["SPX","S&P 500"]
+       自动包成 1-entry universe。
+    """
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
         raise ValueError("news_analyst must be a table")
     defaults = NewsAnalystConfig()
 
-    raw_aliases = raw.get("aliases")
-    if raw_aliases is None:
-        aliases = defaults.aliases
-    elif isinstance(raw_aliases, list):
-        aliases = tuple(
-            str(a).strip() for a in raw_aliases if isinstance(a, str) and a.strip()
-        )
-        if not aliases:
-            aliases = defaults.aliases
-    else:
-        raise ValueError("news_analyst.aliases must be a list of strings")
-
-    instrument_key = raw.get("instrument_key")
-    if instrument_key is not None and not isinstance(instrument_key, str):
-        raise ValueError("news_analyst.instrument_key must be a string")
-    resolved_key = (instrument_key or defaults.instrument_key).strip() or defaults.instrument_key
+    universe = _parse_news_universe(raw, defaults)
 
     return NewsAnalystConfig(
         enabled=_normalize_bool(raw.get("enabled"), "news_analyst.enabled", defaults.enabled),
-        instrument_key=resolved_key,
-        aliases=aliases,
+        universe=universe,
         min_confidence=_coerce_float(
             raw.get("min_confidence"), "news_analyst.min_confidence", defaults.min_confidence,
         ),
@@ -435,6 +460,56 @@ def parse_news_analyst_config(raw: dict[str, Any] | None) -> NewsAnalystConfig:
             defaults.llm_timeout_seconds,
         ),
     )
+
+
+def _parse_news_universe(
+    raw: dict[str, Any], defaults: NewsAnalystConfig,
+) -> tuple[NewsUniverseEntry, ...]:
+    """说明：解析 universe，新/老格式都支持，空值退默认 5 品种。"""
+    raw_universe = raw.get("universe")
+    if raw_universe is not None:
+        if not isinstance(raw_universe, list):
+            raise ValueError("news_analyst.universe must be a list of tables")
+        entries: list[NewsUniverseEntry] = []
+        for idx, entry in enumerate(raw_universe):
+            if not isinstance(entry, dict):
+                raise ValueError(f"news_analyst.universe[{idx}] must be a table")
+            key = entry.get("instrument_key")
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError(f"news_analyst.universe[{idx}].instrument_key required")
+            aliases_raw = entry.get("aliases")
+            if not isinstance(aliases_raw, list):
+                raise ValueError(
+                    f"news_analyst.universe[{idx}].aliases must be a list of strings"
+                )
+            aliases = tuple(
+                str(a).strip() for a in aliases_raw if isinstance(a, str) and a.strip()
+            )
+            if not aliases:
+                raise ValueError(
+                    f"news_analyst.universe[{idx}].aliases must contain at least one alias"
+                )
+            entries.append(NewsUniverseEntry(instrument_key=key.strip(), aliases=aliases))
+        if entries:
+            return tuple(entries)
+
+    # 老格式兼容: instrument_key + aliases 平铺。
+    legacy_key = raw.get("instrument_key")
+    legacy_aliases = raw.get("aliases")
+    if legacy_key is not None or legacy_aliases is not None:
+        if legacy_key is not None and not isinstance(legacy_key, str):
+            raise ValueError("news_analyst.instrument_key must be a string")
+        if legacy_aliases is not None and not isinstance(legacy_aliases, list):
+            raise ValueError("news_analyst.aliases must be a list of strings")
+        key = (legacy_key or defaults.universe[0].instrument_key).strip()
+        aliases = tuple(
+            str(a).strip() for a in (legacy_aliases or []) if isinstance(a, str) and a.strip()
+        )
+        if not aliases:
+            aliases = defaults.universe[0].aliases
+        return (NewsUniverseEntry(instrument_key=key, aliases=aliases),)
+
+    return defaults.universe
 
 
 def parse_cache_config(raw_cache: dict[str, Any] | None) -> CacheConfig:

@@ -1,15 +1,14 @@
-"""文件用途：news_analyst MVP 服务（filter + verify + gate + 落库）一体。
+"""文件用途：news_analyst 服务（filter + verify + gate + 落库）一体。
 
-MVP 只做一个品种 (默认 SPY) 的 paper 自动下单，目标是先把链路跑通。
+# 已完成
+# - [x] 多品种白名单 (TODO-A)：universe 中每个 entry 独立 filter+verify+gate
 
-# 后续 TODO（按优先级排序）
-# - [ ] 多品种白名单：把 NewsAnalystConfig.instrument_key 改成 list[universe entry]，
-#       filter 阶段对每个 entry 单独命中、verify 各自一轮 LLM。
-# - [ ] Lessons 注入：verify prompt 头部塞 trade_store.list_lessons(instrument_key=...) 最近 5 条。
+# 后续 TODO（按优先级）
 # - [ ] Cooldown 表：内存 dict 记 (instrument_key, direction) → last_fill_at，30 分钟内同向跳过。
+# - [ ] K 线印证：拉 1H + 15m candles 进 prompt 给 LLM 看（需要 candle_cache 注入）。
+# - [ ] Lessons 注入：verify prompt 头部塞 trade_store.list_lessons(instrument_key=...) 最近 5 条。
 # - [ ] WebSocket 推 newsDecisions：让前端 News 卡片挂"已分析/已下单"badge。
 # - [ ] OpenAI Chat provider 兼容：当前只走 codex provider.chat()。
-# - [ ] K 线印证：拉 1H + 15m candles 进 prompt 给 LLM 看（需要 candle_cache 注入）。
 """
 from __future__ import annotations
 
@@ -23,7 +22,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
-from ..config import NewsAnalystConfig
+from ..config import NewsAnalystConfig, NewsUniverseEntry
 from ..news.types import NewsItem
 from ..trading.models import TradeDirection, TradeStatus
 from ..trading.store import TradeStore
@@ -284,24 +283,43 @@ class NewsAnalyst:
         self.llm_chat = llm_chat
         self.current_price_provider = current_price_provider
 
-    async def on_top_changed(self, item: NewsItem) -> NewsDecision:
-        """说明：顶部头条变了 → 跑一次完整决策流。返回结果（即使是 skip）。"""
-        instrument_key = self.config.instrument_key
-        now_ms = int(time.time() * 1000)
+    async def on_top_changed(self, item: NewsItem) -> tuple[NewsDecision, ...]:
+        """说明：顶部头条变了 → 对 universe 中所有命中的品种各跑一次决策流。
 
-        # Step 1 - filter
-        if not matches_aliases(item, self.config.aliases):
+        返回值是这条新闻产生的所有决策（每个命中品种一条；全没命中也返回一条
+        filter_miss 决策记到第一个品种上，便于事后看哪些新闻被丢了）。
+        """
+        now_ms = int(time.time() * 1000)
+        # 找到所有命中的 universe entry
+        hits = tuple(
+            entry for entry in self.config.universe
+            if matches_aliases(item, entry.aliases)
+        )
+        if not hits:
             decision = NewsDecision(
-                news_url=item.url, news_title=item.title, instrument_key=instrument_key,
+                news_url=item.url, news_title=item.title,
+                instrument_key=self.config.universe[0].instrument_key if self.config.universe else "",
                 step="filter_miss", direction=None, confidence=None,
                 entry_price=None, stop_price=None, target_price=None,
-                reason="aliases not matched", trade_id=None, created_at_ms=now_ms,
+                reason="no universe alias matched", trade_id=None, created_at_ms=now_ms,
             )
             self.decision_store.insert(decision)
-            return decision
+            return (decision,)
+        decisions: list[NewsDecision] = []
+        for entry in hits:
+            decision = await self._process_one(item, entry, now_ms)
+            decisions.append(decision)
+        return tuple(decisions)
 
-        # Step 2 - verify
-        verdict = await _verify(item, instrument_key, self.llm_chat, self.config.llm_timeout_seconds)
+    async def _process_one(
+        self, item: NewsItem, entry: NewsUniverseEntry, now_ms: int,
+    ) -> NewsDecision:
+        """说明：对单个命中品种跑 verify → gate → 下单。"""
+        instrument_key = entry.instrument_key
+
+        verdict = await _verify(
+            item, instrument_key, self.llm_chat, self.config.llm_timeout_seconds,
+        )
         if verdict is None:
             decision = NewsDecision(
                 news_url=item.url, news_title=item.title, instrument_key=instrument_key,
@@ -313,7 +331,6 @@ class NewsAnalyst:
             self.decision_store.insert(decision)
             return decision
 
-        # Step 3 - gate
         current_price = (
             self.current_price_provider(instrument_key) if self.current_price_provider else None
         )
@@ -330,13 +347,12 @@ class NewsAnalyst:
             self.decision_store.insert(decision)
             return decision
 
-        # Step 4 - open paper trade (market order; broker fills next 1m candle)
         try:
             trade = self.trade_store.create_trade(
                 instrument_key=instrument_key,
                 direction=TradeDirection.LONG if verdict.direction == "long" else TradeDirection.SHORT,
                 size=self.config.default_size,
-                intent_price=None,  # market order
+                intent_price=None,
                 stop_price=verdict.stop,
                 target_prices=(verdict.target,) if verdict.target is not None else (),
                 reasoning_text=f"news_analyst: {item.title} | {verdict.reason}",
