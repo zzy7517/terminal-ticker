@@ -167,6 +167,32 @@ export interface SocialAuthStatus {
   envAvailable: boolean;
 }
 
+export interface SocialFeedItem {
+  source: string;
+  externalId: string;
+  url: string;
+  author: {
+    id: string;
+    name: string;
+    handle: string;
+    profileImageUrl: string;
+    verified: boolean;
+  };
+  text: string;
+  createdAt: string;
+  createdAtMs: number;
+}
+
+export interface SocialMemory {
+  id: number;
+  text: string;
+  source: string | null;
+  externalId: string | null;
+  tags: string[];
+  importance: number;
+  createdAtMs: number;
+}
+
 export interface AgentModelOption {
   slug: string;
   displayName: string;

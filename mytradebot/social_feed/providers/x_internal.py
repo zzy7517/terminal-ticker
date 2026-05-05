@@ -1,6 +1,10 @@
 """文件用途：只读 X/Twitter 内部 GraphQL 客户端。
 
-说明：这是按 xcli 行为重写的最小实现，只支持读取 Following feed。
+说明：这是参考 jackwener/twitter-cli (xcli) 的只读行为重写：
+https://github.com/jackwener/twitter-cli
+
+本文件不是 vendored copy，只保留读取 Following feed 所需的 cookie 鉴权、
+HomeLatestTimeline GraphQL 请求、timeline 解析和基础反限流处理。
 不包含发推、点赞、关注等写操作。
 """
 from __future__ import annotations

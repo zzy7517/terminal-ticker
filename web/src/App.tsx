@@ -44,10 +44,13 @@ import {
   addAlpacaSymbol,
   addBitgetSymbol,
   connectStateSocket,
+  createSocialMemory,
   deleteAgentSession,
   fetchAgentSession,
   fetchAgentSessionHistory,
+  fetchRecentSocialFeed,
   fetchSocialAuthStatus,
+  fetchSocialMemories,
   fetchAgentModels,
   fetchState,
   getTradeDetail,
@@ -87,6 +90,8 @@ import type {
   NewsItem,
   Quote,
   SocialAuthStatus,
+  SocialFeedItem,
+  SocialMemory,
   Trade,
   TradeDetailResponse,
 } from './types';
@@ -2653,6 +2658,8 @@ function SocialSettingsPanel({
   const [savingAuth, setSavingAuth] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [feedPreview, setFeedPreview] = useState<SocialFeedItem[]>([]);
+  const [memoryPreview, setMemoryPreview] = useState<SocialMemory | null>(null);
   const [status, setStatus] = useState('Save X cookies locally, then enable the social feed reader.');
 
   useEffect(() => {
@@ -2726,13 +2733,48 @@ function SocialSettingsPanel({
     setStatus('Testing X Following refresh...');
     try {
       const result = await triggerXFollowingRefresh(3);
+      const items = await fetchRecentSocialFeed(3);
+      setFeedPreview(items);
       setStatus(
         result.status === 'ok'
-          ? `Refresh ok. New ${result.inserted}, cached ${result.totalRecent}.`
+          ? `Refresh ok. New ${result.inserted}, cached ${result.totalRecent}, showing ${items.length}.`
           : `Refresh ${result.status}: ${result.error ?? 'unknown error'}`,
       );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Refresh failed.');
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function loadCachedFeed() {
+    setTesting(true);
+    setStatus('Loading cached social feed sample...');
+    try {
+      const items = await fetchRecentSocialFeed(3);
+      setFeedPreview(items);
+      setStatus(items.length ? `Loaded ${items.length} cached item(s).` : 'No cached feed items yet.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Cached feed load failed.');
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function testMemoryWrite() {
+    setTesting(true);
+    setStatus('Writing a test social memory...');
+    try {
+      const memory = await createSocialMemory({
+        memory: `Social settings memory test (${new Date().toLocaleString()})`,
+        tags: ['settings-test'],
+        importance: 1,
+      });
+      setMemoryPreview(memory);
+      const memories = await fetchSocialMemories(1);
+      setStatus(`Memory test saved. Latest memory id: ${memories[0]?.id ?? memory.id}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Memory test failed.');
     } finally {
       setTesting(false);
     }
@@ -2835,6 +2877,59 @@ function SocialSettingsPanel({
             <EyeOff size={14} />
             Values are written to the backend local cache with file permissions tightened to owner-only.
           </div>
+
+          <div className="social-test-panel">
+            <div className="provider-section-head">
+              <strong>Quick Tests</strong>
+              <span className="provider-inline-badge">manual</span>
+            </div>
+            <div className="settings-action-row">
+              <button
+                className="shell-button"
+                type="button"
+                disabled={!config.enabled || !hasUsableAuth || testing}
+                onClick={testRefresh}
+              >
+                {testing ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
+                Refresh + cache
+              </button>
+              <button
+                className="shell-button"
+                type="button"
+                disabled={!config.enabled || testing}
+                onClick={loadCachedFeed}
+              >
+                <Search size={15} />
+                Read cache
+              </button>
+              <button
+                className="shell-button"
+                type="button"
+                disabled={!config.enabled || testing}
+                onClick={testMemoryWrite}
+              >
+                <Save size={15} />
+                Write memory
+              </button>
+            </div>
+            {feedPreview.length > 0 && (
+              <div className="social-test-preview">
+                {feedPreview.map((item) => (
+                  <div key={`${item.source}:${item.externalId}`} className="social-test-preview__item">
+                    <strong>@{item.author.handle}</strong>
+                    <span>{item.text.slice(0, 160) || '(empty tweet)'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {memoryPreview && (
+              <div className="social-test-memory">
+                <span className="panel-label">Latest test memory</span>
+                <strong>#{memoryPreview.id}</strong>
+                <span>{memoryPreview.text}</span>
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="provider-detail">
@@ -2879,18 +2974,6 @@ function SocialSettingsPanel({
                 {authStatus?.hasSavedAuth ? 'Saved local auth' : authStatus?.envAvailable ? 'Environment' : 'Missing'}
               </strong>
             </div>
-          </div>
-
-          <div className="settings-action-row">
-            <button
-              className="shell-button"
-              type="button"
-              disabled={!config.enabled || !hasUsableAuth || testing}
-              onClick={testRefresh}
-            >
-              {testing ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
-              Test refresh
-            </button>
           </div>
 
           <div className="provider-status-bar">{status}</div>

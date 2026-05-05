@@ -13,6 +13,8 @@ import type {
   NewsItem,
   SecuritySearchResult,
   SocialAuthStatus,
+  SocialFeedItem,
+  SocialMemory,
   SocialFeedConfigUpdate,
   Trade,
   TradeDetailResponse,
@@ -306,6 +308,46 @@ export async function triggerXFollowingRefresh(count = 3): Promise<{
     throw await responseError(response, 'X refresh failed');
   }
   return response.json();
+}
+
+// Reads locally cached social feed items for settings-page smoke tests.
+export async function fetchRecentSocialFeed(limit = 3): Promise<SocialFeedItem[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const response = await fetch(`/api/social/feed?${params}`);
+  if (!response.ok) {
+    throw await responseError(response, 'social feed fetch failed');
+  }
+  const payload = await response.json();
+  return payload.items ?? [];
+}
+
+// Writes a small social memory, used by the settings-page explicit memory test.
+export async function createSocialMemory(payload: {
+  memory: string;
+  tags?: string[];
+  importance?: number;
+}): Promise<SocialMemory> {
+  const response = await fetch('/api/social/memories', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'social memory save failed');
+  }
+  const body = await response.json();
+  return body.memory;
+}
+
+// Reads social memories for settings-page smoke tests.
+export async function fetchSocialMemories(limit = 3): Promise<SocialMemory[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const response = await fetch(`/api/social/memories?${params}`);
+  if (!response.ok) {
+    throw await responseError(response, 'social memories fetch failed');
+  }
+  const payload = await response.json();
+  return payload.memories ?? [];
 }
 
 // Saves the selected K-line interval for a single watchlist instrument.
