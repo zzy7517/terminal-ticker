@@ -2962,6 +2962,28 @@ textarea:focus-visible {
   padding: 14px;
 }
 
+.social-test-count {
+  display: grid;
+  gap: 6px;
+}
+
+.social-test-count input {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--mono);
+  min-height: 38px;
+  padding: 0 10px;
+  width: min(180px, 100%);
+}
+
+.social-test-count small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .social-test-preview {
   display: grid;
   gap: 8px;

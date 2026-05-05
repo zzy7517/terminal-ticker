@@ -2659,6 +2659,7 @@ function SocialSettingsPanel({
   const [recentLimitInput, setRecentLimitInput] = useState('');
   const [retentionDaysInput, setRetentionDaysInput] = useState('');
   const [maxItemsInput, setMaxItemsInput] = useState('');
+  const [refreshCountInput, setRefreshCountInput] = useState('20');
   const [status, setStatus] = useState('Save X cookies locally, then enable the social feed reader.');
 
   useEffect(() => {
@@ -2761,11 +2762,16 @@ function SocialSettingsPanel({
   }
 
   async function testRefresh() {
+    const refreshCount = Number.parseInt(refreshCountInput, 10);
+    if (!Number.isFinite(refreshCount) || refreshCount < 1 || refreshCount > 100) {
+      setStatus('Refresh count must be between 1 and 100.');
+      return;
+    }
     setTesting(true);
-    setStatus('Testing X Following refresh...');
+    setStatus(`Testing X Following refresh with ${refreshCount} item(s)...`);
     try {
-      const result = await triggerXFollowingRefresh(3);
-      const items = await fetchRecentSocialFeed(3);
+      const result = await triggerXFollowingRefresh(refreshCount);
+      const items = await fetchRecentSocialFeed(Math.min(refreshCount, 20));
       setFeedPreview(items);
       setStatus(
         result.status === 'ok'
@@ -2780,10 +2786,15 @@ function SocialSettingsPanel({
   }
 
   async function loadCachedFeed() {
+    const refreshCount = Number.parseInt(refreshCountInput, 10);
+    if (!Number.isFinite(refreshCount) || refreshCount < 1 || refreshCount > 100) {
+      setStatus('Refresh count must be between 1 and 100.');
+      return;
+    }
     setTesting(true);
     setStatus('Loading cached social feed sample...');
     try {
-      const items = await fetchRecentSocialFeed(3);
+      const items = await fetchRecentSocialFeed(Math.min(refreshCount, 20));
       setFeedPreview(items);
       setStatus(items.length ? `Loaded ${items.length} cached item(s).` : 'No cached feed items yet.');
     } catch (error) {
@@ -2816,6 +2827,9 @@ function SocialSettingsPanel({
     parsedRecentLimit !== config.recentLimit ||
     parsedRetentionDays !== config.retentionDays ||
     parsedMaxItems !== config.maxItems;
+  const parsedRefreshCount = Number.parseInt(refreshCountInput, 10);
+  const refreshCountValid =
+    Number.isFinite(parsedRefreshCount) && parsedRefreshCount >= 1 && parsedRefreshCount <= 100;
 
   return (
     <>
@@ -2912,11 +2926,23 @@ function SocialSettingsPanel({
               <strong>Quick Tests</strong>
               <span className="provider-inline-badge">manual</span>
             </div>
+            <label className="social-test-count">
+              <span className="panel-label">Refresh count</span>
+              <input
+                value={refreshCountInput}
+                onChange={(event) => setRefreshCountInput(event.target.value)}
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+              />
+              <small>Controls the POST /api/social/x/refresh payload count. Preview shows up to 20 items.</small>
+            </label>
             <div className="settings-action-row">
               <button
                 className="shell-button"
                 type="button"
-                disabled={!config.enabled || !hasUsableAuth || testing}
+                disabled={!config.enabled || !hasUsableAuth || testing || !refreshCountValid}
                 onClick={testRefresh}
               >
                 {testing ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
@@ -2925,7 +2951,7 @@ function SocialSettingsPanel({
               <button
                 className="shell-button"
                 type="button"
-                disabled={!config.enabled || testing}
+                disabled={!config.enabled || testing || !refreshCountValid}
                 onClick={loadCachedFeed}
               >
                 <Search size={15} />
