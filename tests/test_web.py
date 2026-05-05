@@ -595,6 +595,51 @@ class WebTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in delete_payload["history"]["sessions"]], [second.id])
         self.assertEqual(missing_response.status_code, 404)
 
+    def test_agent_session_history_delete_last_clears_state(self) -> None:
+        """Verify deleting the only session for an instrument clears agentAnalyses and history."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            instrument = AlpacaInstrument("AAPL", "AAPL")
+            store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
+            only_session = store.create_session(
+                instrument_key=instrument.key,
+                title="AAPL · AAPL",
+                provider="codex",
+                model="only-model",
+            )
+            store.append_message(
+                session_id=only_session.id,
+                role="user",
+                content="Lonely prompt",
+            )
+            store.append_message(
+                session_id=only_session.id,
+                role="assistant",
+                content="Lonely analysis.",
+                analysis={"summary": "Lonely analysis.", "bias": "neutral", "confidence": 30},
+            )
+            app = create_app(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                agent_session_store=store,
+                auto_start=False,
+            )
+
+            with TestClient(app) as client:
+                # Prime agentAnalyses so we can confirm it gets cleared.
+                client.post(f"/api/agent/sessions/alpaca:AAPL/history/{only_session.id}/resume")
+                delete_response = client.delete(
+                    f"/api/agent/sessions/alpaca:AAPL/history/{only_session.id}",
+                )
+
+        delete_payload = delete_response.json()
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertTrue(delete_payload["deleted"])
+        self.assertIsNone(delete_payload["session"]["session"])
+        self.assertEqual(delete_payload["session"]["messages"], [])
+        self.assertEqual(delete_payload["history"]["sessions"], [])
+        self.assertNotIn(instrument.key, delete_payload["state"]["agentAnalyses"])
+
     def test_agent_loop_prompt_includes_market_context_snapshot(self) -> None:
         """Verify tool loop still gets authoritative market context before any tool calls."""
         class FakeLoopProvider:

@@ -275,10 +275,10 @@ class AgentSessionStore:
         title: str,
         provider: str,
         model: str,
-        api_mode: str | None = None,
-        reasoning_effort: str | None = None,
-        max_iterations: int | None = None,
-        use_tools: bool | None = None,
+        api_mode: str | None,
+        reasoning_effort: str | None,
+        max_iterations: int | None,
+        use_tools: bool | None,
     ) -> AgentSession:
         """说明：刷新 active 会话当前使用的 provider/model 展示元数据。"""
         clean_title = title.strip()
@@ -474,7 +474,7 @@ class AgentSessionStore:
         return _session_from_row(refreshed)
 
     def delete_session(self, *, instrument_key: str, session_id: str) -> AgentSession | None:
-        """说明：删除指定历史会话；如果删的是 active，会恢复最近剩余会话为 active。"""
+        """说明：删除指定历史会话，并保证此后该标的恰好剩一个 active 会话（若仍有剩余）。"""
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -486,39 +486,29 @@ class AgentSessionStore:
             ).fetchone()
             if row is None:
                 raise ValueError(f"agent session not found: {session_id}")
-            was_active = bool(row["active"])
             connection.execute("DELETE FROM agent_sessions WHERE id = ?", (session_id,))
-            if not was_active:
-                active_row = connection.execute(
-                    """
-                    SELECT *
-                    FROM agent_sessions
-                    WHERE instrument_key = ? AND active = 1
-                    ORDER BY updated_at DESC
-                    LIMIT 1
-                    """,
-                    (instrument_key,),
-                ).fetchone()
-                return _session_from_row(active_row) if active_row else None
-
             next_row = connection.execute(
                 """
                 SELECT *
                 FROM agent_sessions
                 WHERE instrument_key = ?
-                ORDER BY updated_at DESC, created_at DESC
+                ORDER BY active DESC, updated_at DESC, created_at DESC
                 LIMIT 1
                 """,
                 (instrument_key,),
             ).fetchone()
             if next_row is None:
                 return None
-            connection.execute("UPDATE agent_sessions SET active = 1 WHERE id = ?", (next_row["id"],))
-            refreshed = connection.execute(
-                "SELECT * FROM agent_sessions WHERE id = ?",
-                (next_row["id"],),
-            ).fetchone()
-        return _session_from_row(refreshed)
+            if not bool(next_row["active"]):
+                connection.execute(
+                    "UPDATE agent_sessions SET active = 1 WHERE id = ?",
+                    (next_row["id"],),
+                )
+                next_row = connection.execute(
+                    "SELECT * FROM agent_sessions WHERE id = ?",
+                    (next_row["id"],),
+                ).fetchone()
+        return _session_from_row(next_row)
 
     def history_for_context(self, session_id: str, *, limit: int = 8) -> tuple[dict[str, Any], ...]:
         """说明：把最近消息压缩成可发送给 LLM 的会话上下文。"""
