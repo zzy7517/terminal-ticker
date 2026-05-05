@@ -168,6 +168,7 @@ class NewsAnalystConfig:
     max_entry_distance_pct: float = 0.5  # entry 离当前价的允许偏离 (%)
     default_size: float = 1.0            # paper trade 头寸大小
     llm_timeout_seconds: float = 20.0
+    cooldown_minutes: int = 30           # 同品种同方向 N 分钟内不重复开
 
 
 @dataclass(frozen=True)
@@ -458,6 +459,12 @@ def parse_news_analyst_config(raw: dict[str, Any] | None) -> NewsAnalystConfig:
             raw.get("llm_timeout_seconds"),
             "news_analyst.llm_timeout_seconds",
             defaults.llm_timeout_seconds,
+        ),
+        cooldown_minutes=_coerce_min_int(
+            raw.get("cooldown_minutes"),
+            "news_analyst.cooldown_minutes",
+            defaults.cooldown_minutes,
+            0,
         ),
     )
 

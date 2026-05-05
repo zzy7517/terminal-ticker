@@ -221,6 +221,85 @@ class NewsAnalystServiceTests(unittest.TestCase):
         self.assertIsNone(decision.trade_id)
 
 
+class CooldownTests(unittest.TestCase):
+    """同品种同方向 N 分钟内不重复开。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        path = Path(self._tmp.name) / "trades.sqlite3"
+        self.trade_store = TradeStore(path)
+        self.decision_store = NewsDecisionStore(path)
+        self.config = NewsAnalystConfig(
+            enabled=True,
+            universe=(NewsUniverseEntry(instrument_key="alpaca:SPY", aliases=("SPY",)),),
+            min_confidence=0.7, max_entry_distance_pct=5.0,
+            default_size=1.0, llm_timeout_seconds=5.0,
+            cooldown_minutes=30,
+        )
+
+    def _analyst(self, llm_response: str) -> NewsAnalyst:
+        async def fake_chat(messages):
+            return _FakeChatResponse(content=llm_response)
+        return NewsAnalyst(
+            config=self.config, decision_store=self.decision_store,
+            trade_store=self.trade_store, llm_chat=fake_chat,
+            current_price_provider=lambda key: 500.0,
+        )
+
+    def test_second_same_direction_blocked_by_cooldown(self) -> None:
+        analyst = self._analyst(
+            '{"direction":"long","confidence":0.9,"entry":500,"stop":495,'
+            '"target":510,"reason":"strong"}'
+        )
+        item1 = _make_item("Fed cuts SPY rallies", url="https://x/1")
+        d1 = asyncio.run(analyst.on_top_changed(item1))[0]
+        self.assertEqual(d1.step, "opened")
+        item2 = _make_item("More dovish Fed comments, SPY up", url="https://x/2")
+        d2 = asyncio.run(analyst.on_top_changed(item2))[0]
+        self.assertEqual(d2.step, "cooldown")
+        self.assertIsNone(d2.trade_id)
+
+    def test_opposite_direction_not_blocked(self) -> None:
+        # 第一次 long, 第二次 short → cooldown key 不同, 不阻塞
+        analyst = self._analyst(
+            '{"direction":"long","confidence":0.9,"entry":500,"stop":495,'
+            '"target":510,"reason":"strong"}'
+        )
+        item1 = _make_item("Fed cuts SPY", url="https://x/1")
+        asyncio.run(analyst.on_top_changed(item1))
+
+        async def fake_chat_short(messages):
+            return _FakeChatResponse(
+                '{"direction":"short","confidence":0.9,"entry":500,"stop":505,'
+                '"target":490,"reason":"reversal"}'
+            )
+        analyst.llm_chat = fake_chat_short
+        item2 = _make_item("Fed surprise hawkish, SPY tumbles", url="https://x/2")
+        d2 = asyncio.run(analyst.on_top_changed(item2))[0]
+        self.assertEqual(d2.step, "opened")
+        self.assertEqual(d2.direction, "short")
+
+    def test_zero_cooldown_disables_check(self) -> None:
+        self.config = NewsAnalystConfig(
+            enabled=True,
+            universe=(NewsUniverseEntry(instrument_key="alpaca:SPY", aliases=("SPY",)),),
+            min_confidence=0.7, max_entry_distance_pct=5.0,
+            default_size=1.0, llm_timeout_seconds=5.0,
+            cooldown_minutes=0,
+        )
+        analyst = self._analyst(
+            '{"direction":"long","confidence":0.9,"entry":500,"stop":495,'
+            '"target":510,"reason":"strong"}'
+        )
+        item1 = _make_item("SPY 1", url="https://x/1")
+        item2 = _make_item("SPY 2", url="https://x/2")
+        d1 = asyncio.run(analyst.on_top_changed(item1))[0]
+        d2 = asyncio.run(analyst.on_top_changed(item2))[0]
+        self.assertEqual(d1.step, "opened")
+        self.assertEqual(d2.step, "opened")
+
+
 class MultiUniverseTests(unittest.TestCase):
     """新闻同时命中多个品种时，每个品种独立跑决策流。"""
 

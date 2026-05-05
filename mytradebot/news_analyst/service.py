@@ -2,9 +2,9 @@
 
 # 已完成
 # - [x] 多品种白名单 (TODO-A)：universe 中每个 entry 独立 filter+verify+gate
+# - [x] Cooldown 表 (TODO-B)：(instrument_key, direction) → last_open_ms, 内存
 
 # 后续 TODO（按优先级）
-# - [ ] Cooldown 表：内存 dict 记 (instrument_key, direction) → last_fill_at，30 分钟内同向跳过。
 # - [ ] K 线印证：拉 1H + 15m candles 进 prompt 给 LLM 看（需要 candle_cache 注入）。
 # - [ ] Lessons 注入：verify prompt 头部塞 trade_store.list_lessons(instrument_key=...) 最近 5 条。
 # - [ ] WebSocket 推 newsDecisions：让前端 News 卡片挂"已分析/已下单"badge。
@@ -282,6 +282,9 @@ class NewsAnalyst:
         self.trade_store = trade_store
         self.llm_chat = llm_chat
         self.current_price_provider = current_price_provider
+        # Cooldown: (instrument_key, direction) → last_open_ms
+        # 内存即可，重启清零（重启后 N 分钟内偶尔重开同向单可以接受）。
+        self._last_open_ms: dict[tuple[str, str], int] = {}
 
     async def on_top_changed(self, item: NewsItem) -> tuple[NewsDecision, ...]:
         """说明：顶部头条变了 → 对 universe 中所有命中的品种各跑一次决策流。
@@ -347,6 +350,23 @@ class NewsAnalyst:
             self.decision_store.insert(decision)
             return decision
 
+        # Cooldown 检查：同品种同方向 N 分钟内不重复开。
+        cooldown_ms = self.config.cooldown_minutes * 60 * 1000
+        cooldown_key = (instrument_key, verdict.direction)
+        last_open_ms = self._last_open_ms.get(cooldown_key)
+        if cooldown_ms > 0 and last_open_ms is not None and (now_ms - last_open_ms) < cooldown_ms:
+            remaining_min = (cooldown_ms - (now_ms - last_open_ms)) / 60_000
+            decision = NewsDecision(
+                news_url=item.url, news_title=item.title, instrument_key=instrument_key,
+                step="cooldown",
+                direction=verdict.direction, confidence=verdict.confidence,
+                entry_price=verdict.entry, stop_price=verdict.stop, target_price=verdict.target,
+                reason=f"cooldown {remaining_min:.1f}min remaining for {verdict.direction}",
+                trade_id=None, created_at_ms=now_ms,
+            )
+            self.decision_store.insert(decision)
+            return decision
+
         try:
             trade = self.trade_store.create_trade(
                 instrument_key=instrument_key,
@@ -380,6 +400,8 @@ class NewsAnalyst:
             reason=verdict.reason, trade_id=trade_id, created_at_ms=now_ms,
         )
         self.decision_store.insert(decision)
+        # 标记 cooldown
+        self._last_open_ms[(instrument_key, verdict.direction)] = now_ms
         LOGGER.info(
             "news_analyst: opened paper trade #%s on %s direction=%s confidence=%.2f",
             trade_id, instrument_key, verdict.direction, verdict.confidence,
