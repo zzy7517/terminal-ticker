@@ -1,11 +1,10 @@
-"""文件用途：社交信息流与记忆的本地 SQLite 存储。"""
+"""文件用途：社交信息流的本地 SQLite 缓存。"""
 from __future__ import annotations
 
 import json
 import os
 import sqlite3
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -25,32 +24,8 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-@dataclass(frozen=True)
-class SocialFeedMemory:
-    """说明：由 agent 或用户沉淀的一条社交流记忆。"""
-
-    id: int
-    text: str
-    source: str | None
-    external_id: str | None
-    tags: tuple[str, ...]
-    importance: int
-    created_at_ms: int
-
-    def to_payload(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "text": self.text,
-            "source": self.source,
-            "externalId": self.external_id,
-            "tags": list(self.tags),
-            "importance": self.importance,
-            "createdAtMs": self.created_at_ms,
-        }
-
-
 class SocialFeedStore:
-    """说明：SQLite 支撑的社交流缓存与记忆存储。"""
+    """说明：SQLite 支撑的社交流缓存。"""
 
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path).expanduser() if path is not None else default_social_feed_store_path()
@@ -93,25 +68,6 @@ class SocialFeedStore:
             """
             CREATE INDEX IF NOT EXISTS idx_social_feed_created
             ON social_feed_items(created_at_ms DESC)
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS social_memories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source TEXT,
-                external_id TEXT,
-                text TEXT NOT NULL,
-                tags_json TEXT NOT NULL,
-                importance INTEGER NOT NULL,
-                created_at_ms INTEGER NOT NULL
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_social_memories_created
-            ON social_memories(created_at_ms DESC)
             """
         )
         connection.commit()
@@ -259,38 +215,6 @@ class SocialFeedStore:
             connection.commit()
             return cursor.rowcount or 0
 
-    def recent_memories(
-        self,
-        *,
-        limit: int = 50,
-        tag: str | None = None,
-    ) -> list[SocialFeedMemory]:
-        """按创建时间倒序读取记忆。"""
-        resolved_limit = max(1, min(int(limit), 200))
-        with self._connect() as connection:
-            if tag:
-                rows = connection.execute(
-                    """
-                    SELECT *
-                    FROM social_memories
-                    WHERE tags_json LIKE ? ESCAPE '\\'
-                    ORDER BY created_at_ms DESC
-                    LIMIT ?
-                    """,
-                    (f"%{self._escape_like(json.dumps(tag, ensure_ascii=False))}%", resolved_limit),
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT *
-                    FROM social_memories
-                    ORDER BY created_at_ms DESC
-                    LIMIT ?
-                    """,
-                    (resolved_limit,),
-                ).fetchall()
-        return [self._row_to_memory(row) for row in rows]
-
     @staticmethod
     def _item_db_values(item: SocialFeedItem) -> tuple[Any, ...]:
         return (
@@ -402,22 +326,3 @@ class SocialFeedStore:
             raw={},
         )
 
-    @staticmethod
-    def _escape_like(value: str) -> str:
-        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-    @staticmethod
-    def _row_to_memory(row: sqlite3.Row) -> SocialFeedMemory:
-        try:
-            tags = tuple(json.loads(row["tags_json"]) or ())
-        except (TypeError, ValueError, json.JSONDecodeError):
-            tags = ()
-        return SocialFeedMemory(
-            id=int(row["id"]),
-            text=row["text"],
-            source=row["source"],
-            external_id=row["external_id"],
-            tags=tags,
-            importance=int(row["importance"]),
-            created_at_ms=int(row["created_at_ms"]),
-        )

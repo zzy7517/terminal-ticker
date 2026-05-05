@@ -1677,20 +1677,6 @@ def create_app(
             "items": [item.to_payload() for item in items],
         }
 
-    @app.get("/api/social/memories")
-    async def get_social_memories_endpoint(
-        request: Request,
-        limit: int = 50,
-        tag: str | None = None,
-    ) -> dict[str, Any]:
-        """说明：读取最近社交流记忆。"""
-        _require_local_social_request(request)
-        if runtime.social_feed_service is None:
-            return {"memories": [], "enabled": False}
-        resolved = max(1, min(int(limit), 200))
-        memories = runtime.social_feed_service.store.recent_memories(limit=resolved, tag=tag)
-        return {"memories": [memory.to_payload() for memory in memories], "enabled": True}
-
     @app.get("/api/social/auth")
     async def get_social_auth_endpoint(request: Request) -> dict[str, Any]:
         """说明：读取 X auth 保存状态，不返回明文。"""

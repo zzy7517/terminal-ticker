@@ -14,7 +14,6 @@ import type {
   SecuritySearchResult,
   SocialAuthStatus,
   SocialFeedItem,
-  SocialMemory,
   SocialFeedConfigUpdate,
   Trade,
   TradeDetailResponse,
@@ -319,17 +318,6 @@ export async function fetchRecentSocialFeed(limit = 3): Promise<SocialFeedItem[]
   }
   const payload = await response.json();
   return payload.items ?? [];
-}
-
-// Reads locally saved social memories without exposing any write path.
-export async function fetchSocialMemories(limit = 3): Promise<SocialMemory[]> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  const response = await fetch(`/api/social/memories?${params}`);
-  if (!response.ok) {
-    throw await responseError(response, 'social memories fetch failed');
-  }
-  const payload = await response.json();
-  return payload.memories ?? [];
 }
 
 // Saves the selected K-line interval for a single watchlist instrument.

@@ -627,30 +627,6 @@ def build_social_feed_tools(social_feed_service: Any) -> ToolRegistry:
         handler=get_recent_social_feed,
     ))
 
-    async def get_social_memories(limit: int = 20, tag: str | None = None) -> str:
-        """读取最近社交流记忆。"""
-        if social_feed_service is None:
-            return _disabled_reply("get social memories")
-        resolved_limit = max(1, min(int(limit or 20), 100))
-        memories = social_feed_service.store.recent_memories(limit=resolved_limit, tag=tag)
-        return _json_output({
-            "count": len(memories),
-            "memories": [memory.to_payload() for memory in memories],
-        })
-
-    registry.register(ToolDefinition(
-        name="get_social_memories",
-        description="读取最近保存的 X/Twitter 交易信息流记忆，可选按标签过滤。",
-        parameters={
-            "type": "object",
-            "properties": {
-                "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
-                "tag": {"type": ["string", "null"], "description": "可选标签过滤"},
-            },
-        },
-        handler=get_social_memories,
-    ))
-
     return registry
 
 

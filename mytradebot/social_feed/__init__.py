@@ -3,13 +3,12 @@ from __future__ import annotations
 
 from .auth import XAuthStatus, XAuthStore, default_x_auth_store_path
 from .service import SocialFeedRefreshOutcome, SocialFeedService
-from .store import SocialFeedMemory, SocialFeedStore, default_social_feed_store_path
+from .store import SocialFeedStore, default_social_feed_store_path
 from .types import SocialAuthor, SocialFeedItem, SocialMetrics
 
 __all__ = [
     "SocialAuthor",
     "SocialFeedItem",
-    "SocialFeedMemory",
     "SocialFeedRefreshOutcome",
     "SocialFeedService",
     "SocialFeedStore",
