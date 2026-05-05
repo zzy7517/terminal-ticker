@@ -342,6 +342,16 @@ class MarketRuntime:
             quote = self.controller.quotes.get(instrument_key)
             return quote.price if quote is not None else None
 
+        def _candles(instrument_key: str, interval: str, limit: int):
+            """从 controller 内存里拿 multi-timeframe candles。"""
+            quote = self.controller.quotes.get(instrument_key)
+            if quote is None:
+                return ()
+            mtf = quote.multi_timeframe_candles or {}
+            candles = mtf.get(interval) or ()
+            # 已是按时间正序的 tuple，限制条数取最近 N 根
+            return tuple(candles[-limit:]) if limit > 0 else tuple(candles)
+
         async def _llm_chat(messages: list[dict[str, Any]]) -> Any:
             return await llm_provider.chat(messages)
 
@@ -351,6 +361,7 @@ class MarketRuntime:
             trade_store=self.trade_store,
             llm_chat=_llm_chat,
             current_price_provider=_current_price,
+            candle_provider=_candles,
         )
         self.news_analyst = analyst
         assert self.news_service is not None

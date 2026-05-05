@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from mytradebot.config import NewsAnalystConfig, NewsUniverseEntry
+from mytradebot.domain.price_action import Candle
 from mytradebot.news.types import NewsItem
 from mytradebot.news_analyst.service import (
     NewsAnalyst,
@@ -367,6 +368,108 @@ class MultiUniverseTests(unittest.TestCase):
         decisions = asyncio.run(analyst.on_top_changed(item))
         self.assertEqual(len(decisions), 1)
         self.assertEqual(decisions[0].step, "filter_miss")
+
+
+class CandleVerificationTests(unittest.TestCase):
+    """K 线注入：candles 出现在 LLM 看到的 prompt 里。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        path = Path(self._tmp.name) / "trades.sqlite3"
+        self.trade_store = TradeStore(path)
+        self.decision_store = NewsDecisionStore(path)
+        self.config = NewsAnalystConfig(
+            enabled=True,
+            universe=(NewsUniverseEntry(instrument_key="alpaca:SPY", aliases=("SPY",)),),
+            min_confidence=0.7, max_entry_distance_pct=5.0,
+            default_size=1.0, llm_timeout_seconds=5.0, cooldown_minutes=0,
+        )
+
+    def _make_candles(self, base_time_ms: int) -> tuple[Candle, ...]:
+        """造 5 根连续 1H K 线，价格阶梯上涨。"""
+        return tuple(
+            Candle(
+                symbol_key="alpaca:SPY",
+                open_time_ms=base_time_ms + i * 3600_000,
+                open=500.0 + i, high=501.0 + i, low=499.0 + i, close=500.5 + i,
+                volume=1000.0,
+            )
+            for i in range(5)
+        )
+
+    def test_candles_appear_in_prompt_when_provided(self) -> None:
+        captured_messages: list[list[dict]] = []
+
+        async def capture_chat(messages):
+            captured_messages.append(messages)
+            return _FakeChatResponse(
+                '{"direction":"long","confidence":0.9,"entry":504.5,"stop":498,'
+                '"target":510,"reason":"news bullish + 1H trend up confirms"}'
+            )
+
+        candles = self._make_candles(int(time.time() * 1000) - 5 * 3600_000)
+        analyst = NewsAnalyst(
+            config=self.config, decision_store=self.decision_store,
+            trade_store=self.trade_store, llm_chat=capture_chat,
+            current_price_provider=lambda key: 504.5,
+            candle_provider=lambda key, tf, limit: candles if tf == "1H" else (),
+        )
+        item = _make_item("Fed cuts: SPY surges")
+        decisions = asyncio.run(analyst.on_top_changed(item))
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(decisions[0].step, "opened")
+        # prompt 里应该看到 candles section
+        user_prompt = next(m["content"] for m in captured_messages[0] if m["role"] == "user")
+        self.assertIn("Candles", user_prompt)
+        self.assertIn("[1H]", user_prompt)
+        # 5 根 candle 都序列化进去
+        for c in candles:
+            self.assertIn(f"{c.close:.2f}", user_prompt)
+
+    def test_no_candle_provider_still_runs(self) -> None:
+        """candle_provider=None 时 prompt 写 (none available)，整个流程不报错。"""
+        captured: list[list[dict]] = []
+
+        async def capture_chat(messages):
+            captured.append(messages)
+            return _FakeChatResponse(
+                '{"direction":"long","confidence":0.9,"entry":500,"stop":495,'
+                '"target":510,"reason":"strong"}'
+            )
+
+        analyst = NewsAnalyst(
+            config=self.config, decision_store=self.decision_store,
+            trade_store=self.trade_store, llm_chat=capture_chat,
+            current_price_provider=lambda key: 500.0,
+            candle_provider=None,
+        )
+        item = _make_item("SPY moving on news")
+        decisions = asyncio.run(analyst.on_top_changed(item))
+        self.assertEqual(decisions[0].step, "opened")
+        user_prompt = next(m["content"] for m in captured[0] if m["role"] == "user")
+        self.assertIn("(none available)", user_prompt)
+
+    def test_candle_provider_raises_does_not_kill_flow(self) -> None:
+        """provider 抛异常 → 兜成空候选，verify 仍能继续。"""
+        async def fake_chat(messages):
+            return _FakeChatResponse(
+                '{"direction":"long","confidence":0.85,"entry":500,"stop":495,'
+                '"target":510,"reason":"news only"}'
+            )
+
+        def broken(key, tf, limit):
+            raise RuntimeError("cache exploded")
+
+        analyst = NewsAnalyst(
+            config=self.config, decision_store=self.decision_store,
+            trade_store=self.trade_store, llm_chat=fake_chat,
+            current_price_provider=lambda key: 500.0,
+            candle_provider=broken,
+        )
+        item = _make_item("SPY headline")
+        decisions = asyncio.run(analyst.on_top_changed(item))
+        self.assertEqual(decisions[0].step, "opened")  # 仍然能下单
 
 
 if __name__ == "__main__":

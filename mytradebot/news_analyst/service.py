@@ -3,9 +3,9 @@
 # 已完成
 # - [x] 多品种白名单 (TODO-A)：universe 中每个 entry 独立 filter+verify+gate
 # - [x] Cooldown 表 (TODO-B)：(instrument_key, direction) → last_open_ms, 内存
+# - [x] K 线印证 (TODO-C)：1H+15m candles 序列化进 prompt，LLM 据此印证或反驳
 
 # 后续 TODO（按优先级）
-# - [ ] K 线印证：拉 1H + 15m candles 进 prompt 给 LLM 看（需要 candle_cache 注入）。
 # - [ ] Lessons 注入：verify prompt 头部塞 trade_store.list_lessons(instrument_key=...) 最近 5 条。
 # - [ ] WebSocket 推 newsDecisions：让前端 News 卡片挂"已分析/已下单"badge。
 # - [ ] OpenAI Chat provider 兼容：当前只走 codex provider.chat()。
@@ -23,9 +23,18 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from ..config import NewsAnalystConfig, NewsUniverseEntry
+from ..domain.price_action import Candle
 from ..news.types import NewsItem
 from ..trading.models import TradeDirection, TradeStatus
 from ..trading.store import TradeStore
+
+# K 线印证拉取参数：每个 timeframe 的最近条数。20 根足够 LLM 看 ~1.5 天 1H
+# 趋势 + ~5 小时 15m 行为，token 占用小。
+_VERIFY_CANDLE_LIMIT = 20
+_VERIFY_TIMEFRAMES = ("1H", "15m")
+
+# CandleCache.recent 的可调用签名：(symbol_key, interval, *, limit) → Candle 元组
+CandleProvider = Callable[[str, str, int], "tuple[Candle, ...]"]
 
 LOGGER = logging.getLogger(__name__)
 
@@ -137,7 +146,7 @@ def matches_aliases(item: NewsItem, aliases: tuple[str, ...]) -> bool:
 
 # ── Verify (LLM JSON output) ──────────────────────────────────────────────
 
-_VERIFY_SYSTEM_PROMPT = """You are a quant analyst. Given a single Reuters news headline, decide whether it implies a tradable directional move on a specific instrument over the next 1-4 hours.
+_VERIFY_SYSTEM_PROMPT = """You are a quant analyst. Given a single Reuters news headline AND recent multi-timeframe OHLCV candles for a specific instrument, decide whether the news implies a tradable directional move over the next 1-4 hours, USING THE CANDLES TO CORROBORATE OR REJECT YOUR HYPOTHESIS.
 
 Respond with STRICT JSON only, no prose, matching this schema:
 {
@@ -146,13 +155,18 @@ Respond with STRICT JSON only, no prose, matching this schema:
   "entry": <number or null>,    // null if direction="none"
   "stop": <number or null>,
   "target": <number or null>,
-  "reason": "<one sentence why>"
+  "reason": "<one sentence: news implication + how candles agree/disagree>"
 }
 
 Rules:
-- direction="none" if news has no clear directional implication
-- entry/stop/target should be price levels appropriate for the instrument; if you don't have current price, give best-effort plausible levels and reflect uncertainty in confidence
-- confidence ≤ 0.5 unless the news is clearly market-moving (Fed decision, geopolitical shock, major earnings)
+- direction="none" if news has no clear directional implication, OR if candles strongly contradict the news (e.g. news bullish but instrument already gapped +5% in last hour — chasing here is bad)
+- Use the most recent candle's close as guidance for entry / stop / target levels (entry near current price, stop at recent swing, target reasonable)
+- confidence rubric:
+    * 0.85+ : market-moving news (Fed surprise, geopolitical shock) AND candles support direction
+    * 0.6-0.85 : clearly directional news AND candles neutral or supportive
+    * 0.3-0.6 : ambiguous news OR candles contradict
+    * <0.3 : weak signal
+- confidence ≤ 0.5 if candles are missing or empty (you have no way to verify)
 """
 
 
@@ -171,12 +185,15 @@ async def _verify(
     instrument_key: str,
     llm_chat: LLMChatFn,
     timeout_seconds: float,
+    candles_by_tf: dict[str, tuple[Candle, ...]] | None = None,
 ) -> _Verdict | None:
     """说明：调 LLM，解析 JSON。失败/超时返回 None（service 把它当 llm_error）。"""
+    candles_section = _format_candles_section(candles_by_tf or {})
     user_prompt = (
         f"Instrument: {instrument_key}\n"
         f"News title: {item.title}\n"
         f"News summary: {item.summary or '(none)'}\n"
+        f"\n{candles_section}"
     )
     messages = [
         {"role": "system", "content": _VERIFY_SYSTEM_PROMPT},
@@ -219,6 +236,29 @@ async def _verify(
         target=_safe_float(data.get("target")),
         reason=str(data.get("reason", ""))[:500],
     )
+
+
+def _format_candles_section(candles_by_tf: dict[str, tuple[Candle, ...]]) -> str:
+    """说明：把多 timeframe K 线序列化成紧凑可读文本喂给 LLM。"""
+    if not candles_by_tf:
+        return "Candles: (none available)"
+    parts = ["Candles (oldest first, format: open_time_iso O/H/L/C V):"]
+    for tf, candles in candles_by_tf.items():
+        if not candles:
+            parts.append(f"  [{tf}]: (no data)")
+            continue
+        parts.append(f"  [{tf}]:")
+        # 按时间正序展示（cache 默认倒序）
+        for candle in sorted(candles, key=lambda c: c.open_time_ms):
+            from datetime import datetime, timezone
+            t_iso = datetime.fromtimestamp(
+                candle.open_time_ms / 1000, tz=timezone.utc,
+            ).strftime("%Y-%m-%d %H:%M")
+            parts.append(
+                f"    {t_iso} {candle.open:.2f}/{candle.high:.2f}/"
+                f"{candle.low:.2f}/{candle.close:.2f} V={candle.volume:.0f}"
+            )
+    return "\n".join(parts)
 
 
 def _safe_float(value: Any) -> float | None:
@@ -276,12 +316,16 @@ class NewsAnalyst:
         trade_store: TradeStore,
         llm_chat: LLMChatFn,
         current_price_provider: Callable[[str], Optional[float]] | None = None,
+        candle_provider: CandleProvider | None = None,
     ) -> None:
         self.config = config
         self.decision_store = decision_store
         self.trade_store = trade_store
         self.llm_chat = llm_chat
         self.current_price_provider = current_price_provider
+        # candle_provider(instrument_key, interval, limit) → Candle 元组。
+        # 可注入 None；缺失时 verify 仍能运行但 prompt 中 Candles=(none available)
+        self.candle_provider = candle_provider
         # Cooldown: (instrument_key, direction) → last_open_ms
         # 内存即可，重启清零（重启后 N 分钟内偶尔重开同向单可以接受）。
         self._last_open_ms: dict[tuple[str, str], int] = {}
@@ -314,14 +358,33 @@ class NewsAnalyst:
             decisions.append(decision)
         return tuple(decisions)
 
+    def _fetch_candles(self, instrument_key: str) -> dict[str, tuple[Candle, ...]]:
+        """说明：从 candle_provider 拉多 timeframe K 线，失败时返回空 dict。"""
+        if self.candle_provider is None:
+            return {}
+        result: dict[str, tuple[Candle, ...]] = {}
+        for tf in _VERIFY_TIMEFRAMES:
+            try:
+                candles = self.candle_provider(instrument_key, tf, _VERIFY_CANDLE_LIMIT)
+            except Exception:  # noqa: BLE001
+                LOGGER.warning(
+                    "news_analyst: candle fetch failed for %s %s",
+                    instrument_key, tf, exc_info=True,
+                )
+                candles = ()
+            result[tf] = tuple(candles or ())
+        return result
+
     async def _process_one(
         self, item: NewsItem, entry: NewsUniverseEntry, now_ms: int,
     ) -> NewsDecision:
         """说明：对单个命中品种跑 verify → gate → 下单。"""
         instrument_key = entry.instrument_key
+        candles_by_tf = self._fetch_candles(instrument_key)
 
         verdict = await _verify(
             item, instrument_key, self.llm_chat, self.config.llm_timeout_seconds,
+            candles_by_tf=candles_by_tf,
         )
         if verdict is None:
             decision = NewsDecision(
