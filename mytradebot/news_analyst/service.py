@@ -7,9 +7,12 @@
 # - [x] Lessons 注入 (TODO-D)：trade_store.list_lessons 最近 5 条进 prompt
 # - [x] WebSocket+API recent_news_decisions (TODO-E)：snapshot.recentNewsDecisions
 #       + GET /api/news/decisions + config.newsAnalyst section
+# - [x] 前端 UI (TODO-F+G)：News 卡片显示 summary 与决策 badge；
+#       面板从 sidebar 挪到 Agent tab 右侧栏 (60%/40% 分屏，窄屏堆叠)
 
 # 后续 TODO（按优先级）
 # - [ ] OpenAI Chat provider 兼容：当前只走 codex provider.chat()。
+# - [ ] News 设置页加 universe 编辑 UI（当前只能改 watchlist.toml 后重启）
 """
 from __future__ import annotations
 

@@ -201,6 +201,51 @@ export interface NewsStatus {
   lastFetchedAtMs?: number | null;
 }
 
+// news_analyst 决策日志的一条。step:
+//   filter_miss     -- 没命中 universe，不调 LLM
+//   llm_error       -- LLM 调用失败 / JSON 解析失败
+//   low_confidence  -- LLM 给出方向但置信度 < 阈值
+//   entry_too_far   -- entry 离当前价超出允许偏离
+//   gated           -- 其他规则门拦下 (direction=none, missing stop 等)
+//   cooldown        -- 同品种同向 N 分钟内不重复
+//   opened          -- 通过所有门，已下 paper 单 (trade_id 非空)
+export interface NewsDecision {
+  id: number;
+  news_url: string;
+  news_title: string;
+  instrument_key: string;
+  step:
+    | 'filter_miss'
+    | 'llm_error'
+    | 'low_confidence'
+    | 'entry_too_far'
+    | 'gated'
+    | 'cooldown'
+    | 'opened';
+  direction: 'long' | 'short' | 'none' | null;
+  confidence: number | null;
+  entry_price: number | null;
+  stop_price: number | null;
+  target_price: number | null;
+  reason: string;
+  trade_id: number | null;
+  created_at_ms: number;
+}
+
+export interface NewsUniverseEntry {
+  instrumentKey: string;
+  aliases: string[];
+}
+
+export interface NewsAnalystConfig {
+  enabled: boolean;
+  minConfidence: number;
+  maxEntryDistancePct: number;
+  defaultSize: number;
+  cooldownMinutes: number;
+  universe: NewsUniverseEntry[];
+}
+
 export interface MarketState {
   type: 'state';
   updatedAt: string;
@@ -228,6 +273,7 @@ export interface MarketState {
       requestTimeoutSeconds: number;
       retentionDays: number;
     };
+    newsAnalyst?: NewsAnalystConfig;
     sourcePath: string | null;
   };
   instruments: Instrument[];
@@ -237,6 +283,7 @@ export interface MarketState {
   openTrades: Trade[];
   recentNews: NewsItem[];
   newsStatus: NewsStatus;
+  recentNewsDecisions?: NewsDecision[];
 }
 
 export type TradeDirection = 'long' | 'short';

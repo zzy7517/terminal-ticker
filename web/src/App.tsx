@@ -71,6 +71,7 @@ import type {
   LoopStep,
   MarketState,
   NewsConfigUpdate,
+  NewsDecision,
   NewsItem,
   Quote,
   Trade,
@@ -889,12 +890,59 @@ function newsItemsSignature(items: NewsItem[]): string {
   return items.map((item) => `${item.url}|${item.publishedAtMs}|${item.title}`).join('\n');
 }
 
+// 把 news_url → 该新闻的所有决策（按品种）建索引，避免每条 item 都遍历整个列表。
+function indexDecisionsByUrl(
+  decisions: NewsDecision[] | undefined,
+): Map<string, NewsDecision[]> {
+  const map = new Map<string, NewsDecision[]>();
+  if (!decisions) return map;
+  for (const d of decisions) {
+    const arr = map.get(d.news_url) ?? [];
+    arr.push(d);
+    map.set(d.news_url, arr);
+  }
+  return map;
+}
+
+// 单条决策的紧凑 badge：颜色 + step 标签 + (可选) 品种 + 方向。
+function DecisionBadge({ decision }: { decision: NewsDecision }) {
+  const stepLabels: Record<NewsDecision['step'], string> = {
+    opened: '已下单',
+    cooldown: '冷却中',
+    low_confidence: '置信度低',
+    entry_too_far: '价偏离',
+    gated: '规则拦',
+    llm_error: 'LLM 错',
+    filter_miss: '未命中',
+  };
+  // 品种 key 只取尾段更短，alpaca:SPY → SPY
+  const symbol = decision.instrument_key.split(':').pop() ?? decision.instrument_key;
+  const dir = decision.direction;
+  const className = `news-decision-badge news-decision-badge--${decision.step}${
+    dir === 'long' ? ' news-decision-badge--long'
+      : dir === 'short' ? ' news-decision-badge--short' : ''
+  }`;
+  const tooltip = decision.reason || stepLabels[decision.step];
+  return (
+    <span className={className} title={tooltip}>
+      {symbol} · {stepLabels[decision.step]}
+      {decision.step === 'opened' && dir && (
+        <span className="news-decision-badge__dir">
+          {' '}{dir === 'long' ? '↑' : '↓'}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function NewsPanel({
   items,
+  decisions,
   lastStatus,
   lastError,
 }: {
   items: NewsItem[];
+  decisions?: NewsDecision[];
   lastStatus?: string;
   lastError?: string | null;
 }) {
@@ -903,6 +951,7 @@ function NewsPanel({
   const [feedback, setFeedback] = useState<string | null>(null);
   const upstreamSignature = useMemo(() => newsItemsSignature(items), [items]);
   const displayItems = localItems?.items ?? items;
+  const decisionIndex = useMemo(() => indexDecisionsByUrl(decisions), [decisions]);
 
   useEffect(() => {
     if (localItems && upstreamSignature !== localItems.upstreamSignature) {
@@ -957,24 +1006,37 @@ function NewsPanel({
         {displayItems.length === 0 && (
           <div className="news-panel__empty">暂无新闻，点击"立即刷新"拉取。</div>
         )}
-        {displayItems.map((item) => (
-          <a
-            className="news-item"
-            href={item.url}
-            key={item.url}
-            target="_blank"
-            rel="noreferrer"
-            title={item.title}
-          >
-            <div className="news-item__title">{item.title}</div>
-            <div className="news-item__meta">
-              <span>{formatRelativeTime(item.publishedAt)}</span>
-              {item.keywords.length > 0 && (
-                <span className="news-item__keywords">· {item.keywords.slice(0, 3).join(' · ')}</span>
+        {displayItems.map((item) => {
+          const itemDecisions = decisionIndex.get(item.url) ?? [];
+          return (
+            <a
+              className="news-item"
+              href={item.url}
+              key={item.url}
+              target="_blank"
+              rel="noreferrer"
+              title={item.title}
+            >
+              <div className="news-item__title">{item.title}</div>
+              {item.summary && (
+                <div className="news-item__summary">{item.summary}</div>
               )}
-            </div>
-          </a>
-        ))}
+              <div className="news-item__meta">
+                <span>{formatRelativeTime(item.publishedAt)}</span>
+                {item.keywords.length > 0 && (
+                  <span className="news-item__keywords">· {item.keywords.slice(0, 3).join(' · ')}</span>
+                )}
+              </div>
+              {itemDecisions.length > 0 && (
+                <div className="news-item__decisions">
+                  {itemDecisions.map((d) => (
+                    <DecisionBadge key={d.id} decision={d} />
+                  ))}
+                </div>
+              )}
+            </a>
+          );
+        })}
       </div>
     </div>
   );
@@ -1727,13 +1789,7 @@ function WorkspaceView({
                     );
                   })}
               </div>
-              {state?.config.news?.enabled && (
-                <NewsPanel
-                  items={state.recentNews ?? []}
-                  lastStatus={state.newsStatus?.lastStatus}
-                  lastError={state.newsStatus?.lastError ?? null}
-                />
-              )}
+              {/* NewsPanel 已挪到 Agent tab 右侧栏，详见下方 activeTab === 'agent' 分支 */}
             </>
           )}
           {sidebarCollapsed && (
@@ -1858,18 +1914,30 @@ function WorkspaceView({
           )}
 
           {activeTab === 'agent' && (
-            <div className="agent-main-panel">
-              <AgentSessionPanel
-                analysis={selectedAgent}
-                session={agentSession}
-                prompt={agentPrompt}
-                sessionLoading={agentSessionLoading}
-                busy={agentBusyKey === selectedKey}
-                disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
-                onPromptChange={setAgentPrompt}
-                onSend={runAgentAnalysis}
-                onReset={resetAgentConversation}
-              />
+            <div className="agent-with-news">
+              <div className="agent-with-news__main">
+                <AgentSessionPanel
+                  analysis={selectedAgent}
+                  session={agentSession}
+                  prompt={agentPrompt}
+                  sessionLoading={agentSessionLoading}
+                  busy={agentBusyKey === selectedKey}
+                  disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
+                  onPromptChange={setAgentPrompt}
+                  onSend={runAgentAnalysis}
+                  onReset={resetAgentConversation}
+                />
+              </div>
+              {state?.config.news?.enabled && (
+                <aside className="agent-with-news__news">
+                  <NewsPanel
+                    items={state.recentNews ?? []}
+                    decisions={state.recentNewsDecisions ?? []}
+                    lastStatus={state.newsStatus?.lastStatus}
+                    lastError={state.newsStatus?.lastError ?? null}
+                  />
+                </aside>
+              )}
             </div>
           )}
 
