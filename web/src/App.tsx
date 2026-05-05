@@ -49,6 +49,7 @@ import {
   fetchAgentSessionHistory,
   fetchRecentSocialFeed,
   fetchSocialAuthStatus,
+  fetchSocialMemories,
   fetchAgentModels,
   fetchState,
   getTradeDetail,
@@ -89,6 +90,7 @@ import type {
   Quote,
   SocialAuthStatus,
   SocialFeedItem,
+  SocialMemory,
   Trade,
   TradeDetailResponse,
 } from './types';
@@ -2656,6 +2658,7 @@ function SocialSettingsPanel({
   const [savingConfig, setSavingConfig] = useState(false);
   const [testing, setTesting] = useState(false);
   const [feedPreview, setFeedPreview] = useState<SocialFeedItem[]>([]);
+  const [memoriesPreview, setMemoriesPreview] = useState<SocialMemory[]>([]);
   const [status, setStatus] = useState('Save X cookies locally, then enable the social feed reader.');
 
   useEffect(() => {
@@ -2752,6 +2755,20 @@ function SocialSettingsPanel({
       setStatus(items.length ? `Loaded ${items.length} cached item(s).` : 'No cached feed items yet.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Cached feed load failed.');
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function loadSocialMemories() {
+    setTesting(true);
+    setStatus('Loading social memories sample...');
+    try {
+      const memories = await fetchSocialMemories(3);
+      setMemoriesPreview(memories);
+      setStatus(memories.length ? `Loaded ${memories.length} memory item(s).` : 'No social memories yet.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Social memories load failed.');
     } finally {
       setTesting(false);
     }
@@ -2879,6 +2896,15 @@ function SocialSettingsPanel({
                 <Search size={15} />
                 Read cache
               </button>
+              <button
+                className="shell-button"
+                type="button"
+                disabled={!config.enabled || testing}
+                onClick={loadSocialMemories}
+              >
+                <History size={15} />
+                Read memories
+              </button>
             </div>
             {feedPreview.length > 0 && (
               <div className="social-test-preview">
@@ -2886,6 +2912,16 @@ function SocialSettingsPanel({
                   <div key={`${item.source}:${item.externalId}`} className="social-test-preview__item">
                     <strong>@{item.author.handle}</strong>
                     <span>{item.text.slice(0, 160) || '(empty tweet)'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {memoriesPreview.length > 0 && (
+              <div className="social-test-preview">
+                {memoriesPreview.map((memory) => (
+                  <div key={memory.id} className="social-test-preview__item">
+                    <strong>Memory #{memory.id}</strong>
+                    <span>{memory.text.slice(0, 160)}</span>
                   </div>
                 ))}
               </div>

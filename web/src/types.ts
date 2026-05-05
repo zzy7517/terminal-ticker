@@ -183,6 +183,16 @@ export interface SocialFeedItem {
   createdAtMs: number;
 }
 
+export interface SocialMemory {
+  id: number;
+  text: string;
+  source: string | null;
+  externalId: string | null;
+  tags: string[];
+  importance: number;
+  createdAtMs: number;
+}
+
 export interface AgentModelOption {
   slug: string;
   displayName: string;
