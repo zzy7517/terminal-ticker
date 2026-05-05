@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
@@ -73,6 +74,7 @@ WEB_CACHE_HEADERS = {"Cache-Control": "no-store, max-age=0, must-revalidate"}
 THUMBNAIL_CANDLE_LIMIT = 60
 OLDER_CANDLE_SOURCES = {ALPACA_SOURCE, BITGET_SOURCE}
 DEFAULT_AGENT_USER_PROMPT = "Analyze the current K-line chart and update the watch plan."
+LOGGER = logging.getLogger(__name__)
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -380,10 +382,11 @@ class MarketRuntime:
         self.news_analyst = analyst
         assert self.news_service is not None
         self.news_service.on_top_changed = analyst.on_top_changed
+        universe = self.config.news_analyst.universe
         LOGGER.info(
-            "news_analyst enabled: instrument=%s aliases=%d min_confidence=%.2f",
-            self.config.news_analyst.instrument_key,
-            len(self.config.news_analyst.aliases),
+            "news_analyst enabled: universe=%d aliases=%d min_confidence=%.2f",
+            len(universe),
+            sum(len(entry.aliases) for entry in universe),
             self.config.news_analyst.min_confidence,
         )
 
@@ -667,11 +670,13 @@ class MarketRuntime:
             if self.news_service is not None:
                 await self.news_service.stop()
                 self.news_service = None
+            self.news_analyst = None
             return
         # 已启用：若未实例化则创建并启动；若已存在则重建以应用新参数。
         if self.news_service is not None:
             await self.news_service.stop()
             self.news_service = None
+        self.news_analyst = None
         store = NewsStore()
         provider = ReutersSitemapProvider(
             url=next_config.reuters_url,
@@ -686,6 +691,8 @@ class MarketRuntime:
             recent_limit=next_config.recent_limit,
         )
         self.news_service = service
+        if self.config.news_analyst.enabled:
+            self._wire_news_analyst()
         if self.running:
             await service.start()
 
