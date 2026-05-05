@@ -570,12 +570,12 @@ class LessonsInjectionTests(unittest.TestCase):
         self.assertNotIn("Past lessons", user_prompt)
 
 
-class OpenAIProviderCompatTests(unittest.TestCase):
-    """证明 news_analyst 能用 OpenAI provider 驱动（不仅是 codex）。
+class AnthropicProviderCompatTests(unittest.TestCase):
+    """证明 news_analyst 能用 Anthropic provider 驱动（不仅是 codex）。
 
-    OpenAI Chat Completions 响应被 _parse_chat_response 转成 ChatResponse
-    (.content: str)，跟 codex 同构。这里用 httpx MockTransport 发回一个
-    真实的 OpenAI shape JSON，证明 NewsAnalyst 完整 pipeline 能跑通。
+    Anthropic Messages 响应被 _parse_anthropic_response 转成 ChatResponse
+    (.content: str)，跟 codex 同构。这里构造真实的 Anthropic message shape，
+    证明 NewsAnalyst 完整 pipeline 能跑通。
     """
 
     def setUp(self) -> None:
@@ -583,36 +583,34 @@ class OpenAIProviderCompatTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.path = Path(self._tmp.name) / "trades.sqlite3"
 
-    def test_openai_chat_response_drives_news_analyst(self) -> None:
-        from mytradebot.agent.providers.openai_chat import _parse_chat_response
+    def test_anthropic_messages_response_drives_news_analyst(self) -> None:
+        from mytradebot.agent.providers.anthropic import _parse_anthropic_response
 
-        # 构造一个 OpenAI Chat Completions 真实响应 shape。
-        openai_response = {
-            "id": "chatcmpl-x",
-            "object": "chat.completion",
-            "choices": [
+        # 构造一个 Anthropic Messages 真实响应 shape。
+        anthropic_response = {
+            "id": "msg_x",
+            "type": "message",
+            "role": "assistant",
+            "content": [
                 {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": (
-                            '{"direction":"long","confidence":0.85,'
-                            '"entry":500.5,"stop":495,"target":510,'
-                            '"reason":"Fed dovish + 1H trend up"}'
-                        ),
-                    },
-                    "finish_reason": "stop",
+                    "type": "text",
+                    "text": (
+                        '{"direction":"long","confidence":0.85,'
+                        '"entry":500.5,"stop":495,"target":510,'
+                        '"reason":"Fed dovish + 1H trend up"}'
+                    ),
                 }
             ],
-            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 100, "output_tokens": 50},
         }
-        # 走 _parse_chat_response 的路径，确保跟 OpenAI 真实 wire 兼容
-        chat_response = _parse_chat_response(openai_response)
-        self.assertEqual(chat_response.finish_reason, "stop")
+        # 走 _parse_anthropic_response 的路径，确保跟 Anthropic 真实 wire 兼容
+        chat_response = _parse_anthropic_response(anthropic_response)
+        self.assertEqual(chat_response.finish_reason, "end_turn")
         self.assertIn("long", chat_response.content)
 
-        async def openai_chat_fn(messages):
-            # 模拟 OpenAIChatProvider.chat() 返回，由 _parse_chat_response 产出
+        async def anthropic_chat_fn(messages):
+            # 模拟 AnthropicProvider.chat() 返回，由 _parse_anthropic_response 产出
             return chat_response
 
         trade_store = TradeStore(self.path)
@@ -625,7 +623,7 @@ class OpenAIProviderCompatTests(unittest.TestCase):
         )
         analyst = NewsAnalyst(
             config=config, decision_store=decision_store,
-            trade_store=trade_store, llm_chat=openai_chat_fn,
+            trade_store=trade_store, llm_chat=anthropic_chat_fn,
             current_price_provider=lambda key: 500.0,
         )
         item = _make_item("Fed cuts: SPY surges")

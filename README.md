@@ -7,7 +7,7 @@
 - 按 `watchlist.toml` 显示 Bitget、Alpaca 美股和 ETF 标的。
 - 通过本地 WebSocket 推送实时 quote、K 线和多周期上下文更新。
 - 展示选中标的的 K 线图、价格、涨跌幅、成交量和多周期市场视图。
-- 提供会话式 K 线 Agent 解读入口，把当前 K 线、多周期 OHLCV 上下文和最近问答历史转成结构化市场解读；Codex 只是当前默认的 LLM provider adapter。
+- 提供会话式 K 线 Agent 解读入口，把当前 K 线、多周期 OHLCV 上下文和最近问答历史转成结构化市场解读；LLM provider 当前可选 Codex 或 Anthropic。
 - 美股页内搜索 Alpaca 标的，并写入本地 watchlist。
 - Alpaca 凭证只从环境变量读取，不写入配置文件。
 - 不包含 PySide/Qt 浮窗、折叠行情条或滚动 ticker。
@@ -38,7 +38,7 @@ export ALPACA_DATA_FEED="iex"
 export ALPACA_EXTENDED_STATS_FEED="delayed_sip"
 ```
 
-当前 Codex provider adapter 默认读取本机 Codex CLI 登录态：
+LLM provider 二选一配置即可。Codex provider adapter 默认读取本机 Codex CLI 登录态：
 
 ```text
 $CODEX_HOME/auth.json，未设置 CODEX_HOME 时使用 ~/.codex/auth.json
@@ -48,6 +48,27 @@ $CODEX_HOME/auth.json，未设置 CODEX_HOME 时使用 ~/.codex/auth.json
 
 ```bash
 export MYTRADEBOT_CODEX_API_KEY="你的 Codex access token"
+```
+
+Anthropic provider 默认按下面这个 endpoint 发送 Messages 请求，协议形态等价于：
+`POST /api/v1/messages` + `x-api-key`。
+
+```text
+https://claude-proxy.p1.cn/api/v1/messages
+```
+
+对应你已有的 proxy token：
+
+```bash
+export ANTHROPIC_AUTH_TOKEN="你的 Anthropic proxy token"
+```
+
+如果要覆盖 endpoint，可以设置 base URL 或完整 messages URL：
+
+```bash
+export MYTRADEBOT_ANTHROPIC_BASE_URL="https://claude-proxy.p1.cn/api"
+# 或：
+export MYTRADEBOT_ANTHROPIC_BASE_URL="https://claude-proxy.p1.cn/api/v1/messages"
 ```
 
 开发模式需要两个终端。
@@ -130,6 +151,18 @@ max_candles = 40
 reasoning_effort = "medium"
 ```
 
+Anthropic 示例：
+
+```toml
+[agent]
+enabled = true
+provider = "anthropic"
+api_mode = "anthropic_messages"
+model = "global.anthropic.claude-opus-4-6-v1"
+timeout_seconds = 45
+max_candles = 40
+```
+
 配置说明：
 
 - `source` 默认是 `bitget`，所以旧的字符串写法和旧的 Bitget table 写法仍然可用。
@@ -144,13 +177,14 @@ reasoning_effort = "medium"
 - `analysis.lookback` 是每次拉取和策略上下文使用的最近 K 线数量，最小值是 `10`。
 - `analysis.poll_interval_seconds` 控制 K 线刷新间隔。
 - `analysis.stale_after_seconds` 控制最新行情多久后视为过期。
-- `[agent]` 控制 LLM provider 层。第一版只支持 `provider = "codex"`，但产品侧的核心概念是 K 线 Agent 会话，不是“问 Codex”。
-- `agent.api_mode` 当前固定为 `codex_responses`，这和 Hermes 把 `openai-codex` 映射到 Responses 风格 transport 的思路一致。
+- `[agent]` 控制 LLM provider 层。当前支持 `provider = "codex"` 和 `provider = "anthropic"`，产品侧的核心概念是 K 线 Agent 会话，不是绑定某一个模型品牌。
+- `agent.api_mode` 随 provider 变化：Codex 使用 `codex_responses`，Anthropic 使用 `anthropic_messages`。
 - Codex provider adapter 会直接读取 Codex CLI 的 `auth.json`，不会读取 Hermes 的 auth store，也不会导入 Hermes runtime。
 - Codex provider adapter 不再支持通过配置文件或环境变量覆盖 base URL；当前只走内置 Codex backend。
-- Web UI 右侧 `Agent Config` 可以刷新当前 Codex 账号可用模型，选择模型后会写回配置文件。
+- Anthropic provider adapter 使用 `x-api-key` 请求 Messages API，默认读取 `MYTRADEBOT_ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN` 或 `ANTHROPIC_API_KEY`。
+- Web UI 的 Providers 设置页可以选择 provider 和模型，保存后会写回配置文件。
 - `agent.max_candles` 控制每次发送给 LLM 的最近 K 线数量，最小值是 `10`。
-- `agent.reasoning_effort` 支持 `low`、`medium`、`high`、`xhigh`。
+- `agent.reasoning_effort` 支持 `low`、`medium`、`high`、`xhigh`；当前只有 Codex provider 会实际使用，Anthropic provider 会忽略这个字段。
 - 旧配置里的 `show_collapsed` 会被解析以保持兼容，但 Web UI 不再使用折叠行情条。
 
 ## Multi-timeframe Context
@@ -218,7 +252,7 @@ printenv APCA_API_SECRET_KEY | cut -c1-8
 ## 验证
 
 ```bash
-.venv/bin/python -m unittest discover -s tests
+python -m pytest
 npm run build
 ```
 

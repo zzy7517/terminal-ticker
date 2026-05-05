@@ -93,6 +93,27 @@ const GROUP_LABELS: Record<string, string> = {
 };
 
 const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
+const DEFAULT_ANTHROPIC_MODEL = 'global.anthropic.claude-opus-4-6-v1';
+const AGENT_PROVIDER_OPTIONS = [
+  {
+    provider: 'codex',
+    label: 'Codex',
+    apiMode: 'codex_responses',
+    defaultModel: 'gpt-5.4-mini',
+    description: 'Responses adapter for chart analysis',
+    detail: 'Codex Responses adapter used by the chart agent for structured commentary and watch-plan output.',
+    supportsReasoning: true,
+  },
+  {
+    provider: 'anthropic',
+    label: 'Anthropic',
+    apiMode: 'anthropic_messages',
+    defaultModel: DEFAULT_ANTHROPIC_MODEL,
+    description: 'Messages adapter via x-api-key',
+    detail: 'Anthropic Messages adapter used by the chart agent through the configured Claude proxy endpoint.',
+    supportsReasoning: false,
+  },
+] as const;
 const PROVIDERS_HASH = '#/settings/providers';
 const WATCHLIST_HASH = '#/settings/watchlist';
 const NEWS_HASH = '#/settings/news';
@@ -2108,6 +2129,10 @@ function ProviderSettingsPanel({
 
   // Refreshes the provider model catalog and updates the draft selection if needed.
   async function refreshModels() {
+    if (draft && config && draft.provider !== config.provider) {
+      setStatus('Save the provider switch before fetching that provider model list.');
+      return;
+    }
     setRefreshing(true);
     setStatus('Refreshing model catalog...');
     try {
@@ -2153,9 +2178,12 @@ function ProviderSettingsPanel({
     return <div className="settings-loading">Loading settings...</div>;
   }
 
-  const providerLabel = draft.provider === 'openai' ? 'OpenAI' : 'Codex';
-  const providerVisible = `${draft.provider} ${providerLabel}`.toLowerCase().includes(
-    providerSearch.trim().toLowerCase(),
+  const currentProvider =
+    AGENT_PROVIDER_OPTIONS.find((option) => option.provider === draft.provider) ?? AGENT_PROVIDER_OPTIONS[0];
+  const providerOptions = AGENT_PROVIDER_OPTIONS.filter((option) =>
+    `${option.provider} ${option.label} ${option.description}`.toLowerCase().includes(
+      providerSearch.trim().toLowerCase(),
+    ),
   );
   const modelOptions = models.some((model) => model.slug === draft.model)
     ? models
@@ -2166,10 +2194,10 @@ function ProviderSettingsPanel({
           description: '',
           visibility: 'active',
           supportedInApi: true,
-          defaultReasoningEffort: draft.reasoningEffort,
-          supportedReasoningEfforts: REASONING_OPTIONS,
+          defaultReasoningEffort: currentProvider.supportsReasoning ? draft.reasoningEffort : '',
+          supportedReasoningEfforts: currentProvider.supportsReasoning ? REASONING_OPTIONS : [],
           contextWindow: null,
-          preferWebsockets: true,
+          preferWebsockets: currentProvider.provider === 'codex',
         },
         ...models,
       ];
@@ -2179,9 +2207,25 @@ function ProviderSettingsPanel({
     return `${model.displayName} ${model.slug} ${model.description}`.toLowerCase().includes(keyword);
   });
   const selectedModel = modelOptions.find((model) => model.slug === draft.model);
-  const reasoningOptions = selectedModel?.supportedReasoningEfforts.length
+  const reasoningOptions = currentProvider.supportsReasoning && selectedModel?.supportedReasoningEfforts.length
     ? selectedModel.supportedReasoningEfforts
     : REASONING_OPTIONS;
+
+  function selectProvider(option: (typeof AGENT_PROVIDER_OPTIONS)[number]) {
+    setModels([]);
+    setModelSearch('');
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        provider: option.provider,
+        apiMode: option.apiMode,
+        model: option.defaultModel,
+        reasoningEffort: option.supportsReasoning ? current.reasoningEffort : 'medium',
+      };
+    });
+    setStatus(`Save to switch the active provider to ${option.label}.`);
+  }
 
   return (
     <>
@@ -2216,17 +2260,27 @@ function ProviderSettingsPanel({
               </div>
 
               <div className="provider-list">
-                {providerVisible ? (
-                  <button className="provider-item selected" type="button">
-                    <div className="provider-item-icon">
-                      <Bot size={18} />
-                    </div>
-                    <div className="provider-item-copy">
-                      <strong>{providerLabel}</strong>
-                      <small>Responses adapter for chart analysis</small>
-                    </div>
-                    <span className="provider-item-dot" />
-                  </button>
+                {providerOptions.length ? (
+                  providerOptions.map((option) => {
+                    const selected = draft.provider === option.provider;
+                    return (
+                      <button
+                        className={`provider-item ${selected ? 'selected' : ''}`}
+                        key={option.provider}
+                        type="button"
+                        onClick={() => selectProvider(option)}
+                      >
+                        <div className="provider-item-icon">
+                          {option.provider === 'anthropic' ? <Sparkles size={18} /> : <Bot size={18} />}
+                        </div>
+                        <div className="provider-item-copy">
+                          <strong>{option.label}</strong>
+                          <small>{option.description}</small>
+                        </div>
+                        {selected && <span className="provider-item-dot" />}
+                      </button>
+                    );
+                  })
                 ) : (
                   <div className="provider-empty">No providers match this search.</div>
                 )}
@@ -2237,14 +2291,12 @@ function ProviderSettingsPanel({
               <div className="provider-hero">
                 <div>
                   <div className="provider-hero-title">
-                    <h3>{providerLabel}</h3>
+                    <h3>{currentProvider.label}</h3>
                     <span className={`provider-state-badge ${draft.enabled ? 'active' : 'inactive'}`}>
                       {draft.enabled ? 'Active' : 'Disabled'}
                     </span>
                   </div>
-                  <p>{draft.provider === 'openai'
-                    ? 'OpenAI-compatible chat adapter used by the chart agent for structured commentary and watch-plan output.'
-                    : 'Codex Responses adapter used by the chart agent for structured commentary and watch-plan output.'}</p>
+                  <p>{currentProvider.detail}</p>
                 </div>
                 <label className="switch-row">
                   <span>Enabled</span>
@@ -2261,14 +2313,14 @@ function ProviderSettingsPanel({
                 <div className="provider-section-card">
                   <div className="provider-section-head">
                     <strong>Provider</strong>
-                    <span className="provider-inline-badge">Locked</span>
+                    <span className="provider-inline-badge">Selected</span>
                   </div>
                   <div className="provider-fixed-field">{draft.provider}</div>
                 </div>
                 <div className="provider-section-card">
                   <div className="provider-section-head">
                     <strong>API Mode</strong>
-                    <span className="provider-inline-badge">Readonly</span>
+                    <span className="provider-inline-badge">Auto</span>
                   </div>
                   <div className="provider-fixed-field">{draft.apiMode}</div>
                 </div>
@@ -2277,14 +2329,18 @@ function ProviderSettingsPanel({
               <div className="provider-form-grid">
                 <label>
                   <span>Reasoning Effort</span>
-                  <select
-                    value={draft.reasoningEffort}
-                    onChange={(event) => setDraft({ ...draft, reasoningEffort: event.target.value })}
-                  >
-                    {reasoningOptions.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
+                  {currentProvider.supportsReasoning ? (
+                    <select
+                      value={draft.reasoningEffort}
+                      onChange={(event) => setDraft({ ...draft, reasoningEffort: event.target.value })}
+                    >
+                      {reasoningOptions.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="provider-fixed-field">Not used</div>
+                  )}
                 </label>
                 <label>
                   <span>Timeout Seconds</span>

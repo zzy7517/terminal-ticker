@@ -9,9 +9,9 @@
 #       + GET /api/news/decisions + config.newsAnalyst section
 # - [x] 前端 UI (TODO-F+G)：News 卡片显示 summary 与决策 badge；
 #       面板从 sidebar 挪到 Agent tab 右侧栏 (60%/40% 分屏，窄屏堆叠)
-# - [x] OpenAI Chat provider 兼容 (TODO-H)：openai_chat.chat() 已存在且与
-#       codex 同构，create_llm_provider 已支持 OPENAI_PROVIDER 分支；删除
-#       _wire_news_analyst 中的 dead hasattr(chat) 检查 + 加 OpenAI 响应
+# - [x] Anthropic Messages provider 兼容 (TODO-H)：anthropic.chat() 已存在且与
+#       codex 同构，create_llm_provider 已支持 ANTHROPIC_PROVIDER 分支；删除
+#       _wire_news_analyst 中的 dead hasattr(chat) 检查 + 加 Anthropic 响应
 #       e2e 测试证明 pipeline 跑通。
 # - [x] News 设置页加 newsAnalyst section (TODO-I)：只读展示 enabled /
 #       universe / gating 阈值 / cooldown，跟现有 News module 设置一致；

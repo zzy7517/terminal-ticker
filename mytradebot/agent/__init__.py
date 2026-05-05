@@ -24,6 +24,7 @@ from .tools import (
     merge_registries,
 )
 from .web_tools import build_web_tools
+from .providers.anthropic import AnthropicProvider
 from .providers.codex import CodexProvider, _codex_request_headers, _read_codex_cli_credentials
 from .session_store import (
     AgentMessage,
@@ -40,6 +41,7 @@ for _name in dir(_provider):
 __all__ = [
     "AgentAnalysisResult",
     "AgentLoop",
+    "AnthropicProvider",
     "ChatResponse",
     "CodexProvider",
     "LLMProvider",

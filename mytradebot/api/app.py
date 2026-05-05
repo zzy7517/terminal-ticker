@@ -351,7 +351,7 @@ class MarketRuntime:
         """说明：把 NewsAnalyst 接到 NewsService.on_top_changed。
 
         延迟 import 避免顶层循环依赖。当前价从 controller.quotes 取；
-        LLM 走 agent config 选定的 provider (codex 或 openai)，二者都实现
+        LLM 走 agent config 选定的 provider (codex 或 anthropic)，二者都实现
         了 LLMProvider.chat(messages) 协议。
         """
         from ..agent.provider import create_llm_provider, LLMProviderUnavailable

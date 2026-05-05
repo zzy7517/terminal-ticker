@@ -183,6 +183,20 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.agent.max_candles, 24)
         self.assertEqual(config.agent.reasoning_effort, "high")
 
+        anthropic_config = parse_config(
+            {
+                "symbols": ["SPOT:BTCUSDT"],
+                "agent": {
+                    "provider": "anthropic",
+                    "api_mode": "anthropic_messages",
+                    "model": "global.anthropic.claude-opus-4-6-v1",
+                },
+            }
+        )
+
+        self.assertEqual(anthropic_config.agent.provider, "anthropic")
+        self.assertEqual(anthropic_config.agent.api_mode, "anthropic_messages")
+
     def test_parse_config_news_defaults_when_absent(self) -> None:
         """Verify NewsConfig defaults when the [news] section is absent."""
         config = parse_config({"symbols": [{"symbol": "BTCUSDT", "inst_type": "USDT-FUTURES"}]})

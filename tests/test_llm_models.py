@@ -3,7 +3,9 @@ import unittest
 
 from mytradebot.config import AgentConfig
 from mytradebot.config.agent_models import (
+    ANTHROPIC_MESSAGES_API_MODE,
     CODEX_API_MODE,
+    DEFAULT_ANTHROPIC_MODEL,
     DEFAULT_CODEX_MODEL,
     normalize_model,
     resolve_agent_model,
@@ -38,6 +40,17 @@ class LlmModelTests(unittest.TestCase):
         """Verify Codex aliases map to the default model."""
         self.assertEqual(normalize_model("codex", "default"), DEFAULT_CODEX_MODEL)
         self.assertEqual(normalize_model("codex", "fast"), DEFAULT_CODEX_MODEL)
+
+    def test_resolve_anthropic_profile(self) -> None:
+        """Verify Anthropic config resolves to a Messages profile."""
+        profile = resolve_agent_model(
+            AgentConfig(provider="anthropic", api_mode="anthropic_messages", model="")
+        )
+
+        self.assertEqual(profile.provider, "anthropic")
+        self.assertEqual(profile.api_mode, ANTHROPIC_MESSAGES_API_MODE)
+        self.assertEqual(profile.model, DEFAULT_ANTHROPIC_MODEL)
+        self.assertFalse(profile.supports_reasoning)
 
 
 if __name__ == "__main__":

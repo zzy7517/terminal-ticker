@@ -5,15 +5,15 @@ from dataclasses import dataclass
 from typing import Any
 
 CODEX_PROVIDER = "codex"
-OPENAI_PROVIDER = "openai"
+ANTHROPIC_PROVIDER = "anthropic"
 CODEX_API_MODE = "codex_responses"
-OPENAI_CHAT_API_MODE = "chat_completions"
+ANTHROPIC_MESSAGES_API_MODE = "anthropic_messages"
 DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 DEFAULT_CODEX_MODEL = "gpt-5.4-mini"
-DEFAULT_OPENAI_MODEL = "gpt-4o"
+DEFAULT_ANTHROPIC_MODEL = "global.anthropic.claude-opus-4-6-v1"
 
-SUPPORTED_AGENT_PROVIDERS = {CODEX_PROVIDER, OPENAI_PROVIDER}
-SUPPORTED_API_MODES = {CODEX_API_MODE, OPENAI_CHAT_API_MODE}
+SUPPORTED_AGENT_PROVIDERS = {CODEX_PROVIDER, ANTHROPIC_PROVIDER}
+SUPPORTED_API_MODES = {CODEX_API_MODE, ANTHROPIC_MESSAGES_API_MODE}
 SUPPORTED_REASONING_EFFORTS = {"low", "medium", "high", "xhigh"}
 
 CODEX_MODEL_ALIASES = {
@@ -55,8 +55,8 @@ def normalize_api_mode(provider: str, raw_value: Any = None) -> str:
     if raw_value is None or raw_value == "":
         if provider == CODEX_PROVIDER:
             return CODEX_API_MODE
-        if provider == OPENAI_PROVIDER:
-            return OPENAI_CHAT_API_MODE
+        if provider == ANTHROPIC_PROVIDER:
+            return ANTHROPIC_MESSAGES_API_MODE
     if not isinstance(raw_value, str):
         raise ValueError("agent.api_mode must be a string")
     api_mode = raw_value.strip().lower()
@@ -64,8 +64,8 @@ def normalize_api_mode(provider: str, raw_value: Any = None) -> str:
         return normalize_api_mode(provider)
     if provider == CODEX_PROVIDER and api_mode != CODEX_API_MODE:
         raise ValueError(f"agent.api_mode for codex must be {CODEX_API_MODE}")
-    if provider == OPENAI_PROVIDER and api_mode != OPENAI_CHAT_API_MODE:
-        raise ValueError(f"agent.api_mode for openai must be {OPENAI_CHAT_API_MODE}")
+    if provider == ANTHROPIC_PROVIDER and api_mode != ANTHROPIC_MESSAGES_API_MODE:
+        raise ValueError(f"agent.api_mode for anthropic must be {ANTHROPIC_MESSAGES_API_MODE}")
     if api_mode not in SUPPORTED_API_MODES:
         supported = ", ".join(sorted(SUPPORTED_API_MODES))
         raise ValueError(f"agent.api_mode must be one of: {supported}")
@@ -77,8 +77,8 @@ def normalize_model(provider: str, raw_value: Any) -> str:
     if raw_value is None:
         if provider == CODEX_PROVIDER:
             return DEFAULT_CODEX_MODEL
-        if provider == OPENAI_PROVIDER:
-            return DEFAULT_OPENAI_MODEL
+        if provider == ANTHROPIC_PROVIDER:
+            return DEFAULT_ANTHROPIC_MODEL
         return ""
     if not isinstance(raw_value, str):
         raise ValueError("agent.model must be a string")
@@ -86,8 +86,8 @@ def normalize_model(provider: str, raw_value: Any) -> str:
     if not model:
         if provider == CODEX_PROVIDER:
             return DEFAULT_CODEX_MODEL
-        if provider == OPENAI_PROVIDER:
-            return DEFAULT_OPENAI_MODEL
+        if provider == ANTHROPIC_PROVIDER:
+            return DEFAULT_ANTHROPIC_MODEL
         return ""
     if provider == CODEX_PROVIDER:
         return CODEX_MODEL_ALIASES.get(model.lower(), model)
@@ -124,7 +124,7 @@ def resolve_agent_model(config: Any) -> AgentModelProfile:
             model=model,
             reasoning_effort=reasoning_effort,
         )
-    if provider == OPENAI_PROVIDER:
+    if provider == ANTHROPIC_PROVIDER:
         return AgentModelProfile(
             provider=provider,
             api_mode=api_mode,

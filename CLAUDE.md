@@ -72,7 +72,7 @@ The Python package `mytradebot/` is organized as strict layers. Upper layers imp
 3. **`market_data/`** — per-provider adapters (`bitget.py`, `alpaca.py`) plus `router.py` which dispatches `InstrumentConfig` to the right provider and preserves watchlist order. `candle_cache.py` provides the local OHLCV cache that agent tools read from.
 4. **`runtime/`** — `feed.py` runs a background worker that streams quotes/candles from providers into a `queue.Queue` of `FeedEvent`s. `controller.py` (`TickerController`) drains that queue into an in-memory `QuoteState` map, tracks flash directions, and forwards 1m candles to the paper broker.
 5. **`trading/`** — paper-trading subsystem. `store.py` is a SQLite-backed `TradeStore` at `~/.cache/mytradebot/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `paper_broker.py` is the deterministic fill engine (consumes 1m candles, evaluates limit/stop/target). `review.py` orchestrates LLM post-trade reviews that produce lesson rows.
-6. **`agent/`** — LLM layer. `provider.py` builds the multi-timeframe context and normalizes model output to a fixed JSON schema. `providers/codex.py` and `providers/openai_chat.py` implement the transport. `loop.py` is a tool-calling agent loop (OpenAI-style function calling); `tools.py` defines the `ToolRegistry` plus two tool factories: `build_market_tools` (read-only data access) and `build_trading_tools` (open/cancel/adjust paper trades, query history). `session_store.py` is a SQLite-backed per-instrument chat history at `~/.cache/mytradebot/agent_sessions.sqlite3`.
+6. **`agent/`** — LLM layer. `provider.py` builds the multi-timeframe context and normalizes model output to a fixed JSON schema. `providers/codex.py` and `providers/anthropic.py` implement the transport. `loop.py` is a tool-calling agent loop (OpenAI-style function calling internally, converted by each provider); `tools.py` defines the `ToolRegistry` plus two tool factories: `build_market_tools` (read-only data access) and `build_trading_tools` (open/cancel/adjust paper trades, query history). `session_store.py` is a SQLite-backed per-instrument chat history at `~/.cache/mytradebot/agent_sessions.sqlite3`.
 7. **`api/app.py`** — the only place where async FastAPI meets the sync `TickerController`. It owns the `WebSocket` client set, broadcasts state snapshots (now including `openTrades`), runs a periodic review loop, and exposes all routes under `/api/*` plus `/ws`. This file is large (~1200 lines) because it's the integration seam.
 
 ### The one seam that matters
@@ -96,7 +96,7 @@ Two modes live side by side:
 - **Legacy single-shot**: `provider.py` builds a prompt from the current quote + multi-timeframe OHLCV + recent session turns, calls the LLM once, and parses a strict JSON response (`summary / bias / confidence / key_levels / watch_plan / invalidation / risk_notes`).
 - **Tool-calling loop**: `agent/loop.py` runs iterative chat with `ToolRegistry` (currently `get_quote`, `get_candles`, `list_instruments`). Same output schema. Bounded by `DEFAULT_MAX_ITERATIONS`.
 
-Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionStore`. The `api_mode` in config (`codex_responses`) selects transport shape — Codex uses Responses API shapes, OpenAI uses Chat Completions.
+Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionStore`. The `api_mode` in config selects transport shape — Codex uses Responses API shapes, Anthropic uses Messages API shapes.
 
 ### Market-data model
 
