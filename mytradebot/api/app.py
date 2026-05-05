@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import urllib.parse
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
@@ -11,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,6 +27,7 @@ from ..agent import (
     build_agent_context,
     build_market_tools,
     build_news_tools,
+    build_social_feed_tools,
     build_trading_tools,
     build_web_tools,
     create_llm_provider,
@@ -34,6 +36,7 @@ from ..agent import (
 )
 from ..news import NewsService, NewsStore
 from ..news.providers.reuters import ReutersSitemapProvider
+from ..social_feed import SocialFeedService, SocialFeedStore, XAuthStore
 from ..agent.provider import _result_from_text
 from ..agent.tools import ToolRegistry
 from ..trading import TradeStatus, TradeStore
@@ -46,10 +49,12 @@ from ..config import (
     AppConfig,
     BITGET_SOURCE,
     NewsConfig,
+    SocialFeedConfig,
     load_config,
     parse_agent_config,
     parse_analysis_config,
     parse_news_config,
+    parse_social_feed_config,
 )
 from ..market_data.alpaca import search_assets as search_alpaca_assets
 from ..runtime.controller import TickerController
@@ -67,6 +72,7 @@ from ..config.watchlist_store import (
     update_analysis_config_in_watchlist,
     update_instrument_analysis_interval_in_watchlist,
     update_news_config_in_watchlist,
+    update_social_feed_config_in_watchlist,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -76,6 +82,7 @@ THUMBNAIL_CANDLE_LIMIT = 60
 OLDER_CANDLE_SOURCES = {ALPACA_SOURCE, BITGET_SOURCE}
 DEFAULT_AGENT_USER_PROMPT = "Analyze the current K-line chart and update the watch plan."
 LOGGER = logging.getLogger(__name__)
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -111,6 +118,25 @@ def _normalize_agent_prompt(prompt: str | None) -> str:
     """说明：规范化用户发给 Agent 的问题。"""
     text = (prompt or "").strip()
     return text or DEFAULT_AGENT_USER_PROMPT
+
+
+def _require_local_social_request(request: Request) -> None:
+    """说明：社交流 API 只允许本机页面/客户端访问，避免局域网暴露 X 缓存。"""
+    client_host = (request.client.host if request.client else "").lower()
+    if client_host and client_host not in LOCAL_HOSTS and client_host != "testclient":
+        raise HTTPException(status_code=403, detail="social feed API is local-only")
+    raw_host = (request.headers.get("host") or "").strip().lower()
+    if raw_host.startswith("[") and "]" in raw_host:
+        host = raw_host.split("]", 1)[0].strip("[]")
+    else:
+        host = raw_host.split(":", 1)[0]
+    if host not in LOCAL_HOSTS:
+        LOGGER.warning("social feed API request used non-loopback Host header: %s", raw_host)
+    origin = request.headers.get("origin")
+    if origin:
+        origin_host = (urllib.parse.urlparse(origin).hostname or "").lower()
+        if origin_host not in LOCAL_HOSTS:
+            raise HTTPException(status_code=403, detail="social feed API origin denied")
 
 
 def _instrument_payload(instrument: MarketInstrument, *, default_interval: str) -> dict[str, Any]:
@@ -241,6 +267,12 @@ def serialize_market_state(
                     for e in config.news_analyst.universe
                 ],
             },
+            "socialFeed": {
+                "enabled": config.social_feed.enabled,
+                "recentLimit": config.social_feed.recent_limit,
+                "retentionDays": config.social_feed.retention_days,
+                "maxItems": config.social_feed.max_items,
+            },
             "sourcePath": str(config.source_path) if config.source_path else None,
         },
         "instruments": [
@@ -328,6 +360,10 @@ class MarketRuntime:
         self.agent_analyses: dict[str, dict[str, Any]] = {}
         self.agent_session_store = agent_session_store or AgentSessionStore()
         self._active_session_for_tools: str | None = None
+        self.x_auth_store = XAuthStore()
+        self.social_feed_service: SocialFeedService | None = None
+        if config.social_feed.enabled:
+            self.social_feed_service = self._create_social_feed_service(config.social_feed)
         self.news_service: NewsService | None = None
         self.news_analyst = None  # type: ignore[var-annotated]  # NewsAnalyst | None, lazy import below
         if config.news.enabled:
@@ -346,6 +382,18 @@ class MarketRuntime:
             )
             if config.news_analyst.enabled:
                 self._wire_news_analyst()
+
+    def _create_social_feed_service(self, config: SocialFeedConfig) -> SocialFeedService:
+        """说明：按配置创建社交流服务，X auth 优先读取本地保存值。"""
+        from ..social_feed.providers import XInternalClient
+
+        return SocialFeedService(
+            store=SocialFeedStore(),
+            client_factory=lambda: XInternalClient(self.x_auth_store.load()),
+            recent_limit=config.recent_limit,
+            retention_days=config.retention_days,
+            max_items=config.max_items,
+        )
 
     def _wire_news_analyst(self) -> None:
         """说明：把 NewsAnalyst 接到 NewsService.on_top_changed。
@@ -675,6 +723,30 @@ class MarketRuntime:
         await self.broadcast()
         return {"changed": changed, "state": self.snapshot()}
 
+    async def update_social_feed_config(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：持久化 social_feed 配置并按需启停 SocialFeedService。"""
+        source_path = self._require_source_path()
+        try:
+            next_config = _social_feed_config_from_payload(self.config.social_feed, payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        changed = await asyncio.to_thread(
+            update_social_feed_config_in_watchlist,
+            source_path,
+            next_config,
+        )
+        self.config = replace(self.config, social_feed=next_config)
+        self._apply_social_feed_service_state(next_config)
+        await self.broadcast()
+        return {"changed": changed, "state": self.snapshot()}
+
+    def _apply_social_feed_service_state(self, next_config: SocialFeedConfig) -> None:
+        """说明：根据新配置启停或重建 SocialFeedService。"""
+        if not next_config.enabled:
+            self.social_feed_service = None
+            return
+        self.social_feed_service = self._create_social_feed_service(next_config)
+
     async def _apply_news_service_state(self, next_config: NewsConfig) -> None:
         """说明：根据新配置启停或重建 NewsService。"""
         if not next_config.enabled:
@@ -947,8 +1019,15 @@ class MarketRuntime:
             session_id_provider=lambda: active_session_id,
         )
         news_tools = build_news_tools(self.news_service)
+        social_feed_tools = build_social_feed_tools(self.social_feed_service)
         web_tools = build_web_tools()
-        tools = merge_registries(market_tools, trading_tools, news_tools, web_tools)
+        tools = merge_registries(
+            market_tools,
+            trading_tools,
+            news_tools,
+            social_feed_tools,
+            web_tools,
+        )
 
         current_context = build_agent_context(
             instrument=instrument,
@@ -1551,6 +1630,83 @@ def create_app(
             "news": [item.to_payload() for item in items],
         }
 
+    @app.get("/api/social/feed")
+    async def get_social_feed_endpoint(
+        request: Request,
+        limit: int = 50,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        """说明：读取本地缓存的社交流内容。"""
+        _require_local_social_request(request)
+        if runtime.social_feed_service is None:
+            return {"items": [], "enabled": False}
+        resolved = max(1, min(int(limit), 200))
+        items = runtime.social_feed_service.recent_items(limit=resolved, query=query)
+        return {
+            "enabled": True,
+            "items": [item.to_payload() for item in items],
+            "status": {
+                "lastStatus": runtime.social_feed_service.last_status,
+                "lastError": runtime.social_feed_service.last_error,
+                "lastFetchedAtMs": runtime.social_feed_service.last_fetched_at_ms,
+            },
+        }
+
+    @app.post("/api/social/x/refresh")
+    async def refresh_x_following_endpoint(
+        request: Request,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """说明：手动触发一次 X Following 读取。"""
+        _require_local_social_request(request)
+        if runtime.social_feed_service is None:
+            raise HTTPException(status_code=409, detail="social feed module disabled")
+        raw_count = (payload or {}).get("count", 20)
+        try:
+            count = max(1, min(int(raw_count), 100))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="count must be an integer") from exc
+        outcome = await runtime.social_feed_service.refresh_x_following(count=count)
+        await runtime.broadcast()
+        items = runtime.social_feed_service.recent_items(limit=50)
+        return {
+            "status": outcome.status,
+            "inserted": outcome.inserted,
+            "totalRecent": outcome.total_recent,
+            "error": outcome.error,
+            "items": [item.to_payload() for item in items],
+        }
+
+    @app.get("/api/social/auth")
+    async def get_social_auth_endpoint(request: Request) -> dict[str, Any]:
+        """说明：读取 X auth 保存状态，不返回明文。"""
+        _require_local_social_request(request)
+        return runtime.x_auth_store.status().to_payload()
+
+    @app.post("/api/social/auth")
+    async def save_social_auth_endpoint(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：保存 X auth cookie 到本地 secret store。"""
+        _require_local_social_request(request)
+        auth_token = str(payload.get("authToken") or payload.get("auth_token") or "")
+        ct0 = str(payload.get("ct0") or "")
+        try:
+            status = runtime.x_auth_store.save(auth_token=auth_token, ct0=ct0)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return status.to_payload()
+
+    @app.delete("/api/social/auth")
+    async def clear_social_auth_endpoint(request: Request) -> dict[str, Any]:
+        """说明：清除本地保存的 X auth cookie。"""
+        _require_local_social_request(request)
+        return runtime.x_auth_store.clear().to_payload()
+
+    @app.post("/api/social/config")
+    async def update_social_feed_config_endpoint(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：处理 Social Feed 配置更新请求。"""
+        _require_local_social_request(request)
+        return await runtime.update_social_feed_config(payload)
+
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
         """说明：接入 WebSocket 客户端并推送市场状态。"""
@@ -1698,3 +1854,29 @@ def _news_config_from_payload(current: NewsConfig, payload: dict[str, Any]) -> N
         if incoming in payload:
             raw[normalized] = payload[incoming]
     return parse_news_config(raw)
+
+
+def _social_feed_config_from_payload(
+    current: SocialFeedConfig,
+    payload: dict[str, Any],
+) -> SocialFeedConfig:
+    """说明：合并前端 social_feed 设置并重新规范化。"""
+    raw: dict[str, Any] = {
+        "enabled": current.enabled,
+        "recent_limit": current.recent_limit,
+        "retention_days": current.retention_days,
+        "max_items": current.max_items,
+    }
+    field_map = {
+        "enabled": "enabled",
+        "recentLimit": "recent_limit",
+        "recent_limit": "recent_limit",
+        "retentionDays": "retention_days",
+        "retention_days": "retention_days",
+        "maxItems": "max_items",
+        "max_items": "max_items",
+    }
+    for incoming, normalized in field_map.items():
+        if incoming in payload:
+            raw[normalized] = payload[incoming]
+    return parse_social_feed_config(raw)

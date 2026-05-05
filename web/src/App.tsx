@@ -8,9 +8,12 @@ import {
   ChevronsRight,
   ChartNoAxesCombined,
   CircleDot,
+  EyeOff,
   Eraser,
   History,
+  KeyRound,
   Loader2,
+  LockKeyhole,
   Minus,
   Moon,
   MousePointer2,
@@ -44,6 +47,8 @@ import {
   deleteAgentSession,
   fetchAgentSession,
   fetchAgentSessionHistory,
+  fetchRecentSocialFeed,
+  fetchSocialAuthStatus,
   fetchAgentModels,
   fetchState,
   getTradeDetail,
@@ -56,9 +61,13 @@ import {
   saveAgentConfig,
   saveInstrumentAnalysisInterval,
   saveNewsConfig,
+  saveSocialAuth,
+  saveSocialFeedConfig,
   searchInstruments,
   sendAgentMessage,
+  clearSocialAuth,
   triggerNewsRefresh,
+  triggerXFollowingRefresh,
   triggerTradeReview,
 } from './api';
 import type {
@@ -78,6 +87,8 @@ import type {
   NewsDecision,
   NewsItem,
   Quote,
+  SocialAuthStatus,
+  SocialFeedItem,
   Trade,
   TradeDetailResponse,
 } from './types';
@@ -117,9 +128,10 @@ const AGENT_PROVIDER_OPTIONS = [
 const PROVIDERS_HASH = '#/settings/providers';
 const WATCHLIST_HASH = '#/settings/watchlist';
 const NEWS_HASH = '#/settings/news';
+const SOCIAL_HASH = '#/settings/social';
 const THEME_STORAGE_KEY = 'mytradebot-theme';
 const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
-type SettingsSection = 'providers' | 'watchlist' | 'news';
+type SettingsSection = 'providers' | 'watchlist' | 'news' | 'social';
 type SearchSource = 'bitget' | 'alpaca';
 type SourceHint = SearchSource;
 type ThemeName = 'light' | 'dark';
@@ -216,6 +228,9 @@ function nextTheme(theme: ThemeName): ThemeName {
 
 // Converts the browser hash into the app's internal route shape.
 function readRouteFromHash(): AppRoute {
+  if (window.location.hash.startsWith(SOCIAL_HASH)) {
+    return { view: 'settings', section: 'social' };
+  }
   if (window.location.hash.startsWith(NEWS_HASH)) {
     return { view: 'settings', section: 'news' };
   }
@@ -232,7 +247,9 @@ function readRouteFromHash(): AppRoute {
 function navigateToRoute(route: AppRoute) {
   if (route.view === 'settings') {
     const hash =
-      route.section === 'news'
+      route.section === 'social'
+        ? SOCIAL_HASH
+        : route.section === 'news'
         ? NEWS_HASH
         : route.section === 'watchlist'
           ? WATCHLIST_HASH
@@ -1127,6 +1144,14 @@ function SettingsFrame({
             >
               <Newspaper size={18} />
               <span>News</span>
+            </button>
+            <button
+              className={`settings-nav-item ${section === 'social' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('social')}
+            >
+              <KeyRound size={18} />
+              <span>Social</span>
             </button>
           </div>
 
@@ -2614,6 +2639,311 @@ function NewsSettingsPanel({
   );
 }
 
+// Settings panel for X/Twitter social-feed auth and local module switch.
+function SocialSettingsPanel({
+  state,
+  onState,
+}: {
+  state: MarketState | null;
+  onState: (state: MarketState) => void;
+}) {
+  const config = state?.config.socialFeed;
+  const configSignature = config ? JSON.stringify(config) : '';
+  const [authStatus, setAuthStatus] = useState<SocialAuthStatus | null>(null);
+  const [authToken, setAuthToken] = useState('');
+  const [ct0, setCt0] = useState('');
+  const [savingAuth, setSavingAuth] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [feedPreview, setFeedPreview] = useState<SocialFeedItem[]>([]);
+  const [status, setStatus] = useState('Save X cookies locally, then enable the social feed reader.');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSocialAuthStatus()
+      .then((nextStatus) => {
+        if (!cancelled) setAuthStatus(nextStatus);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : 'Could not load social auth status.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!config) return;
+    setStatus(config.enabled ? 'Social feed reader is enabled.' : 'Social feed reader is disabled.');
+  }, [configSignature]);
+
+  async function persistSocialEnabled(nextEnabled: boolean) {
+    if (!config) return;
+    setSavingConfig(true);
+    setStatus(nextEnabled ? 'Enabling social feed reader...' : 'Disabling social feed reader...');
+    try {
+      const nextState = await saveSocialFeedConfig({ enabled: nextEnabled });
+      onState(nextState);
+      setStatus(nextEnabled ? 'Social feed reader enabled.' : 'Social feed reader disabled.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Save failed.');
+    } finally {
+      setSavingConfig(false);
+    }
+  }
+
+  async function persistAuth() {
+    setSavingAuth(true);
+    setStatus('Saving X auth locally...');
+    try {
+      const nextStatus = await saveSocialAuth({ authToken, ct0 });
+      setAuthStatus(nextStatus);
+      setAuthToken('');
+      setCt0('');
+      setStatus('X auth saved. Values are not shown again after saving.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Auth save failed.');
+    } finally {
+      setSavingAuth(false);
+    }
+  }
+
+  async function clearAuth() {
+    setSavingAuth(true);
+    setStatus('Clearing saved X auth...');
+    try {
+      const nextStatus = await clearSocialAuth();
+      setAuthStatus(nextStatus);
+      setStatus('Saved X auth cleared.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Clear failed.');
+    } finally {
+      setSavingAuth(false);
+    }
+  }
+
+  async function testRefresh() {
+    setTesting(true);
+    setStatus('Testing X Following refresh...');
+    try {
+      const result = await triggerXFollowingRefresh(3);
+      const items = await fetchRecentSocialFeed(3);
+      setFeedPreview(items);
+      setStatus(
+        result.status === 'ok'
+          ? `Refresh ok. New ${result.inserted}, cached ${result.totalRecent}, showing ${items.length}.`
+          : `Refresh ${result.status}: ${result.error ?? 'unknown error'}`,
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Refresh failed.');
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function loadCachedFeed() {
+    setTesting(true);
+    setStatus('Loading cached social feed sample...');
+    try {
+      const items = await fetchRecentSocialFeed(3);
+      setFeedPreview(items);
+      setStatus(items.length ? `Loaded ${items.length} cached item(s).` : 'No cached feed items yet.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Cached feed load failed.');
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  if (!config) {
+    return <div className="settings-loading">Loading settings...</div>;
+  }
+
+  const hasUsableAuth = Boolean(authStatus?.hasSavedAuth || authStatus?.envAvailable);
+  const savedAt = authStatus?.savedAtMs ? new Date(authStatus.savedAtMs).toLocaleString() : '—';
+  const canSaveAuth = authToken.trim().length > 0 && ct0.trim().length > 0 && !savingAuth;
+
+  return (
+    <>
+      <header className="settings-stage-head">
+        <div>
+          <div className="eyebrow">Local X Feed</div>
+          <h2>Social</h2>
+        </div>
+        <div className="settings-stage-actions">
+          <span className={`provider-inline-badge ${config.enabled ? 'positive' : ''}`}>
+            {config.enabled ? 'Reader On' : 'Reader Off'}
+          </span>
+          <span className={`provider-inline-badge ${hasUsableAuth ? 'positive' : ''}`}>
+            {hasUsableAuth ? 'Auth Ready' : 'Auth Missing'}
+          </span>
+        </div>
+      </header>
+
+      <div className="social-settings-layout">
+        <section className="provider-detail social-vault-card">
+          <div className="provider-section-head">
+            <strong>X Auth Vault</strong>
+            <span className="provider-inline-badge">local only</span>
+          </div>
+          <p className="settings-hint" style={{ marginTop: 0 }}>
+            Paste the two x.com cookies here once. They are stored on this machine and never echoed back
+            into the UI.
+          </p>
+
+          <div className="social-auth-state">
+            <div className="social-auth-state__icon">
+              <LockKeyhole size={20} />
+            </div>
+            <div>
+              <strong>{authStatus?.hasSavedAuth ? 'Saved auth is available' : 'No saved auth yet'}</strong>
+              <span>
+                {authStatus?.hasSavedAuth
+                  ? `Saved at ${savedAt}`
+                  : authStatus?.envAvailable
+                    ? 'Environment variables are available as fallback.'
+                    : 'Paste auth_token and ct0 to enable X refresh.'}
+              </span>
+            </div>
+          </div>
+
+          <div className="social-auth-form">
+            <label>
+              <span className="panel-label">auth_token</span>
+              <input
+                value={authToken}
+                onChange={(event) => setAuthToken(event.target.value)}
+                placeholder="Paste auth_token value"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              <span className="panel-label">ct0</span>
+              <input
+                value={ct0}
+                onChange={(event) => setCt0(event.target.value)}
+                placeholder="Paste ct0 value"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+          </div>
+
+          <div className="settings-action-row">
+            <button className="shell-button primary" type="button" disabled={!canSaveAuth} onClick={persistAuth}>
+              {savingAuth ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
+              Save auth
+            </button>
+            <button
+              className="shell-button danger"
+              type="button"
+              disabled={savingAuth || !authStatus?.hasSavedAuth}
+              onClick={clearAuth}
+            >
+              <Trash2 size={15} />
+              Clear saved auth
+            </button>
+          </div>
+
+          <div className="settings-hint social-secret-note">
+            <EyeOff size={14} />
+            Values are written to the backend local cache with file permissions tightened to owner-only.
+          </div>
+
+          <div className="social-test-panel">
+            <div className="provider-section-head">
+              <strong>Quick Tests</strong>
+              <span className="provider-inline-badge">manual</span>
+            </div>
+            <div className="settings-action-row">
+              <button
+                className="shell-button"
+                type="button"
+                disabled={!config.enabled || !hasUsableAuth || testing}
+                onClick={testRefresh}
+              >
+                {testing ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
+                Refresh + cache
+              </button>
+              <button
+                className="shell-button"
+                type="button"
+                disabled={!config.enabled || testing}
+                onClick={loadCachedFeed}
+              >
+                <Search size={15} />
+                Read cache
+              </button>
+            </div>
+            {feedPreview.length > 0 && (
+              <div className="social-test-preview">
+                {feedPreview.map((item) => (
+                  <div key={`${item.source}:${item.externalId}`} className="social-test-preview__item">
+                    <strong>@{item.author.handle}</strong>
+                    <span>{item.text.slice(0, 160) || '(empty tweet)'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="provider-detail">
+          <div className="provider-section-head">
+            <strong>Reader</strong>
+          </div>
+
+          <label className="settings-toggle-row">
+            <div>
+              <strong>Enable X Following reader</strong>
+              <small>
+                Controls the [social_feed] block in watchlist.toml. Agent tools stay disabled while this is off.
+              </small>
+            </div>
+            <button
+              className={`settings-toggle ${config.enabled ? 'on' : ''}`}
+              type="button"
+              disabled={savingConfig}
+              onClick={() => persistSocialEnabled(!config.enabled)}
+              aria-pressed={config.enabled}
+            >
+              <span />
+            </button>
+          </label>
+
+          <div className="settings-readonly-grid">
+            <div>
+              <span className="panel-label">Recent limit</span>
+              <strong>{config.recentLimit}</strong>
+            </div>
+            <div>
+              <span className="panel-label">Retention</span>
+              <strong>{config.retentionDays} days</strong>
+            </div>
+            <div>
+              <span className="panel-label">Max cached items</span>
+              <strong>{config.maxItems}</strong>
+            </div>
+            <div>
+              <span className="panel-label">Auth source</span>
+              <strong>
+                {authStatus?.hasSavedAuth ? 'Saved local auth' : authStatus?.envAvailable ? 'Environment' : 'Missing'}
+              </strong>
+            </div>
+          </div>
+
+          <div className="provider-status-bar">{status}</div>
+        </section>
+      </div>
+    </>
+  );
+}
+
 // 只读展示 [news_analyst] section: enabled / universe (5 个品种各自 alias 列表) /
 // gating 阈值 / cooldown。修改入口仍是 watchlist.toml + 重启 (跟 News module 一致)。
 function NewsAnalystSettingsSection({ state }: { state: MarketState | null }) {
@@ -3009,6 +3339,8 @@ export default function App() {
           <ProviderSettingsPanel state={state} onState={setState} />
         ) : route.section === 'news' ? (
           <NewsSettingsPanel state={state} onState={setState} />
+        ) : route.section === 'social' ? (
+          <SocialSettingsPanel state={state} onState={setState} />
         ) : (
           <WatchlistSettingsPanel state={state} onState={setState} />
         )}

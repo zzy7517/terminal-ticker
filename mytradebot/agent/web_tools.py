@@ -1,13 +1,14 @@
 """文件用途：给 agent loop 加 web_search / web_fetch 两个工具。
 
 # 后端策略
-# - web_search: 走 DuckDuckGo HTML 端点（零配置 / 免费 / 不需 API key）。
-#   后续如要升级到 Brave / Tavily / Exa，只需新增 _search_<backend> 函数
-#   并在 _resolve_backend() 里加 env 探测分支。
+# - web_search: 默认 auto，先走 Exa MCP（零配置 / 不需 API key），失败后退回
+#   DuckDuckGo HTML 端点。可用 MYTRADEBOT_WEB_SEARCH_BACKEND=duckduckgo/exa_mcp
+#   强制指定后端。
 # - web_fetch: 用 curl_cffi 伪装 Safari 指纹拉取任意 URL，跟 Reuters
 #   sitemap provider 同样的反爬策略，一致体验。
 #
 # # 已知限制
+# - Exa MCP 是远程服务，网络或服务不可用时 auto 会退回 DDG。
 # - DDG HTML 抓取被反爬时报错，工具返回 error JSON 让 LLM 自行决定要不要重试或换 query
 # - web_fetch 不做 HTML→Markdown 渲染，只剥 <script>/<style> 后返回纯文本片段
 """
@@ -17,6 +18,7 @@ import asyncio
 import ipaddress
 import json
 import logging
+import os
 import re
 import socket
 from html import unescape
@@ -35,6 +37,8 @@ from .tools import ToolDefinition, ToolRegistry
 LOGGER = logging.getLogger(__name__)
 
 DDG_HTML_URL = "https://html.duckduckgo.com/html/"
+EXA_MCP_URL = "https://mcp.exa.ai/mcp"
+WEB_SEARCH_BACKEND_ENV = "MYTRADEBOT_WEB_SEARCH_BACKEND"
 _IMPERSONATE_TARGET = "safari17_0"
 _DEFAULT_TIMEOUT = 15.0
 _FETCH_BODY_LIMIT = 8000   # 单次 fetch 返回的纯文本上限（避免 LLM context 爆炸）
@@ -216,12 +220,150 @@ def _parse_ddg_html(html: str, limit: int) -> list[dict[str, str]]:
     return out
 
 
+def _normalize_search_backend(value: str | None) -> str:
+    """说明：解析 web_search backend；默认 auto 先 Exa MCP，失败退回 DDG。"""
+    raw = (value or "auto").strip().lower().replace("-", "_")
+    if not raw or raw == "auto":
+        return "auto"
+    if raw in {"ddg", "duck", "duckduckgo"}:
+        return "duckduckgo"
+    if raw in {"exa", "exa_mcp", "examcp"}:
+        return "exa_mcp"
+    raise ValueError(f"{WEB_SEARCH_BACKEND_ENV} must be one of: auto, duckduckgo, exa_mcp")
+
+
+def _resolve_search_backend() -> str:
+    return _normalize_search_backend(os.getenv(WEB_SEARCH_BACKEND_ENV))
+
+
+def _iter_exa_mcp_payloads(body: str):
+    """说明：Exa MCP 可能返回 JSON，也可能以 SSE data: 行返回 JSON-RPC。"""
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("data:"):
+            continue
+        payload = stripped[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        yield parsed
+
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return
+    yield parsed
+
+
+def _extract_exa_mcp_text(body: str) -> str:
+    rpc: dict[str, Any] | None = None
+    for candidate in _iter_exa_mcp_payloads(body):
+        if isinstance(candidate, dict) and ("result" in candidate or "error" in candidate):
+            rpc = candidate
+            break
+    if rpc is None:
+        raise RuntimeError("Exa MCP returned an empty response")
+
+    error = rpc.get("error")
+    if isinstance(error, dict):
+        code = error.get("code")
+        code_label = f" {code}" if isinstance(code, int) else ""
+        message = error.get("message") if isinstance(error.get("message"), str) else "Unknown error"
+        raise RuntimeError(f"Exa MCP error{code_label}: {message}")
+
+    result = rpc.get("result")
+    if not isinstance(result, dict):
+        raise RuntimeError("Exa MCP returned no result")
+    if result.get("isError") is True:
+        content = result.get("content")
+        message = ""
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
+                    message = item["text"].strip()
+                    break
+        raise RuntimeError(message or "Exa MCP returned an error")
+
+    content = result.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
+                text = item["text"].strip()
+                if text:
+                    return text
+    raise RuntimeError("Exa MCP returned empty content")
+
+
+def _parse_exa_mcp_results(text: str, limit: int) -> list[dict[str, str]]:
+    """说明：解析 Exa MCP web_search_exa 的 Title/URL/Text 块。"""
+    blocks = re.split(r"(?=^Title: )", text, flags=re.MULTILINE)
+    out: list[dict[str, str]] = []
+    for block in blocks:
+        if len(out) >= limit:
+            break
+        title_match = re.search(r"^Title:\s*(.+)", block, flags=re.MULTILINE)
+        url_match = re.search(r"^URL:\s*(.+)", block, flags=re.MULTILINE)
+        if not title_match or not url_match:
+            continue
+        title = _strip_html(title_match.group(1)).strip()
+        result_url = url_match.group(1).strip()
+        content = ""
+        text_start = block.find("\nText: ")
+        if text_start >= 0:
+            content = block[text_start + len("\nText: "):].strip()
+        else:
+            highlights_match = re.search(r"\nHighlights:\s*\n", block)
+            if highlights_match and highlights_match.end() < len(block):
+                content = block[highlights_match.end():].strip()
+        content = re.sub(r"\n---\s*$", "", content).strip()
+        snippet = re.sub(r"\s+", " ", _strip_html(content)).strip()
+        if len(snippet) > 500:
+            snippet = snippet[:497] + "..."
+        if title and result_url:
+            out.append({"url": result_url, "title": title, "snippet": snippet})
+    return out
+
+
 async def _http_post_ddg(query: str, timeout: float) -> tuple[int, str]:
     """说明：POST 到 DDG HTML 端点。返回 (status_code, body)。"""
     if _CurlAsyncSession is None:
         raise RuntimeError("curl_cffi not installed; web_search requires it")
     async with _CurlAsyncSession(impersonate=_IMPERSONATE_TARGET, timeout=timeout) as s:
         r = await s.post(DDG_HTML_URL, data={"q": query})
+        return int(r.status_code), str(r.text or "")
+
+
+async def _http_post_exa_mcp(query: str, limit: int, timeout: float) -> tuple[int, str]:
+    """说明：调用 Exa 远程 MCP 的 web_search_exa tool。"""
+    if _CurlAsyncSession is None:
+        raise RuntimeError("curl_cffi not installed; web_search requires it")
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "web_search_exa",
+            "arguments": {
+                "query": query,
+                "numResults": limit,
+                "livecrawl": "fallback",
+                "type": "auto",
+                "contextMaxCharacters": 3000,
+            },
+        },
+    }
+    async with _CurlAsyncSession(timeout=timeout) as s:
+        r = await s.post(
+            EXA_MCP_URL,
+            json=payload,
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+            },
+        )
         return int(r.status_code), str(r.text or "")
 
 
@@ -250,6 +392,82 @@ async def _http_get(url: str, timeout: float) -> tuple[int, str, str, bool]:
     raise RuntimeError("too many redirects")
 
 
+async def _search_duckduckgo(query: str, limit: int, timeout_seconds: float) -> dict[str, Any]:
+    try:
+        status, body = await _http_post_ddg(query, timeout_seconds)
+    except _CurlRequestException as exc:
+        return {"error": f"http error: {exc}", "engine": "duckduckgo"}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"search failed: {exc}", "engine": "duckduckgo"}
+
+    if status >= 400:
+        return {"error": f"HTTP {status}", "engine": "duckduckgo"}
+
+    results = _parse_ddg_html(body, limit)
+    if not results:
+        # DDG 返反爬页或空结果时常返回 200 + 极少 HTML，留个明显信号给 LLM
+        return {
+            "engine": "duckduckgo",
+            "query": query,
+            "count": 0,
+            "results": [],
+            "note": "no results (possibly rate-limited or blocked)",
+        }
+    return {
+        "engine": "duckduckgo",
+        "query": query,
+        "count": len(results),
+        "results": results,
+    }
+
+
+async def _search_exa_mcp(query: str, limit: int, timeout_seconds: float) -> dict[str, Any]:
+    try:
+        status, body = await _http_post_exa_mcp(query, limit, timeout_seconds)
+    except _CurlRequestException as exc:
+        return {"error": f"http error: {exc}", "engine": "exa_mcp"}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"search failed: {exc}", "engine": "exa_mcp"}
+
+    if status >= 400:
+        return {"error": f"HTTP {status}", "engine": "exa_mcp"}
+
+    try:
+        text = _extract_exa_mcp_text(body)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"search failed: {exc}", "engine": "exa_mcp"}
+
+    results = _parse_exa_mcp_results(text, limit)
+    if not results:
+        return {
+            "engine": "exa_mcp",
+            "query": query,
+            "count": 0,
+            "results": [],
+            "note": "no parseable results from Exa MCP",
+        }
+    return {
+        "engine": "exa_mcp",
+        "query": query,
+        "count": len(results),
+        "results": results,
+    }
+
+
+def _search_failure_reason(result: dict[str, Any]) -> str:
+    error = result.get("error")
+    if isinstance(error, str) and error:
+        return error
+    note = result.get("note")
+    if isinstance(note, str) and note:
+        return note
+    return "no results"
+
+
+def _search_has_results(result: dict[str, Any]) -> bool:
+    return "error" not in result and int(result.get("count") or 0) > 0
+
+
 def build_web_tools(
     *,
     timeout_seconds: float = _DEFAULT_TIMEOUT,
@@ -263,7 +481,7 @@ def build_web_tools(
     registry = ToolRegistry()
 
     async def web_search(query: str, limit: int = 5) -> str:
-        """说明：DuckDuckGo 搜索，返回最多 N 条 {url, title, snippet}。"""
+        """说明：搜索网页；默认 Exa MCP，失败退回 DuckDuckGo。"""
         q = (query or "").strip()
         if not q:
             return _json_output({"error": "query is empty"})
@@ -271,39 +489,45 @@ def build_web_tools(
             capped = _bounded_int(limit, default=5, low=1, high=20, field="limit")
         except ValueError as exc:
             return _json_output({"error": str(exc)})
+
         try:
-            status, body = await _http_post_ddg(q, timeout_seconds)
-        except _CurlRequestException as exc:
-            return _json_output({"error": f"http error: {exc}"})
-        except Exception as exc:  # noqa: BLE001
-            return _json_output({"error": f"search failed: {exc}"})
+            backend = _resolve_search_backend()
+        except ValueError as exc:
+            return _json_output({"error": str(exc)})
 
-        if status >= 400:
-            return _json_output({"error": f"HTTP {status}", "engine": "duckduckgo"})
+        if backend == "duckduckgo":
+            return _json_output(await _search_duckduckgo(q, capped, timeout_seconds))
+        if backend == "exa_mcp":
+            return _json_output(await _search_exa_mcp(q, capped, timeout_seconds))
 
-        results = _parse_ddg_html(body, capped)
-        if not results:
-            # DDG 返反爬页或空结果时常返回 200 + 极少 HTML，留个明显信号给 LLM
-            return _json_output({
-                "engine": "duckduckgo",
-                "query": q,
-                "count": 0,
-                "results": [],
-                "note": "no results (possibly rate-limited or blocked)",
-            })
+        exa_result = await _search_exa_mcp(q, capped, timeout_seconds)
+        if _search_has_results(exa_result):
+            return _json_output(exa_result)
+
+        ddg_result = await _search_duckduckgo(q, capped, timeout_seconds)
+        if "error" not in ddg_result:
+            ddg_result["fallbackFrom"] = "exa_mcp"
+            ddg_result["fallbackReason"] = _search_failure_reason(exa_result)
+            return _json_output(ddg_result)
+
         return _json_output({
-            "engine": "duckduckgo",
+            "engine": "auto",
             "query": q,
-            "count": len(results),
-            "results": results,
+            "count": 0,
+            "results": [],
+            "errors": {
+                "exa_mcp": _search_failure_reason(exa_result),
+                "duckduckgo": _search_failure_reason(ddg_result),
+            },
         })
 
     registry.register(ToolDefinition(
         name="web_search",
         description=(
-            "Search the open web via DuckDuckGo. Returns up to N hits with "
-            "{url, title, snippet}. Use this to discover sources or check facts; "
-            "follow up with web_fetch to read a specific URL in full."
+            "Search the open web. Defaults to Exa MCP with DuckDuckGo fallback; "
+            "set MYTRADEBOT_WEB_SEARCH_BACKEND to auto, exa_mcp, or duckduckgo. "
+            "Returns up to N hits with {url, title, snippet}. Use this to discover "
+            "sources or check facts; follow up with web_fetch to read a specific URL in full."
         ),
         parameters={
             "type": "object",

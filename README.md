@@ -238,6 +238,14 @@ Agent 不是只看一段 prompt。打开 `agent.use_tools = true` 后，它可�
 - `get_trade_history`：读取历史交易、fills 和 lessons。
 - `web_search` / `web_fetch`：受限制的网页搜索和读取工具，会拒绝 localhost、内网地址和不安全 scheme。
 
+`web_search` 默认使用 Exa MCP，并在失败时退回 DuckDuckGo HTML 搜索；不需要配置 Exa API key。可以用环境变量强制后端：
+
+```bash
+export MYTRADEBOT_WEB_SEARCH_BACKEND="auto"       # 默认：Exa MCP -> DuckDuckGo
+export MYTRADEBOT_WEB_SEARCH_BACKEND="exa_mcp"    # 只用 Exa MCP
+export MYTRADEBOT_WEB_SEARCH_BACKEND="duckduckgo" # 只用 DuckDuckGo
+```
+
 Agent 输出会被解析成结构化结果，核心字段包括 `summary`、`bias`、`confidence`、`key_levels`、`watch_plan`、`invalidation` 和 `risk_notes`。
 
 ## Paper Trading
