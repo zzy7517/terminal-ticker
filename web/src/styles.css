@@ -917,14 +917,35 @@ textarea:focus-visible {
   font-family: var(--mono);
   font-size: 11px;
   gap: 8px;
-  grid-template-columns: minmax(0, 1fr) auto 28px;
+  grid-template-columns: auto minmax(0, 1fr) auto 28px;
 }
 
-.session-toolbar span,
-.session-toolbar small {
+.session-toolbar > span,
+.session-toolbar > small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-provider-select {
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  height: 26px;
+  padding: 0 6px;
+}
+
+.session-provider-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.session-toolbar-model {
+  color: var(--text-secondary);
 }
 
 .session-icon-action {
@@ -1228,122 +1249,105 @@ textarea:focus-visible {
   transform: scale(0.97);
 }
 
-/* ── Agent analysis blocks ────────────────────────────────────────── */
-.confidence-meter {
-  background: var(--canvas);
-  border-radius: var(--radius-md);
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 10px;
-}
-
-.confidence-meter > div:first-child {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-}
-
-.confidence-meter span {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.confidence-meter strong {
-  font-family: var(--mono);
+/* ── Agent message markdown ───────────────────────────────────────── */
+.session-markdown {
+  color: var(--text-primary);
   font-size: 13px;
+  line-height: 1.55;
+  word-break: break-word;
 }
 
-.confidence-track {
-  background: var(--line-soft);
-  border-radius: 999px;
-  height: 6px;
-  overflow: hidden;
+.session-markdown > :first-child {
+  margin-top: 0;
 }
 
-.confidence-track span {
-  background: linear-gradient(90deg, var(--accent), var(--up));
-  border-radius: inherit;
-  display: block;
-  height: 100%;
+.session-markdown > :last-child {
+  margin-bottom: 0;
 }
 
-.agent-levels {
-  display: grid;
-  gap: 6px;
-  margin-top: 10px;
+.session-markdown p {
+  margin: 0 0 8px;
 }
 
-.agent-level {
+.session-markdown h1,
+.session-markdown h2,
+.session-markdown h3,
+.session-markdown h4 {
+  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 12px 0 6px;
+}
+
+.session-markdown h1 { font-size: 16px; }
+.session-markdown h2 { font-size: 15px; }
+.session-markdown h3 { font-size: 14px; }
+.session-markdown h4 { font-size: 13px; color: var(--text-secondary); }
+
+.session-markdown ul,
+.session-markdown ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.session-markdown li {
+  margin-bottom: 3px;
+}
+
+.session-markdown code {
   background: var(--canvas);
-  border-radius: var(--radius-md);
-  padding: 8px;
-}
-
-.agent-level span,
-.agent-level small,
-.agent-invalidation span {
-  color: var(--text-muted);
-  display: block;
-  font-size: 11px;
-}
-
-.agent-level strong {
-  display: block;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
   font-family: var(--mono);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  margin: 3px 0;
+  font-size: 12px;
+  padding: 1px 5px;
 }
 
-.agent-plan {
+.session-markdown pre {
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  margin: 0 0 8px;
+  overflow-x: auto;
+  padding: 10px 12px;
+}
+
+.session-markdown pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.session-markdown blockquote {
+  border-left: 3px solid var(--line-soft);
   color: var(--text-secondary);
-  display: grid;
-  font-size: 12px;
-  gap: 6px;
-  line-height: 1.45;
-  margin-top: 10px;
+  margin: 0 0 8px;
+  padding: 2px 0 2px 10px;
 }
 
-.agent-plan div {
-  border-top: 1px solid var(--line-soft);
-  padding-top: 6px;
-}
-
-.agent-invalidation {
-  background: rgba(255, 68, 102, 0.06);
-  border-radius: var(--radius-md);
-  margin-top: 10px;
-  padding: 8px;
-}
-
-.agent-invalidation strong {
-  display: block;
-  font-size: 12px;
-  line-height: 1.4;
-  margin-top: 3px;
-}
-
-.risk-notes {
-  background: var(--accent-tint);
-  border-radius: var(--radius-md);
-  display: grid;
-  gap: 5px;
-  margin-top: 10px;
-  padding: 8px;
-}
-
-.risk-notes span {
+.session-markdown a {
   color: var(--accent);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
+  text-decoration: underline;
 }
 
-.risk-notes small {
-  color: var(--text-secondary);
-  line-height: 1.4;
+.session-markdown table {
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+
+.session-markdown th,
+.session-markdown td {
+  border: 1px solid var(--line-soft);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.session-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  margin: 10px 0;
 }
 
 /* ── Agent tool steps ─────────────────────────────────────────────── */
@@ -1526,9 +1530,9 @@ textarea:focus-visible {
   display: grid;
   gap: 0;
   grid-template-columns: 240px minmax(0, 1fr);
+  height: calc(100vh - 28px);
   margin: 0 auto;
   max-width: 1600px;
-  min-height: calc(100vh - 28px);
 }
 
 .settings-nav {
@@ -1622,7 +1626,9 @@ textarea:focus-visible {
 }
 
 .settings-stage {
+  height: 100%;
   min-width: 0;
+  overflow-y: auto;
   padding: 24px;
 }
 
@@ -1644,7 +1650,7 @@ textarea:focus-visible {
   display: grid;
   gap: 14px;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-  min-height: calc(100vh - 170px);
+  min-height: 0;
 }
 
 .provider-catalog {
@@ -1739,17 +1745,15 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 20px;
+  padding: 16px;
 }
 
-/* News 设置页右栏：Module 和 News Analyst 两个 detail 纵向叠加，共享右栏滚动，
-   整体跟其他设置页一样贴满 .provider-layout 的高度 */
+/* News 设置页右栏：Module 和 News Analyst 两个 detail 纵向叠加，
+   滚动交给外层 .settings-stage 处理，本身只做布局。 */
 .news-settings-detail-stack {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-height: 0;
-  overflow-y: auto;
 }
 
 .provider-hero {
