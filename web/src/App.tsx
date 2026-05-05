@@ -40,6 +40,8 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from 'lightweight-charts';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   addAlpacaSymbol,
   addBitgetSymbol,
@@ -290,14 +292,6 @@ function agentTone(analysis: AgentAnalysis | undefined) {
   if (bias === 'bearish') return 'down';
   if (bias === 'mixed') return 'mixed';
   return 'neutral';
-}
-
-// Normalizes provider confidence values that may arrive as either 0-1 or 0-100.
-function agentConfidencePercent(analysis: AgentAnalysis | null | undefined) {
-  if (!analysis?.available) return 0;
-  const value = Number(analysis.confidence);
-  if (!Number.isFinite(value)) return 0;
-  return Math.round(value <= 1 ? value * 100 : value);
 }
 
 // Returns the short source label shown beside an instrument.
@@ -1442,54 +1436,12 @@ function WatchlistSettingsPanel({
   );
 }
 
-// Renders the structured fields returned by the chart-agent provider.
-function AgentAnalysisBlock({ analysis }: { analysis: AgentAnalysis }) {
-  const confidence = agentConfidencePercent(analysis);
+// Renders any text body as markdown so the agent can use headings, lists, code, tables freely.
+function MarkdownMessage({ source }: { source: string }) {
   return (
-    <>
-      <p>{analysis.available ? analysis.summary : analysis.error || 'Agent response unavailable.'}</p>
-      {analysis.available && (
-        <>
-          <div className="confidence-meter">
-            <div>
-              <span>Confidence</span>
-              <strong>{confidence}%</strong>
-            </div>
-            <div className="confidence-track">
-              <span style={{ width: `${Math.max(4, Math.min(100, confidence))}%` }} />
-            </div>
-          </div>
-          <div className="agent-levels">
-            {analysis.keyLevels.slice(0, 3).map((level, index) => (
-              <div className="agent-level" key={`${level.label}-${index}`}>
-                <span>{level.label || 'Level'}</span>
-                <strong>{formatLevelPrice(level.price)}</strong>
-                <small>{level.reason}</small>
-              </div>
-            ))}
-          </div>
-          <div className="agent-plan">
-            {analysis.watchPlan.slice(0, 3).map((item, index) => (
-              <div key={`${item}-${index}`}>{item}</div>
-            ))}
-          </div>
-          {analysis.invalidation && (
-            <div className="agent-invalidation">
-              <span>Invalidation</span>
-              <strong>{analysis.invalidation}</strong>
-            </div>
-          )}
-          {analysis.riskNotes.length > 0 && (
-            <div className="risk-notes">
-              <span>Risk notes</span>
-              {analysis.riskNotes.slice(0, 2).map((item, index) => (
-                <small key={`${item}-${index}`}>{item}</small>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </>
+    <div className="session-markdown">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{source || ''}</ReactMarkdown>
+    </div>
   );
 }
 
@@ -1560,10 +1512,10 @@ function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
             )}
           </div>
           {analysis.loopResult && <AgentToolSteps steps={analysis.loopResult.steps} />}
-          <AgentAnalysisBlock analysis={analysis} />
+          <MarkdownMessage source={analysis.available ? analysis.summary : analysis.error || 'Agent response unavailable.'} />
         </>
       ) : (
-        <p>{message.content || message.error || 'No content.'}</p>
+        <MarkdownMessage source={message.content || message.error || 'No content.'} />
       )}
     </div>
   );
@@ -1671,11 +1623,13 @@ function AgentSessionPanel({
   sessionLoading,
   busy,
   disabled,
+  currentProvider,
   onDeleteSession,
   onPromptChange,
   onResumeSession,
   onSend,
   onReset,
+  onProviderSwitch,
 }: {
   analysis: AgentAnalysis | undefined;
   session: AgentSessionResponse | null;
@@ -1686,11 +1640,13 @@ function AgentSessionPanel({
   sessionLoading: boolean;
   busy: boolean;
   disabled: boolean;
+  currentProvider: string;
   onDeleteSession: (sessionId: string) => Promise<void>;
   onPromptChange: (value: string) => void;
   onResumeSession: (sessionId: string) => Promise<void>;
   onSend: () => Promise<void>;
   onReset: () => Promise<void>;
+  onProviderSwitch: (provider: string) => Promise<void>;
 }) {
   const messages = session?.messages ?? [];
   const latestAnalysis =
@@ -1700,6 +1656,17 @@ function AgentSessionPanel({
   const sessionTime = session?.session
     ? new Date(session.session.updatedAt).toLocaleTimeString()
     : 'No session';
+  const [providerSwitching, setProviderSwitching] = useState(false);
+
+  async function handleProviderChange(next: string) {
+    if (!next || next === currentProvider) return;
+    setProviderSwitching(true);
+    try {
+      await onProviderSwitch(next);
+    } finally {
+      setProviderSwitching(false);
+    }
+  }
 
   return (
     <div className="agent-card agent-readout agent-session-card">
@@ -1710,7 +1677,20 @@ function AgentSessionPanel({
         <span className={`agent-bias ${tone}`}>{latestAnalysis?.bias ?? 'idle'}</span>
       </div>
       <div className="session-toolbar">
-        <span>{session?.session?.model ?? analysis?.model ?? '-'}</span>
+        <select
+          aria-label="Switch agent provider"
+          className="session-provider-select"
+          disabled={busy || sessionLoading || providerSwitching}
+          onChange={(event) => void handleProviderChange(event.target.value)}
+          value={currentProvider}
+        >
+          {AGENT_PROVIDER_OPTIONS.map((option) => (
+            <option key={option.provider} value={option.provider}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <span className="session-toolbar-model">{session?.session?.model ?? analysis?.model ?? '-'}</span>
         <small>{sessionLoading ? 'Loading' : sessionTime}</small>
         <button
           aria-label="Start new agent session"
@@ -1746,7 +1726,7 @@ function AgentSessionPanel({
               <span>Latest</span>
               <time>{new Date(analysis.updatedAt).toLocaleTimeString()}</time>
             </div>
-            <AgentAnalysisBlock analysis={analysis} />
+            <MarkdownMessage source={analysis.available ? analysis.summary : analysis.error || 'Agent response unavailable.'} />
           </div>
         )}
         {!sessionLoading && messages.length === 0 && !analysis && (
@@ -2090,11 +2070,22 @@ function WorkspaceView({
                   sessionLoading={agentSessionLoading}
                   busy={agentBusyKey === selectedKey}
                   disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
+                  currentProvider={state?.config.agent.provider ?? AGENT_PROVIDER_OPTIONS[0].provider}
                   onDeleteSession={deleteAgentConversation}
                   onPromptChange={setAgentPrompt}
                   onResumeSession={resumeAgentConversation}
                   onSend={runAgentAnalysis}
                   onReset={resetAgentConversation}
+                  onProviderSwitch={async (provider) => {
+                    const option = AGENT_PROVIDER_OPTIONS.find((item) => item.provider === provider);
+                    if (!option) return;
+                    const nextState = await saveAgentConfig({
+                      provider: option.provider,
+                      apiMode: option.apiMode,
+                      model: option.defaultModel,
+                    });
+                    setState(nextState);
+                  }}
                 />
               </div>
               {state?.config.news?.enabled && (
