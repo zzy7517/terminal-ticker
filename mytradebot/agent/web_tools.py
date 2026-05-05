@@ -13,12 +13,15 @@
 """
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import json
 import logging
 import re
+import socket
 from html import unescape
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 try:
     from curl_cffi.requests import AsyncSession as _CurlAsyncSession
@@ -35,6 +38,8 @@ DDG_HTML_URL = "https://html.duckduckgo.com/html/"
 _IMPERSONATE_TARGET = "safari17_0"
 _DEFAULT_TIMEOUT = 15.0
 _FETCH_BODY_LIMIT = 8000   # 单次 fetch 返回的纯文本上限（避免 LLM context 爆炸）
+_MAX_FETCH_REDIRECTS = 5
+_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 
 _DDG_RESULT_RE = re.compile(
     r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
@@ -46,11 +51,23 @@ _DDG_SNIPPET_RE = re.compile(
 )
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _DDG_REDIRECT_PREFIX = "//duckduckgo.com/l/?uddg="
+_LOCAL_HOSTNAMES = {"localhost"}
 
 
 def _json_output(data: Any) -> str:
     """与 tools._json_output 同形态，独立一份避免下游引用模块私有 API。"""
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def _bounded_int(value: Any, *, default: int, low: int, high: int, field: str) -> int:
+    """把工具参数收敛到整数区间；模型传错类型时返回清晰错误。"""
+    if value is None or value == "":
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be an integer") from exc
+    return max(low, min(parsed, high))
 
 
 def _is_readable_content_type(content_type_lower: str) -> bool:
@@ -75,6 +92,68 @@ def _strip_html(html: str) -> str:
     """剥 HTML 标签 + 解码实体，返回紧凑文本。"""
     text = _HTML_TAG_RE.sub("", html)
     return unescape(text).strip()
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """web_fetch 只能读公网内容，避免模型访问本机/内网/metadata 地址。"""
+    return ip.is_multicast or not ip.is_global
+
+
+def _literal_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    normalized = host.strip("[]")
+    try:
+        return ipaddress.ip_address(normalized)
+    except ValueError:
+        return None
+
+
+def _resolve_host_ips(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    out: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    for family, *_rest, sockaddr in infos:
+        if family not in (socket.AF_INET, socket.AF_INET6):
+            continue
+        raw_ip = str(sockaddr[0])
+        try:
+            out.append(ipaddress.ip_address(raw_ip))
+        except ValueError:
+            continue
+    return out
+
+
+async def _fetch_target_validation_error(url: str) -> str | None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return f"unsupported scheme: {parsed.scheme!r}"
+    if not parsed.netloc:
+        return "missing host"
+
+    host = parsed.hostname
+    if not host:
+        return "missing host"
+
+    normalized_host = host.rstrip(".").lower()
+    if normalized_host in _LOCAL_HOSTNAMES or normalized_host.endswith(".localhost"):
+        return f"blocked private/internal host: {host}"
+
+    literal = _literal_ip(host)
+    if literal is not None:
+        if _is_blocked_ip(literal):
+            return f"blocked private/internal address: {host}"
+        return None
+
+    try:
+        resolved = await asyncio.to_thread(_resolve_host_ips, host)
+    except socket.gaierror as exc:
+        return f"host is not resolvable: {host} ({exc})"
+    except OSError as exc:
+        return f"host resolution failed: {host} ({exc})"
+
+    if not resolved:
+        return f"host is not resolvable: {host}"
+    if any(_is_blocked_ip(ip) for ip in resolved):
+        return f"blocked private/internal address: {host}"
+    return None
 
 
 def _unwrap_ddg_redirect(href: str) -> str:
@@ -122,10 +201,24 @@ async def _http_get(url: str, timeout: float) -> tuple[int, str, str]:
     """说明：拉单个 URL 的内容。返回 (status_code, content_type, body)。"""
     if _CurlAsyncSession is None:
         raise RuntimeError("curl_cffi not installed; web_fetch requires it")
+    current_url = url
     async with _CurlAsyncSession(impersonate=_IMPERSONATE_TARGET, timeout=timeout) as s:
-        r = await s.get(url)
-        ct = r.headers.get("content-type", "") or r.headers.get("Content-Type", "")
-        return int(r.status_code), str(ct), str(r.text or "")
+        for _ in range(_MAX_FETCH_REDIRECTS + 1):
+            r = await s.get(current_url, allow_redirects=False)
+            status = int(r.status_code)
+            if status in _REDIRECT_STATUSES:
+                location = r.headers.get("location", "") or r.headers.get("Location", "")
+                if not location:
+                    break
+                next_url = urljoin(current_url, str(location))
+                validation_error = await _fetch_target_validation_error(next_url)
+                if validation_error:
+                    raise ValueError(f"blocked redirect target: {validation_error}")
+                current_url = next_url
+                continue
+            ct = r.headers.get("content-type", "") or r.headers.get("Content-Type", "")
+            return status, str(ct), str(r.text or "")
+    raise RuntimeError("too many redirects")
 
 
 def build_web_tools(
@@ -145,7 +238,10 @@ def build_web_tools(
         q = (query or "").strip()
         if not q:
             return _json_output({"error": "query is empty"})
-        capped = max(1, min(int(limit or 5), 20))
+        try:
+            capped = _bounded_int(limit, default=5, low=1, high=20, field="limit")
+        except ValueError as exc:
+            return _json_output({"error": str(exc)})
         try:
             status, body = await _http_post_ddg(q, timeout_seconds)
         except _CurlRequestException as exc:
@@ -200,11 +296,9 @@ def build_web_tools(
         target = (url or "").strip()
         if not target:
             return _json_output({"error": "url is empty"})
-        parsed = urlparse(target)
-        if parsed.scheme not in {"http", "https"}:
-            return _json_output({"error": f"unsupported scheme: {parsed.scheme!r}"})
-        if not parsed.netloc:
-            return _json_output({"error": "missing host"})
+        validation_error = await _fetch_target_validation_error(target)
+        if validation_error:
+            return _json_output({"error": validation_error, "url": target})
 
         try:
             status, content_type, body = await _http_get(target, timeout_seconds)
@@ -238,7 +332,20 @@ def build_web_tools(
         # 折叠多空白
         text = re.sub(r"\s+", " ", text).strip()
 
-        cap = body_limit if max_chars is None else max(200, min(int(max_chars), body_limit))
+        try:
+            cap = (
+                body_limit
+                if max_chars is None
+                else _bounded_int(
+                    max_chars,
+                    default=body_limit,
+                    low=200,
+                    high=body_limit,
+                    field="max_chars",
+                )
+            )
+        except ValueError as exc:
+            return _json_output({"error": str(exc), "url": target})
         truncated = text[:cap]
         return _json_output({
             "url": target,

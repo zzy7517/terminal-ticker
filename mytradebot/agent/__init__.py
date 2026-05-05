@@ -54,6 +54,7 @@ __all__ = [
     "build_market_tools",
     "build_news_tools",
     "build_trading_tools",
+    "build_web_tools",
     "merge_registries",
     "create_llm_provider",
     "list_available_agent_models",
