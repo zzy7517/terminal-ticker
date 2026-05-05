@@ -507,13 +507,17 @@ class WebTests(unittest.TestCase):
                         json={"message": "What changed since the prior candle?"},
                     )
                     persisted_response = client.get("/api/agent/sessions/alpaca:AAPL")
+                    history_response = client.get("/api/agent/sessions/alpaca:AAPL/history")
 
         payload = response.json()
         persisted_payload = persisted_response.json()
+        history_payload = history_response.json()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(payload["result"]["available"])
         self.assertEqual(payload["state"]["agentAnalyses"][instrument.key]["summary"], "AAPL is trending.")
         self.assertEqual(payload["session"]["session"]["instrumentKey"], instrument.key)
+        self.assertEqual(payload["session"]["session"]["apiMode"], "codex_responses")
+        self.assertIn("history", payload)
         self.assertEqual(
             [message["role"] for message in payload["session"]["messages"]],
             ["user", "assistant"],
@@ -524,6 +528,72 @@ class WebTests(unittest.TestCase):
         )
         self.assertEqual(persisted_response.status_code, 200)
         self.assertEqual(persisted_payload["messages"][1]["analysis"]["summary"], "AAPL is trending.")
+        self.assertEqual(history_response.status_code, 200)
+        self.assertEqual(history_payload["sessions"][0]["messageCount"], 2)
+        self.assertEqual(history_payload["sessions"][0]["preview"], "What changed since the prior candle?")
+
+    def test_agent_session_history_can_resume_and_delete(self) -> None:
+        """Verify history endpoints can restore and delete persisted chart sessions."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            instrument = AlpacaInstrument("AAPL", "AAPL")
+            store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
+            first = store.create_session(
+                instrument_key=instrument.key,
+                title="AAPL · AAPL",
+                provider="codex",
+                model="old-model",
+            )
+            store.append_message(
+                session_id=first.id,
+                role="user",
+                content="First session prompt",
+            )
+            store.append_message(
+                session_id=first.id,
+                role="assistant",
+                content="Old analysis.",
+                analysis={"summary": "Old analysis.", "bias": "neutral", "confidence": 40},
+            )
+            second = store.create_session(
+                instrument_key=instrument.key,
+                title="AAPL · AAPL",
+                provider="codex",
+                model="new-model",
+            )
+            store.append_message(
+                session_id=second.id,
+                role="user",
+                content="Second session prompt",
+            )
+            app = create_app(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                agent_session_store=store,
+                auto_start=False,
+            )
+
+            with TestClient(app) as client:
+                resume_response = client.post(
+                    f"/api/agent/sessions/alpaca:AAPL/history/{first.id}/resume",
+                )
+                delete_response = client.delete(
+                    f"/api/agent/sessions/alpaca:AAPL/history/{first.id}",
+                )
+                missing_response = client.delete(
+                    f"/api/agent/sessions/alpaca:AAPL/history/{first.id}",
+                )
+
+        resume_payload = resume_response.json()
+        delete_payload = delete_response.json()
+        self.assertEqual(resume_response.status_code, 200)
+        self.assertEqual(resume_payload["session"]["session"]["id"], first.id)
+        self.assertEqual(resume_payload["state"]["agentAnalyses"][instrument.key]["summary"], "Old analysis.")
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertTrue(delete_payload["deleted"])
+        self.assertEqual(delete_payload["session"]["session"]["id"], second.id)
+        self.assertEqual([item["id"] for item in delete_payload["history"]["sessions"]], [second.id])
+        self.assertEqual(missing_response.status_code, 404)
 
     def test_agent_loop_prompt_includes_market_context_snapshot(self) -> None:
         """Verify tool loop still gets authoritative market context before any tool calls."""

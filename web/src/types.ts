@@ -69,6 +69,15 @@ export interface AgentSession {
   createdAt: string;
   updatedAt: string;
   active: boolean;
+  apiMode: string | null;
+  reasoningEffort: string | null;
+  maxIterations: number | null;
+  useTools: boolean | null;
+}
+
+export interface AgentSessionSummary extends AgentSession {
+  messageCount: number;
+  preview: string;
 }
 
 export interface AgentMessage {
@@ -84,6 +93,16 @@ export interface AgentMessage {
 export interface AgentSessionResponse {
   session: AgentSession | null;
   messages: AgentMessage[];
+}
+
+export interface AgentSessionHistoryResponse {
+  sessions: AgentSessionSummary[];
+}
+
+export interface AgentSessionMutationResponse {
+  session: AgentSessionResponse;
+  history: AgentSessionHistoryResponse;
+  state: MarketState;
 }
 
 export interface AgentConfig {

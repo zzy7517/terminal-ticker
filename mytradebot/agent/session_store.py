@@ -26,6 +26,10 @@ class AgentSession:
     created_at: str
     updated_at: str
     active: bool
+    api_mode: str | None = None
+    reasoning_effort: str | None = None
+    max_iterations: int | None = None
+    use_tools: bool | None = None
 
     def to_payload(self) -> dict[str, Any]:
         """说明：转换成前端可消费的载荷。"""
@@ -38,6 +42,27 @@ class AgentSession:
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
             "active": self.active,
+            "apiMode": self.api_mode,
+            "reasoningEffort": self.reasoning_effort,
+            "maxIterations": self.max_iterations,
+            "useTools": self.use_tools,
+        }
+
+
+@dataclass(frozen=True)
+class AgentSessionSummary:
+    """说明：封装会话历史列表中的一行摘要。"""
+
+    session: AgentSession
+    message_count: int
+    preview: str
+
+    def to_payload(self) -> dict[str, Any]:
+        """说明：转换成前端历史列表载荷。"""
+        return {
+            **self.session.to_payload(),
+            "messageCount": self.message_count,
+            "preview": self.preview,
         }
 
 
@@ -104,6 +129,7 @@ class AgentSessionStore:
             )
             """
         )
+        _ensure_agent_session_columns(connection)
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS agent_messages (
@@ -154,6 +180,10 @@ class AgentSessionStore:
         title: str,
         provider: str,
         model: str,
+        api_mode: str | None = None,
+        reasoning_effort: str | None = None,
+        max_iterations: int | None = None,
+        use_tools: bool | None = None,
     ) -> AgentSession:
         """说明：创建一个新 active 会话，并停用同标的旧 active 会话。"""
         session_id = str(uuid.uuid4())
@@ -167,11 +197,24 @@ class AgentSessionStore:
             connection.execute(
                 """
                 INSERT INTO agent_sessions (
-                    id, instrument_key, title, provider, model, created_at, updated_at, active
+                    id, instrument_key, title, provider, model, created_at, updated_at, active,
+                    api_mode, reasoning_effort, max_iterations, use_tools
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
                 """,
-                (session_id, instrument_key, clean_title, provider, model, now, now),
+                (
+                    session_id,
+                    instrument_key,
+                    clean_title,
+                    provider,
+                    model,
+                    now,
+                    now,
+                    api_mode,
+                    reasoning_effort,
+                    max_iterations,
+                    _bool_to_db(use_tools),
+                ),
             )
             row = connection.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?",
@@ -186,16 +229,32 @@ class AgentSessionStore:
         title: str,
         provider: str,
         model: str,
+        api_mode: str | None = None,
+        reasoning_effort: str | None = None,
+        max_iterations: int | None = None,
+        use_tools: bool | None = None,
     ) -> AgentSession:
         """说明：返回 active 会话，不存在时创建。"""
         session = self.get_active_session(instrument_key)
         if session is not None:
-            if session.title != title or session.provider != provider or session.model != model:
+            if (
+                session.title != title
+                or session.provider != provider
+                or session.model != model
+                or session.api_mode != api_mode
+                or session.reasoning_effort != reasoning_effort
+                or session.max_iterations != max_iterations
+                or session.use_tools != use_tools
+            ):
                 return self.update_session_metadata(
                     session.id,
                     title=title,
                     provider=provider,
                     model=model,
+                    api_mode=api_mode,
+                    reasoning_effort=reasoning_effort,
+                    max_iterations=max_iterations,
+                    use_tools=use_tools,
                 )
             return session
         return self.create_session(
@@ -203,6 +262,10 @@ class AgentSessionStore:
             title=title,
             provider=provider,
             model=model,
+            api_mode=api_mode,
+            reasoning_effort=reasoning_effort,
+            max_iterations=max_iterations,
+            use_tools=use_tools,
         )
 
     def update_session_metadata(
@@ -212,6 +275,10 @@ class AgentSessionStore:
         title: str,
         provider: str,
         model: str,
+        api_mode: str | None = None,
+        reasoning_effort: str | None = None,
+        max_iterations: int | None = None,
+        use_tools: bool | None = None,
     ) -> AgentSession:
         """说明：刷新 active 会话当前使用的 provider/model 展示元数据。"""
         clean_title = title.strip()
@@ -219,10 +286,25 @@ class AgentSessionStore:
             connection.execute(
                 """
                 UPDATE agent_sessions
-                SET title = ?, provider = ?, model = ?
+                SET title = ?,
+                    provider = ?,
+                    model = ?,
+                    api_mode = ?,
+                    reasoning_effort = ?,
+                    max_iterations = ?,
+                    use_tools = ?
                 WHERE id = ?
                 """,
-                (clean_title, provider, model, session_id),
+                (
+                    clean_title,
+                    provider,
+                    model,
+                    api_mode,
+                    reasoning_effort,
+                    max_iterations,
+                    _bool_to_db(use_tools),
+                    session_id,
+                ),
             )
             row = connection.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?",
@@ -322,6 +404,122 @@ class AgentSessionStore:
             "messages": [message.to_payload() for message in messages],
         }
 
+    def list_sessions(
+        self,
+        instrument_key: str,
+        *,
+        limit: int = 20,
+    ) -> tuple[AgentSessionSummary, ...]:
+        """说明：按更新时间倒序列出某个标的的历史会话摘要。"""
+        clean_limit = max(1, min(int(limit), 100))
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    s.*,
+                    COUNT(m.id) AS message_count,
+                    COALESCE(
+                        (
+                            SELECT SUBSTR(REPLACE(REPLACE(m1.content, X'0A', ' '), X'0D', ' '), 1, 120)
+                            FROM agent_messages m1
+                            WHERE m1.session_id = s.id AND m1.role = 'user'
+                            ORDER BY m1.created_at, m1.id
+                            LIMIT 1
+                        ),
+                        ''
+                    ) AS preview
+                FROM agent_sessions s
+                LEFT JOIN agent_messages m ON m.session_id = s.id
+                WHERE s.instrument_key = ?
+                GROUP BY s.id
+                ORDER BY s.updated_at DESC, s.created_at DESC
+                LIMIT ?
+                """,
+                (instrument_key, clean_limit),
+            ).fetchall()
+        return tuple(
+            AgentSessionSummary(
+                session=_session_from_row(row),
+                message_count=int(row["message_count"]),
+                preview=str(row["preview"] or "").strip(),
+            )
+            for row in rows
+        )
+
+    def activate_session(self, *, instrument_key: str, session_id: str) -> AgentSession:
+        """说明：把指定历史会话恢复为某标的的 active 会话。"""
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM agent_sessions
+                WHERE id = ? AND instrument_key = ?
+                """,
+                (session_id, instrument_key),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"agent session not found: {session_id}")
+            connection.execute(
+                "UPDATE agent_sessions SET active = 0 WHERE instrument_key = ? AND active = 1",
+                (instrument_key,),
+            )
+            connection.execute(
+                "UPDATE agent_sessions SET active = 1 WHERE id = ?",
+                (session_id,),
+            )
+            refreshed = connection.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        return _session_from_row(refreshed)
+
+    def delete_session(self, *, instrument_key: str, session_id: str) -> AgentSession | None:
+        """说明：删除指定历史会话；如果删的是 active，会恢复最近剩余会话为 active。"""
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM agent_sessions
+                WHERE id = ? AND instrument_key = ?
+                """,
+                (session_id, instrument_key),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"agent session not found: {session_id}")
+            was_active = bool(row["active"])
+            connection.execute("DELETE FROM agent_sessions WHERE id = ?", (session_id,))
+            if not was_active:
+                active_row = connection.execute(
+                    """
+                    SELECT *
+                    FROM agent_sessions
+                    WHERE instrument_key = ? AND active = 1
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                    """,
+                    (instrument_key,),
+                ).fetchone()
+                return _session_from_row(active_row) if active_row else None
+
+            next_row = connection.execute(
+                """
+                SELECT *
+                FROM agent_sessions
+                WHERE instrument_key = ?
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT 1
+                """,
+                (instrument_key,),
+            ).fetchone()
+            if next_row is None:
+                return None
+            connection.execute("UPDATE agent_sessions SET active = 1 WHERE id = ?", (next_row["id"],))
+            refreshed = connection.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?",
+                (next_row["id"],),
+            ).fetchone()
+        return _session_from_row(refreshed)
+
     def history_for_context(self, session_id: str, *, limit: int = 8) -> tuple[dict[str, Any], ...]:
         """说明：把最近消息压缩成可发送给 LLM 的会话上下文。"""
         messages = self.list_messages(session_id, limit=limit)
@@ -357,6 +555,10 @@ def _session_from_row(row: sqlite3.Row) -> AgentSession:
         created_at=_iso_from_timestamp(float(row["created_at"])),
         updated_at=_iso_from_timestamp(float(row["updated_at"])),
         active=bool(row["active"]),
+        api_mode=_optional_str(row["api_mode"]),
+        reasoning_effort=_optional_str(row["reasoning_effort"]),
+        max_iterations=_optional_int(row["max_iterations"]),
+        use_tools=_optional_bool(row["use_tools"]),
     )
 
 
@@ -393,3 +595,44 @@ def _json_loads(value: Any) -> dict[str, Any] | None:
 def _iso_from_timestamp(value: float) -> str:
     """说明：返回前端可读的 UTC ISO 字符串。"""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(value))
+
+
+def _ensure_agent_session_columns(connection: sqlite3.Connection) -> None:
+    """说明：为旧版本地 SQLite 增补会话配置快照字段。"""
+    rows = connection.execute("PRAGMA table_info(agent_sessions)").fetchall()
+    columns = {str(row["name"]) for row in rows}
+    migrations = {
+        "api_mode": "ALTER TABLE agent_sessions ADD COLUMN api_mode TEXT",
+        "reasoning_effort": "ALTER TABLE agent_sessions ADD COLUMN reasoning_effort TEXT",
+        "max_iterations": "ALTER TABLE agent_sessions ADD COLUMN max_iterations INTEGER",
+        "use_tools": "ALTER TABLE agent_sessions ADD COLUMN use_tools INTEGER",
+    }
+    for column, statement in migrations.items():
+        if column not in columns:
+            connection.execute(statement)
+
+
+def _bool_to_db(value: bool | None) -> int | None:
+    """说明：把可空 bool 转成 SQLite 友好的整数。"""
+    if value is None:
+        return None
+    return 1 if value else 0
+
+
+def _optional_str(value: Any) -> str | None:
+    """说明：把可空 SQLite 值转成字符串。"""
+    return str(value) if value not in (None, "") else None
+
+
+def _optional_int(value: Any) -> int | None:
+    """说明：把可空 SQLite 值转成整数。"""
+    if value is None:
+        return None
+    return int(value)
+
+
+def _optional_bool(value: Any) -> bool | None:
+    """说明：把可空 SQLite 值转成 bool。"""
+    if value is None:
+        return None
+    return bool(value)

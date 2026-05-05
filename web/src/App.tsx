@@ -41,7 +41,9 @@ import {
   addAlpacaSymbol,
   addBitgetSymbol,
   connectStateSocket,
+  deleteAgentSession,
   fetchAgentSession,
+  fetchAgentSessionHistory,
   fetchAgentModels,
   fetchState,
   getTradeDetail,
@@ -50,6 +52,7 @@ import {
   loadOlderCandles,
   removeWatchlistInstrument,
   resetAgentSession,
+  resumeAgentSession,
   saveAgentConfig,
   saveInstrumentAnalysisInterval,
   saveNewsConfig,
@@ -64,6 +67,7 @@ import type {
   AgentMessage,
   AgentModelOption,
   AgentSessionResponse,
+  AgentSessionSummary,
   CandlePoint,
   Instrument,
   InstrumentSearchResult,
@@ -1519,25 +1523,126 @@ function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
   );
 }
 
+// Renders persisted chart-agent session rows with restore/delete actions.
+function AgentSessionHistoryList({
+  activeSessionId,
+  busyActionKey,
+  history,
+  loading,
+  onDelete,
+  onResume,
+}: {
+  activeSessionId: string | null;
+  busyActionKey: string | null;
+  history: AgentSessionSummary[];
+  loading: boolean;
+  onDelete: (sessionId: string) => Promise<void>;
+  onResume: (sessionId: string) => Promise<void>;
+}) {
+  const visibleHistory = history.slice(0, 8);
+
+  return (
+    <div className="session-history">
+      <div className="session-history-head">
+        <span>
+          <History size={13} /> History
+        </span>
+        <small>{loading ? 'Loading' : `${history.length} saved`}</small>
+      </div>
+      <div className="session-history-list">
+        {loading && (
+          <div className="session-history-empty">
+            <Loader2 className="spin" size={14} />
+            <span>Loading saved sessions</span>
+          </div>
+        )}
+        {!loading && visibleHistory.map((item) => {
+          const isActive = item.id === activeSessionId || item.active;
+          const resumeKey = `resume:${item.id}`;
+          const deleteKey = `delete:${item.id}`;
+          const title = item.preview || item.title || item.id;
+          return (
+            <div className={`session-history-row ${isActive ? 'active' : ''}`} key={item.id}>
+              <button
+                className="session-history-main"
+                disabled={isActive || Boolean(busyActionKey)}
+                onClick={() => void onResume(item.id)}
+                title={isActive ? 'Active session' : 'Resume session'}
+                type="button"
+              >
+                <span>{title}</span>
+                <small>
+                  {item.model} · {item.messageCount} msg · {new Date(item.updatedAt).toLocaleDateString()}
+                </small>
+              </button>
+              <div className="session-history-actions">
+                <span className={`session-history-badge ${isActive ? 'active' : ''}`}>
+                  {isActive ? 'active' : item.reasoningEffort ?? '-'}
+                </span>
+                <button
+                  aria-label="Resume saved agent session"
+                  className="session-icon-action"
+                  disabled={isActive || Boolean(busyActionKey)}
+                  onClick={() => void onResume(item.id)}
+                  title="Resume session"
+                  type="button"
+                >
+                  {busyActionKey === resumeKey ? <Loader2 className="spin" size={13} /> : <RefreshCw size={13} />}
+                </button>
+                <button
+                  aria-label="Delete saved agent session"
+                  className="session-icon-action danger"
+                  disabled={Boolean(busyActionKey)}
+                  onClick={() => void onDelete(item.id)}
+                  title="Delete session"
+                  type="button"
+                >
+                  {busyActionKey === deleteKey ? <Loader2 className="spin" size={13} /> : <Trash2 size={13} />}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {!loading && visibleHistory.length === 0 && (
+          <div className="session-history-empty">
+            <History size={14} />
+            <span>No saved sessions yet.</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Renders the active per-instrument chart-agent session and compose box.
 function AgentSessionPanel({
   analysis,
   session,
+  history,
   prompt,
+  historyLoading,
+  sessionActionKey,
   sessionLoading,
   busy,
   disabled,
+  onDeleteSession,
   onPromptChange,
+  onResumeSession,
   onSend,
   onReset,
 }: {
   analysis: AgentAnalysis | undefined;
   session: AgentSessionResponse | null;
+  history: AgentSessionSummary[];
   prompt: string;
+  historyLoading: boolean;
+  sessionActionKey: string | null;
   sessionLoading: boolean;
   busy: boolean;
   disabled: boolean;
+  onDeleteSession: (sessionId: string) => Promise<void>;
   onPromptChange: (value: string) => void;
+  onResumeSession: (sessionId: string) => Promise<void>;
   onSend: () => Promise<void>;
   onReset: () => Promise<void>;
 }) {
@@ -1545,7 +1650,7 @@ function AgentSessionPanel({
   const latestAnalysis =
     [...messages].reverse().find((message) => message.analysis)?.analysis ?? analysis;
   const tone = agentTone(latestAnalysis ?? undefined);
-  const canSend = !disabled && !busy && !sessionLoading;
+  const canSend = !disabled && !busy && !sessionLoading && !sessionActionKey;
   const sessionTime = session?.session
     ? new Date(session.session.updatedAt).toLocaleTimeString()
     : 'No session';
@@ -1571,6 +1676,14 @@ function AgentSessionPanel({
           <RefreshCw size={14} />
         </button>
       </div>
+      <AgentSessionHistoryList
+        activeSessionId={session?.session?.id ?? null}
+        busyActionKey={sessionActionKey}
+        history={history}
+        loading={historyLoading}
+        onDelete={onDeleteSession}
+        onResume={onResumeSession}
+      />
       <div className="session-transcript">
         {sessionLoading && (
           <div className="session-empty">
@@ -1632,8 +1745,11 @@ function WorkspaceView({
   selectedAgent,
   theme,
   agentSession,
+  agentSessionHistory,
   agentPrompt,
   agentBusyKey,
+  agentSessionActionKey,
+  agentSessionHistoryLoading,
   agentSessionLoading,
   analysisIntervalBusy,
   olderBusyKey,
@@ -1647,7 +1763,9 @@ function WorkspaceView({
   updateAnalysisInterval,
   loadOlderForSelected,
   runAgentAnalysis,
+  resumeAgentConversation,
   resetAgentConversation,
+  deleteAgentConversation,
   onThemeToggle,
   openSettings,
   openWatchlistSettings,
@@ -1662,8 +1780,11 @@ function WorkspaceView({
   selectedAgent: AgentAnalysis | undefined;
   theme: ThemeName;
   agentSession: AgentSessionResponse | null;
+  agentSessionHistory: AgentSessionSummary[];
   agentPrompt: string;
   agentBusyKey: string | null;
+  agentSessionActionKey: string | null;
+  agentSessionHistoryLoading: boolean;
   agentSessionLoading: boolean;
   analysisIntervalBusy: boolean;
   olderBusyKey: string | null;
@@ -1677,7 +1798,9 @@ function WorkspaceView({
   updateAnalysisInterval: (value: string) => void;
   loadOlderForSelected: () => void;
   runAgentAnalysis: () => Promise<void>;
+  resumeAgentConversation: (sessionId: string) => Promise<void>;
   resetAgentConversation: () => Promise<void>;
+  deleteAgentConversation: (sessionId: string) => Promise<void>;
   onThemeToggle: () => void;
   openSettings: () => void;
   openWatchlistSettings: () => void;
@@ -1914,11 +2037,16 @@ function WorkspaceView({
                 <AgentSessionPanel
                   analysis={selectedAgent}
                   session={agentSession}
+                  history={agentSessionHistory}
                   prompt={agentPrompt}
+                  historyLoading={agentSessionHistoryLoading}
+                  sessionActionKey={agentSessionActionKey}
                   sessionLoading={agentSessionLoading}
                   busy={agentBusyKey === selectedKey}
                   disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
+                  onDeleteSession={deleteAgentConversation}
                   onPromptChange={setAgentPrompt}
+                  onResumeSession={resumeAgentConversation}
                   onSend={runAgentAnalysis}
                   onReset={resetAgentConversation}
                 />
@@ -2517,7 +2645,10 @@ export default function App() {
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [agentBusyKey, setAgentBusyKey] = useState<string | null>(null);
   const [agentSessionLoadingKey, setAgentSessionLoadingKey] = useState<string | null>(null);
+  const [agentSessionHistoryLoadingKey, setAgentSessionHistoryLoadingKey] = useState<string | null>(null);
+  const [agentSessionActionKey, setAgentSessionActionKey] = useState<string | null>(null);
   const [agentSession, setAgentSession] = useState<AgentSessionResponse | null>(null);
+  const [agentSessionHistory, setAgentSessionHistory] = useState<AgentSessionSummary[]>([]);
   const [agentPrompt, setAgentPrompt] = useState('');
   const [analysisIntervalBusy, setAnalysisIntervalBusy] = useState(false);
   const [olderBusyKey, setOlderBusyKey] = useState<string | null>(null);
@@ -2601,16 +2732,22 @@ export default function App() {
     agentSession?.session?.instrumentKey === selectedKey || (!agentSession?.session && selectedKey)
       ? agentSession
       : null;
+  const selectedAgentSessionHistory = selectedKey
+    ? agentSessionHistory.filter((item) => item.instrumentKey === selectedKey)
+    : [];
 
   useEffect(() => {
     if (!selectedKey) {
       setAgentSession(null);
+      setAgentSessionHistory([]);
+      setAgentSessionActionKey(null);
       setAgentPrompt('');
       return;
     }
     let disposed = false;
     const key = selectedKey;
     setAgentSessionLoadingKey(key);
+    setAgentSessionHistoryLoadingKey(key);
     setAgentPrompt('');
     fetchAgentSession(key)
       .then((payload) => {
@@ -2627,6 +2764,23 @@ export default function App() {
       .finally(() => {
         if (!disposed) {
           setAgentSessionLoadingKey(null);
+        }
+      });
+    fetchAgentSessionHistory(key)
+      .then((payload) => {
+        if (!disposed) {
+          setAgentSessionHistory(payload.sessions);
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        if (!disposed) {
+          setAgentSessionHistory([]);
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setAgentSessionHistoryLoadingKey(null);
         }
       });
     return () => {
@@ -2690,6 +2844,7 @@ export default function App() {
       const payload = await sendAgentMessage(selectedKey, agentPrompt);
       setState(payload.state);
       setAgentSession(payload.session);
+      setAgentSessionHistory(payload.history.sessions);
       setAgentPrompt('');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'agent analysis failed';
@@ -2732,6 +2887,7 @@ export default function App() {
     try {
       const payload = await resetAgentSession(key);
       setAgentSession(payload);
+      setAgentSessionHistory(payload.history.sessions);
       setAgentPrompt('');
       setState((current) => {
         if (!current) return current;
@@ -2742,6 +2898,46 @@ export default function App() {
       console.error(error);
     } finally {
       setAgentBusyKey(null);
+    }
+  }
+
+  // Restores a saved agent session for the selected symbol.
+  async function resumeAgentConversation(sessionId: string) {
+    if (!selectedKey || agentSessionActionKey) return;
+    const key = selectedKey;
+    const actionKey = `resume:${sessionId}`;
+    setAgentSessionActionKey(actionKey);
+    try {
+      const payload = await resumeAgentSession(key, sessionId);
+      setState(payload.state);
+      setAgentSession(payload.session);
+      setAgentSessionHistory(payload.history.sessions);
+      setAgentPrompt('');
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setAgentSessionActionKey((current) => (current === actionKey ? null : current));
+    }
+  }
+
+  // Deletes a saved agent session after explicit user confirmation.
+  async function deleteAgentConversation(sessionId: string) {
+    if (!selectedKey || agentSessionActionKey) return;
+    const confirmed = window.confirm('Delete this saved agent session?');
+    if (!confirmed) return;
+    const key = selectedKey;
+    const actionKey = `delete:${sessionId}`;
+    setAgentSessionActionKey(actionKey);
+    try {
+      const payload = await deleteAgentSession(key, sessionId);
+      setState(payload.state);
+      setAgentSession(payload.session);
+      setAgentSessionHistory(payload.history.sessions);
+      setAgentPrompt('');
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setAgentSessionActionKey((current) => (current === actionKey ? null : current));
     }
   }
 
@@ -2776,8 +2972,11 @@ export default function App() {
       selectedAgent={selectedAgent}
       theme={theme}
       agentSession={selectedAgentSession}
+      agentSessionHistory={selectedAgentSessionHistory}
       agentPrompt={agentPrompt}
       agentBusyKey={agentBusyKey}
+      agentSessionActionKey={agentSessionActionKey}
+      agentSessionHistoryLoading={agentSessionHistoryLoadingKey === selectedKey}
       agentSessionLoading={agentSessionLoadingKey === selectedKey}
       analysisIntervalBusy={analysisIntervalBusy}
       olderBusyKey={olderBusyKey}
@@ -2791,7 +2990,9 @@ export default function App() {
       updateAnalysisInterval={updateAnalysisInterval}
       loadOlderForSelected={loadOlderForSelected}
       runAgentAnalysis={runAgentAnalysis}
+      resumeAgentConversation={resumeAgentConversation}
       resetAgentConversation={resetAgentConversation}
+      deleteAgentConversation={deleteAgentConversation}
       onThemeToggle={() => setTheme((current) => nextTheme(current))}
       openSettings={() => navigateToRoute({ view: 'settings', section: 'providers' })}
       openWatchlistSettings={() => navigateToRoute({ view: 'settings', section: 'watchlist' })}
