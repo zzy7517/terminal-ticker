@@ -1611,50 +1611,45 @@ function WatchlistSettingsPanel({
 
 // Renders agent text without depending on the provider's structured fields.
 function AgentAnalysisBlock({ analysis }: { analysis: AgentAnalysis }) {
-  const text = analysis.rawText || analysis.summary || analysis.error || 'Agent response unavailable.';
+  const text = analysis.summary || analysis.error || analysis.rawText || 'Agent response unavailable.';
   return (
     <>
-      {analysis.loopResult && <AgentToolSteps steps={analysis.loopResult.steps} />}
+      {analysis.loopResult && <AgentLoopSteps steps={analysis.loopResult.steps} />}
       <p className="session-message-text">{text}</p>
     </>
   );
 }
 
-// Renders the tool call steps from an agent loop iteration.
-function AgentToolSteps({ steps }: { steps: LoopStep[] }) {
-  const toolSteps = steps.filter((s) => s.stepType === 'tool_call' || s.stepType === 'tool_result');
-  if (toolSteps.length === 0) return null;
-
-  const pairs: Array<{ call: LoopStep; result?: LoopStep }> = [];
-  for (const step of toolSteps) {
-    if (step.stepType === 'tool_call') {
-      pairs.push({ call: step });
-    } else if (step.stepType === 'tool_result' && pairs.length > 0) {
-      const last = pairs[pairs.length - 1];
-      if (!last.result) last.result = step;
-    }
-  }
+// Renders every visible step from an agent loop iteration.
+function AgentLoopSteps({ steps }: { steps: LoopStep[] }) {
+  if (steps.length === 0) return null;
 
   return (
     <div className="agent-tool-steps">
-      {pairs.map((pair, index) => (
+      {steps.map((step, index) => (
         <div key={index} className="agent-tool-step">
           <div className="tool-step-summary">
             <Zap size={12} />
-            <span className="tool-name">{pair.call.toolCall?.name ?? 'tool'}</span>
-            {pair.result?.toolResult?.error && <span className="tool-error-badge">error</span>}
+            <span className="tool-name">{loopStepLabel(step)}</span>
+            {step.toolResult?.error && <span className="tool-error-badge">error</span>}
           </div>
           <div className="tool-step-detail">
-            {pair.call.toolCall?.arguments && Object.keys(pair.call.toolCall.arguments).length > 0 && (
+            {step.toolCall?.arguments && Object.keys(step.toolCall.arguments).length > 0 && (
               <div className="tool-args">
                 <small>Arguments</small>
-                <pre>{JSON.stringify(pair.call.toolCall.arguments, null, 2)}</pre>
+                <pre>{JSON.stringify(step.toolCall.arguments, null, 2)}</pre>
               </div>
             )}
-            {pair.result?.toolResult && (
-              <div className={`tool-output ${pair.result.toolResult.error ? 'error' : ''}`}>
+            {step.toolResult && (
+              <div className={`tool-output ${step.toolResult.error ? 'error' : ''}`}>
                 <small>Output</small>
-                <pre>{pair.result.toolResult.output}</pre>
+                <pre>{step.toolResult.output}</pre>
+              </div>
+            )}
+            {step.stepType === 'assistant' && step.content && (
+              <div className="tool-output">
+                <small>Assistant response</small>
+                <pre>{step.content}</pre>
               </div>
             )}
           </div>
@@ -1664,11 +1659,17 @@ function AgentToolSteps({ steps }: { steps: LoopStep[] }) {
   );
 }
 
+function loopStepLabel(step: LoopStep) {
+  if (step.stepType === 'tool_call') return `call ${step.toolCall?.name ?? 'tool'}`;
+  if (step.stepType === 'tool_result') return `result ${step.toolResult?.name ?? 'tool'}`;
+  return 'assistant response';
+}
+
 // Renders one persisted chat turn in the chart-agent transcript.
 function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
   const analysis = message.analysis;
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
-  const content = message.content || analysis?.rawText || analysis?.summary || message.error || analysis?.error || 'No content.';
+  const content = analysis?.summary || message.error || analysis?.error || message.content || analysis?.rawText || 'No content.';
   return (
     <div className={`session-message ${message.role}`}>
       <div className="session-message-head">
@@ -1677,7 +1678,7 @@ function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
       </div>
       {message.role === 'assistant' && analysis ? (
         <>
-          {analysis.loopResult && <AgentToolSteps steps={analysis.loopResult.steps} />}
+          {analysis.loopResult && <AgentLoopSteps steps={analysis.loopResult.steps} />}
           <p className="session-message-text">{content}</p>
         </>
       ) : (
