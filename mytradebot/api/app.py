@@ -21,25 +21,20 @@ from starlette.types import Scope
 
 from ..agent import (
     AgentAnalysisResult,
-    AgentLoop,
+    AgentRuntimeServices,
+    AgentSessionRuntime,
     AgentSessionStore,
     LLMProviderError,
     LLMProviderUnavailable,
+    TradingAgentRuntime,
+    TradingAgentRuntimeServices,
     build_agent_context,
-    build_market_tools,
-    build_news_tools,
-    build_social_feed_tools,
-    build_trading_tools,
-    build_web_tools,
     create_llm_provider,
     list_available_agent_models,
-    merge_registries,
 )
 from ..news import NewsService, NewsStore
 from ..news.providers.reuters import ReutersSitemapProvider
 from ..social_feed import SocialFeedService, SocialFeedStore, XAuthStore
-from ..agent.provider import _result_from_text
-from ..agent.tools import ToolRegistry
 from ..trading import TradeStatus, TradeStore, ExchangeRouter
 from ..trading.bitget_demo import (
     BITGET_DEMO_FILL_SOURCE,
@@ -132,6 +127,16 @@ def _agent_session_config_kwargs(config: AgentConfig) -> dict[str, Any]:
         "max_iterations": config.max_iterations,
         "use_tools": config.use_tools,
     }
+
+
+def _agent_tool_audit_hook(call: Any, result: Any, tool: Any) -> None:
+    """说明：runtime 级工具审计钩子，后续可扩展为权限或持久化事件。"""
+    LOGGER.info(
+        "agent tool finished: name=%s error=%s output_chars=%d",
+        getattr(call, "name", getattr(tool, "name", "unknown")),
+        bool(getattr(result, "error", False)),
+        len(str(getattr(result, "output", ""))),
+    )
 
 
 def _normalize_agent_prompt(prompt: str | None) -> str:
@@ -1192,21 +1197,19 @@ class MarketRuntime:
         if quote is None:
             raise HTTPException(status_code=404, detail="Quote is not available.")
 
-        session = await asyncio.to_thread(
-            self.agent_session_store.get_or_create_active_session,
+        provider = create_llm_provider(agent_cfg)
+        session_runtime = await AgentSessionRuntime.get_or_create_active(
+            store=self.agent_session_store,
             instrument_key=instrument.key,
             title=_agent_session_title(instrument),
-            provider=agent_cfg.provider,
-            model=agent_cfg.model,
-            **_agent_session_config_kwargs(agent_cfg),
+            config=agent_cfg,
+            provider=provider,
+            runtime_services=AgentRuntimeServices(
+                after_tool_hooks=(_agent_tool_audit_hook,),
+            ),
         )
         user_prompt = _normalize_agent_prompt(prompt)
-        await asyncio.to_thread(
-            self.agent_session_store.append_message,
-            session_id=session.id,
-            role="user",
-            content=user_prompt,
-        )
+        await session_runtime.append_user_message(user_prompt)
 
         if not quote.candles:
             result = AgentAnalysisResult.unavailable(
@@ -1216,31 +1219,24 @@ class MarketRuntime:
             )
             payload = result.to_payload()
             self.agent_analyses[instrument.key] = payload
-            await self._record_agent_assistant_message(session.id, payload)
+            await session_runtime.record_assistant_analysis(payload)
             await self.broadcast()
             return {
                 "result": payload,
-                "session": await self._agent_session_payload(session.id),
-                "history": await self._agent_session_history_payload(instrument.key),
+                "session": await session_runtime.payload(),
+                "history": await session_runtime.history_payload(instrument.key),
                 "state": self.snapshot(),
             }
 
-        history = await asyncio.to_thread(
-            self.agent_session_store.history_for_context,
-            session.id,
-            limit=8,
-        )
-
-        provider = create_llm_provider(agent_cfg)
+        history = await session_runtime.history_for_context(limit=8)
 
         if agent_cfg.use_tools and hasattr(provider, "chat"):
             return await self._run_agent_loop(
                 instrument=instrument,
                 quote=quote,
-                session=session,
+                session_runtime=session_runtime,
                 user_prompt=user_prompt,
                 history=history,
-                provider=provider,
                 agent_cfg=agent_cfg,
             )
 
@@ -1254,12 +1250,12 @@ class MarketRuntime:
         result = await provider.analyze(context)
         payload = result.to_payload()
         self.agent_analyses[instrument.key] = payload
-        await self._record_agent_assistant_message(session.id, payload, context=context)
+        await session_runtime.record_assistant_analysis(payload, context=context)
         await self.broadcast()
         return {
             "result": payload,
-            "session": await self._agent_session_payload(session.id),
-            "history": await self._agent_session_history_payload(instrument.key),
+            "session": await session_runtime.payload(),
+            "history": await session_runtime.history_payload(instrument.key),
             "state": self.snapshot(),
         }
 
@@ -1268,136 +1264,44 @@ class MarketRuntime:
         *,
         instrument: MarketInstrument,
         quote: QuoteState,
-        session: Any,
+        session_runtime: AgentSessionRuntime,
         user_prompt: str,
         history: tuple[dict[str, Any], ...],
-        provider: Any,
         agent_cfg: AgentConfig | None = None,
     ) -> dict[str, Any]:
-        """通过 agent loop 执行带工具调用的 LLM 分析。"""
+        """通过 trading domain runtime 执行带工具调用的 LLM 分析。"""
         cfg = agent_cfg or self.config.agent
-        context_provider = MarketContextProvider(self)
-        market_tools = build_market_tools(context_provider)
-
-        active_session_id = session.id
-        trading_tools = build_trading_tools(
-            store=self.trade_store,
-            snapshot_provider=lambda key: self._trading_snapshot_payload(key),
-            session_id_provider=lambda: active_session_id,
-        )
-        news_tools = build_news_tools(self.news_service)
-        social_feed_tools = build_social_feed_tools(self.social_feed_service)
-        web_tools = build_web_tools()
-        tools = merge_registries(
-            market_tools,
-            trading_tools,
-            news_tools,
-            social_feed_tools,
-            web_tools,
+        runtime = TradingAgentRuntime(
+            provider=session_runtime.provider,
+            config=cfg,
+            services=TradingAgentRuntimeServices(
+                context_provider=MarketContextProvider(self),
+                trade_store=self.trade_store,
+                snapshot_provider=lambda key: self._trading_snapshot_payload(key),
+                news_service=self.news_service,
+                social_feed_service=self.social_feed_service,
+                runtime_services=session_runtime.runtime_services,
+            ),
         )
 
-        current_context = build_agent_context(
+        turn_result = await runtime.run_turn(
             instrument=instrument,
             quote=quote,
-            interval=instrument.analysis_interval or self.config.analysis.interval,
-            max_candles=cfg.max_candles,
-            session_history=tuple(),
+            session_id=session_runtime.session.id,
+            user_prompt=user_prompt,
+            history=history,
+            analysis_interval=instrument.analysis_interval or self.config.analysis.interval,
         )
-
-        lessons = self.trade_store.list_lessons(
-            instrument_key=instrument.key,
-            limit=5,
-        )
-        lessons_block = ""
-        if lessons:
-            bullets = "\n".join(
-                f"- [{lesson['category'] or 'general'}] {lesson['text']}"
-                for lesson in lessons
-            )
-            lessons_block = (
-                "\n\n过去同标的交易复盘 (最多 5 条，时间倒序):\n"
-                f"{bullets}\n"
-                "在给出计划和开单前请参考上述教训，避免重复错误。\n"
-            )
-
-        enriched_prompt = (
-            f"当前分析标的: {instrument.label} ({instrument.key})\n\n"
-            "当前行情上下文(JSON，工具返回值优先于这里的快照):\n"
-            f"{json.dumps(current_context, ensure_ascii=False, separators=(',', ':'))}"
-            f"{lessons_block}\n\n"
-            f"{user_prompt}"
-        )
-
-        conversation_history = _agent_loop_history_without_current_turn(
-            history,
-            current_user_prompt=user_prompt,
-        )
-
-        loop = AgentLoop(
-            provider=provider,
-            tools=tools,
-            max_iterations=cfg.max_iterations,
-        )
-
-        loop_result = await loop.run(
-            user_message=enriched_prompt,
-            conversation_history=conversation_history if conversation_history else None,
-        )
-
-        if loop_result.finished and not loop_result.content.strip():
-            result = AgentAnalysisResult.unavailable(
-                provider=provider.name,
-                model=provider.model,
-                error="Agent returned no output text.",
-            )
-        elif loop_result.finished:
-            result = _result_from_text(
-                loop_result.content, provider=provider.name, model=provider.model,
-            )
-        else:
-            result = AgentAnalysisResult.unavailable(
-                provider=provider.name,
-                model=provider.model,
-                error=loop_result.error or "Agent loop did not finish.",
-                raw_text=loop_result.content or None,
-            )
-        payload = result.to_payload()
-        payload["loopResult"] = loop_result.to_payload()
+        payload = turn_result.to_payload()
         self.agent_analyses[instrument.key] = payload
-        await self._record_agent_assistant_message(session.id, payload)
+        await session_runtime.record_assistant_analysis(payload)
         await self.broadcast()
         return {
             "result": payload,
-            "session": await self._agent_session_payload(session.id),
-            "history": await self._agent_session_history_payload(instrument.key),
+            "session": await session_runtime.payload(),
+            "history": await session_runtime.history_payload(instrument.key),
             "state": self.snapshot(),
         }
-
-    async def _record_agent_assistant_message(
-        self,
-        session_id: str,
-        analysis_payload: dict[str, Any],
-        context: dict[str, Any] | None = None,
-    ) -> None:
-        """说明：把 LLM 结果写入会话消息历史。"""
-        loop_result = analysis_payload.get("loopResult")
-        loop_content = loop_result.get("content") if isinstance(loop_result, dict) else None
-        content = str(
-            analysis_payload.get("rawText")
-            or loop_content
-            or analysis_payload.get("summary")
-            or analysis_payload.get("error")
-            or "Agent response unavailable."
-        )
-        await asyncio.to_thread(
-            self.agent_session_store.append_message,
-            session_id=session_id,
-            role="assistant",
-            content=content,
-            analysis=analysis_payload,
-            context=context,
-            error=analysis_payload.get("error") if not analysis_payload.get("available") else None,
-        )
 
     async def _agent_session_payload(self, session_id: str) -> dict[str, Any]:
         """说明：异步读取一个 session payload。"""
@@ -2199,24 +2103,6 @@ def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) ->
         if "apiMode" not in payload and "api_mode" not in payload:
             raw["api_mode"] = None
     return parse_agent_config(raw)
-
-
-def _agent_loop_history_without_current_turn(
-    history: tuple[dict[str, Any], ...],
-    *,
-    current_user_prompt: str,
-) -> list[dict[str, Any]]:
-    """Return prior chat history without the user turn already represented by the prompt."""
-    history_items = list(history)
-    if history_items:
-        latest = history_items[-1]
-        if latest.get("role") == "user" and str(latest.get("content", "")) == current_user_prompt:
-            history_items = history_items[:-1]
-    return [
-        {"role": msg["role"], "content": msg["content"]}
-        for msg in history_items
-        if msg.get("role") in ("user", "assistant")
-    ]
 
 
 def _latest_session_analysis(session_payload: dict[str, Any]) -> dict[str, Any] | None:

@@ -7,11 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from ..config import AgentConfig
-from ..config.agent_models import (
-    ANTHROPIC_PROVIDER,
-    CODEX_PROVIDER,
-    resolve_agent_model,
-)
+from ..config.agent_models import resolve_agent_model
 from ..domain.quotes import QuoteState
 from ..domain.price_action import Candle
 from ..market_data.router import MarketInstrument
@@ -202,30 +198,16 @@ def build_agent_context(
 
 def create_llm_provider(config: AgentConfig) -> LLMProvider:
     """说明：根据配置创建 LLM provider。"""
-    profile = resolve_agent_model(config)
-    if profile.provider == CODEX_PROVIDER:
-        from .providers.codex import CodexProvider
+    from .model_registry import DEFAULT_AGENT_MODEL_REGISTRY
 
-        return CodexProvider(config, profile)
-    if profile.provider == ANTHROPIC_PROVIDER:
-        from .providers.anthropic import AnthropicProvider
-
-        return AnthropicProvider(config, profile)
-    raise LLMProviderUnavailable(f"Unsupported agent provider: {profile.provider}")
+    return DEFAULT_AGENT_MODEL_REGISTRY.create_provider(config)
 
 
 async def list_available_agent_models(config: AgentConfig) -> list[dict[str, Any]]:
     """说明：列出当前 Agent provider 可用的模型。"""
-    profile = resolve_agent_model(config)
-    if profile.provider == CODEX_PROVIDER:
-        from .providers.codex import CodexProvider
+    from .model_registry import DEFAULT_AGENT_MODEL_REGISTRY
 
-        return await CodexProvider(config, profile).list_models()
-    if profile.provider == ANTHROPIC_PROVIDER:
-        from .providers.anthropic import AnthropicProvider
-
-        return await AnthropicProvider(config, profile).list_models()
-    raise LLMProviderUnavailable(f"Unsupported agent provider: {profile.provider}")
+    return await DEFAULT_AGENT_MODEL_REGISTRY.list_available_models(config)
 
 
 def _result_from_text(text: str, *, provider: str, model: str) -> AgentAnalysisResult:

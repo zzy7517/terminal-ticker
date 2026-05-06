@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from inspect import isawaitable
 from typing import Any, Awaitable, Callable
 
 from ..trading import (
@@ -54,11 +55,35 @@ class ToolResult:
     error: bool = False
 
 
+BeforeToolHook = Callable[[ToolCall, ToolDefinition], ToolCall | None | Awaitable[ToolCall | None]]
+AfterToolHook = Callable[
+    [ToolCall, ToolResult, ToolDefinition],
+    ToolResult | None | Awaitable[ToolResult | None],
+]
+
+
 class ToolRegistry:
     """管理所有可用工具的注册表。"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        before_tool_hooks: tuple[BeforeToolHook, ...] = tuple(),
+        after_tool_hooks: tuple[AfterToolHook, ...] = tuple(),
+    ) -> None:
         self._tools: dict[str, ToolDefinition] = {}
+        self._before_tool_hooks = before_tool_hooks
+        self._after_tool_hooks = after_tool_hooks
+
+    def extend_hooks(
+        self,
+        *,
+        before_tool_hooks: tuple[BeforeToolHook, ...] = tuple(),
+        after_tool_hooks: tuple[AfterToolHook, ...] = tuple(),
+    ) -> None:
+        """追加 runtime 级工具钩子，用于审计、权限或参数改写。"""
+        self._before_tool_hooks = (*self._before_tool_hooks, *before_tool_hooks)
+        self._after_tool_hooks = (*self._after_tool_hooks, *after_tool_hooks)
 
     def register(self, tool: ToolDefinition) -> None:
         self._tools[tool.name] = tool
@@ -105,20 +130,36 @@ class ToolRegistry:
                 output=f"Unknown tool: {call.name}",
                 error=True,
             )
+        effective_call = call
         try:
-            output = await tool.handler(**call.arguments)
-            return ToolResult(call_id=call.id, name=call.name, output=output)
+            for hook in self._before_tool_hooks:
+                replacement = await _maybe_await(hook(effective_call, tool))
+                if isinstance(replacement, ToolCall):
+                    effective_call = replacement
+            output = await tool.handler(**effective_call.arguments)
+            result = ToolResult(call_id=effective_call.id, name=effective_call.name, output=output)
         except Exception as exc:
-            return ToolResult(
-                call_id=call.id,
-                name=call.name,
+            result = ToolResult(
+                call_id=effective_call.id,
+                name=effective_call.name,
                 output=str(exc) or exc.__class__.__name__,
                 error=True,
             )
+        for hook in self._after_tool_hooks:
+            replacement = await _maybe_await(hook(effective_call, result, tool))
+            if isinstance(replacement, ToolResult):
+                result = replacement
+        return result
 
 
 def _json_output(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+async def _maybe_await(value: Any) -> Any:
+    if isawaitable(value):
+        return await value
+    return value
 
 
 def _parse_bitget_instrument_key(instrument_key: str) -> tuple[str, str]:
