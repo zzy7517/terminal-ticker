@@ -44,6 +44,7 @@ import {
   addAlpacaSymbol,
   addBitgetSymbol,
   addHyperliquidTestnetSymbol,
+  cancelExchangeOrder,
   connectStateSocket,
   deleteAgentSession,
   fetchAgentSession,
@@ -79,6 +80,8 @@ import type {
   AgentSessionResponse,
   AgentSessionSummary,
   CandlePoint,
+  ExchangeOrder,
+  ExchangePosition,
   Instrument,
   InstrumentSearchResult,
   Lesson,
@@ -1724,31 +1727,23 @@ function AgentSessionHistoryList({
 function AgentSessionPanel({
   analysis,
   session,
-  history,
   prompt,
-  historyLoading,
   sessionActionKey,
   sessionLoading,
   busy,
   disabled,
-  onDeleteSession,
   onPromptChange,
-  onResumeSession,
   onSend,
   onReset,
 }: {
   analysis: AgentAnalysis | undefined;
   session: AgentSessionResponse | null;
-  history: AgentSessionSummary[];
   prompt: string;
-  historyLoading: boolean;
   sessionActionKey: string | null;
   sessionLoading: boolean;
   busy: boolean;
   disabled: boolean;
-  onDeleteSession: (sessionId: string) => Promise<void>;
   onPromptChange: (value: string) => void;
-  onResumeSession: (sessionId: string) => Promise<void>;
   onSend: () => Promise<void>;
   onReset: () => Promise<void>;
 }) {
@@ -1782,14 +1777,6 @@ function AgentSessionPanel({
           <RefreshCw size={14} />
         </button>
       </div>
-      <AgentSessionHistoryList
-        activeSessionId={session?.session?.id ?? null}
-        busyActionKey={sessionActionKey}
-        history={history}
-        loading={historyLoading}
-        onDelete={onDeleteSession}
-        onResume={onResumeSession}
-      />
       <div className="session-transcript">
         {sessionLoading && (
           <div className="session-empty">
@@ -2016,7 +2003,14 @@ function WorkspaceView({
                     );
                   })}
               </div>
-              {/* NewsPanel 已挪到 Agent tab 右侧栏，详见下方 activeTab === 'agent' 分支 */}
+              <AgentSessionHistoryList
+                activeSessionId={agentSession?.session?.id ?? null}
+                busyActionKey={agentSessionActionKey}
+                history={agentSessionHistory}
+                loading={agentSessionHistoryLoading}
+                onDelete={deleteAgentConversation}
+                onResume={resumeAgentConversation}
+              />
             </>
           )}
           {sidebarCollapsed && (
@@ -2146,16 +2140,12 @@ function WorkspaceView({
                 <AgentSessionPanel
                   analysis={selectedAgent}
                   session={agentSession}
-                  history={agentSessionHistory}
                   prompt={agentPrompt}
-                  historyLoading={agentSessionHistoryLoading}
                   sessionActionKey={agentSessionActionKey}
                   sessionLoading={agentSessionLoading}
                   busy={agentBusyKey === selectedKey}
                   disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
-                  onDeleteSession={deleteAgentConversation}
                   onPromptChange={setAgentPrompt}
-                  onResumeSession={resumeAgentConversation}
                   onSend={runAgentAnalysis}
                   onReset={resetAgentConversation}
                 />
@@ -3567,25 +3557,21 @@ export default function App() {
   );
 }
 
-// Read-only positions dashboard: shows open + historical paper trades plus reviewed lessons.
 function PositionsPanel({ state }: { state: MarketState | null }) {
-  const [allTrades, setAllTrades] = useState<Trade[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<TradeDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [busyReview, setBusyReview] = useState(false);
+  const [cancelling, setCancelling] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const positions = state?.exchangePositions ?? [];
+  const orders = state?.exchangeOrders ?? [];
+
+  const refreshLessons = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [trades, l] = await Promise.all([
-        listTrades({ limit: 100 }),
-        listLessons(undefined, 50),
-      ]);
-      setAllTrades(trades);
+      const l = await listLessons(undefined, 50);
       setLessons(l);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : 'load failed');
@@ -3595,41 +3581,15 @@ function PositionsPanel({ state }: { state: MarketState | null }) {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  // Prefer the WebSocket-pushed snapshot for open trades — it stays live without polling.
-  const openTrades = state?.openTrades ?? allTrades.filter(
-    (t) => t.status === 'planned' || t.status === 'open',
-  );
-  const closedTrades = allTrades.filter(
-    (t) => t.status === 'closed' || t.status === 'cancelled',
-  );
-
-  useEffect(() => {
-    if (selectedTradeId == null) {
-      setDetail(null);
-      return;
-    }
-    let cancelled = false;
-    getTradeDetail(selectedTradeId)
-      .then((d) => {
-        if (!cancelled) setDetail(d);
-      })
-      .catch((exc) => {
-        if (!cancelled) setError(exc instanceof Error ? exc.message : 'detail load failed');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedTradeId]);
+    void refreshLessons();
+  }, [refreshLessons]);
 
   const runReview = async () => {
     setBusyReview(true);
     setError(null);
     try {
       await triggerTradeReview(5);
-      await refresh();
+      await refreshLessons();
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : 'review failed');
     } finally {
@@ -3637,21 +3597,48 @@ function PositionsPanel({ state }: { state: MarketState | null }) {
     }
   };
 
-  const totalRealized = closedTrades.reduce((sum, t) => sum + t.realizedPnl, 0);
+  const handleCancel = async (exchange: string, orderId: string, symbol: string) => {
+    setCancelling(orderId);
+    try {
+      await cancelExchangeOrder(exchange, orderId, symbol);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : 'cancel failed');
+    } finally {
+      setCancelling(null);
+    }
+  };
+
+  const totalUnrealized = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
+  const groupedPositions: Record<string, ExchangePosition[]> = {};
+  for (const p of positions) {
+    (groupedPositions[p.exchange] ??= []).push(p);
+  }
+  const groupedOrders: Record<string, ExchangeOrder[]> = {};
+  for (const o of orders) {
+    (groupedOrders[o.exchange] ??= []).push(o);
+  }
+
+  const EXCHANGE_LABELS: Record<string, string> = {
+    'hyperliquid-testnet': 'Hyperliquid Testnet',
+    'bitget-demo': 'Bitget Demo',
+    'alpaca-paper': 'Alpaca Paper',
+  };
 
   return (
     <div className="agent-main-panel" style={{ gap: 16, display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', gap: 16 }}>
-          <div><strong>Open</strong> {openTrades.length}</div>
-          <div><strong>Closed</strong> {closedTrades.length}</div>
-          <div><strong>Realized PnL</strong> {totalRealized.toFixed(2)}</div>
+          <div><strong>持仓</strong> {positions.length}</div>
+          <div><strong>挂单</strong> {orders.length}</div>
+          <div>
+            <strong>未实现盈亏</strong>{' '}
+            <span style={{ color: totalUnrealized >= 0 ? '#26a69a' : '#ef5350' }}>
+              {totalUnrealized >= 0 ? '+' : ''}{totalUnrealized.toFixed(2)}
+            </span>
+          </div>
           <div><strong>Lessons</strong> {lessons.length}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={() => void refresh()} disabled={loading}>
-            {loading ? '刷新中…' : '刷新'}
-          </button>
           <button type="button" onClick={runReview} disabled={busyReview}>
             {busyReview ? '复盘中…' : '触发复盘'}
           </button>
@@ -3661,70 +3648,105 @@ function PositionsPanel({ state }: { state: MarketState | null }) {
       {error && <div style={{ color: '#e06c75' }}>{error}</div>}
 
       <section>
-        <h3 style={{ margin: '4px 0' }}>Open / Planned</h3>
-        <TradeTable trades={openTrades} onSelect={(id) => setSelectedTradeId(id)} selectedId={selectedTradeId} />
+        <h3 style={{ margin: '4px 0' }}>实时持仓</h3>
+        {positions.length === 0 && <div style={{ opacity: 0.6, padding: 6 }}>无持仓</div>}
+        {Object.entries(groupedPositions).map(([exchange, items]) => (
+          <div key={exchange} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>
+              {EXCHANGE_LABELS[exchange] ?? exchange}
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>标的</th>
+                  <th style={{ textAlign: 'left' }}>方向</th>
+                  <th style={{ textAlign: 'right' }}>数量</th>
+                  <th style={{ textAlign: 'right' }}>开仓均价</th>
+                  <th style={{ textAlign: 'right' }}>标记价</th>
+                  <th style={{ textAlign: 'right' }}>未实现盈亏</th>
+                  <th style={{ textAlign: 'right' }}>杠杆</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((p) => (
+                  <tr key={`${p.exchange}:${p.symbol}:${p.side}`}>
+                    <td>{p.symbol}</td>
+                    <td style={{ color: p.side === 'long' ? '#26a69a' : '#ef5350' }}>
+                      {p.side === 'long' ? '多' : '空'}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>{p.size}</td>
+                    <td style={{ textAlign: 'right' }}>{p.entryPrice.toFixed(2)}</td>
+                    <td style={{ textAlign: 'right' }}>{p.markPrice.toFixed(2)}</td>
+                    <td style={{
+                      textAlign: 'right',
+                      color: p.unrealizedPnl >= 0 ? '#26a69a' : '#ef5350',
+                    }}>
+                      {p.unrealizedPnl >= 0 ? '+' : ''}{p.unrealizedPnl.toFixed(2)}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>{p.leverage != null ? `${p.leverage}x` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </section>
 
       <section>
-        <h3 style={{ margin: '4px 0' }}>History</h3>
-        <TradeTable trades={closedTrades} onSelect={(id) => setSelectedTradeId(id)} selectedId={selectedTradeId} />
-      </section>
-
-      {detail && (
-        <section style={{ border: '1px solid rgba(127,127,127,0.3)', borderRadius: 6, padding: 12 }}>
-          <h3 style={{ margin: '4px 0' }}>Trade #{detail.trade.id} · {detail.trade.instrumentKey}</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 8 }}>
-            <div><span>Direction</span><br/><strong>{detail.trade.direction}</strong></div>
-            <div><span>Status</span><br/><strong>{detail.trade.status}</strong></div>
-            <div><span>Size</span><br/><strong>{detail.trade.size}</strong></div>
-            <div><span>Realized PnL</span><br/><strong>{detail.trade.realizedPnl.toFixed(2)}</strong></div>
-          </div>
-          {detail.trade.reasoningText && (
-            <div style={{ marginTop: 8 }}>
-              <strong>Reasoning</strong>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{detail.trade.reasoningText}</div>
+        <h3 style={{ margin: '4px 0' }}>活跃订单</h3>
+        {orders.length === 0 && <div style={{ opacity: 0.6, padding: 6 }}>无挂单</div>}
+        {Object.entries(groupedOrders).map(([exchange, items]) => (
+          <div key={exchange} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>
+              {EXCHANGE_LABELS[exchange] ?? exchange}
             </div>
-          )}
-          <div style={{ marginTop: 8 }}>
-            <strong>Fills</strong>
-            <ul style={{ margin: 0, paddingLeft: 18 }}>
-              {detail.trade.fills.map((f) => (
-                <li key={f.id}>
-                  [{f.kind}] price={f.price} qty={f.quantity} · {f.triggerReason || '—'}
-                </li>
-              ))}
-              {detail.trade.fills.length === 0 && <li style={{ opacity: 0.6 }}>no fills yet</li>}
-            </ul>
-          </div>
-          {detail.lessons.length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <strong>Lessons for this instrument</strong>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {detail.lessons.map((l) => (
-                  <li key={l.id}>
-                    [{l.category || 'general'}] {l.text}
-                    {l.tags.length > 0 && (
-                      <span style={{ opacity: 0.6 }}> · {l.tags.join(', ')}</span>
-                    )}
-                  </li>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>标的</th>
+                  <th style={{ textAlign: 'left' }}>方向</th>
+                  <th style={{ textAlign: 'left' }}>类型</th>
+                  <th style={{ textAlign: 'right' }}>数量</th>
+                  <th style={{ textAlign: 'right' }}>价格</th>
+                  <th style={{ textAlign: 'right' }}>已成交</th>
+                  <th style={{ textAlign: 'left' }}>状态</th>
+                  <th style={{ textAlign: 'center' }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((o) => (
+                  <tr key={`${o.exchange}:${o.orderId}`}>
+                    <td>{o.symbol}</td>
+                    <td style={{ color: o.side === 'buy' ? '#26a69a' : '#ef5350' }}>
+                      {o.side}
+                    </td>
+                    <td>{o.orderType}</td>
+                    <td style={{ textAlign: 'right' }}>{o.size}</td>
+                    <td style={{ textAlign: 'right' }}>{o.price?.toFixed(2) ?? 'market'}</td>
+                    <td style={{ textAlign: 'right' }}>{o.filledSize}</td>
+                    <td>{o.status}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        style={{ fontSize: 11, padding: '2px 8px' }}
+                        disabled={cancelling === o.orderId}
+                        onClick={() => void handleCancel(o.exchange, o.orderId, o.symbol)}
+                      >
+                        {cancelling === o.orderId ? '撤销中…' : '撤单'}
+                      </button>
+                    </td>
+                  </tr>
                 ))}
-              </ul>
-            </div>
-          )}
-          {detail.snapshot && (
-            <details style={{ marginTop: 8 }}>
-              <summary>Frozen snapshot at open</summary>
-              <pre style={{ maxHeight: 260, overflow: 'auto', fontSize: 11 }}>
-                {JSON.stringify(detail.snapshot.payload, null, 2)}
-              </pre>
-            </details>
-          )}
-        </section>
-      )}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </section>
 
       <section>
         <h3 style={{ margin: '4px 0' }}>Recent Lessons</h3>
-        {lessons.length === 0 && <div style={{ opacity: 0.6 }}>尚未生成 lesson。完成一笔交易并触发复盘后会出现。</div>}
+        {loading && <div style={{ opacity: 0.6 }}>加载中…</div>}
+        {!loading && lessons.length === 0 && <div style={{ opacity: 0.6 }}>尚未生成 lesson。完成一笔交易并触发复盘后会出现。</div>}
         <ul style={{ margin: 0, paddingLeft: 18 }}>
           {lessons.slice(0, 20).map((l) => (
             <li key={l.id}>
@@ -3734,64 +3756,5 @@ function PositionsPanel({ state }: { state: MarketState | null }) {
         </ul>
       </section>
     </div>
-  );
-}
-
-function TradeTable({
-  trades,
-  onSelect,
-  selectedId,
-}: {
-  trades: Trade[];
-  onSelect: (id: number) => void;
-  selectedId: number | null;
-}) {
-  if (trades.length === 0) {
-    return <div style={{ opacity: 0.6, padding: 6 }}>无记录</div>;
-  }
-  return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-      <thead>
-        <tr>
-          <th style={{ textAlign: 'left' }}>ID</th>
-          <th style={{ textAlign: 'left' }}>Instrument</th>
-          <th style={{ textAlign: 'left' }}>Dir</th>
-          <th style={{ textAlign: 'right' }}>Size</th>
-          <th style={{ textAlign: 'right' }}>Entry</th>
-          <th style={{ textAlign: 'right' }}>Stop</th>
-          <th style={{ textAlign: 'right' }}>Targets</th>
-          <th style={{ textAlign: 'left' }}>Status</th>
-          <th style={{ textAlign: 'right' }}>PnL</th>
-        </tr>
-      </thead>
-      <tbody>
-        {trades.map((t) => {
-          const entryFill = t.fills.find((f) => f.kind === 'entry');
-          const entryLabel = entryFill ? entryFill.price.toFixed(2) : (t.intentPrice?.toFixed(2) ?? '—');
-          return (
-            <tr
-              key={t.id}
-              onClick={() => onSelect(t.id)}
-              style={{
-                cursor: 'pointer',
-                background: selectedId === t.id ? 'rgba(127,127,127,0.15)' : 'transparent',
-              }}
-            >
-              <td>#{t.id}</td>
-              <td>{t.instrumentKey}</td>
-              <td>{t.direction}</td>
-              <td style={{ textAlign: 'right' }}>{t.size}</td>
-              <td style={{ textAlign: 'right' }}>{entryLabel}</td>
-              <td style={{ textAlign: 'right' }}>{t.stopPrice?.toFixed(2) ?? '—'}</td>
-              <td style={{ textAlign: 'right' }}>
-                {t.targetPrices.length === 0 ? '—' : t.targetPrices.map((p) => p.toFixed(2)).join(', ')}
-              </td>
-              <td>{t.status}</td>
-              <td style={{ textAlign: 'right' }}>{t.realizedPnl.toFixed(2)}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
   );
 }
