@@ -59,6 +59,14 @@ export ALPACA_DATA_FEED=iex
 
 Codex provider reads `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), or `MYTRADEBOT_CODEX_API_KEY` env var.
 
+Bitget Demo Trading uses demo-only API credentials. The backend signs v2 REST requests and always sends `paptrading: 1`:
+
+```bash
+export BITGET_DEMO_API_KEY=...
+export BITGET_DEMO_API_SECRET=...
+export BITGET_DEMO_PASSPHRASE=...
+```
+
 ## Architecture
 
 This is a local-first market monitoring and LLM research tool. One Python process runs a FastAPI server that owns all market state; a React/Vite frontend talks to it over REST + a single WebSocket.
@@ -71,8 +79,8 @@ The Python package `mytradebot/` is organized as strict layers. Upper layers imp
 2. **`config/`** — parses `watchlist.toml` → `AppConfig`. Also holds agent model normalization (`agent_models.py`) and `watchlist_store.py` which round-trips the TOML on add/remove from the UI.
 3. **`market_data/`** — per-provider adapters (`bitget.py`, `alpaca.py`, `hyperliquid.py`) plus `router.py` which dispatches `InstrumentConfig` to the right provider and preserves watchlist order. `candle_cache.py` provides the local OHLCV cache that agent tools read from.
 4. **`runtime/`** — `feed.py` runs a background worker that streams quotes/candles from providers into a `queue.Queue` of `FeedEvent`s. `controller.py` (`TickerController`) drains that queue into an in-memory `QuoteState` map and tracks flash directions.
-5. **`trading/`** — local trade records and external testnet execution. `store.py` is a SQLite-backed `TradeStore` at `~/.cache/mytradebot/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.py` submits signed Hyperliquid testnet orders. `review.py` orchestrates LLM post-trade reviews that produce lesson rows.
-6. **`agent/`** — LLM layer. `provider.py` builds the multi-timeframe context and normalizes model output to a fixed JSON schema. `providers/codex.py` and `providers/anthropic.py` implement the transport. `loop.py` is a tool-calling agent loop (OpenAI-style function calling internally, converted by each provider); `tools.py` defines the `ToolRegistry` plus two tool factories: `build_market_tools` (read-only data access) and `build_trading_tools` (Hyperliquid testnet order entry plus local trade history). `session_store.py` is a SQLite-backed per-instrument chat history at `~/.cache/mytradebot/agent_sessions.sqlite3`.
+5. **`trading/`** — local trade records and external testnet/demo execution. `store.py` is a SQLite-backed `TradeStore` at `~/.cache/mytradebot/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.py` submits signed Hyperliquid testnet orders; `bitget_demo.py` signs Bitget Demo Trading orders. `review.py` orchestrates LLM post-trade reviews that produce lesson rows.
+6. **`agent/`** — LLM layer. `provider.py` builds the multi-timeframe context and normalizes model output to a fixed JSON schema. `providers/codex.py` and `providers/anthropic.py` implement the transport. `loop.py` is a tool-calling agent loop (OpenAI-style function calling internally, converted by each provider); `tools.py` defines the `ToolRegistry` plus two tool factories: `build_market_tools` (read-only data access) and `build_trading_tools` (Hyperliquid testnet and Bitget demo order entry plus local trade history). `session_store.py` is a SQLite-backed per-instrument chat history at `~/.cache/mytradebot/agent_sessions.sqlite3`.
 7. **`api/app.py`** — the only place where async FastAPI meets the sync `TickerController`. It owns the `WebSocket` client set, broadcasts state snapshots (now including `openTrades`), runs a periodic review loop, and exposes all routes under `/api/*` plus `/ws`. This file is large (~1200 lines) because it's the integration seam.
 
 ### The one seam that matters
@@ -81,9 +89,9 @@ The Python package `mytradebot/` is organized as strict layers. Upper layers imp
 
 ### Trade record and testnet pipeline
 
-The agent can submit Hyperliquid testnet orders via `open_hyperliquid_testnet_trade` during a chat turn. Flow:
-1. Tool handler submits a signed order to Hyperliquid testnet and freezes a snapshot (multi-timeframe context + current analysis) into the `snapshots` table.
-2. The order result is inserted into `trades`; immediate fills are inserted into `fills`. Local code no longer simulates fills from 1m candles.
+The agent can submit Hyperliquid testnet orders via `open_hyperliquid_testnet_trade`, or Bitget demo orders via `open_bitget_demo_trade`, during a chat turn. Flow:
+1. Tool handler submits a signed order to the external test/demo environment and freezes a snapshot (multi-timeframe context + current analysis) into the `snapshots` table.
+2. The order result is inserted into `trades`; immediate Hyperliquid fills are inserted into `fills`. Local code no longer simulates fills from 1m candles.
 3. Closed trades periodically get reviewed by `trading/review.py` (every 15 min in background, or on-demand via `POST /api/trades/review`). The reviewer calls the configured LLM and writes structured lessons into the `lessons` table.
 4. When the agent opens a new trade on the same instrument, the top 5 most recent lessons are injected into the prompt so past mistakes inform new decisions.
 
@@ -94,7 +102,7 @@ Resting orders and later fills require exchange order-state sync; they are not a
 Two modes live side by side:
 
 - **Legacy single-shot**: `provider.py` builds a prompt from the current quote + multi-timeframe OHLCV + recent session turns, calls the LLM once, and parses a strict JSON response (`summary / bias / confidence / key_levels / watch_plan / invalidation / risk_notes`).
-- **Tool-calling loop**: `agent/loop.py` runs iterative chat with `ToolRegistry` (market tools, news tools, local trade-history tools, and Hyperliquid testnet entry). Same output schema. Bounded by `DEFAULT_MAX_ITERATIONS`.
+- **Tool-calling loop**: `agent/loop.py` runs iterative chat with `ToolRegistry` (market tools, news tools, local trade-history tools, Hyperliquid testnet entry, and Bitget demo entry). Same output schema. Bounded by `DEFAULT_MAX_ITERATIONS`.
 
 Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionStore`. The `api_mode` in config selects transport shape — Codex uses Responses API shapes, Anthropic uses Messages API shapes.
 
@@ -117,4 +125,4 @@ Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionS
 - Alpaca Basic is ~200 req/min and has a 15-minute delay on historical bars; the backend intentionally leaves a 16-minute gap on bar requests.
 - Bitget symbols that exist in both Spot and Futures require explicit `inst_type` in watchlist.toml.
 - The Codex adapter reads Codex CLI auth directly — it does not reuse Hermes auth store and does not allow base URL overrides.
-- The app can place Hyperliquid testnet orders only; it does not connect to real-money broker execution, manage exchange position lifecycle, or compute risk. It's still primarily a research/monitoring tool.
+- The app can place Hyperliquid testnet and Bitget Demo Trading orders only; it does not connect to real-money broker execution, manage exchange position lifecycle, or compute risk. It's still primarily a research/monitoring tool.

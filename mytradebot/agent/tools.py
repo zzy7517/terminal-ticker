@@ -6,18 +6,21 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from ..trading import (
+    BITGET_DEMO_FILL_SOURCE,
     FillKind,
     HYPERLIQUID_FILL_SOURCE,
+    BitgetDemoTradingError,
     HyperliquidTradingError,
     TradeDirection,
     TradeStatus,
     TradeStore,
+    open_bitget_demo_position,
     open_testnet_position as open_hyperliquid_testnet_position,
 )
 from ..trading import bitget as bitget_trading
 from ..trading import alpaca as alpaca_trading
 from ..trading.exchange_models import OrderResult
-from ..config import HYPERLIQUID_TESTNET_SOURCE
+from ..config import BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE
 
 ToolHandler = Callable[..., Awaitable[str]]
 
@@ -116,6 +119,18 @@ class ToolRegistry:
 
 def _json_output(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def _parse_bitget_instrument_key(instrument_key: str) -> tuple[str, str]:
+    """说明：兼容当前 Bitget key 和旧文档里的 source 前缀写法。"""
+    parts = [part.strip() for part in instrument_key.split(":") if part.strip()]
+    if len(parts) == 2 and parts[0].upper() in {"SPOT", "USDT-FUTURES"}:
+        return parts[1].upper(), parts[0].upper()
+    if len(parts) == 3 and parts[0].lower() == BITGET_SOURCE:
+        return parts[1].upper(), parts[2].upper()
+    raise ValueError(
+        "bitget instrument_key must look like USDT-FUTURES:BTCUSDT or bitget:BTCUSDT:USDT-FUTURES"
+    )
 
 
 def build_market_tools(context_provider: Any) -> ToolRegistry:
@@ -478,13 +493,13 @@ def build_trading_tools(
             "properties": {
                 "instrument_key": {
                     "type": "string",
-                    "description": "标的唯一标识，如 USDT-FUTURES:BTCUSDT",
+                    "description": "标的唯一标识，如 USDT-FUTURES:BTCUSDT 或 SPOT:ETHUSDT",
                 },
                 "direction": {"type": "string", "enum": ["long", "short"]},
-                "size": {"type": "number", "description": "合约数量，必须 > 0"},
+                "size": {"type": "number", "description": "订单数量，必须 > 0"},
                 "reasoning": {
                     "type": "string",
-                    "description": "开仓理由，会写入本地 trade 记录",
+                    "description": "下单理由，会写入本地 trade 记录",
                 },
                 "order_type": {
                     "type": "string",

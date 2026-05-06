@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from mytradebot.agent.tools import ToolCall, build_trading_tools
 from mytradebot.trading import TradeStore, TradeStatus
+from mytradebot.trading.exchange_models import OrderResult
 from mytradebot.trading.hyperliquid import HyperliquidOrderResult
 
 
@@ -41,6 +42,7 @@ class TradingToolsTests(unittest.TestCase):
     def test_registry_exposes_real_testnet_tool_not_local_paper_entry_tools(self) -> None:
         names = {tool.name for tool in self.registry.list_tools()}
         self.assertIn("open_hyperliquid_testnet_trade", names)
+        self.assertIn("open_bitget_demo_trade", names)
         self.assertNotIn("open_paper_trade", names)
         self.assertNotIn("cancel_paper_trade", names)
         self.assertNotIn("adjust_paper_trade", names)
@@ -156,6 +158,50 @@ class TradingToolsTests(unittest.TestCase):
         history = self._exec("get_trade_history", {"limit": 10})
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]["realizedPnl"], 5.0)
+
+    def test_open_bitget_demo_trade_records_external_order(self) -> None:
+        with patch(
+            "mytradebot.agent.tools.bitget_trading.place_order",
+            return_value=OrderResult(
+                exchange="bitget-demo",
+                order_id="bg-1",
+                raw={"code": "00000", "data": {"orderId": "bg-1"}},
+            ),
+        ) as placed:
+            data = self._exec(
+                "open_bitget_demo_trade",
+                {
+                    "instrument_key": "USDT-FUTURES:BTCUSDT",
+                    "direction": "long",
+                    "size": 0.01,
+                    "reasoning": "demo breakout",
+                    "order_type": "limit",
+                    "limit_price": 60000.0,
+                },
+            )
+
+        placed.assert_called_once()
+        _, kwargs = placed.call_args
+        self.assertEqual(kwargs["symbol"], "BTCUSDT")
+        self.assertEqual(kwargs["product_type"], "USDT-FUTURES")
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["exchange"], "bitget-demo")
+        trade = data["trade"]
+        self.assertEqual(trade["fillSource"], "bitget-demo")
+        self.assertEqual(trade["externalOrderId"], "bg-1")
+        self.assertEqual(trade["status"], "planned")
+
+    def test_open_bitget_demo_trade_rejects_non_bitget_key(self) -> None:
+        data = self._exec(
+            "open_bitget_demo_trade",
+            {
+                "instrument_key": "hyperliquid-testnet:BTC",
+                "direction": "long",
+                "size": 0.01,
+                "reasoning": "wrong venue",
+            },
+        )
+        self.assertIn("error", data)
 
 
 if __name__ == "__main__":

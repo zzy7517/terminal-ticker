@@ -30,6 +30,18 @@ export interface HyperliquidTestnetOrderRequest {
   slippage?: number;
 }
 
+export interface BitgetDemoOrderRequest {
+  direction: 'long' | 'short';
+  size: number;
+  reasoning?: string;
+  orderType?: 'market' | 'limit';
+  limitPrice?: number | null;
+  marginMode?: 'crossed' | 'isolated';
+  marginCoin?: string;
+  force?: 'gtc' | 'ioc' | 'fok' | 'post_only';
+  clientOid?: string;
+}
+
 // Builds a user-facing error while preserving FastAPI's structured detail when available.
 async function responseError(response: Response, prefix: string): Promise<Error> {
   try {
