@@ -1771,9 +1771,8 @@ textarea:focus-visible {
   padding: 20px;
 }
 
-/* News 设置页右栏：Module 和 News Analyst 两个 detail 纵向叠加，共享右栏滚动，
-   整体跟其他设置页一样贴满 .provider-layout 的高度 */
 .news-settings-detail-stack {
+  align-self: start;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -2726,31 +2725,152 @@ textarea:focus-visible {
   }
 }
 
-/* Agent tab + News 同区布局 (左 60% Agent / 右 40% News) */
-.agent-with-news {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: 16px;
-  height: 100%;
-  min-height: 0;
-}
-.agent-with-news__main {
-  min-width: 0;
-  min-height: 0;
+/* ── Agent tab layout ─────────────────────────────────────────────── */
+.agent-tab-layout {
   display: flex;
   flex-direction: column;
-}
-.agent-with-news__news {
-  min-width: 0;
+  gap: 16px;
   min-height: 0;
-  overflow: auto;
 }
-@media (max-width: 1280px) {
-  /* 窄屏堆叠：上 Agent 下 News */
-  .agent-with-news {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
+
+/* ── News tab panel ──────────────────────────────────────────────── */
+.news-tab-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.news-tab-panel .news-panel {
+  margin-top: 0;
+  border-top: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+.news-tab-panel .news-panel__list {
+  max-height: none;
+}
+
+/* ── Social tab panel ────────────────────────────────────────────── */
+.social-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  min-height: 0;
+}
+.social-tab-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.social-tab-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.social-tab-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.social-tab-panel__last-refresh {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.social-tab-panel__feedback {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+.social-tab-panel__empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 24px 0;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.social-tab-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  max-height: calc(100vh - 200px);
+}
+
+/* ── Social feed item ────────────────────────────────────────────── */
+.social-feed-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  color: var(--text-primary);
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.social-feed-item:hover {
+  background: var(--accent-tint);
+}
+.social-feed-item__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.social-feed-item__avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.social-feed-item__handle {
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.social-feed-item__verified {
+  color: var(--accent);
+}
+.social-feed-item__name {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.social-feed-item__time {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.social-feed-item__text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Agent tab: session history in main area ─────────────────────── */
+.agent-tab-layout .session-history {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  padding: 12px 14px;
+}
+.agent-tab-layout .session-history-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 6px;
 }
 
 /* ── News Settings page ───────────────────────────────────────────── */

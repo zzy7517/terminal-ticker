@@ -1124,6 +1124,133 @@ function NewsPanel({
 }
 
 
+const SOCIAL_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+
+function SocialFeedPanel({ state }: { state: MarketState | null }) {
+  const enabled = state?.config.socialFeed?.enabled ?? false;
+  const [items, setItems] = useState<SocialFeedItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<number | null>(null);
+
+  const loadFeed = useCallback(async () => {
+    setLoading(true);
+    try {
+      const feed = await fetchRecentSocialFeed(40);
+      setItems(feed);
+      setFeedback(null);
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : 'Failed to load feed');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const refreshFeed = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setFeedback(null);
+    try {
+      const result = await triggerXFollowingRefresh(20);
+      const feed = await fetchRecentSocialFeed(40);
+      setItems(feed);
+      setLastRefreshed(Date.now());
+      if (result.status === 'ok') {
+        setFeedback(result.inserted > 0 ? `${result.inserted} new items` : 'no new items');
+      } else {
+        setFeedback(`${result.status}: ${result.error ?? 'unknown'}`);
+      }
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : 'Refresh failed');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    void loadFeed();
+  }, [enabled, loadFeed]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const timer = setInterval(() => void refreshFeed(), SOCIAL_REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [enabled, refreshFeed]);
+
+  if (!enabled) {
+    return (
+      <div className="social-tab-panel">
+        <div className="social-tab-panel__empty">
+          Social feed is disabled. Enable it in <strong>Settings → Social</strong>.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="social-tab-panel">
+      <div className="social-tab-panel__head">
+        <span className="social-tab-panel__title">X Following</span>
+        <div className="social-tab-panel__actions">
+          {lastRefreshed && (
+            <span className="social-tab-panel__last-refresh">
+              Last: {new Date(lastRefreshed).toLocaleTimeString()}
+            </span>
+          )}
+          <button
+            className="news-refresh-btn"
+            onClick={() => void refreshFeed()}
+            disabled={refreshing || loading}
+            type="button"
+          >
+            {refreshing ? '刷新中…' : '立即刷新'}
+          </button>
+        </div>
+      </div>
+      {feedback && <div className="social-tab-panel__feedback">{feedback}</div>}
+      {loading && items.length === 0 && (
+        <div className="social-tab-panel__empty">
+          <Loader2 className="spin" size={16} /> Loading feed…
+        </div>
+      )}
+      <div className="social-tab-panel__list">
+        {items.map((item) => (
+          <a
+            className="social-feed-item"
+            href={item.url}
+            key={`${item.source}:${item.externalId}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <div className="social-feed-item__header">
+              {item.author.profileImageUrl && (
+                <img
+                  className="social-feed-item__avatar"
+                  src={item.author.profileImageUrl}
+                  alt=""
+                  loading="lazy"
+                />
+              )}
+              <strong className="social-feed-item__handle">
+                @{item.author.handle}
+                {item.author.verified && <Sparkles size={12} className="social-feed-item__verified" />}
+              </strong>
+              <span className="social-feed-item__name">{item.author.name}</span>
+              <time className="social-feed-item__time">{formatRelativeTime(item.createdAt)}</time>
+            </div>
+            <div className="social-feed-item__text">{item.text}</div>
+          </a>
+        ))}
+        {!loading && items.length === 0 && (
+          <div className="social-tab-panel__empty">暂无推文，点击"立即刷新"拉取。</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Renders one compact chart statistic tile.
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
@@ -1943,7 +2070,7 @@ function WorkspaceView({
     ) &&
     Boolean(historyKey && !exhaustedHistoryKeys.has(historyKey));
   const nextThemeName = nextTheme(theme);
-  const [activeTab, setActiveTab] = useState<'chart' | 'agent' | 'positions'>('chart');
+  const [activeTab, setActiveTab] = useState<'chart' | 'agent' | 'news' | 'social' | 'positions'>('chart');
 
   return (
     <main className="app-shell">
@@ -2036,14 +2163,6 @@ function WorkspaceView({
                     );
                   })}
               </div>
-              <AgentSessionHistoryList
-                activeSessionId={agentSession?.session?.id ?? null}
-                busyActionKey={agentSessionActionKey}
-                history={agentSessionHistory}
-                loading={agentSessionHistoryLoading}
-                onDelete={deleteAgentConversation}
-                onResume={resumeAgentConversation}
-              />
             </>
           )}
           {sidebarCollapsed && (
@@ -2103,6 +2222,24 @@ function WorkspaceView({
               onClick={() => setActiveTab('agent')}
             >
               Agent
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'news'}
+              className={`workspace-tab ${activeTab === 'news' ? 'active' : ''}`}
+              onClick={() => setActiveTab('news')}
+            >
+              News
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'social'}
+              className={`workspace-tab ${activeTab === 'social' ? 'active' : ''}`}
+              onClick={() => setActiveTab('social')}
+            >
+              Social
             </button>
             <button
               type="button"
@@ -2168,36 +2305,47 @@ function WorkspaceView({
           )}
 
           {activeTab === 'agent' && (
-            <div className="agent-with-news">
-              <div className="agent-with-news__main">
-                <AgentSessionPanel
-                  analysis={selectedAgent}
-                  session={agentSession}
-                  prompt={agentPrompt}
-                  sessionActionKey={agentSessionActionKey}
-                  sessionLoading={agentSessionLoading}
-                  busy={agentBusyKey === selectedKey}
-                  disabled={!selectedKey || !selectedQuote?.candles.length}
-                  selectedProvider={agentProvider}
-                  selectedModel={agentModel}
-                  onProviderChange={onAgentProviderChange}
-                  onModelChange={onAgentModelChange}
-                  onPromptChange={setAgentPrompt}
-                  onSend={runAgentAnalysis}
-                  onReset={resetAgentConversation}
-                />
-              </div>
-              {state?.config.news?.enabled && (
-                <aside className="agent-with-news__news">
-                  <NewsPanel
-                    items={state.recentNews ?? []}
-                    decisions={state.recentNewsDecisions ?? []}
-                    lastStatus={state.newsStatus?.lastStatus}
-                    lastError={state.newsStatus?.lastError ?? null}
-                  />
-                </aside>
-              )}
+            <div className="agent-tab-layout">
+              <AgentSessionPanel
+                analysis={selectedAgent}
+                session={agentSession}
+                prompt={agentPrompt}
+                sessionActionKey={agentSessionActionKey}
+                sessionLoading={agentSessionLoading}
+                busy={agentBusyKey === selectedKey}
+                disabled={!selectedKey || !selectedQuote?.candles.length}
+                selectedProvider={agentProvider}
+                selectedModel={agentModel}
+                onProviderChange={onAgentProviderChange}
+                onModelChange={onAgentModelChange}
+                onPromptChange={setAgentPrompt}
+                onSend={runAgentAnalysis}
+                onReset={resetAgentConversation}
+              />
+              <AgentSessionHistoryList
+                activeSessionId={agentSession?.session?.id ?? null}
+                busyActionKey={agentSessionActionKey}
+                history={agentSessionHistory}
+                loading={agentSessionHistoryLoading}
+                onDelete={deleteAgentConversation}
+                onResume={resumeAgentConversation}
+              />
             </div>
+          )}
+
+          {activeTab === 'news' && (
+            <div className="news-tab-panel">
+              <NewsPanel
+                items={state?.recentNews ?? []}
+                decisions={state?.recentNewsDecisions ?? []}
+                lastStatus={state?.newsStatus?.lastStatus}
+                lastError={state?.newsStatus?.lastError ?? null}
+              />
+            </div>
+          )}
+
+          {activeTab === 'social' && (
+            <SocialFeedPanel state={state} />
           )}
 
           {activeTab === 'positions' && (
