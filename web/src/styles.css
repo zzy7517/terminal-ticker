@@ -1394,23 +1394,14 @@ textarea:focus-visible {
   overflow: hidden;
 }
 
-.agent-tool-step summary {
+.tool-step-summary {
   align-items: center;
-  cursor: pointer;
   display: flex;
   font-size: 11px;
   gap: 5px;
   padding: 4px 8px;
   color: var(--text-secondary);
   user-select: none;
-}
-
-.agent-tool-step summary:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-:root[data-theme="dark"] .agent-tool-step summary:hover {
-  background: rgba(255, 255, 255, 0.03);
 }
 
 .agent-tool-step .tool-name {

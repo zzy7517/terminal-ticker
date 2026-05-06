@@ -1613,7 +1613,10 @@ function WatchlistSettingsPanel({
 function AgentAnalysisBlock({ analysis }: { analysis: AgentAnalysis }) {
   const text = analysis.rawText || analysis.summary || analysis.error || 'Agent response unavailable.';
   return (
-    <p className="session-message-text">{text}</p>
+    <>
+      {analysis.loopResult && <AgentToolSteps steps={analysis.loopResult.steps} />}
+      <p className="session-message-text">{text}</p>
+    </>
   );
 }
 
@@ -1635,12 +1638,12 @@ function AgentToolSteps({ steps }: { steps: LoopStep[] }) {
   return (
     <div className="agent-tool-steps">
       {pairs.map((pair, index) => (
-        <details key={index} className="agent-tool-step">
-          <summary>
+        <div key={index} className="agent-tool-step">
+          <div className="tool-step-summary">
             <Zap size={12} />
             <span className="tool-name">{pair.call.toolCall?.name ?? 'tool'}</span>
             {pair.result?.toolResult?.error && <span className="tool-error-badge">error</span>}
-          </summary>
+          </div>
           <div className="tool-step-detail">
             {pair.call.toolCall?.arguments && Object.keys(pair.call.toolCall.arguments).length > 0 && (
               <div className="tool-args">
@@ -1655,7 +1658,7 @@ function AgentToolSteps({ steps }: { steps: LoopStep[] }) {
               </div>
             )}
           </div>
-        </details>
+        </div>
       ))}
     </div>
   );
