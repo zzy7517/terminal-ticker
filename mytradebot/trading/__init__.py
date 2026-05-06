@@ -10,6 +10,13 @@ from .models import (
     TradeStatus,
 )
 from .store import TradeStore, default_trade_store_path
+from .bitget_demo import (
+    BITGET_DEMO_FILL_SOURCE,
+    BitgetDemoOrderResult,
+    BitgetDemoTradingError,
+    bitget_demo_credentials_available,
+    open_demo_position as open_bitget_demo_position,
+)
 from .hyperliquid import (
     HYPERLIQUID_FILL_SOURCE,
     HyperliquidTradingError,
@@ -26,6 +33,11 @@ __all__ = [
     "TradeStatus",
     "TradeStore",
     "default_trade_store_path",
+    "BITGET_DEMO_FILL_SOURCE",
+    "BitgetDemoOrderResult",
+    "BitgetDemoTradingError",
+    "bitget_demo_credentials_available",
+    "open_bitget_demo_position",
     "HYPERLIQUID_FILL_SOURCE",
     "HyperliquidTradingError",
     "hyperliquid_credentials_available",

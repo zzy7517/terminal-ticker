@@ -28,6 +28,18 @@ export interface HyperliquidTestnetOrderRequest {
   slippage?: number;
 }
 
+export interface BitgetDemoOrderRequest {
+  direction: 'long' | 'short';
+  size: number;
+  reasoning?: string;
+  orderType?: 'market' | 'limit';
+  limitPrice?: number | null;
+  marginMode?: 'crossed' | 'isolated';
+  marginCoin?: string;
+  force?: 'gtc' | 'ioc' | 'fok' | 'post_only';
+  clientOid?: string;
+}
+
 // Builds a user-facing error while preserving FastAPI's structured detail when available.
 async function responseError(response: Response, prefix: string): Promise<Error> {
   try {
@@ -467,6 +479,30 @@ export async function openHyperliquidTestnetTrade(
   });
   if (!response.ok) {
     throw await responseError(response, 'Hyperliquid testnet order failed');
+  }
+  return response.json();
+}
+
+// Places a Bitget demo order and records the order id in the local trade store.
+export async function openBitgetDemoTrade(
+  instrumentKey: string,
+  request: BitgetDemoOrderRequest,
+): Promise<{
+  ok: boolean;
+  demo: boolean;
+  exchange: 'bitget';
+  trade: Trade;
+  fill: unknown;
+  order: unknown;
+  state: MarketState;
+}> {
+  const response = await fetch(`/api/bitget-demo/trades/${encodeURIComponent(instrumentKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'Bitget demo order failed');
   }
   return response.json();
 }

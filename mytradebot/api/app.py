@@ -41,6 +41,11 @@ from ..social_feed import SocialFeedService, SocialFeedStore, XAuthStore
 from ..agent.provider import _result_from_text
 from ..agent.tools import ToolRegistry
 from ..trading import TradeStatus, TradeStore
+from ..trading.bitget_demo import (
+    BITGET_DEMO_FILL_SOURCE,
+    BitgetDemoTradingError,
+    open_demo_position as open_bitget_demo_position,
+)
 from ..trading.hyperliquid import (
     HYPERLIQUID_FILL_SOURCE,
     HyperliquidTradingError,
@@ -129,42 +134,33 @@ def _normalize_agent_prompt(prompt: str | None) -> str:
     return text or DEFAULT_AGENT_USER_PROMPT
 
 
+def _require_local_request(request: Request, *, feature_name: str) -> None:
+    """说明：敏感本机 API 只允许 loopback 页面/客户端访问。"""
+    client_host = (request.client.host if request.client else "").lower()
+    if client_host and client_host not in LOCAL_HOSTS and client_host != "testclient":
+        raise HTTPException(status_code=403, detail=f"{feature_name} API is local-only")
+    raw_host = (request.headers.get("host") or "").strip().lower()
+    if raw_host.startswith("[") and "]" in raw_host:
+        host = raw_host.split("]", 1)[0].strip("[]")
+    else:
+        host = raw_host.split(":", 1)[0]
+    if host not in LOCAL_HOSTS and not (client_host == "testclient" and host == "testserver"):
+        LOGGER.warning("%s API request used non-loopback Host header: %s", feature_name, raw_host)
+    origin = request.headers.get("origin")
+    if origin:
+        origin_host = (urllib.parse.urlparse(origin).hostname or "").lower()
+        if origin_host not in LOCAL_HOSTS:
+            raise HTTPException(status_code=403, detail=f"{feature_name} API origin denied")
+
+
 def _require_local_social_request(request: Request) -> None:
     """说明：社交流 API 只允许本机页面/客户端访问，避免局域网暴露 X 缓存。"""
-    client_host = (request.client.host if request.client else "").lower()
-    if client_host and client_host not in LOCAL_HOSTS and client_host != "testclient":
-        raise HTTPException(status_code=403, detail="social feed API is local-only")
-    raw_host = (request.headers.get("host") or "").strip().lower()
-    if raw_host.startswith("[") and "]" in raw_host:
-        host = raw_host.split("]", 1)[0].strip("[]")
-    else:
-        host = raw_host.split(":", 1)[0]
-    if host not in LOCAL_HOSTS:
-        LOGGER.warning("social feed API request used non-loopback Host header: %s", raw_host)
-    origin = request.headers.get("origin")
-    if origin:
-        origin_host = (urllib.parse.urlparse(origin).hostname or "").lower()
-        if origin_host not in LOCAL_HOSTS:
-            raise HTTPException(status_code=403, detail="social feed API origin denied")
+    _require_local_request(request, feature_name="social feed")
 
 
-def _require_local_hyperliquid_trading_request(request: Request) -> None:
-    """说明：真实测试网下单只允许本机页面/客户端访问。"""
-    client_host = (request.client.host if request.client else "").lower()
-    if client_host and client_host not in LOCAL_HOSTS and client_host != "testclient":
-        raise HTTPException(status_code=403, detail="Hyperliquid testnet trading API is local-only")
-    raw_host = (request.headers.get("host") or "").strip().lower()
-    if raw_host.startswith("[") and "]" in raw_host:
-        host = raw_host.split("]", 1)[0].strip("[]")
-    else:
-        host = raw_host.split(":", 1)[0]
-    if host not in LOCAL_HOSTS:
-        LOGGER.warning("Hyperliquid trading API request used non-loopback Host header: %s", raw_host)
-    origin = request.headers.get("origin")
-    if origin:
-        origin_host = (urllib.parse.urlparse(origin).hostname or "").lower()
-        if origin_host not in LOCAL_HOSTS:
-            raise HTTPException(status_code=403, detail="Hyperliquid testnet trading API origin denied")
+def _require_local_trading_request(request: Request) -> None:
+    """说明：测试网/模拟盘下单 API 只允许本机页面/客户端访问。"""
+    _require_local_request(request, feature_name="trading")
 
 
 def _request_float(raw_value: Any, field_name: str) -> float:
@@ -975,6 +971,95 @@ class MarketRuntime:
             "state": self.snapshot(),
         }
 
+    async def open_bitget_demo_trade(
+        self,
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：通过 HTTP API 在 Bitget 模拟盘提交真实订单。"""
+        instrument = self._instrument_by_key(instrument_key)
+        if instrument.source != BITGET_SOURCE:
+            raise HTTPException(
+                status_code=400,
+                detail="Bitget demo trading only supports bitget instruments.",
+            )
+        inst_type = getattr(instrument, "inst_type", None)
+        if inst_type is None:
+            raise HTTPException(status_code=400, detail="Bitget instrument is missing inst_type.")
+        try:
+            direction = TradeDirection(str(payload.get("direction") or "").lower())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="direction must be long or short") from exc
+        size = _request_float(payload.get("size"), "size")
+        if size <= 0:
+            raise HTTPException(status_code=400, detail="size must be positive")
+        order_type = str(payload.get("orderType") or payload.get("order_type") or "market").lower()
+        if order_type not in {"market", "limit"}:
+            raise HTTPException(status_code=400, detail="orderType must be market or limit")
+        limit_price = payload.get("limitPrice", payload.get("limit_price"))
+        resolved_limit = None if limit_price in (None, "") else _request_float(limit_price, "limitPrice")
+        if order_type == "limit" and resolved_limit is None:
+            raise HTTPException(status_code=400, detail="limitPrice is required for limit orders")
+        if resolved_limit is not None and resolved_limit <= 0:
+            raise HTTPException(status_code=400, detail="limitPrice must be positive")
+        reasoning = str(payload.get("reasoning") or "Manual Bitget demo trade")
+        try:
+            result = await asyncio.to_thread(
+                open_bitget_demo_position,
+                symbol=instrument.symbol,
+                inst_type=inst_type,
+                is_buy=direction is TradeDirection.LONG,
+                size=size,
+                order_type=order_type,
+                limit_price=resolved_limit,
+                margin_mode=str(payload.get("marginMode") or payload.get("margin_mode") or "crossed"),
+                margin_coin=str(payload.get("marginCoin") or payload.get("margin_coin") or "USDT"),
+                force=str(payload.get("force") or "gtc"),
+                client_oid=(
+                    None
+                    if payload.get("clientOid", payload.get("client_oid")) in (None, "")
+                    else str(payload.get("clientOid", payload.get("client_oid")))
+                ),
+            )
+        except BitgetDemoTradingError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        snapshot_payload = self._trading_snapshot_payload(instrument.key)
+        snapshot_id = await asyncio.to_thread(
+            lambda: self.trade_store.save_snapshot(
+                instrument_key=instrument.key,
+                payload=snapshot_payload,
+            ).id
+            if snapshot_payload
+            else None
+        )
+        trade = await asyncio.to_thread(
+            self.trade_store.create_trade,
+            instrument_key=instrument.key,
+            direction=direction,
+            size=size,
+            intent_price=resolved_limit,
+            stop_price=None,
+            target_prices=tuple(),
+            reasoning_text=reasoning,
+            session_id=None,
+            snapshot_id=snapshot_id,
+            market_kind=f"bitget-demo-{inst_type.lower()}",
+            fill_source=BITGET_DEMO_FILL_SOURCE,
+            status=TradeStatus.PLANNED,
+            external_order_id=result.external_order_id,
+        )
+        await self.broadcast()
+        return {
+            "ok": True,
+            "demo": True,
+            "exchange": "bitget",
+            "trade": trade.to_payload(),
+            "fill": None,
+            "order": result.raw,
+            "state": self.snapshot(),
+        }
+
     async def open_hyperliquid_testnet_trade(
         self,
         instrument_key: str,
@@ -1672,6 +1757,16 @@ def create_app(
         """说明：处理单个标的的手动 Agent 分析请求。"""
         return await runtime.analyze_instrument(instrument_key)
 
+    @app.post("/api/bitget-demo/trades/{instrument_key}")
+    async def open_bitget_demo_trade_endpoint(
+        request: Request,
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：处理 Bitget 模拟盘下单请求。"""
+        _require_local_trading_request(request)
+        return await runtime.open_bitget_demo_trade(instrument_key, payload)
+
     @app.post("/api/hyperliquid-testnet/trades/{instrument_key}")
     async def open_hyperliquid_testnet_trade_endpoint(
         request: Request,
@@ -1679,7 +1774,7 @@ def create_app(
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         """说明：处理 Hyperliquid 测试网真实开仓请求。"""
-        _require_local_hyperliquid_trading_request(request)
+        _require_local_trading_request(request)
         return await runtime.open_hyperliquid_testnet_trade(instrument_key, payload)
 
     @app.get("/api/trades")
@@ -1706,14 +1801,24 @@ def create_app(
         )
         return {"trades": [trade.to_payload() for trade in trades]}
 
+    @app.post("/api/bitget-demo/{instrument_key}/open")
+    async def open_bitget_demo_trade_alias_endpoint(
+        request: Request,
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：处理 Bitget 模拟盘下单请求。"""
+        _require_local_trading_request(request)
+        return await runtime.open_bitget_demo_trade(instrument_key, payload)
+
     @app.post("/api/hyperliquid-testnet/{instrument_key}/open")
-    async def open_hyperliquid_testnet_trade_compat_endpoint(
+    async def open_hyperliquid_testnet_trade_alias_endpoint(
         request: Request,
         instrument_key: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         """说明：处理 Hyperliquid 测试网真实开仓请求。"""
-        _require_local_hyperliquid_trading_request(request)
+        _require_local_trading_request(request)
         return await runtime.open_hyperliquid_testnet_trade(instrument_key, payload)
 
     @app.get("/api/trades/{trade_id}")
