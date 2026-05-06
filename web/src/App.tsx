@@ -1732,6 +1732,10 @@ function AgentSessionPanel({
   sessionLoading,
   busy,
   disabled,
+  selectedProvider,
+  selectedModel,
+  onProviderChange,
+  onModelChange,
   onPromptChange,
   onSend,
   onReset,
@@ -1743,6 +1747,10 @@ function AgentSessionPanel({
   sessionLoading: boolean;
   busy: boolean;
   disabled: boolean;
+  selectedProvider: string;
+  selectedModel: string;
+  onProviderChange: (provider: string, defaultModel: string) => void;
+  onModelChange: (model: string) => void;
   onPromptChange: (value: string) => void;
   onSend: () => Promise<void>;
   onReset: () => Promise<void>;
@@ -1776,6 +1784,29 @@ function AgentSessionPanel({
         >
           <RefreshCw size={14} />
         </button>
+      </div>
+      <div className="session-provider-bar">
+        <select
+          className="session-provider-select"
+          value={selectedProvider}
+          onChange={(event) => {
+            const option = AGENT_PROVIDER_OPTIONS.find((o) => o.provider === event.target.value);
+            if (option) onProviderChange(option.provider, option.defaultModel);
+          }}
+          disabled={busy}
+        >
+          {AGENT_PROVIDER_OPTIONS.map((option) => (
+            <option key={option.provider} value={option.provider}>{option.label}</option>
+          ))}
+        </select>
+        <input
+          className="session-model-input"
+          type="text"
+          value={selectedModel}
+          onChange={(event) => onModelChange(event.target.value)}
+          disabled={busy}
+          placeholder="Model name"
+        />
       </div>
       <div className="session-transcript">
         {sessionLoading && (
@@ -1840,6 +1871,8 @@ function WorkspaceView({
   agentSession,
   agentSessionHistory,
   agentPrompt,
+  agentProvider,
+  agentModel,
   agentBusyKey,
   agentSessionActionKey,
   agentSessionHistoryLoading,
@@ -1853,6 +1886,8 @@ function WorkspaceView({
   setSelectedKey,
   setState,
   setAgentPrompt,
+  onAgentProviderChange,
+  onAgentModelChange,
   updateAnalysisInterval,
   loadOlderForSelected,
   runAgentAnalysis,
@@ -1875,6 +1910,8 @@ function WorkspaceView({
   agentSession: AgentSessionResponse | null;
   agentSessionHistory: AgentSessionSummary[];
   agentPrompt: string;
+  agentProvider: string;
+  agentModel: string;
   agentBusyKey: string | null;
   agentSessionActionKey: string | null;
   agentSessionHistoryLoading: boolean;
@@ -1888,6 +1925,8 @@ function WorkspaceView({
   setSelectedKey: (value: string) => void;
   setState: (state: MarketState) => void;
   setAgentPrompt: (value: string) => void;
+  onAgentProviderChange: (provider: string, defaultModel: string) => void;
+  onAgentModelChange: (model: string) => void;
   updateAnalysisInterval: (value: string) => void;
   loadOlderForSelected: () => void;
   runAgentAnalysis: () => Promise<void>;
@@ -2144,7 +2183,11 @@ function WorkspaceView({
                   sessionActionKey={agentSessionActionKey}
                   sessionLoading={agentSessionLoading}
                   busy={agentBusyKey === selectedKey}
-                  disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
+                  disabled={!selectedKey || !selectedQuote?.candles.length}
+                  selectedProvider={agentProvider}
+                  selectedModel={agentModel}
+                  onProviderChange={onAgentProviderChange}
+                  onModelChange={onAgentModelChange}
                   onPromptChange={setAgentPrompt}
                   onSend={runAgentAnalysis}
                   onReset={resetAgentConversation}
@@ -2370,21 +2413,12 @@ function ProviderSettingsPanel({
                 <div>
                   <div className="provider-hero-title">
                     <h3>{currentProvider.label}</h3>
-                    <span className={`provider-state-badge ${draft.enabled ? 'active' : 'inactive'}`}>
-                      {draft.enabled ? 'Active' : 'Disabled'}
+                    <span className={`provider-state-badge ${draft.provider === currentProvider.provider ? 'active' : 'inactive'}`}>
+                      {draft.provider === currentProvider.provider ? 'Default' : ''}
                     </span>
                   </div>
                   <p>{currentProvider.detail}</p>
                 </div>
-                <label className="switch-row">
-                  <span>Enabled</span>
-                  <input
-                    checked={draft.enabled}
-                    onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
-                    type="checkbox"
-                  />
-                  <span className="switch-slider" />
-                </label>
               </div>
 
               <div className="provider-section">
@@ -3205,6 +3239,12 @@ export default function App() {
   const [agentSession, setAgentSession] = useState<AgentSessionResponse | null>(null);
   const [agentSessionHistory, setAgentSessionHistory] = useState<AgentSessionSummary[]>([]);
   const [agentPrompt, setAgentPrompt] = useState('');
+  const [agentProvider, setAgentProvider] = useState<string>(
+    () => state?.config.agent.provider ?? AGENT_PROVIDER_OPTIONS[0].provider,
+  );
+  const [agentModel, setAgentModel] = useState<string>(
+    () => state?.config.agent.model ?? AGENT_PROVIDER_OPTIONS[0].defaultModel,
+  );
   const [analysisIntervalBusy, setAnalysisIntervalBusy] = useState(false);
   const [olderBusyKey, setOlderBusyKey] = useState<string | null>(null);
   const [exhaustedHistoryKeys, setExhaustedHistoryKeys] = useState<Set<string>>(() => new Set());
@@ -3396,7 +3436,10 @@ export default function App() {
     if (!selectedKey) return;
     setAgentBusyKey(selectedKey);
     try {
-      const payload = await sendAgentMessage(selectedKey, agentPrompt);
+      const payload = await sendAgentMessage(selectedKey, agentPrompt, {
+        provider: agentProvider,
+        model: agentModel,
+      });
       setState(payload.state);
       setAgentSession(payload.session);
       setAgentSessionHistory(payload.history.sessions);
@@ -3405,8 +3448,8 @@ export default function App() {
       const message = error instanceof Error ? error.message : 'agent analysis failed';
       const fallback: AgentAnalysis = {
         available: false,
-        provider: state?.config.agent.provider ?? 'codex',
-        model: state?.config.agent.model ?? '-',
+        provider: agentProvider,
+        model: agentModel,
         updatedAt: new Date().toISOString(),
         summary: '',
         bias: 'neutral',
@@ -3531,6 +3574,8 @@ export default function App() {
       agentSession={selectedAgentSession}
       agentSessionHistory={selectedAgentSessionHistory}
       agentPrompt={agentPrompt}
+      agentProvider={agentProvider}
+      agentModel={agentModel}
       agentBusyKey={agentBusyKey}
       agentSessionActionKey={agentSessionActionKey}
       agentSessionHistoryLoading={agentSessionHistoryLoadingKey === selectedKey}
@@ -3544,6 +3589,11 @@ export default function App() {
       setSelectedKey={setSelectedKey}
       setState={setState}
       setAgentPrompt={setAgentPrompt}
+      onAgentProviderChange={(provider, defaultModel) => {
+        setAgentProvider(provider);
+        setAgentModel(defaultModel);
+      }}
+      onAgentModelChange={setAgentModel}
       updateAnalysisInterval={updateAnalysisInterval}
       loadOlderForSelected={loadOlderForSelected}
       runAgentAnalysis={runAgentAnalysis}

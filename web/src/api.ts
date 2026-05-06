@@ -205,16 +205,20 @@ export async function deleteAgentSession(key: string, sessionId: string): Promis
 export async function sendAgentMessage(
   key: string,
   message: string,
+  options?: { provider?: string; model?: string },
 ): Promise<{
   result: AgentAnalysis;
   session: AgentSessionResponse;
   history: AgentSessionHistoryResponse;
   state: MarketState;
 }> {
+  const body: Record<string, string> = { message };
+  if (options?.provider) body.provider = options.provider;
+  if (options?.model) body.model = options.model;
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) {
     throw await responseError(response, 'agent message failed');

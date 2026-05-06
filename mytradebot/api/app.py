@@ -69,6 +69,11 @@ from ..config import (
     parse_news_config,
     parse_social_feed_config,
 )
+from ..config.agent_models import (
+    normalize_api_mode,
+    normalize_model,
+    normalize_provider,
+)
 from ..market_data.alpaca import search_assets as search_alpaca_assets
 from ..runtime.controller import TickerController
 from ..runtime.feed import CHART_CANDLE_LIMIT, OLDER_CANDLE_LIMIT
@@ -1177,8 +1182,11 @@ class MarketRuntime:
         self,
         instrument_key: str,
         prompt: str | None = None,
+        override_provider: str | None = None,
+        override_model: str | None = None,
     ) -> dict[str, Any]:
         """说明：对单个标的执行一次会话式 LLM 分析，支持 agent loop with tools。"""
+        agent_cfg = self._effective_agent_config(override_provider, override_model)
         instrument = self._instrument_by_key(instrument_key)
         quote = self.controller.quotes.get(instrument.key)
         if quote is None:
@@ -1188,9 +1196,9 @@ class MarketRuntime:
             self.agent_session_store.get_or_create_active_session,
             instrument_key=instrument.key,
             title=_agent_session_title(instrument),
-            provider=self.config.agent.provider,
-            model=self.config.agent.model,
-            **_agent_session_config_kwargs(self.config.agent),
+            provider=agent_cfg.provider,
+            model=agent_cfg.model,
+            **_agent_session_config_kwargs(agent_cfg),
         )
         user_prompt = _normalize_agent_prompt(prompt)
         await asyncio.to_thread(
@@ -1200,27 +1208,10 @@ class MarketRuntime:
             content=user_prompt,
         )
 
-        if not self.config.agent.enabled:
-            result = AgentAnalysisResult.unavailable(
-                provider=self.config.agent.provider,
-                model=self.config.agent.model,
-                error="Agent is disabled in config.",
-            )
-            payload = result.to_payload()
-            self.agent_analyses[instrument.key] = payload
-            await self._record_agent_assistant_message(session.id, payload)
-            await self.broadcast()
-            return {
-                "result": payload,
-                "session": await self._agent_session_payload(session.id),
-                "history": await self._agent_session_history_payload(instrument.key),
-                "state": self.snapshot(),
-            }
-
         if not quote.candles:
             result = AgentAnalysisResult.unavailable(
-                provider=self.config.agent.provider,
-                model=self.config.agent.model,
+                provider=agent_cfg.provider,
+                model=agent_cfg.model,
                 error="No OHLCV candles are available for this instrument yet.",
             )
             payload = result.to_payload()
@@ -1240,9 +1231,9 @@ class MarketRuntime:
             limit=8,
         )
 
-        provider = create_llm_provider(self.config.agent)
+        provider = create_llm_provider(agent_cfg)
 
-        if self.config.agent.use_tools and hasattr(provider, "chat"):
+        if agent_cfg.use_tools and hasattr(provider, "chat"):
             return await self._run_agent_loop(
                 instrument=instrument,
                 quote=quote,
@@ -1250,13 +1241,14 @@ class MarketRuntime:
                 user_prompt=user_prompt,
                 history=history,
                 provider=provider,
+                agent_cfg=agent_cfg,
             )
 
         context = build_agent_context(
             instrument=instrument,
             quote=quote,
             interval=instrument.analysis_interval or self.config.analysis.interval,
-            max_candles=self.config.agent.max_candles,
+            max_candles=agent_cfg.max_candles,
             session_history=history,
         )
         result = await provider.analyze(context)
@@ -1280,8 +1272,10 @@ class MarketRuntime:
         user_prompt: str,
         history: tuple[dict[str, Any], ...],
         provider: Any,
+        agent_cfg: AgentConfig | None = None,
     ) -> dict[str, Any]:
         """通过 agent loop 执行带工具调用的 LLM 分析。"""
+        cfg = agent_cfg or self.config.agent
         context_provider = MarketContextProvider(self)
         market_tools = build_market_tools(context_provider)
 
@@ -1306,7 +1300,7 @@ class MarketRuntime:
             instrument=instrument,
             quote=quote,
             interval=instrument.analysis_interval or self.config.analysis.interval,
-            max_candles=self.config.agent.max_candles,
+            max_candles=cfg.max_candles,
             session_history=tuple(),
         )
 
@@ -1342,7 +1336,7 @@ class MarketRuntime:
         loop = AgentLoop(
             provider=provider,
             tools=tools,
-            max_iterations=self.config.agent.max_iterations,
+            max_iterations=cfg.max_iterations,
         )
 
         loop_result = await loop.run(
@@ -1478,6 +1472,30 @@ class MarketRuntime:
         if self.running:
             self.controller.start()
         await self.broadcast()
+
+    def _effective_agent_config(
+        self,
+        override_provider: str | None = None,
+        override_model: str | None = None,
+    ) -> AgentConfig:
+        """说明：根据可选的 provider/model 覆盖构造实际使用的 AgentConfig。"""
+        base = self.config.agent
+        if not override_provider and not override_model:
+            return base
+        provider = normalize_provider(override_provider) if override_provider else base.provider
+        model = normalize_model(provider, override_model) if override_model else normalize_model(provider, None)
+        api_mode = normalize_api_mode(provider)
+        return AgentConfig(
+            enabled=True,
+            provider=provider,
+            api_mode=api_mode,
+            model=model,
+            timeout_seconds=base.timeout_seconds,
+            max_candles=base.max_candles,
+            reasoning_effort=base.reasoning_effort,
+            max_iterations=base.max_iterations,
+            use_tools=base.use_tools,
+        )
 
     def _require_source_path(self) -> Path:
         """说明：返回当前 watchlist 路径，缺失时抛出 Web 错误。"""
@@ -1745,7 +1763,12 @@ def create_app(
     ) -> dict[str, Any]:
         """说明：追加用户问题并触发一次会话式 Agent 分析。"""
         message = payload.get("message", payload.get("prompt"))
-        return await runtime.analyze_instrument(instrument_key, prompt=str(message) if message is not None else None)
+        return await runtime.analyze_instrument(
+            instrument_key,
+            prompt=str(message) if message is not None else None,
+            override_provider=payload.get("provider"),
+            override_model=payload.get("model"),
+        )
 
     @app.post("/api/agent/sessions/{instrument_key}/reset")
     async def reset_agent_session_endpoint(instrument_key: str) -> dict[str, Any]:

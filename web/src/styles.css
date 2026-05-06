@@ -927,6 +927,35 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.session-provider-bar {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.session-provider-select,
+.session-model-input {
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: 11px;
+  height: 28px;
+  padding: 0 8px;
+}
+
+.session-provider-select:disabled,
+.session-model-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.session-model-input {
+  min-width: 0;
+}
+
 .session-icon-action {
   align-items: center;
   background: var(--canvas);
