@@ -99,12 +99,9 @@ import type {
 import { useChartDrawings } from './chartDrawings';
 
 const GROUP_LABELS: Record<string, string> = {
-  stocks: '美股',
-  crypto: 'Crypto',
-  metals: 'Metals',
-  indices: 'Indices',
-  watchlist: 'Watchlist',
-  other: 'Other',
+  alpaca: 'Alpaca',
+  bitget: 'Bitget',
+  'hyperliquid-testnet': 'Hyperliquid Testnet',
 };
 
 const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
@@ -271,7 +268,7 @@ function navigateToRoute(route: AppRoute) {
 // Orders watchlist groups so common asset classes stay in predictable positions.
 function orderedGroups(state: MarketState | null) {
   if (!state) return [];
-  const preferred = ['stocks', 'crypto', 'metals', 'indices', 'watchlist', 'other'];
+  const preferred = ['alpaca', 'bitget', 'hyperliquid-testnet'];
   const present = Object.keys(state.groups);
   return [
     ...preferred.filter((group) => present.includes(group)),
@@ -328,10 +325,7 @@ function instrumentVenue(instrument: Instrument) {
 
 // Groups provider sources into the higher-level labels used in settings.
 function watchlistSectionLabel(source: string) {
-  if (source === 'alpaca') return '美股';
-  if (source === 'bitget') return 'Crypto';
-  if (source === 'hyperliquid-testnet') return 'Crypto Testnet';
-  return sourceName(source);
+  return GROUP_LABELS[source] ?? sourceName(source);
 }
 
 // Builds provider sections while preserving a useful default source order.

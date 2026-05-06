@@ -258,7 +258,7 @@ def serialize_market_state(
     """说明：构造浏览器需要的完整市场状态快照。"""
     groups: dict[str, list[str]] = {}
     for instrument in instruments:
-        groups.setdefault(instrument.group, []).append(instrument.key)
+        groups.setdefault(instrument.source, []).append(instrument.key)
     return {
         "type": "state",
         "updatedAt": _utc_now_iso(),
