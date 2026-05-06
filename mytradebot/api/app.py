@@ -1380,8 +1380,12 @@ class MarketRuntime:
         context: dict[str, Any] | None = None,
     ) -> None:
         """说明：把 LLM 结果写入会话消息历史。"""
+        loop_result = analysis_payload.get("loopResult")
+        loop_content = loop_result.get("content") if isinstance(loop_result, dict) else None
         content = str(
-            analysis_payload.get("summary")
+            analysis_payload.get("rawText")
+            or loop_content
+            or analysis_payload.get("summary")
             or analysis_payload.get("error")
             or "Agent response unavailable."
         )

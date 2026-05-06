@@ -1159,6 +1159,10 @@ textarea:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.session-message-text {
+  white-space: pre-wrap;
+}
+
 .loop-info {
   color: var(--text-muted);
   font-family: var(--mono);

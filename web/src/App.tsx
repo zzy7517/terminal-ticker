@@ -284,23 +284,6 @@ function changeClass(quote: Quote | undefined) {
   return 'neutral';
 }
 
-// Maps agent bias to the same visual tone vocabulary as market signals.
-function agentTone(analysis: AgentAnalysis | undefined) {
-  const bias = analysis?.bias;
-  if (bias === 'bullish') return 'up';
-  if (bias === 'bearish') return 'down';
-  if (bias === 'mixed') return 'mixed';
-  return 'neutral';
-}
-
-// Normalizes provider confidence values that may arrive as either 0-1 or 0-100.
-function agentConfidencePercent(analysis: AgentAnalysis | null | undefined) {
-  if (!analysis?.available) return 0;
-  const value = Number(analysis.confidence);
-  if (!Number.isFinite(value)) return 0;
-  return Math.round(value <= 1 ? value * 100 : value);
-}
-
 // Returns the short source label shown beside an instrument.
 function sourceLabel(instrument: Instrument | undefined) {
   if (!instrument) return '-';
@@ -1626,54 +1609,11 @@ function WatchlistSettingsPanel({
   );
 }
 
-// Renders the structured fields returned by the chart-agent provider.
+// Renders agent text without depending on the provider's structured fields.
 function AgentAnalysisBlock({ analysis }: { analysis: AgentAnalysis }) {
-  const confidence = agentConfidencePercent(analysis);
+  const text = analysis.rawText || analysis.summary || analysis.error || 'Agent response unavailable.';
   return (
-    <>
-      <p>{analysis.available ? analysis.summary : analysis.error || 'Agent response unavailable.'}</p>
-      {analysis.available && (
-        <>
-          <div className="confidence-meter">
-            <div>
-              <span>Confidence</span>
-              <strong>{confidence}%</strong>
-            </div>
-            <div className="confidence-track">
-              <span style={{ width: `${Math.max(4, Math.min(100, confidence))}%` }} />
-            </div>
-          </div>
-          <div className="agent-levels">
-            {analysis.keyLevels.slice(0, 3).map((level, index) => (
-              <div className="agent-level" key={`${level.label}-${index}`}>
-                <span>{level.label || 'Level'}</span>
-                <strong>{formatLevelPrice(level.price)}</strong>
-                <small>{level.reason}</small>
-              </div>
-            ))}
-          </div>
-          <div className="agent-plan">
-            {analysis.watchPlan.slice(0, 3).map((item, index) => (
-              <div key={`${item}-${index}`}>{item}</div>
-            ))}
-          </div>
-          {analysis.invalidation && (
-            <div className="agent-invalidation">
-              <span>Invalidation</span>
-              <strong>{analysis.invalidation}</strong>
-            </div>
-          )}
-          {analysis.riskNotes.length > 0 && (
-            <div className="risk-notes">
-              <span>Risk notes</span>
-              {analysis.riskNotes.slice(0, 2).map((item, index) => (
-                <small key={`${item}-${index}`}>{item}</small>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </>
+    <p className="session-message-text">{text}</p>
   );
 }
 
@@ -1724,8 +1664,8 @@ function AgentToolSteps({ steps }: { steps: LoopStep[] }) {
 // Renders one persisted chat turn in the chart-agent transcript.
 function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
   const analysis = message.analysis;
-  const tone = agentTone(analysis ?? undefined);
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
+  const content = message.content || analysis?.rawText || analysis?.summary || message.error || analysis?.error || 'No content.';
   return (
     <div className={`session-message ${message.role}`}>
       <div className="session-message-head">
@@ -1734,20 +1674,11 @@ function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
       </div>
       {message.role === 'assistant' && analysis ? (
         <>
-          <div className="session-analysis-head">
-            <span className={`agent-bias ${tone}`}>{analysis.bias}</span>
-            <small>{analysis.model}</small>
-            {analysis.loopResult && (
-              <small className="loop-info">
-                {analysis.loopResult.iterations} iter · {analysis.loopResult.steps.filter((s) => s.stepType === 'tool_call').length} tools
-              </small>
-            )}
-          </div>
           {analysis.loopResult && <AgentToolSteps steps={analysis.loopResult.steps} />}
-          <AgentAnalysisBlock analysis={analysis} />
+          <p className="session-message-text">{content}</p>
         </>
       ) : (
-        <p>{message.content || message.error || 'No content.'}</p>
+        <p className="session-message-text">{content}</p>
       )}
     </div>
   );
@@ -1877,9 +1808,6 @@ function AgentSessionPanel({
   onReset: () => Promise<void>;
 }) {
   const messages = session?.messages ?? [];
-  const latestAnalysis =
-    [...messages].reverse().find((message) => message.analysis)?.analysis ?? analysis;
-  const tone = agentTone(latestAnalysis ?? undefined);
   const canSend = !disabled && !busy && !sessionLoading && !sessionActionKey;
   const sessionTime = session?.session
     ? new Date(session.session.updatedAt).toLocaleTimeString()
@@ -1891,7 +1819,7 @@ function AgentSessionPanel({
         <span className="panel-label with-icon">
           <Sparkles size={14} /> Chart Session
         </span>
-        <span className={`agent-bias ${tone}`}>{latestAnalysis?.bias ?? 'idle'}</span>
+        <span className="agent-bias neutral">{busy ? 'running' : 'idle'}</span>
       </div>
       <div className="session-toolbar">
         <span>{session?.session?.model ?? analysis?.model ?? '-'}</span>
