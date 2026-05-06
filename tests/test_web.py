@@ -31,6 +31,7 @@ from mytradebot.api.app import (
     create_app,
     serialize_market_state,
 )
+from mytradebot.trading import BitgetDemoOrderResult
 from mytradebot.trading.store import TradeStore
 
 
@@ -159,6 +160,88 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["instruments"][0]["key"], "alpaca:AAPL")
+
+    def test_bitget_demo_trade_endpoint_records_order(self) -> None:
+        """Verify Bitget demo order API writes the external order id locally."""
+        instrument = BitgetInstrument(
+            "BTCUSDT",
+            "USDT-FUTURES",
+            "BTC",
+            "BTC",
+            "USDT",
+            "perp",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            app = create_app(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=(instrument,),
+                controller_factory=DummyController,
+                auto_start=False,
+            )
+            runtime = app.state.runtime
+            runtime.trade_store = TradeStore(Path(tmp_dir) / "trades.sqlite3")
+
+            with patch(
+                "mytradebot.api.app.open_bitget_demo_position",
+                return_value=BitgetDemoOrderResult(
+                    raw={"code": "00000", "data": {"orderId": "bg-1", "clientOid": "cid-1"}},
+                    external_order_id="bg-1",
+                    client_order_id="cid-1",
+                ),
+            ) as placed, TestClient(app) as client:
+                response = client.post(
+                    "/api/bitget-demo/trades/USDT-FUTURES%3ABTCUSDT",
+                    json={
+                        "direction": "long",
+                        "size": 0.01,
+                        "reasoning": "manual demo test",
+                        "orderType": "limit",
+                        "limitPrice": 60000,
+                        "marginMode": "isolated",
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        placed.assert_called_once()
+        _, kwargs = placed.call_args
+        self.assertEqual(kwargs["symbol"], "BTCUSDT")
+        self.assertEqual(kwargs["inst_type"], "USDT-FUTURES")
+        self.assertEqual(kwargs["limit_price"], 60000.0)
+        self.assertEqual(kwargs["margin_mode"], "isolated")
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertTrue(body["demo"])
+        self.assertEqual(body["trade"]["fillSource"], "bitget-demo")
+        self.assertEqual(body["trade"]["externalOrderId"], "bg-1")
+        self.assertEqual(body["trade"]["status"], "planned")
+        self.assertEqual(body["state"]["openTrades"][0]["externalOrderId"], "bg-1")
+
+    def test_bitget_demo_trade_endpoint_rejects_remote_origin(self) -> None:
+        """Verify demo trading endpoints are local-browser only."""
+        instrument = BitgetInstrument(
+            "BTCUSDT",
+            "USDT-FUTURES",
+            "BTC",
+            "BTC",
+            "USDT",
+            "perp",
+        )
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/bitget-demo/trades/USDT-FUTURES%3ABTCUSDT",
+                headers={"origin": "https://example.com"},
+                json={"direction": "long", "size": 0.01},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("trading API origin denied", response.text)
 
     def test_runtime_wires_news_analyst_at_startup(self) -> None:
         """Verify enabling news analyst does not crash on startup."""
