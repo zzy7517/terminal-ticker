@@ -57,6 +57,7 @@ export interface AgentAnalysis {
   riskNotes: string[];
   error: string | null;
   rawText: string | null;
+  displayText?: string;
   loopResult?: LoopResult;
 }
 

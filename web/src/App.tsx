@@ -1611,7 +1611,7 @@ function WatchlistSettingsPanel({
 
 // Renders agent text without depending on the provider's structured fields.
 function AgentAnalysisBlock({ analysis }: { analysis: AgentAnalysis }) {
-  const text = analysis.summary || analysis.error || analysis.rawText || 'Agent response unavailable.';
+  const text = readableAgentText(analysis);
   return (
     <>
       {analysis.loopResult && <AgentLoopSteps steps={analysis.loopResult.steps} />}
@@ -1649,7 +1649,7 @@ function AgentLoopSteps({ steps }: { steps: LoopStep[] }) {
             {step.stepType === 'assistant' && step.content && (
               <div className="tool-output">
                 <small>Assistant response</small>
-                <pre>{step.content}</pre>
+                <pre>{readableLoopContent(step.content)}</pre>
               </div>
             )}
           </div>
@@ -1669,7 +1669,7 @@ function loopStepLabel(step: LoopStep) {
 function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
   const analysis = message.analysis;
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
-  const content = analysis?.summary || message.error || analysis?.error || message.content || analysis?.rawText || 'No content.';
+  const content = analysis ? readableAgentText(analysis) : message.error || message.content || 'No content.';
   return (
     <div className={`session-message ${message.role}`}>
       <div className="session-message-head">
@@ -1686,6 +1686,36 @@ function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
       )}
     </div>
   );
+}
+
+function readableAgentText(analysis: AgentAnalysis) {
+  return analysis.displayText || analysis.summary || analysis.error || readableLoopContent(analysis.rawText) || 'Agent response unavailable.';
+}
+
+function readableLoopContent(content: string | null | undefined) {
+  if (!content) return '';
+  try {
+    const payload = JSON.parse(content);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return content;
+    const parts: string[] = [];
+    if (typeof payload.summary === 'string' && payload.summary.trim()) {
+      parts.push(payload.summary.trim());
+    }
+    const bias = typeof payload.bias === 'string' ? payload.bias : '';
+    const confidence = Number.isFinite(Number(payload.confidence)) ? Number(payload.confidence) : null;
+    if (bias || confidence !== null) {
+      parts.push(`Bias: ${bias || 'neutral'}${confidence !== null ? ` · Confidence: ${confidence}%` : ''}`);
+    }
+    if (Array.isArray(payload.watch_plan) && payload.watch_plan.length > 0) {
+      parts.push(`Watch plan:\n${payload.watch_plan.map((item: unknown) => `- ${String(item)}`).join('\n')}`);
+    }
+    if (typeof payload.invalidation === 'string' && payload.invalidation.trim()) {
+      parts.push(`Invalidation: ${payload.invalidation.trim()}`);
+    }
+    return parts.join('\n\n') || content;
+  } catch {
+    return content;
+  }
 }
 
 // Renders persisted chart-agent session rows with restore/delete actions.

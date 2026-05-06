@@ -61,6 +61,7 @@ class AgentAnalysisResult:
     risk_notes: tuple[str, ...] = tuple()
     error: str | None = None
     raw_text: str | None = None
+    display_text: str | None = None
 
     @classmethod
     def unavailable(
@@ -97,12 +98,41 @@ class AgentAnalysisResult:
             "riskNotes": list(self.risk_notes),
             "error": self.error,
             "rawText": self.raw_text,
+            "displayText": self.display_text or _display_text_from_result(self),
         }
 
 
 def _utc_now_iso() -> str:
     """说明：返回当前 UTC 时间的 ISO 字符串。"""
     return datetime.now(timezone.utc).isoformat()
+
+
+def _display_text_from_result(result: AgentAnalysisResult) -> str:
+    """说明：把结构化分析结果转成对话面板可读文本，避免展示模型 JSON。"""
+    if not result.available:
+        return result.error or "Agent response unavailable."
+    lines: list[str] = []
+    if result.summary:
+        lines.append(result.summary)
+    lines.append(f"Bias: {result.bias} · Confidence: {result.confidence}%")
+    if result.key_levels:
+        lines.append("Key levels:")
+        for item in result.key_levels:
+            label = _coerce_text(item.get("label")) or "level"
+            price = item.get("price")
+            price_text = "n/a" if price is None else str(price)
+            reason = _coerce_text(item.get("reason"))
+            suffix = f" - {reason}" if reason else ""
+            lines.append(f"- {label}: {price_text}{suffix}")
+    if result.watch_plan:
+        lines.append("Watch plan:")
+        lines.extend(f"- {item}" for item in result.watch_plan)
+    if result.invalidation:
+        lines.append(f"Invalidation: {result.invalidation}")
+    if result.risk_notes:
+        lines.append("Risk notes:")
+        lines.extend(f"- {item}" for item in result.risk_notes)
+    return "\n".join(lines).strip()
 
 
 def _short_candle(candle: Candle) -> dict[str, Any]:
