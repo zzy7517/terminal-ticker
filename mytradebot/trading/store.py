@@ -1,4 +1,4 @@
-"""文件用途：Paper trading SQLite 存储层。"""
+"""文件用途：交易记录 SQLite 存储层。"""
 from __future__ import annotations
 
 import json
@@ -49,7 +49,7 @@ def _json_loads(value: Any) -> Any:
 
 
 class TradeStore:
-    """说明：SQLite 支撑的虚拟订单、成交和快照存储。"""
+    """说明：SQLite 支撑的本地订单、成交和快照存储。"""
 
     def __init__(self, path: str | Path | None = None) -> None:
         """说明：初始化存储路径。"""
@@ -200,8 +200,9 @@ class TradeStore:
         market_kind: str = "",
         fill_source: str = DEFAULT_FILL_SOURCE,
         status: TradeStatus = TradeStatus.PLANNED,
+        external_order_id: str | None = None,
     ) -> Trade:
-        """说明：新建虚拟订单，默认状态为 planned。"""
+        """说明：新建本地订单记录，默认状态为 planned。"""
         if size <= 0:
             raise ValueError("trade size must be positive")
         now = _now_ms()
@@ -218,7 +219,7 @@ class TradeStore:
                     market_kind, fill_source, external_order_id,
                     created_at_ms, updated_at_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?, ?, NULL, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     instrument_key,
@@ -234,6 +235,7 @@ class TradeStore:
                     snapshot_id,
                     market_kind,
                     fill_source,
+                    external_order_id,
                     now,
                     now,
                 ),

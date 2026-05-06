@@ -40,11 +40,10 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   addAlpacaSymbol,
   addBitgetSymbol,
+  addHyperliquidTestnetSymbol,
   connectStateSocket,
   deleteAgentSession,
   fetchAgentSession,
@@ -134,7 +133,7 @@ const SOCIAL_HASH = '#/settings/social';
 const THEME_STORAGE_KEY = 'mytradebot-theme';
 const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
 type SettingsSection = 'providers' | 'watchlist' | 'news' | 'social';
-type SearchSource = 'bitget' | 'alpaca';
+type SearchSource = 'bitget' | 'alpaca' | 'hyperliquid-testnet';
 type SourceHint = SearchSource;
 type ThemeName = 'light' | 'dark';
 
@@ -294,6 +293,14 @@ function agentTone(analysis: AgentAnalysis | undefined) {
   return 'neutral';
 }
 
+// Normalizes provider confidence values that may arrive as either 0-1 or 0-100.
+function agentConfidencePercent(analysis: AgentAnalysis | null | undefined) {
+  if (!analysis?.available) return 0;
+  const value = Number(analysis.confidence);
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value <= 1 ? value * 100 : value);
+}
+
 // Returns the short source label shown beside an instrument.
 function sourceLabel(instrument: Instrument | undefined) {
   if (!instrument) return '-';
@@ -304,6 +311,7 @@ function sourceLabel(instrument: Instrument | undefined) {
 // Formats a raw provider source identifier for settings and watchlist text.
 function sourceName(source: string) {
   if (source === 'alpaca') return 'Alpaca';
+  if (source === 'hyperliquid-testnet') return 'Hyperliquid Testnet';
   return source.toUpperCase();
 }
 
@@ -319,12 +327,13 @@ function instrumentVenue(instrument: Instrument) {
 function watchlistSectionLabel(source: string) {
   if (source === 'alpaca') return '美股';
   if (source === 'bitget') return 'Crypto';
+  if (source === 'hyperliquid-testnet') return 'Crypto Testnet';
   return sourceName(source);
 }
 
 // Builds provider sections while preserving a useful default source order.
 function watchlistSections(instruments: Instrument[]) {
-  const preferred = ['alpaca', 'bitget'];
+  const preferred = ['alpaca', 'bitget', 'hyperliquid-testnet'];
   const sources = [
     ...preferred.filter((source) => instruments.some((instrument) => instrument.source === source)),
     ...Array.from(new Set(instruments.map((instrument) => instrument.source)))
@@ -364,9 +373,10 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
   const explicitLabel = labelParts.join(' ').trim();
   let sourceHint: SourceHint | null = null;
   let body = token.trim();
-  const sourceMatch = body.match(/^(bitget|alpaca)[:/](.+)$/i);
+  const sourceMatch = body.match(/^(bitget|alpaca|hyperliquid-testnet|hyperliquid)[:/](.+)$/i);
   if (sourceMatch) {
-    sourceHint = sourceMatch[1].toLowerCase() as SourceHint;
+    const hint = sourceMatch[1].toLowerCase();
+    sourceHint = (hint === 'hyperliquid' ? 'hyperliquid-testnet' : hint) as SourceHint;
     body = sourceMatch[2];
   }
 
@@ -375,7 +385,23 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
   let symbol: string;
   let instType: string | null = null;
 
-  if (sourceHint === 'alpaca' || (!sourceHint && upperBody.endsWith('.US'))) {
+  if (sourceHint === 'hyperliquid-testnet') {
+    source = 'hyperliquid-testnet';
+    symbol = upperBody;
+    if (!symbol) {
+      return {
+        raw: trimmed,
+        source,
+        symbol,
+        label: explicitLabel || upperBody,
+        instType,
+        key: `hyperliquid-testnet:${symbol}`,
+        valid: false,
+        exists: false,
+        error: 'Hyperliquid coin cannot be blank.',
+      };
+    }
+  } else if (sourceHint === 'alpaca' || (!sourceHint && upperBody.endsWith('.US'))) {
     source = 'alpaca';
     symbol = upperBody.endsWith('.US') ? upperBody.slice(0, -3) : upperBody;
     if (!symbol) {
@@ -416,8 +442,19 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
     }
   }
 
-  const label = explicitLabel || (source === 'alpaca' ? symbol : defaultBitgetLabel(symbol));
-  const key = source === 'alpaca' ? `alpaca:${symbol}` : `${instType}:${symbol}`;
+  let label = explicitLabel || defaultBitgetLabel(symbol);
+  if (!explicitLabel && source === 'alpaca') {
+    label = symbol;
+  }
+  if (!explicitLabel && source === 'hyperliquid-testnet') {
+    label = `${symbol} Perp`;
+  }
+  const key =
+    source === 'alpaca'
+      ? `alpaca:${symbol}`
+      : source === 'hyperliquid-testnet'
+        ? `hyperliquid-testnet:${symbol}`
+        : `${instType}:${symbol}`;
   return {
     raw: trimmed,
     source,
@@ -457,9 +494,20 @@ function resultFromBulkEntry(entry: BulkEntry): InstrumentSearchResult {
     nameCn: '',
     nameHk: '',
     nameEn: '',
-    displayText: entry.source === 'bitget' ? `${entry.instType} · ${entry.symbol}` : entry.symbol,
+    displayText:
+      entry.source === 'bitget'
+        ? `${entry.instType} · ${entry.symbol}`
+        : entry.source === 'hyperliquid-testnet'
+          ? `Testnet perp · ${entry.symbol}/USDC`
+          : entry.symbol,
     exists: entry.exists,
   };
+}
+
+function addInstrumentBySource(result: InstrumentSearchResult) {
+  if (result.source === 'bitget') return addBitgetSymbol(result);
+  if (result.source === 'hyperliquid-testnet') return addHyperliquidTestnetSymbol(result);
+  return addAlpacaSymbol(result);
 }
 
 // Formats support/resistance prices with compact precision.
@@ -1186,6 +1234,12 @@ function WatchlistSettingsPanel({
   const editable = Boolean(state?.config.sourcePath);
   const sections = useMemo(() => watchlistSections(state?.instruments ?? []), [state?.instruments]);
 
+  async function addWatchlistResult(result: InstrumentSearchResult) {
+    if (result.source === 'bitget') return addBitgetSymbol(result);
+    if (result.source === 'hyperliquid-testnet') return addHyperliquidTestnetSymbol(result);
+    return addAlpacaSymbol(result);
+  }
+
   // Adds one search result to the local watchlist configuration.
   async function addResult(result: InstrumentSearchResult) {
     if (result.exists || busyKey) return;
@@ -1196,9 +1250,7 @@ function WatchlistSettingsPanel({
     setBusyKey(result.key);
     setStatus(`Adding ${result.symbol}...`);
     try {
-      const nextState = result.source === 'bitget'
-        ? await addBitgetSymbol(result)
-        : await addAlpacaSymbol(result);
+      const nextState = await addWatchlistResult(result);
       onState(nextState);
       setResults((items) =>
         items.map((item) => (item.key === result.key ? { ...item, exists: true } : item)),
@@ -1257,9 +1309,7 @@ function WatchlistSettingsPanel({
       let added = 0;
       for (const entry of addableEntries) {
         const result = resultFromBulkEntry(entry);
-        const nextState = entry.source === 'bitget'
-          ? await addBitgetSymbol(result)
-          : await addAlpacaSymbol(result);
+        const nextState = await addWatchlistResult(result);
         added += 1;
         onState(nextState);
       }
@@ -1338,7 +1388,7 @@ function WatchlistSettingsPanel({
             <textarea
               value={bulkText}
               onChange={(event) => setBulkText(event.target.value)}
-              placeholder={'BTCUSDT\nSPOT:ETHUSDT\nAAPL.US'}
+              placeholder={'BTCUSDT\nSPOT:ETHUSDT\nAAPL.US\nhyperliquid:BTC'}
               spellCheck={false}
             />
             {entries.length > 0 && (
@@ -1392,6 +1442,16 @@ function WatchlistSettingsPanel({
               >
                 Alpaca
               </button>
+              <button
+                className={searchSource === 'hyperliquid-testnet' ? 'active' : ''}
+                type="button"
+                onClick={() => {
+                  setSearchSource('hyperliquid-testnet');
+                  setResults([]);
+                }}
+              >
+                Hyperliquid Testnet
+              </button>
             </div>
             <div className="settings-search">
               <Search size={17} />
@@ -1401,7 +1461,13 @@ function WatchlistSettingsPanel({
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') runSearch();
                 }}
-                placeholder={searchSource === 'bitget' ? 'BTC / BTCUSDT' : 'AAPL / Apple'}
+                placeholder={
+                  searchSource === 'bitget'
+                    ? 'BTC / BTCUSDT'
+                    : searchSource === 'hyperliquid-testnet'
+                      ? 'BTC / ETH'
+                      : 'AAPL / Apple'
+                }
               />
               <button className="inline-search-button" type="button" onClick={runSearch}>
                 Search
@@ -1436,12 +1502,54 @@ function WatchlistSettingsPanel({
   );
 }
 
-// Renders any text body as markdown so the agent can use headings, lists, code, tables freely.
-function MarkdownMessage({ source }: { source: string }) {
+// Renders the structured fields returned by the chart-agent provider.
+function AgentAnalysisBlock({ analysis }: { analysis: AgentAnalysis }) {
+  const confidence = agentConfidencePercent(analysis);
   return (
-    <div className="session-markdown">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{source || ''}</ReactMarkdown>
-    </div>
+    <>
+      <p>{analysis.available ? analysis.summary : analysis.error || 'Agent response unavailable.'}</p>
+      {analysis.available && (
+        <>
+          <div className="confidence-meter">
+            <div>
+              <span>Confidence</span>
+              <strong>{confidence}%</strong>
+            </div>
+            <div className="confidence-track">
+              <span style={{ width: `${Math.max(4, Math.min(100, confidence))}%` }} />
+            </div>
+          </div>
+          <div className="agent-levels">
+            {analysis.keyLevels.slice(0, 3).map((level, index) => (
+              <div className="agent-level" key={`${level.label}-${index}`}>
+                <span>{level.label || 'Level'}</span>
+                <strong>{formatLevelPrice(level.price)}</strong>
+                <small>{level.reason}</small>
+              </div>
+            ))}
+          </div>
+          <div className="agent-plan">
+            {analysis.watchPlan.slice(0, 3).map((item, index) => (
+              <div key={`${item}-${index}`}>{item}</div>
+            ))}
+          </div>
+          {analysis.invalidation && (
+            <div className="agent-invalidation">
+              <span>Invalidation</span>
+              <strong>{analysis.invalidation}</strong>
+            </div>
+          )}
+          {analysis.riskNotes.length > 0 && (
+            <div className="risk-notes">
+              <span>Risk notes</span>
+              {analysis.riskNotes.slice(0, 2).map((item, index) => (
+                <small key={`${item}-${index}`}>{item}</small>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
@@ -1512,10 +1620,10 @@ function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
             )}
           </div>
           {analysis.loopResult && <AgentToolSteps steps={analysis.loopResult.steps} />}
-          <MarkdownMessage source={analysis.available ? analysis.summary : analysis.error || 'Agent response unavailable.'} />
+          <AgentAnalysisBlock analysis={analysis} />
         </>
       ) : (
-        <MarkdownMessage source={message.content || message.error || 'No content.'} />
+        <p>{message.content || message.error || 'No content.'}</p>
       )}
     </div>
   );
@@ -1623,13 +1731,11 @@ function AgentSessionPanel({
   sessionLoading,
   busy,
   disabled,
-  currentProvider,
   onDeleteSession,
   onPromptChange,
   onResumeSession,
   onSend,
   onReset,
-  onProviderSwitch,
 }: {
   analysis: AgentAnalysis | undefined;
   session: AgentSessionResponse | null;
@@ -1640,13 +1746,11 @@ function AgentSessionPanel({
   sessionLoading: boolean;
   busy: boolean;
   disabled: boolean;
-  currentProvider: string;
   onDeleteSession: (sessionId: string) => Promise<void>;
   onPromptChange: (value: string) => void;
   onResumeSession: (sessionId: string) => Promise<void>;
   onSend: () => Promise<void>;
   onReset: () => Promise<void>;
-  onProviderSwitch: (provider: string) => Promise<void>;
 }) {
   const messages = session?.messages ?? [];
   const latestAnalysis =
@@ -1656,17 +1760,6 @@ function AgentSessionPanel({
   const sessionTime = session?.session
     ? new Date(session.session.updatedAt).toLocaleTimeString()
     : 'No session';
-  const [providerSwitching, setProviderSwitching] = useState(false);
-
-  async function handleProviderChange(next: string) {
-    if (!next || next === currentProvider) return;
-    setProviderSwitching(true);
-    try {
-      await onProviderSwitch(next);
-    } finally {
-      setProviderSwitching(false);
-    }
-  }
 
   return (
     <div className="agent-card agent-readout agent-session-card">
@@ -1677,20 +1770,7 @@ function AgentSessionPanel({
         <span className={`agent-bias ${tone}`}>{latestAnalysis?.bias ?? 'idle'}</span>
       </div>
       <div className="session-toolbar">
-        <select
-          aria-label="Switch agent provider"
-          className="session-provider-select"
-          disabled={busy || sessionLoading || providerSwitching}
-          onChange={(event) => void handleProviderChange(event.target.value)}
-          value={currentProvider}
-        >
-          {AGENT_PROVIDER_OPTIONS.map((option) => (
-            <option key={option.provider} value={option.provider}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <span className="session-toolbar-model">{session?.session?.model ?? analysis?.model ?? '-'}</span>
+        <span>{session?.session?.model ?? analysis?.model ?? '-'}</span>
         <small>{sessionLoading ? 'Loading' : sessionTime}</small>
         <button
           aria-label="Start new agent session"
@@ -1726,7 +1806,7 @@ function AgentSessionPanel({
               <span>Latest</span>
               <time>{new Date(analysis.updatedAt).toLocaleTimeString()}</time>
             </div>
-            <MarkdownMessage source={analysis.available ? analysis.summary : analysis.error || 'Agent response unavailable.'} />
+            <AgentAnalysisBlock analysis={analysis} />
           </div>
         )}
         {!sessionLoading && messages.length === 0 && !analysis && (
@@ -1837,7 +1917,10 @@ function WorkspaceView({
   const candleDelta = closeDeltaPercent(selectedQuote?.candles ?? []);
   const historyKey = selectedKey ? `${selectedKey}:${currentInterval}` : null;
   const canLoadOlder =
-    Boolean(selectedInstrument && ['alpaca', 'bitget'].includes(selectedInstrument.source)) &&
+    Boolean(
+      selectedInstrument &&
+        ['alpaca', 'bitget', 'hyperliquid-testnet'].includes(selectedInstrument.source),
+    ) &&
     Boolean(historyKey && !exhaustedHistoryKeys.has(historyKey));
   const nextThemeName = nextTheme(theme);
   const [activeTab, setActiveTab] = useState<'chart' | 'agent' | 'positions'>('chart');
@@ -2070,22 +2153,11 @@ function WorkspaceView({
                   sessionLoading={agentSessionLoading}
                   busy={agentBusyKey === selectedKey}
                   disabled={!selectedKey || !selectedQuote?.candles.length || !state?.config.agent.enabled}
-                  currentProvider={state?.config.agent.provider ?? AGENT_PROVIDER_OPTIONS[0].provider}
                   onDeleteSession={deleteAgentConversation}
                   onPromptChange={setAgentPrompt}
                   onResumeSession={resumeAgentConversation}
                   onSend={runAgentAnalysis}
                   onReset={resetAgentConversation}
-                  onProviderSwitch={async (provider) => {
-                    const option = AGENT_PROVIDER_OPTIONS.find((item) => item.provider === provider);
-                    if (!option) return;
-                    const nextState = await saveAgentConfig({
-                      provider: option.provider,
-                      apiMode: option.apiMode,
-                      model: option.defaultModel,
-                    });
-                    setState(nextState);
-                  }}
                 />
               </div>
               {state?.config.news?.enabled && (
@@ -3303,7 +3375,7 @@ export default function App() {
       !historyKey ||
       olderBusyRef.current === historyKey ||
       exhaustedHistoryKeys.has(historyKey) ||
-      !['alpaca', 'bitget'].includes(selectedInstrument.source)
+      !['alpaca', 'bitget', 'hyperliquid-testnet'].includes(selectedInstrument.source)
     ) {
       return;
     }

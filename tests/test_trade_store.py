@@ -1,4 +1,4 @@
-"""Test paper-trading SQLite store."""
+"""Test local trading SQLite store."""
 import tempfile
 import unittest
 from pathlib import Path

@@ -69,38 +69,38 @@ The Python package `mytradebot/` is organized as strict layers. Upper layers imp
 
 1. **`domain/`** — pure dataclasses. `Candle` (OHLCV, self-validating), `QuoteState`, `merge_candles`. No I/O.
 2. **`config/`** — parses `watchlist.toml` → `AppConfig`. Also holds agent model normalization (`agent_models.py`) and `watchlist_store.py` which round-trips the TOML on add/remove from the UI.
-3. **`market_data/`** — per-provider adapters (`bitget.py`, `alpaca.py`) plus `router.py` which dispatches `InstrumentConfig` to the right provider and preserves watchlist order. `candle_cache.py` provides the local OHLCV cache that agent tools read from.
-4. **`runtime/`** — `feed.py` runs a background worker that streams quotes/candles from providers into a `queue.Queue` of `FeedEvent`s. `controller.py` (`TickerController`) drains that queue into an in-memory `QuoteState` map, tracks flash directions, and forwards 1m candles to the paper broker.
-5. **`trading/`** — paper-trading subsystem. `store.py` is a SQLite-backed `TradeStore` at `~/.cache/mytradebot/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `paper_broker.py` is the deterministic fill engine (consumes 1m candles, evaluates limit/stop/target). `review.py` orchestrates LLM post-trade reviews that produce lesson rows.
-6. **`agent/`** — LLM layer. `provider.py` builds the multi-timeframe context and normalizes model output to a fixed JSON schema. `providers/codex.py` and `providers/anthropic.py` implement the transport. `loop.py` is a tool-calling agent loop (OpenAI-style function calling internally, converted by each provider); `tools.py` defines the `ToolRegistry` plus two tool factories: `build_market_tools` (read-only data access) and `build_trading_tools` (open/cancel/adjust paper trades, query history). `session_store.py` is a SQLite-backed per-instrument chat history at `~/.cache/mytradebot/agent_sessions.sqlite3`.
+3. **`market_data/`** — per-provider adapters (`bitget.py`, `alpaca.py`, `hyperliquid.py`) plus `router.py` which dispatches `InstrumentConfig` to the right provider and preserves watchlist order. `candle_cache.py` provides the local OHLCV cache that agent tools read from.
+4. **`runtime/`** — `feed.py` runs a background worker that streams quotes/candles from providers into a `queue.Queue` of `FeedEvent`s. `controller.py` (`TickerController`) drains that queue into an in-memory `QuoteState` map and tracks flash directions.
+5. **`trading/`** — local trade records and external testnet execution. `store.py` is a SQLite-backed `TradeStore` at `~/.cache/mytradebot/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.py` submits signed Hyperliquid testnet orders. `review.py` orchestrates LLM post-trade reviews that produce lesson rows.
+6. **`agent/`** — LLM layer. `provider.py` builds the multi-timeframe context and normalizes model output to a fixed JSON schema. `providers/codex.py` and `providers/anthropic.py` implement the transport. `loop.py` is a tool-calling agent loop (OpenAI-style function calling internally, converted by each provider); `tools.py` defines the `ToolRegistry` plus two tool factories: `build_market_tools` (read-only data access) and `build_trading_tools` (Hyperliquid testnet order entry plus local trade history). `session_store.py` is a SQLite-backed per-instrument chat history at `~/.cache/mytradebot/agent_sessions.sqlite3`.
 7. **`api/app.py`** — the only place where async FastAPI meets the sync `TickerController`. It owns the `WebSocket` client set, broadcasts state snapshots (now including `openTrades`), runs a periodic review loop, and exposes all routes under `/api/*` plus `/ws`. This file is large (~1200 lines) because it's the integration seam.
 
 ### The one seam that matters
 
 `api/app.py` runs a background task that periodically drains `controller.event_queue` and pushes a JSON snapshot to every connected WebSocket client. Frontend state is a pure projection of these snapshots — there is no client-owned state for quotes/candles. When adding a new data field, add it to the snapshot payload and let the frontend read it; don't introduce a separate REST poll.
 
-### Paper trading pipeline
+### Trade record and testnet pipeline
 
-The agent can open virtual trades via `open_paper_trade` during a chat turn. Flow:
-1. Tool handler freezes a snapshot (multi-timeframe context + current analysis) into the `snapshots` table and inserts a `planned` trade row.
-2. `PaperBroker`, driven from `TickerController._drive_paper_broker`, receives each new 1m candle and evaluates fill conditions against all `planned`/`open` trades for that instrument. It records fills and transitions trade status.
+The agent can submit Hyperliquid testnet orders via `open_hyperliquid_testnet_trade` during a chat turn. Flow:
+1. Tool handler submits a signed order to Hyperliquid testnet and freezes a snapshot (multi-timeframe context + current analysis) into the `snapshots` table.
+2. The order result is inserted into `trades`; immediate fills are inserted into `fills`. Local code no longer simulates fills from 1m candles.
 3. Closed trades periodically get reviewed by `trading/review.py` (every 15 min in background, or on-demand via `POST /api/trades/review`). The reviewer calls the configured LLM and writes structured lessons into the `lessons` table.
 4. When the agent opens a new trade on the same instrument, the top 5 most recent lessons are injected into the prompt so past mistakes inform new decisions.
 
-Decision cadence and fill cadence are decoupled: decisions run at whatever interval the user triggers; fills are evaluated on every 1m close regardless.
+Resting orders and later fills require exchange order-state sync; they are not advanced by local candle simulation.
 
 ### Agent pipeline
 
 Two modes live side by side:
 
 - **Legacy single-shot**: `provider.py` builds a prompt from the current quote + multi-timeframe OHLCV + recent session turns, calls the LLM once, and parses a strict JSON response (`summary / bias / confidence / key_levels / watch_plan / invalidation / risk_notes`).
-- **Tool-calling loop**: `agent/loop.py` runs iterative chat with `ToolRegistry` (currently `get_quote`, `get_candles`, `list_instruments`). Same output schema. Bounded by `DEFAULT_MAX_ITERATIONS`.
+- **Tool-calling loop**: `agent/loop.py` runs iterative chat with `ToolRegistry` (market tools, news tools, local trade-history tools, and Hyperliquid testnet entry). Same output schema. Bounded by `DEFAULT_MAX_ITERATIONS`.
 
 Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionStore`. The `api_mode` in config selects transport shape — Codex uses Responses API shapes, Anthropic uses Messages API shapes.
 
 ### Market-data model
 
-`instrument_key` (e.g. `bitget:BTCUSDT:USDT-FUTURES`, `alpaca:AAPL`) is the canonical identifier used everywhere: queue events, WebSocket payloads, session storage, agent tool arguments. When adding a new data source, define a new `MarketInstrument` variant and extend `router.resolve_instruments` — keep the string format stable because session history and cached candles key on it.
+`instrument_key` (e.g. `bitget:BTCUSDT:USDT-FUTURES`, `alpaca:AAPL`, `hyperliquid-testnet:BTC`) is the canonical identifier used everywhere: queue events, WebSocket payloads, session storage, agent tool arguments. When adding a new data source, define a new `MarketInstrument` variant and extend `router.resolve_instruments` — keep the string format stable because session history and cached candles key on it.
 
 `[analysis]` config (interval, lookback, poll interval) controls the OHLCV fetch loop in `feed.py`. `agent.max_candles` controls how many of those bars get shipped to the LLM. These are independent — the feed can cache more than the agent sees.
 
@@ -117,4 +117,4 @@ Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionS
 - Alpaca Basic is ~200 req/min and has a 15-minute delay on historical bars; the backend intentionally leaves a 16-minute gap on bar requests.
 - Bitget symbols that exist in both Spot and Futures require explicit `inst_type` in watchlist.toml.
 - The Codex adapter reads Codex CLI auth directly — it does not reuse Hermes auth store and does not allow base URL overrides.
-- The app does not place orders, manage positions, or compute risk. It's a research/monitoring tool.
+- The app can place Hyperliquid testnet orders only; it does not connect to real-money broker execution, manage exchange position lifecycle, or compute risk. It's still primarily a research/monitoring tool.

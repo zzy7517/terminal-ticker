@@ -1,4 +1,5 @@
 """Test Alpaca provider normalization and search."""
+from datetime import datetime, timezone
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +12,17 @@ from mytradebot.market_data.alpaca import (
     search_assets,
 )
 from mytradebot.config import InstrumentConfig
+
+
+class _ExtendedStatsClock(datetime):
+    """Stable clock for fixed-date extended-hours fixture bars."""
+
+    @classmethod
+    def now(cls, tz=None):
+        fixed_now = datetime(2026, 4, 28, 20, 30, tzinfo=timezone.utc)
+        if tz is None:
+            return fixed_now.replace(tzinfo=None)
+        return fixed_now.astimezone(tz)
 
 
 class AlpacaProviderTests(unittest.TestCase):
@@ -102,7 +114,10 @@ class AlpacaProviderTests(unittest.TestCase):
                 }
             }
 
-        with patch("mytradebot.market_data.alpaca._fetch_json", side_effect=fake_fetch):
+        with (
+            patch("mytradebot.market_data.alpaca.datetime", _ExtendedStatsClock),
+            patch("mytradebot.market_data.alpaca._fetch_json", side_effect=fake_fetch),
+        ):
             payloads = fetch_snapshot_payloads(instruments)
 
         bars_calls = [call for call in calls if call[0] == "/v2/stocks/bars"]
@@ -162,7 +177,10 @@ class AlpacaProviderTests(unittest.TestCase):
                 "next_page_token": "page-2",
             }
 
-        with patch("mytradebot.market_data.alpaca._fetch_json", side_effect=fake_fetch):
+        with (
+            patch("mytradebot.market_data.alpaca.datetime", _ExtendedStatsClock),
+            patch("mytradebot.market_data.alpaca._fetch_json", side_effect=fake_fetch),
+        ):
             payloads = fetch_snapshot_payloads(instruments)
 
         bars_calls = [call for call in calls if call[0] == "/v2/stocks/bars"]

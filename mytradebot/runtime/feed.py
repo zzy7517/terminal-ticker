@@ -20,6 +20,11 @@ from ..market_data.bitget import (
     fetch_candles as fetch_bitget_candles,
     fetch_snapshot_payloads,
 )
+from ..market_data.hyperliquid import (
+    HyperliquidInstrument,
+    fetch_candles as fetch_hyperliquid_candles,
+    fetch_snapshot_payloads as fetch_hyperliquid_snapshot_payloads,
+)
 from ..market_data.candle_cache import (
     CandleCache,
     cached_fetch_candles,
@@ -88,6 +93,9 @@ class FeedWorker(threading.Thread):
         self.alpaca_instruments = tuple(
             instrument for instrument in instruments if isinstance(instrument, AlpacaInstrument)
         )
+        self.hyperliquid_instruments = tuple(
+            instrument for instrument in instruments if isinstance(instrument, HyperliquidInstrument)
+        )
         self.event_queue = event_queue
         self.candle_cache = candle_cache
         if self.candle_cache is None and self.config.cache.enabled:
@@ -132,10 +140,14 @@ class FeedWorker(threading.Thread):
         """说明：启动 provider 任务并在退出时发送 stopped 状态。"""
         if self.bitget_instruments:
             self.tasks.append(asyncio.create_task(self._run_bitget()))
-        if self.config.analysis.enabled and (self.bitget_instruments or self.alpaca_instruments):
+        if self.config.analysis.enabled and (
+            self.bitget_instruments or self.alpaca_instruments or self.hyperliquid_instruments
+        ):
             self.tasks.append(asyncio.create_task(self._run_candles()))
         if self.alpaca_instruments:
             self.tasks.append(asyncio.create_task(self._run_alpaca()))
+        if self.hyperliquid_instruments:
+            self.tasks.append(asyncio.create_task(self._run_hyperliquid()))
 
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)
@@ -204,10 +216,43 @@ class FeedWorker(threading.Thread):
             except asyncio.CancelledError:
                 break
 
+    async def _run_hyperliquid(self) -> None:
+        """说明：按配置周期轮询 Hyperliquid 测试网快照。"""
+        while not self.stop_event.is_set():
+            try:
+                payloads = await asyncio.to_thread(
+                    fetch_hyperliquid_snapshot_payloads,
+                    self.hyperliquid_instruments,
+                )
+                for payload in payloads.values():
+                    self.event_queue.put(FeedEvent("quote", payload))
+                if payloads:
+                    self.event_queue.put(FeedEvent("status", "polling"))
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                detail = str(exc) or exc.__class__.__name__
+                self.event_queue.put(
+                    FeedEvent(
+                        "error",
+                        {
+                            "message": detail,
+                            "ids": [instrument.key for instrument in self.hyperliquid_instruments],
+                        },
+                    )
+                )
+
+            try:
+                await asyncio.sleep(self.config.display.stock_poll_interval_seconds)
+            except asyncio.CancelledError:
+                break
+
     async def _run_candles(self) -> None:
         """说明：轮询 provider K 线并发送图表数据。"""
         while not self.stop_event.is_set():
-            for instrument in self.bitget_instruments + self.alpaca_instruments:
+            for instrument in (
+                self.bitget_instruments + self.alpaca_instruments + self.hyperliquid_instruments
+            ):
                 if self.stop_event.is_set():
                     break
                 candles = tuple()
@@ -352,6 +397,14 @@ class FeedWorker(threading.Thread):
             )
         if isinstance(instrument, AlpacaInstrument):
             return fetch_alpaca_candles(
+                instrument,
+                interval=interval,
+                limit=limit,
+                after_open_time_ms=after_open_time_ms,
+                before_open_time_ms=before_open_time_ms,
+            )
+        if isinstance(instrument, HyperliquidInstrument):
+            return fetch_hyperliquid_candles(
                 instrument,
                 interval=interval,
                 limit=limit,

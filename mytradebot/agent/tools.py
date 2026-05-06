@@ -2,14 +2,19 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from ..trading import (
+    FillKind,
+    HYPERLIQUID_FILL_SOURCE,
+    HyperliquidTradingError,
     TradeDirection,
     TradeStatus,
     TradeStore,
+    open_testnet_position as open_hyperliquid_testnet_position,
 )
+from ..config import HYPERLIQUID_TESTNET_SOURCE
 
 ToolHandler = Callable[..., Awaitable[str]]
 
@@ -224,7 +229,7 @@ def build_trading_tools(
     snapshot_provider: Callable[[str], dict[str, Any]] | None = None,
     session_id_provider: Callable[[], str | None] | None = None,
 ) -> ToolRegistry:
-    """构建 paper trading 工具集。
+    """构建交易记录和 Hyperliquid 测试网工具集。
 
     snapshot_provider(instrument_key) 应返回当前多周期上下文字典，open 时冻结。
     session_id_provider() 返回当前 agent 会话 ID，用于串联 trade 与对话。
@@ -251,97 +256,131 @@ def build_trading_tools(
         snap = store.save_snapshot(instrument_key=instrument_key, payload=payload)
         return snap.id
 
-    async def open_paper_trade(
+    async def open_hyperliquid_testnet_trade(
         instrument_key: str,
         direction: str,
         size: float,
         reasoning: str,
-        entry_type: str = "market",
-        entry_price: float | None = None,
-        stop_price: float | None = None,
-        target_prices: list[float] | None = None,
-        market_kind: str = "",
+        order_type: str = "market",
+        limit_price: float | None = None,
+        slippage: float = 0.05,
     ) -> str:
-        """开一笔虚拟订单。限价单撮合由 paper broker 在后续 1m K 线上处理。"""
+        """在 Hyperliquid 测试网真实提交开仓订单，并同步记录到本地交易表。"""
+        if not instrument_key.startswith(f"{HYPERLIQUID_TESTNET_SOURCE}:"):
+            return _json_output({
+                "error": (
+                    "open_hyperliquid_testnet_trade only supports "
+                    f"{HYPERLIQUID_TESTNET_SOURCE}:* instruments"
+                )
+            })
+        coin = instrument_key.split(":", 1)[1]
         try:
             direction_enum = TradeDirection(direction.lower())
         except ValueError:
             return _json_output({"error": f"invalid direction: {direction}"})
-        entry_type_value = (entry_type or "market").lower()
-        if entry_type_value not in {"market", "limit"}:
-            return _json_output({"error": f"invalid entry_type: {entry_type}"})
-        resolved_entry_price: float | None
-        if entry_type_value == "limit":
-            if entry_price is None:
-                return _json_output({"error": "limit order requires entry_price"})
-            resolved_entry_price = float(entry_price)
-            initial_status = TradeStatus.PLANNED
-        else:
-            resolved_entry_price = None
-            initial_status = TradeStatus.PLANNED  # broker 会在下一根 1m K 线以 open 价 fill
+        order_type_value = (order_type or "market").lower()
+        if order_type_value not in {"market", "limit"}:
+            return _json_output({"error": f"invalid order_type: {order_type}"})
+        if order_type_value == "limit" and limit_price is None:
+            return _json_output({"error": "limit order requires limit_price"})
+        is_buy = direction_enum is TradeDirection.LONG
+        try:
+            result = open_hyperliquid_testnet_position(
+                coin=coin,
+                is_buy=is_buy,
+                size=float(size),
+                order_type=order_type_value,
+                limit_price=None if limit_price is None else float(limit_price),
+                slippage=float(slippage),
+            )
+        except (HyperliquidTradingError, ValueError) as exc:
+            return _json_output({"error": str(exc)})
+
+        status = TradeStatus.OPEN if result.filled_size else TradeStatus.PLANNED
+        intent_price = result.average_price if result.average_price is not None else limit_price
         try:
             snapshot_id = _capture_snapshot(instrument_key)
             trade = store.create_trade(
                 instrument_key=instrument_key,
                 direction=direction_enum,
                 size=float(size),
-                intent_price=resolved_entry_price,
-                stop_price=None if stop_price is None else float(stop_price),
-                target_prices=tuple(float(p) for p in (target_prices or ())),
+                intent_price=None if intent_price is None else float(intent_price),
+                stop_price=None,
+                target_prices=tuple(),
                 reasoning_text=reasoning,
                 session_id=_resolve_session_id(),
                 snapshot_id=snapshot_id,
-                market_kind=market_kind,
-                status=initial_status,
+                market_kind="hyperliquid-testnet-perp",
+                fill_source=HYPERLIQUID_FILL_SOURCE,
+                status=status,
+                external_order_id=result.external_order_id,
             )
+            fill = None
+            if result.filled_size and result.average_price is not None:
+                fill = store.record_fill(
+                    trade_id=trade.id,
+                    kind=FillKind.ENTRY,
+                    price=float(result.average_price),
+                    quantity=float(result.filled_size),
+                    trigger_reason="hyperliquid testnet order filled",
+                    fill_source=HYPERLIQUID_FILL_SOURCE,
+                    external_order_id=result.external_order_id,
+                )
+                trade = store.get_trade(trade.id) or trade
         except ValueError as exc:
-            return _json_output({"error": str(exc)})
-        return _json_output({"ok": True, "trade": trade.to_payload()})
+            return _json_output({"error": str(exc), "order": result.raw})
+
+        return _json_output({
+            "ok": True,
+            "testnet": True,
+            "trade": trade.to_payload(),
+            "fill": fill.to_payload() if fill is not None else None,
+            "order": result.raw,
+        })
 
     registry.register(ToolDefinition(
-        name="open_paper_trade",
+        name="open_hyperliquid_testnet_trade",
         description=(
-            "开一笔虚拟订单并冻结当下多周期上下文。market 单会在下一根 1m K 线以 open 价 fill；"
-            "limit 单会在价格触及 entry_price 时 fill。stop/target 由 broker 自动撮合。"
-            "所有订单只是 paper trading，不会真实下单。"
+            "在 Hyperliquid 测试网提交真实开仓订单，并把结果写入本地交易记录。"
+            "只支持 hyperliquid-testnet:* 标的。需要环境变量 "
+            "HYPERLIQUID_TESTNET_PRIVATE_KEY，可选 HYPERLIQUID_TESTNET_ACCOUNT_ADDRESS / "
+            "HYPERLIQUID_TESTNET_VAULT_ADDRESS。market 单通过 SDK 以 IOC aggressive limit 实现。"
         ),
         parameters={
             "type": "object",
             "properties": {
-                "instrument_key": {"type": "string", "description": "标的唯一标识"},
+                "instrument_key": {
+                    "type": "string",
+                    "description": "标的唯一标识，如 hyperliquid-testnet:BTC",
+                },
                 "direction": {"type": "string", "enum": ["long", "short"]},
-                "size": {"type": "number", "description": "订单数量，必须 > 0"},
+                "size": {"type": "number", "description": "合约数量，必须 > 0"},
                 "reasoning": {
                     "type": "string",
-                    "description": "开单理由，会写入 trade 记录用于后续复盘",
+                    "description": "开仓理由，会写入本地 trade 记录",
                 },
-                "entry_type": {
+                "order_type": {
                     "type": "string",
                     "enum": ["market", "limit"],
                     "default": "market",
                 },
-                "entry_price": {
+                "limit_price": {
                     "type": ["number", "null"],
-                    "description": "限价单必填；市价单留空",
+                    "description": "limit 单必填；market 单可留空",
                 },
-                "stop_price": {"type": ["number", "null"]},
-                "target_prices": {
-                    "type": "array",
-                    "items": {"type": "number"},
-                    "description": "一个或多个止盈价位",
-                },
-                "market_kind": {
-                    "type": "string",
-                    "description": "可选，记录市场类型标签，如 crypto / equity / index",
+                "slippage": {
+                    "type": "number",
+                    "description": "market 单允许滑点，默认 0.05 即 5%",
+                    "default": 0.05,
                 },
             },
             "required": ["instrument_key", "direction", "size", "reasoning"],
         },
-        handler=open_paper_trade,
+        handler=open_hyperliquid_testnet_trade,
     ))
 
     async def list_open_trades(instrument_key: str | None = None) -> str:
-        """列出 planned 或 open 状态的虚拟订单。"""
+        """列出 planned 或 open 状态的本地交易记录。"""
         trades = store.list_trades(
             instrument_key=instrument_key,
             statuses=[TradeStatus.PLANNED, TradeStatus.OPEN],
@@ -350,7 +389,7 @@ def build_trading_tools(
 
     registry.register(ToolDefinition(
         name="list_open_trades",
-        description="列出当前 planned 或 open 状态的虚拟订单；可选按标的过滤。",
+        description="列出当前 planned 或 open 状态的本地交易记录；可选按标的过滤。",
         parameters={
             "type": "object",
             "properties": {
@@ -361,64 +400,6 @@ def build_trading_tools(
             },
         },
         handler=list_open_trades,
-    ))
-
-    async def cancel_paper_trade(trade_id: int) -> str:
-        """取消 planned 虚拟订单。已 open 的无法取消，请用 close_paper_trade。"""
-        try:
-            trade = store.cancel_trade(int(trade_id))
-        except ValueError as exc:
-            return _json_output({"error": str(exc)})
-        return _json_output({"ok": True, "trade": trade.to_payload()})
-
-    registry.register(ToolDefinition(
-        name="cancel_paper_trade",
-        description="取消一笔处于 planned 状态的虚拟订单。",
-        parameters={
-            "type": "object",
-            "properties": {
-                "trade_id": {"type": "integer"},
-            },
-            "required": ["trade_id"],
-        },
-        handler=cancel_paper_trade,
-    ))
-
-    async def adjust_paper_trade(
-        trade_id: int,
-        stop_price: float | None = None,
-        target_prices: list[float] | None = None,
-    ) -> str:
-        """调整 planned 或 open 订单的止损和止盈价位。"""
-        try:
-            trade = store.adjust_levels(
-                int(trade_id),
-                stop_price=None if stop_price is None else float(stop_price),
-                target_prices=(
-                    None if target_prices is None
-                    else [float(p) for p in target_prices]
-                ),
-            )
-        except ValueError as exc:
-            return _json_output({"error": str(exc)})
-        return _json_output({"ok": True, "trade": trade.to_payload()})
-
-    registry.register(ToolDefinition(
-        name="adjust_paper_trade",
-        description="调整虚拟订单的止损或止盈价位。传 null 表示不修改该字段。",
-        parameters={
-            "type": "object",
-            "properties": {
-                "trade_id": {"type": "integer"},
-                "stop_price": {"type": ["number", "null"]},
-                "target_prices": {
-                    "type": ["array", "null"],
-                    "items": {"type": "number"},
-                },
-            },
-            "required": ["trade_id"],
-        },
-        handler=adjust_paper_trade,
     ))
 
     async def get_trade_history(
@@ -437,7 +418,7 @@ def build_trading_tools(
     registry.register(ToolDefinition(
         name="get_trade_history",
         description=(
-            "读取已关闭和取消的虚拟订单历史，含每笔交易的 reasoning、实现盈亏和成交价位。"
+            "读取已关闭和取消的本地交易历史，含每笔交易的 reasoning、实现盈亏和成交价位。"
             "用于复盘时汲取经验。"
         ),
         parameters={

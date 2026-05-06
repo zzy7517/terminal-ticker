@@ -16,7 +16,8 @@ from .agent_models import (
 
 BITGET_SOURCE = "bitget"
 ALPACA_SOURCE = "alpaca"
-SUPPORTED_SOURCES = {BITGET_SOURCE, ALPACA_SOURCE}
+HYPERLIQUID_TESTNET_SOURCE = "hyperliquid-testnet"
+SUPPORTED_SOURCES = {BITGET_SOURCE, ALPACA_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
 SUPPORTED_INST_TYPES = {"SPOT", "USDT-FUTURES"}
 
 # Reuters 现役新闻 sitemap。老的 /sitemap_news.xml 已下线（401/404）。
@@ -165,10 +166,10 @@ _DEFAULT_NEWS_UNIVERSE: tuple[NewsUniverseEntry, ...] = (
 
 @dataclass(frozen=True)
 class NewsAnalystConfig:
-    """说明：news → LLM → 自动 paper trade 的配置。
+    """说明：news → LLM → 自动记录本地交易决策的配置。
 
     universe 是品种白名单。一条新闻可能同时命中多个品种 (例如"美联储降息"
-    可能影响 SPY 和 QQQ)，每个命中品种独立跑 verify+gate+下单。
+    可能影响 SPY 和 QQQ)，每个命中品种独立跑 verify+gate+记录。
 
     扩展 TODO 见 mytradebot/news_analyst/service.py 顶部。
     """
@@ -176,7 +177,7 @@ class NewsAnalystConfig:
     universe: tuple[NewsUniverseEntry, ...] = _DEFAULT_NEWS_UNIVERSE
     min_confidence: float = 0.7
     max_entry_distance_pct: float = 0.5  # entry 离当前价的允许偏离 (%)
-    default_size: float = 1.0            # paper trade 头寸大小
+    default_size: float = 1.0            # 本地 planned 记录的头寸大小
     llm_timeout_seconds: float = 20.0
     cooldown_minutes: int = 30           # 同品种同方向 N 分钟内不重复开
 
@@ -254,7 +255,7 @@ def _normalize_label(raw_value: Any) -> str | None:
 
 def _default_group(source: str) -> str:
     """说明：根据数据源选择默认 UI 分组。"""
-    if source == BITGET_SOURCE:
+    if source in {BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}:
         return "crypto"
     if source == ALPACA_SOURCE:
         return "stocks"
@@ -625,12 +626,15 @@ def _normalize_instruments(symbols: Iterable[Any]) -> tuple[InstrumentConfig, ..
             if raw_symbol_value is None:
                 raise ValueError("symbol entries cannot be blank")
             parsed = _parse_symbol_string(str(raw_symbol_value), source=source)
+            instrument_inst_type = (
+                _normalize_inst_type(raw_symbol.get("inst_type"))
+                if source == BITGET_SOURCE
+                else None
+            )
             instrument = InstrumentConfig(
                 symbol=parsed.symbol,
                 source=source,
-                inst_type=_normalize_inst_type(raw_symbol.get("inst_type"))
-                if source == BITGET_SOURCE
-                else None,
+                inst_type=instrument_inst_type,
                 label=_normalize_label(raw_symbol.get("label")),
                 show_collapsed=_normalize_bool(
                     raw_symbol.get("show_collapsed"),

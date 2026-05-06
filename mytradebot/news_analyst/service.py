@@ -520,7 +520,7 @@ class NewsAnalyst:
         # 标记 cooldown
         self._last_open_ms[(instrument_key, verdict.direction)] = now_ms
         LOGGER.info(
-            "news_analyst: opened paper trade #%s on %s direction=%s confidence=%.2f",
+            "news_analyst: recorded planned trade #%s on %s direction=%s confidence=%.2f",
             trade_id, instrument_key, verdict.direction, verdict.confidence,
         )
         return decision
