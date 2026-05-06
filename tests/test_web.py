@@ -21,6 +21,7 @@ from mytradebot.config import (
 from mytradebot.runtime.controller import DrainResult
 from mytradebot.market_data.alpaca import AlpacaAsset, AlpacaInstrument
 from mytradebot.market_data.bitget import BitgetInstrument
+from mytradebot.market_data.hyperliquid import HyperliquidInstrument
 from mytradebot.domain.quotes import QuoteState
 from mytradebot.domain.price_action import Candle
 from mytradebot.api.app import (
@@ -365,6 +366,46 @@ class WebTests(unittest.TestCase):
         self.assertTrue(response.json()["changed"])
         self.assertEqual(persisted.instruments[1].source, "bitget")
         self.assertEqual(persisted.instruments[1].inst_type, "USDT-FUTURES")
+
+    def test_hyperliquid_trade_endpoint_rejects_non_local_origin(self) -> None:
+        """Verify real testnet order endpoint rejects cross-site browser calls."""
+        instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/hyperliquid-testnet/trades/hyperliquid-testnet%3ABTC",
+                headers={"origin": "https://example.com"},
+                json={"direction": "long", "size": 0.1},
+            )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_hyperliquid_limit_order_rejects_missing_price_before_sdk_call(self) -> None:
+        """Verify limit order validation runs before attempting a signed order."""
+        instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with patch("mytradebot.api.app.open_hyperliquid_testnet_position") as opened:
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/hyperliquid-testnet/trades/hyperliquid-testnet%3ABTC",
+                    json={"direction": "long", "size": 0.1, "orderType": "limit"},
+                )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("limitPrice is required", response.json()["detail"])
+        opened.assert_not_called()
 
     def test_alpaca_add_endpoint_persists_symbol(self) -> None:
         """Verify browser can add Alpaca symbols to the watchlist."""

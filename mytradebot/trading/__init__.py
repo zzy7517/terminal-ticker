@@ -1,4 +1,4 @@
-"""文件用途：Paper trading 子系统，管理虚拟订单、撮合和快照。"""
+"""文件用途：交易记录子系统，管理订单、成交和快照。"""
 from __future__ import annotations
 
 from .models import (
@@ -10,6 +10,12 @@ from .models import (
     TradeStatus,
 )
 from .store import TradeStore, default_trade_store_path
+from .hyperliquid import (
+    HYPERLIQUID_FILL_SOURCE,
+    HyperliquidTradingError,
+    hyperliquid_credentials_available,
+    open_testnet_position,
+)
 
 __all__ = [
     "Fill",
@@ -20,4 +26,8 @@ __all__ = [
     "TradeStatus",
     "TradeStore",
     "default_trade_store_path",
+    "HYPERLIQUID_FILL_SOURCE",
+    "HyperliquidTradingError",
+    "hyperliquid_credentials_available",
+    "open_testnet_position",
 ]

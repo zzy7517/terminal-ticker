@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import urllib.parse
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
@@ -40,7 +41,12 @@ from ..social_feed import SocialFeedService, SocialFeedStore, XAuthStore
 from ..agent.provider import _result_from_text
 from ..agent.tools import ToolRegistry
 from ..trading import TradeStatus, TradeStore
-from ..trading.paper_broker import PaperBroker
+from ..trading.hyperliquid import (
+    HYPERLIQUID_FILL_SOURCE,
+    HyperliquidTradingError,
+    open_testnet_position as open_hyperliquid_testnet_position,
+)
+from ..trading.models import FillKind, TradeDirection
 from ..trading.review import review_pending
 from ..config import (
     AgentConfig,
@@ -48,6 +54,7 @@ from ..config import (
     ALPACA_SOURCE,
     AppConfig,
     BITGET_SOURCE,
+    HYPERLIQUID_TESTNET_SOURCE,
     NewsConfig,
     SocialFeedConfig,
     load_config,
@@ -60,12 +67,14 @@ from ..market_data.alpaca import search_assets as search_alpaca_assets
 from ..runtime.controller import TickerController
 from ..runtime.feed import CHART_CANDLE_LIMIT, OLDER_CANDLE_LIMIT
 from ..market_data.bitget import search_instruments as search_bitget_instruments
+from ..market_data.hyperliquid import search_instruments as search_hyperliquid_instruments
 from ..domain.quotes import QuoteState
 from ..domain.price_action import Candle, merge_candles
 from ..market_data.router import MarketInstrument, resolve_instruments
 from ..config.watchlist_store import (
     append_alpaca_symbol_to_watchlist,
     append_bitget_symbol_to_watchlist,
+    append_hyperliquid_symbol_to_watchlist,
     remove_alpaca_symbol_from_watchlist,
     remove_symbol_from_watchlist,
     update_agent_config_in_watchlist,
@@ -79,7 +88,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
 WEB_CACHE_HEADERS = {"Cache-Control": "no-store, max-age=0, must-revalidate"}
 THUMBNAIL_CANDLE_LIMIT = 60
-OLDER_CANDLE_SOURCES = {ALPACA_SOURCE, BITGET_SOURCE}
+OLDER_CANDLE_SOURCES = {ALPACA_SOURCE, BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
 DEFAULT_AGENT_USER_PROMPT = "Analyze the current K-line chart and update the watch plan."
 LOGGER = logging.getLogger(__name__)
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -137,6 +146,36 @@ def _require_local_social_request(request: Request) -> None:
         origin_host = (urllib.parse.urlparse(origin).hostname or "").lower()
         if origin_host not in LOCAL_HOSTS:
             raise HTTPException(status_code=403, detail="social feed API origin denied")
+
+
+def _require_local_hyperliquid_trading_request(request: Request) -> None:
+    """说明：真实测试网下单只允许本机页面/客户端访问。"""
+    client_host = (request.client.host if request.client else "").lower()
+    if client_host and client_host not in LOCAL_HOSTS and client_host != "testclient":
+        raise HTTPException(status_code=403, detail="Hyperliquid testnet trading API is local-only")
+    raw_host = (request.headers.get("host") or "").strip().lower()
+    if raw_host.startswith("[") and "]" in raw_host:
+        host = raw_host.split("]", 1)[0].strip("[]")
+    else:
+        host = raw_host.split(":", 1)[0]
+    if host not in LOCAL_HOSTS:
+        LOGGER.warning("Hyperliquid trading API request used non-loopback Host header: %s", raw_host)
+    origin = request.headers.get("origin")
+    if origin:
+        origin_host = (urllib.parse.urlparse(origin).hostname or "").lower()
+        if origin_host not in LOCAL_HOSTS:
+            raise HTTPException(status_code=403, detail="Hyperliquid testnet trading API origin denied")
+
+
+def _request_float(raw_value: Any, field_name: str) -> float:
+    """说明：把 HTTP payload 数字字段转换为有限浮点数。"""
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a number") from exc
+    if not math.isfinite(value):
+        raise HTTPException(status_code=400, detail=f"{field_name} must be finite")
+    return value
 
 
 def _instrument_payload(instrument: MarketInstrument, *, default_interval: str) -> dict[str, Any]:
@@ -340,19 +379,10 @@ class MarketRuntime:
         self.instruments = instruments
         self.controller_factory = controller_factory
         self.trade_store = trade_store or TradeStore()
-        self.paper_broker = PaperBroker(self.trade_store)
-        try:
-            self.controller = controller_factory(
-                config=config,
-                instruments=instruments,
-                paper_broker=self.paper_broker,
-            )
-        except TypeError:
-            # 兼容不支持 paper_broker 参数的测试替身
-            self.controller = controller_factory(
-                config=config,
-                instruments=instruments,
-            )
+        self.controller = controller_factory(
+            config=config,
+            instruments=instruments,
+        )
         self.clients: set[WebSocket] = set()
         self.pump_task: asyncio.Task[None] | None = None
         self.review_task: asyncio.Task[None] | None = None
@@ -572,6 +602,29 @@ class MarketRuntime:
             for item in results
         ]
 
+    async def search_hyperliquid(self, query: str) -> list[dict[str, Any]]:
+        """说明：搜索 Hyperliquid 测试网永续合约，并标记已在 watchlist 中的结果。"""
+        text = query.strip()
+        if not text:
+            return []
+        active = {instrument.key for instrument in self.instruments}
+        results = await asyncio.to_thread(search_hyperliquid_instruments, text)
+        return [
+            {
+                "source": HYPERLIQUID_TESTNET_SOURCE,
+                "symbol": item.symbol,
+                "label": item.label,
+                "instType": None,
+                "key": item.key,
+                "nameCn": "",
+                "nameHk": "",
+                "nameEn": "",
+                "displayText": f"Testnet perp · {item.base_asset}/{item.quote_asset}",
+                "exists": item.key in active,
+            }
+            for item in results
+        ]
+
     async def search_instruments(self, source: str, query: str) -> list[dict[str, Any]]:
         """说明：按 provider 搜索可加入 watchlist 的标的。"""
         normalized_source = source.strip().lower()
@@ -579,6 +632,8 @@ class MarketRuntime:
             return await self.search_alpaca(query)
         if normalized_source == BITGET_SOURCE:
             return await self.search_bitget(query)
+        if normalized_source == HYPERLIQUID_TESTNET_SOURCE:
+            return await self.search_hyperliquid(query)
         raise HTTPException(status_code=400, detail="Unsupported search source.")
 
     async def add_alpaca(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -613,6 +668,26 @@ class MarketRuntime:
                 source_path,
                 symbol=symbol,
                 inst_type=inst_type,
+                label=label,
+                group="crypto",
+                show_collapsed=True,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if changed:
+            await self.reload_from_source()
+        return {"changed": changed, "state": self.snapshot()}
+
+    async def add_hyperliquid(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：把一个 Hyperliquid 测试网标的写入 watchlist 并激活。"""
+        source_path = self._require_source_path()
+        symbol = str(payload.get("symbol") or "")
+        label = str(payload.get("label") or "").strip() or None
+        try:
+            changed = await asyncio.to_thread(
+                append_hyperliquid_symbol_to_watchlist,
+                source_path,
+                symbol=symbol,
                 label=label,
                 group="crypto",
                 show_collapsed=True,
@@ -897,6 +972,101 @@ class MarketRuntime:
             "deleted": True,
             "session": session_payload,
             "history": await self._agent_session_history_payload(instrument.key),
+            "state": self.snapshot(),
+        }
+
+    async def open_hyperliquid_testnet_trade(
+        self,
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：通过 HTTP API 在 Hyperliquid 测试网提交真实开仓订单。"""
+        instrument = self._instrument_by_key(instrument_key)
+        if instrument.source != HYPERLIQUID_TESTNET_SOURCE:
+            raise HTTPException(
+                status_code=400,
+                detail="Hyperliquid testnet trading only supports hyperliquid-testnet instruments.",
+            )
+        try:
+            direction = TradeDirection(str(payload.get("direction") or "").lower())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="direction must be long or short") from exc
+        size = _request_float(payload.get("size"), "size")
+        if size <= 0:
+            raise HTTPException(status_code=400, detail="size must be positive")
+        order_type = str(payload.get("orderType") or payload.get("order_type") or "market").strip().lower()
+        if order_type not in {"market", "limit"}:
+            raise HTTPException(status_code=400, detail="orderType must be market or limit")
+        limit_price = payload.get("limitPrice", payload.get("limit_price"))
+        resolved_limit = None if limit_price in (None, "") else _request_float(limit_price, "limitPrice")
+        if order_type == "limit" and resolved_limit is None:
+            raise HTTPException(status_code=400, detail="limitPrice is required for limit orders")
+        if resolved_limit is not None and resolved_limit <= 0:
+            raise HTTPException(status_code=400, detail="limitPrice must be positive")
+        slippage = _request_float(payload.get("slippage", 0.05), "slippage")
+        if slippage < 0:
+            raise HTTPException(status_code=400, detail="slippage must be non-negative")
+        reasoning = str(payload.get("reasoning") or "Manual Hyperliquid testnet trade")
+        try:
+            result = await asyncio.to_thread(
+                open_hyperliquid_testnet_position,
+                coin=instrument.symbol,
+                is_buy=direction is TradeDirection.LONG,
+                size=size,
+                order_type=order_type,
+                limit_price=resolved_limit,
+                slippage=slippage,
+            )
+        except HyperliquidTradingError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        status = TradeStatus.OPEN if result.filled_size else TradeStatus.PLANNED
+        intent_price = result.average_price if result.average_price is not None else resolved_limit
+        snapshot_payload = self._trading_snapshot_payload(instrument.key)
+        snapshot_id = await asyncio.to_thread(
+            lambda: self.trade_store.save_snapshot(
+                instrument_key=instrument.key,
+                payload=snapshot_payload,
+            ).id
+            if snapshot_payload
+            else None
+        )
+        trade = await asyncio.to_thread(
+            self.trade_store.create_trade,
+            instrument_key=instrument.key,
+            direction=direction,
+            size=size,
+            intent_price=None if intent_price is None else float(intent_price),
+            stop_price=None,
+            target_prices=tuple(),
+            reasoning_text=reasoning,
+            session_id=None,
+            snapshot_id=snapshot_id,
+            market_kind="hyperliquid-testnet-perp",
+            fill_source=HYPERLIQUID_FILL_SOURCE,
+            status=status,
+            external_order_id=result.external_order_id,
+        )
+        fill_payload = None
+        if result.filled_size and result.average_price is not None:
+            fill = await asyncio.to_thread(
+                self.trade_store.record_fill,
+                trade_id=trade.id,
+                kind=FillKind.ENTRY,
+                price=float(result.average_price),
+                quantity=float(result.filled_size),
+                trigger_reason="hyperliquid testnet order filled",
+                fill_source=HYPERLIQUID_FILL_SOURCE,
+                external_order_id=result.external_order_id,
+            )
+            fill_payload = fill.to_payload()
+            trade = await asyncio.to_thread(self.trade_store.get_trade, trade.id) or trade
+        await self.broadcast()
+        return {
+            "ok": True,
+            "testnet": True,
+            "trade": trade.to_payload(),
+            "fill": fill_payload,
+            "order": result.raw,
             "state": self.snapshot(),
         }
 
@@ -1224,12 +1394,10 @@ class MarketRuntime:
         refresh_seconds = max(0.25, self.config.display.refresh_interval_ms / 1000)
         while self.running:
             result = self.controller.drain_events()
-            consume = getattr(self.controller, "consume_fill_events", None)
-            fills = tuple(consume()) if callable(consume) else ()
-            if result.dirty or fills:
+            if result.dirty:
                 await self.broadcast()
             await asyncio.sleep(refresh_seconds)
-            if not (result.dirty or fills):
+            if not result.dirty:
                 await self.broadcast()
 
     async def _run_review_loop(self) -> None:
@@ -1422,6 +1590,11 @@ def create_app(
         """说明：处理新增 Bitget 标的请求。"""
         return await runtime.add_bitget(payload)
 
+    @app.post("/api/watchlist/hyperliquid-testnet")
+    async def add_hyperliquid_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：处理新增 Hyperliquid 测试网标的请求。"""
+        return await runtime.add_hyperliquid(payload)
+
     @app.delete("/api/watchlist/alpaca/{symbol}")
     async def remove_alpaca_endpoint(symbol: str) -> dict[str, Any]:
         """说明：处理移除 Alpaca 标的请求。"""
@@ -1499,13 +1672,23 @@ def create_app(
         """说明：处理单个标的的手动 Agent 分析请求。"""
         return await runtime.analyze_instrument(instrument_key)
 
+    @app.post("/api/hyperliquid-testnet/trades/{instrument_key}")
+    async def open_hyperliquid_testnet_trade_endpoint(
+        request: Request,
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：处理 Hyperliquid 测试网真实开仓请求。"""
+        _require_local_hyperliquid_trading_request(request)
+        return await runtime.open_hyperliquid_testnet_trade(instrument_key, payload)
+
     @app.get("/api/trades")
     async def list_trades_endpoint(
         instrument_key: str | None = None,
         status: str | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
-        """说明：返回虚拟订单列表，支持按 instrument / status 过滤。"""
+        """说明：返回本地交易记录列表，支持按 instrument / status 过滤。"""
         status_list: list[TradeStatus] | None = None
         if status:
             parts = [s.strip().lower() for s in status.split(",") if s.strip()]
@@ -1522,6 +1705,16 @@ def create_app(
             limit=max(1, min(int(limit), 500)),
         )
         return {"trades": [trade.to_payload() for trade in trades]}
+
+    @app.post("/api/hyperliquid-testnet/{instrument_key}/open")
+    async def open_hyperliquid_testnet_trade_compat_endpoint(
+        request: Request,
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：处理 Hyperliquid 测试网真实开仓请求。"""
+        _require_local_hyperliquid_trading_request(request)
+        return await runtime.open_hyperliquid_testnet_trade(instrument_key, payload)
 
     @app.get("/api/trades/{trade_id}")
     async def get_trade_endpoint(trade_id: int) -> dict[str, Any]:

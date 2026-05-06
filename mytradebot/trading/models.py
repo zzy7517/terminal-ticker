@@ -1,4 +1,4 @@
-"""文件用途：Paper trading 领域模型，定义 Trade / Fill / Snapshot 数据类。"""
+"""文件用途：交易记录领域模型，定义 Trade / Fill / Snapshot 数据类。"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -88,7 +88,7 @@ class Fill:
 
 @dataclass(frozen=True)
 class Trade:
-    """说明：一笔虚拟订单的完整状态。"""
+    """说明：一笔本地记录订单的完整状态。"""
 
     id: int
     instrument_key: str

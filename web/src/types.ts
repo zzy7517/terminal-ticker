@@ -118,15 +118,15 @@ export interface AgentConfig {
 }
 
 export interface AgentConfigUpdate {
-  enabled?: boolean;
-  provider?: string;
-  apiMode?: string;
-  model?: string;
-  timeoutSeconds?: number;
-  maxCandles?: number;
-  reasoningEffort?: string;
-  maxIterations?: number;
-  useTools?: boolean;
+  enabled: boolean;
+  provider: string;
+  apiMode: string;
+  model: string;
+  timeoutSeconds: number;
+  maxCandles: number;
+  reasoningEffort: string;
+  maxIterations: number;
+  useTools: boolean;
 }
 
 export interface AnalysisConfigUpdate {

@@ -25,7 +25,7 @@ class ReviewResult:
 
 
 REVIEW_INSTRUCTIONS = """你是一个 price action 交易复盘助手。
-根据一笔已关闭的虚拟交易的开单上下文、执行结果和盈亏，写出简短、可执行的教训。
+根据一笔已关闭的本地交易记录的开单上下文、执行结果和盈亏，写出简短、可执行的教训。
 输出一个 JSON object，字段必须是：
 lesson: string (一两句话，聚焦下次能改进的点)
 category: string ("entry" | "exit" | "risk" | "patience" | "bias" 之一)

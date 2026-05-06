@@ -19,6 +19,15 @@ import type {
   TradeDetailResponse,
 } from './types';
 
+export interface HyperliquidTestnetOrderRequest {
+  direction: 'long' | 'short';
+  size: number;
+  reasoning?: string;
+  orderType?: 'market' | 'limit';
+  limitPrice?: number | null;
+  slippage?: number;
+}
+
 // Builds a user-facing error while preserving FastAPI's structured detail when available.
 async function responseError(response: Response, prefix: string): Promise<Error> {
   try {
@@ -85,6 +94,23 @@ export async function addBitgetSymbol(result: InstrumentSearchResult): Promise<M
     body: JSON.stringify({
       symbol: result.symbol,
       instType: result.instType,
+      label: result.label,
+    }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'add failed');
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
+// Persists a Hyperliquid testnet instrument to the watchlist and returns the reloaded state.
+export async function addHyperliquidTestnetSymbol(result: InstrumentSearchResult): Promise<MarketState> {
+  const response = await fetch('/api/watchlist/hyperliquid-testnet', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      symbol: result.symbol,
       label: result.label,
     }),
   });
@@ -420,6 +446,29 @@ export async function triggerTradeReview(limit = 3): Promise<Array<{
   }
   const payload = await response.json();
   return payload.results;
+}
+
+// Places a real Hyperliquid testnet order and records it in the local trade store.
+export async function openHyperliquidTestnetTrade(
+  instrumentKey: string,
+  request: HyperliquidTestnetOrderRequest,
+): Promise<{
+  ok: boolean;
+  testnet: boolean;
+  trade: Trade;
+  fill: unknown;
+  order: unknown;
+  state: MarketState;
+}> {
+  const response = await fetch(`/api/hyperliquid-testnet/trades/${encodeURIComponent(instrumentKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'Hyperliquid testnet order failed');
+  }
+  return response.json();
 }
 
 // Fetches the latest cached news items from the local store.
