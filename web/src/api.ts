@@ -6,6 +6,8 @@ import type {
   AgentSessionMutationResponse,
   AgentSessionResponse,
   AnalysisConfigUpdate,
+  ExchangeOrder,
+  ExchangePosition,
   InstrumentSearchResult,
   Lesson,
   MarketState,
@@ -483,28 +485,56 @@ export async function openHyperliquidTestnetTrade(
   return response.json();
 }
 
-// Places a Bitget demo order and records the order id in the local trade store.
-export async function openBitgetDemoTrade(
-  instrumentKey: string,
-  request: BitgetDemoOrderRequest,
-): Promise<{
-  ok: boolean;
-  demo: boolean;
-  exchange: 'bitget';
-  trade: Trade;
-  fill: unknown;
-  order: unknown;
-  state: MarketState;
-}> {
-  const response = await fetch(`/api/bitget-demo/trades/${encodeURIComponent(instrumentKey)}`, {
+export async function fetchExchangePositions(): Promise<ExchangePosition[]> {
+  const response = await fetch('/api/exchange/positions');
+  if (!response.ok) {
+    throw await responseError(response, 'exchange positions fetch failed');
+  }
+  const payload = await response.json();
+  return payload.positions as ExchangePosition[];
+}
+
+export async function fetchExchangeOrders(): Promise<ExchangeOrder[]> {
+  const response = await fetch('/api/exchange/orders');
+  if (!response.ok) {
+    throw await responseError(response, 'exchange orders fetch failed');
+  }
+  const payload = await response.json();
+  return payload.orders as ExchangeOrder[];
+}
+
+export async function placeExchangeOrder(params: {
+  instrumentKey: string;
+  direction: string;
+  size: number;
+  order_type?: string;
+  limit_price?: number;
+  reasoning?: string;
+}): Promise<{ exchange: string; orderId: string | null; localTradeId: number }> {
+  const response = await fetch('/api/exchange/orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
+    body: JSON.stringify(params),
   });
   if (!response.ok) {
-    throw await responseError(response, 'Bitget demo order failed');
+    throw await responseError(response, 'exchange order failed');
   }
   return response.json();
+}
+
+export async function cancelExchangeOrder(
+  exchange: string,
+  orderId: string,
+  symbol = '',
+): Promise<void> {
+  const params = symbol ? `?symbol=${encodeURIComponent(symbol)}` : '';
+  const response = await fetch(
+    `/api/exchange/orders/${encodeURIComponent(exchange)}/${encodeURIComponent(orderId)}${params}`,
+    { method: 'DELETE' },
+  );
+  if (!response.ok) {
+    throw await responseError(response, 'cancel order failed');
+  }
 }
 
 // Fetches the latest cached news items from the local store.

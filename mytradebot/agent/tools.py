@@ -17,6 +17,9 @@ from ..trading import (
     open_bitget_demo_position,
     open_testnet_position as open_hyperliquid_testnet_position,
 )
+from ..trading import bitget as bitget_trading
+from ..trading import alpaca as alpaca_trading
+from ..trading.exchange_models import OrderResult
 from ..config import BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE
 
 ToolHandler = Callable[..., Awaitable[str]]
@@ -394,6 +397,52 @@ def build_trading_tools(
         handler=open_hyperliquid_testnet_trade,
     ))
 
+    def _record_exchange_trade(
+        instrument_key: str,
+        direction_enum: TradeDirection,
+        size: float,
+        reasoning: str,
+        result: OrderResult,
+        market_kind: str,
+    ) -> dict[str, Any]:
+        """内部辅助：把交易所下单结果写入本地 TradeStore。"""
+        status = TradeStatus.OPEN if result.filled_size else TradeStatus.PLANNED
+        snapshot_id = _capture_snapshot(instrument_key)
+        trade = store.create_trade(
+            instrument_key=instrument_key,
+            direction=direction_enum,
+            size=float(size),
+            intent_price=result.average_price,
+            stop_price=None,
+            target_prices=tuple(),
+            reasoning_text=reasoning,
+            session_id=_resolve_session_id(),
+            snapshot_id=snapshot_id,
+            market_kind=market_kind,
+            fill_source=result.exchange,
+            status=status,
+            external_order_id=result.order_id,
+        )
+        fill = None
+        if result.filled_size and result.average_price is not None:
+            fill = store.record_fill(
+                trade_id=trade.id,
+                kind=FillKind.ENTRY,
+                price=float(result.average_price),
+                quantity=float(result.filled_size),
+                trigger_reason=f"{result.exchange} order filled",
+                fill_source=result.exchange,
+                external_order_id=result.order_id,
+            )
+            trade = store.get_trade(trade.id) or trade
+        return {
+            "ok": True,
+            "exchange": result.exchange,
+            "trade": trade.to_payload(),
+            "fill": fill.to_payload() if fill is not None else None,
+            "order": result.raw,
+        }
+
     async def open_bitget_demo_trade(
         instrument_key: str,
         direction: str,
@@ -401,73 +450,43 @@ def build_trading_tools(
         reasoning: str,
         order_type: str = "market",
         limit_price: float | None = None,
-        margin_mode: str = "crossed",
-        margin_coin: str = "USDT",
-        force: str = "gtc",
     ) -> str:
-        """在 Bitget 模拟盘真实提交订单，并同步记录到本地交易表。"""
+        """在 Bitget 模拟盘提交开仓订单。"""
+        if not (instrument_key.startswith("USDT-FUTURES:") or instrument_key.startswith("SPOT:")):
+            return _json_output({"error": "open_bitget_demo_trade only supports USDT-FUTURES:* or SPOT:* instruments"})
         try:
-            symbol, inst_type = _parse_bitget_instrument_key(instrument_key)
             direction_enum = TradeDirection(direction.lower())
-        except ValueError as exc:
-            return _json_output({"error": str(exc)})
-        order_type_value = (order_type or "market").lower()
-        if order_type_value not in {"market", "limit"}:
-            return _json_output({"error": f"invalid order_type: {order_type}"})
-        if order_type_value == "limit" and limit_price is None:
-            return _json_output({"error": "limit order requires limit_price"})
-        is_buy = direction_enum is TradeDirection.LONG
+        except ValueError:
+            return _json_output({"error": f"invalid direction: {direction}"})
+        parts = instrument_key.split(":", 1)
+        product_type = parts[0]
+        symbol = parts[1]
+        side = "buy" if direction_enum is TradeDirection.LONG else "sell"
+        result = bitget_trading.place_order(
+            symbol=symbol,
+            product_type=product_type,
+            side=side,
+            trade_side="open",
+            order_type=(order_type or "market").lower(),
+            size=float(size),
+            price=None if limit_price is None else float(limit_price),
+        )
+        if not result.ok:
+            return _json_output({"error": result.error})
         try:
-            result = open_bitget_demo_position(
-                symbol=symbol,
-                inst_type=inst_type,
-                is_buy=is_buy,
-                size=float(size),
-                order_type=order_type_value,
-                limit_price=None if limit_price is None else float(limit_price),
-                margin_mode=margin_mode,
-                margin_coin=margin_coin,
-                force=force,
+            payload = _record_exchange_trade(
+                instrument_key, direction_enum, size, reasoning, result, "bitget-demo-futures",
             )
-        except (BitgetDemoTradingError, ValueError) as exc:
-            return _json_output({"error": str(exc)})
-
-        try:
-            snapshot_id = _capture_snapshot(instrument_key)
-            trade = store.create_trade(
-                instrument_key=instrument_key,
-                direction=direction_enum,
-                size=float(size),
-                intent_price=None if limit_price is None else float(limit_price),
-                stop_price=None,
-                target_prices=tuple(),
-                reasoning_text=reasoning,
-                session_id=_resolve_session_id(),
-                snapshot_id=snapshot_id,
-                market_kind=f"bitget-demo-{inst_type.lower()}",
-                fill_source=BITGET_DEMO_FILL_SOURCE,
-                status=TradeStatus.PLANNED,
-                external_order_id=result.external_order_id,
-            )
+            return _json_output(payload)
         except ValueError as exc:
             return _json_output({"error": str(exc), "order": result.raw})
-
-        return _json_output({
-            "ok": True,
-            "demo": True,
-            "exchange": "bitget",
-            "trade": trade.to_payload(),
-            "fill": None,
-            "order": result.raw,
-        })
 
     registry.register(ToolDefinition(
         name="open_bitget_demo_trade",
         description=(
-            "在 Bitget 模拟盘提交真实订单，并把 orderId 写入本地交易记录。"
-            "支持 SPOT 和 USDT-FUTURES Bitget 标的。需要 Demo API Key 环境变量 "
-            "BITGET_DEMO_API_KEY / BITGET_DEMO_API_SECRET / BITGET_DEMO_PASSPHRASE。"
-            "此工具只提交模拟盘订单，不会走 Bitget 真实盘。"
+            "在 Bitget 模拟盘提交开仓订单，并把结果写入本地交易记录。"
+            "只支持 USDT-FUTURES:* 或 SPOT:* 标的。需要环境变量 "
+            "BITGET_API_KEY, BITGET_API_SECRET, BITGET_API_PASSPHRASE。"
         ),
         parameters={
             "type": "object",
@@ -491,27 +510,87 @@ def build_trading_tools(
                     "type": ["number", "null"],
                     "description": "limit 单必填；market 单可留空",
                 },
-                "margin_mode": {
-                    "type": "string",
-                    "enum": ["crossed", "isolated"],
-                    "default": "crossed",
-                    "description": "USDT-FUTURES 使用；SPOT 会忽略",
-                },
-                "margin_coin": {
-                    "type": "string",
-                    "default": "USDT",
-                    "description": "USDT-FUTURES 使用；SPOT 会忽略",
-                },
-                "force": {
-                    "type": "string",
-                    "enum": ["gtc", "ioc", "fok", "post_only"],
-                    "default": "gtc",
-                    "description": "limit 单有效期",
-                },
             },
             "required": ["instrument_key", "direction", "size", "reasoning"],
         },
         handler=open_bitget_demo_trade,
+    ))
+
+    async def open_alpaca_paper_trade(
+        instrument_key: str,
+        direction: str,
+        size: float,
+        reasoning: str,
+        order_type: str = "market",
+        limit_price: float | None = None,
+        time_in_force: str = "day",
+    ) -> str:
+        """在 Alpaca paper trading 提交订单。"""
+        if not instrument_key.startswith("alpaca:"):
+            return _json_output({"error": "open_alpaca_paper_trade only supports alpaca:* instruments"})
+        try:
+            direction_enum = TradeDirection(direction.lower())
+        except ValueError:
+            return _json_output({"error": f"invalid direction: {direction}"})
+        symbol = instrument_key.split(":", 1)[1]
+        side = "buy" if direction_enum is TradeDirection.LONG else "sell"
+        result = alpaca_trading.place_order(
+            symbol=symbol,
+            side=side,
+            order_type=(order_type or "market").lower(),
+            qty=float(size),
+            limit_price=None if limit_price is None else float(limit_price),
+            time_in_force=time_in_force,
+        )
+        if not result.ok:
+            return _json_output({"error": result.error})
+        try:
+            payload = _record_exchange_trade(
+                instrument_key, direction_enum, size, reasoning, result, "alpaca-paper",
+            )
+            return _json_output(payload)
+        except ValueError as exc:
+            return _json_output({"error": str(exc), "order": result.raw})
+
+    registry.register(ToolDefinition(
+        name="open_alpaca_paper_trade",
+        description=(
+            "在 Alpaca paper trading 提交订单，并把结果写入本地交易记录。"
+            "只支持 alpaca:* 标的（美股/ETF）。需要环境变量 "
+            "APCA_API_KEY_ID, APCA_API_SECRET_KEY。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "instrument_key": {
+                    "type": "string",
+                    "description": "标的唯一标识，如 alpaca:AAPL",
+                },
+                "direction": {"type": "string", "enum": ["long", "short"]},
+                "size": {"type": "number", "description": "股数，必须 > 0"},
+                "reasoning": {
+                    "type": "string",
+                    "description": "开仓理由，会写入本地 trade 记录",
+                },
+                "order_type": {
+                    "type": "string",
+                    "enum": ["market", "limit"],
+                    "default": "market",
+                },
+                "limit_price": {
+                    "type": ["number", "null"],
+                    "description": "limit 单必填；market 单可留空",
+                },
+                "time_in_force": {
+                    "type": "string",
+                    "enum": ["day", "gtc", "ioc", "fok"],
+                    "default": "day",
+                    "description": "订单有效期",
+                },
+            },
+            "required": ["instrument_key", "direction", "size", "reasoning"],
+        },
+        handler=open_alpaca_paper_trade,
     ))
 
     async def list_open_trades(instrument_key: str | None = None) -> str:

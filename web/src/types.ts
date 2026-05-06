@@ -337,6 +337,8 @@ export interface MarketState {
   quotes: Record<string, Quote>;
   agentAnalyses: Record<string, AgentAnalysis>;
   openTrades: Trade[];
+  exchangePositions: ExchangePosition[];
+  exchangeOrders: ExchangeOrder[];
   recentNews: NewsItem[];
   newsStatus: NewsStatus;
   recentNewsDecisions?: NewsDecision[];
@@ -419,3 +421,31 @@ export interface InstrumentSearchResult {
 }
 
 export type SecuritySearchResult = InstrumentSearchResult;
+
+export interface ExchangePosition {
+  exchange: string;
+  symbol: string;
+  instrumentKey: string;
+  side: string;
+  size: number;
+  entryPrice: number;
+  markPrice: number;
+  unrealizedPnl: number;
+  leverage: number | null;
+  margin: number | null;
+  liquidationPrice: number | null;
+}
+
+export interface ExchangeOrder {
+  exchange: string;
+  symbol: string;
+  instrumentKey: string;
+  orderId: string;
+  side: string;
+  orderType: string;
+  size: number;
+  price: number | null;
+  filledSize: number;
+  status: string;
+  createdAtMs: number;
+}

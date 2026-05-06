@@ -23,6 +23,8 @@ from .hyperliquid import (
     hyperliquid_credentials_available,
     open_testnet_position,
 )
+from .exchange_models import ExchangeOrder, ExchangePosition, OrderResult
+from .exchange_router import ExchangeRouter
 
 __all__ = [
     "Fill",
@@ -42,4 +44,8 @@ __all__ = [
     "HyperliquidTradingError",
     "hyperliquid_credentials_available",
     "open_testnet_position",
+    "ExchangeOrder",
+    "ExchangePosition",
+    "OrderResult",
+    "ExchangeRouter",
 ]

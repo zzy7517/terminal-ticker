@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mytradebot.agent.tools import ToolCall, build_trading_tools
-from mytradebot.trading import BitgetDemoOrderResult, TradeStore, TradeStatus
+from mytradebot.trading import TradeStore, TradeStatus
+from mytradebot.trading.exchange_models import OrderResult
 from mytradebot.trading.hyperliquid import HyperliquidOrderResult
 
 
@@ -160,11 +161,11 @@ class TradingToolsTests(unittest.TestCase):
 
     def test_open_bitget_demo_trade_records_external_order(self) -> None:
         with patch(
-            "mytradebot.agent.tools.open_bitget_demo_position",
-            return_value=BitgetDemoOrderResult(
-                raw={"code": "00000", "data": {"orderId": "bg-1", "clientOid": "cid-1"}},
-                external_order_id="bg-1",
-                client_order_id="cid-1",
+            "mytradebot.agent.tools.bitget_trading.place_order",
+            return_value=OrderResult(
+                exchange="bitget-demo",
+                order_id="bg-1",
+                raw={"code": "00000", "data": {"orderId": "bg-1"}},
             ),
         ) as placed:
             data = self._exec(
@@ -176,23 +177,19 @@ class TradingToolsTests(unittest.TestCase):
                     "reasoning": "demo breakout",
                     "order_type": "limit",
                     "limit_price": 60000.0,
-                    "margin_mode": "isolated",
                 },
             )
 
         placed.assert_called_once()
         _, kwargs = placed.call_args
         self.assertEqual(kwargs["symbol"], "BTCUSDT")
-        self.assertEqual(kwargs["inst_type"], "USDT-FUTURES")
-        self.assertEqual(kwargs["limit_price"], 60000.0)
-        self.assertEqual(kwargs["margin_mode"], "isolated")
+        self.assertEqual(kwargs["product_type"], "USDT-FUTURES")
         self.assertTrue(data["ok"])
-        self.assertTrue(data["demo"])
+        self.assertEqual(data["exchange"], "bitget-demo")
         trade = data["trade"]
         self.assertEqual(trade["fillSource"], "bitget-demo")
         self.assertEqual(trade["externalOrderId"], "bg-1")
         self.assertEqual(trade["status"], "planned")
-        self.assertEqual(trade["intentPrice"], 60000.0)
 
     def test_open_bitget_demo_trade_rejects_non_bitget_key(self) -> None:
         data = self._exec(

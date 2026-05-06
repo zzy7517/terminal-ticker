@@ -40,7 +40,7 @@ from ..news.providers.reuters import ReutersSitemapProvider
 from ..social_feed import SocialFeedService, SocialFeedStore, XAuthStore
 from ..agent.provider import _result_from_text
 from ..agent.tools import ToolRegistry
-from ..trading import TradeStatus, TradeStore
+from ..trading import TradeStatus, TradeStore, ExchangeRouter
 from ..trading.bitget_demo import (
     BITGET_DEMO_FILL_SOURCE,
     BitgetDemoTradingError,
@@ -53,6 +53,7 @@ from ..trading.hyperliquid import (
 )
 from ..trading.models import FillKind, TradeDirection
 from ..trading.review import review_pending
+from ..trading.exchange_models import ExchangePosition, ExchangeOrder
 from ..config import (
     AgentConfig,
     AnalysisConfig,
@@ -243,6 +244,8 @@ def serialize_market_state(
     stream_status: str,
     agent_analyses: dict[str, dict[str, Any]] | None = None,
     open_trades: list[dict[str, Any]] | None = None,
+    exchange_positions: list[dict[str, Any]] | None = None,
+    exchange_orders: list[dict[str, Any]] | None = None,
     recent_news: list[dict[str, Any]] | None = None,
     news_status: dict[str, Any] | None = None,
     recent_news_decisions: list[dict[str, Any]] | None = None,
@@ -324,6 +327,8 @@ def serialize_market_state(
         },
         "agentAnalyses": agent_analyses or {},
         "openTrades": open_trades or [],
+        "exchangePositions": exchange_positions or [],
+        "exchangeOrders": exchange_orders or [],
         "recentNews": recent_news or [],
         "newsStatus": news_status or {},
         "recentNewsDecisions": recent_news_decisions or [],
@@ -375,6 +380,7 @@ class MarketRuntime:
         self.instruments = instruments
         self.controller_factory = controller_factory
         self.trade_store = trade_store or TradeStore()
+        self.exchange_router = ExchangeRouter(trade_store=self.trade_store)
         self.controller = controller_factory(
             config=config,
             instruments=instruments,
@@ -515,6 +521,16 @@ class MarketRuntime:
                 statuses=[TradeStatus.PLANNED, TradeStatus.OPEN],
             )
         ]
+        exchange_positions: list[dict[str, Any]] = []
+        exchange_orders: list[dict[str, Any]] = []
+        try:
+            exchange_positions = [p.to_payload() for p in self.exchange_router.get_all_positions()]
+        except Exception:
+            LOGGER.debug("Failed to fetch exchange positions for snapshot", exc_info=True)
+        try:
+            exchange_orders = [o.to_payload() for o in self.exchange_router.get_all_orders()]
+        except Exception:
+            LOGGER.debug("Failed to fetch exchange orders for snapshot", exc_info=True)
         recent_news: list[dict[str, Any]] = []
         news_status: dict[str, Any] = {"enabled": self.config.news.enabled}
         if self.news_service is not None:
@@ -534,6 +550,8 @@ class MarketRuntime:
             stream_status=self.controller.stream_status,
             agent_analyses=self.agent_analyses,
             open_trades=open_trades,
+            exchange_positions=exchange_positions,
+            exchange_orders=exchange_orders,
             recent_news=recent_news,
             news_status=news_status,
             recent_news_decisions=recent_news_decisions,
@@ -1886,6 +1904,96 @@ def create_app(
                 for r in results
             ],
         }
+
+    @app.get("/api/exchange/positions")
+    async def get_exchange_positions_endpoint() -> dict[str, Any]:
+        """说明：聚合所有交易所的实时持仓。"""
+        positions = runtime.exchange_router.get_all_positions()
+        return {"positions": [p.to_payload() for p in positions]}
+
+    @app.get("/api/exchange/orders")
+    async def get_exchange_orders_endpoint() -> dict[str, Any]:
+        """说明：聚合所有交易所的活跃订单。"""
+        orders = runtime.exchange_router.get_all_orders()
+        return {"orders": [o.to_payload() for o in orders]}
+
+    @app.post("/api/exchange/orders")
+    async def place_exchange_order_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：通过交易所路由下单，并写入本地 TradeStore 用于复盘。"""
+        instrument_key = payload.get("instrumentKey", "")
+        if not instrument_key:
+            raise HTTPException(status_code=400, detail="instrumentKey required")
+        order_kwargs = {k: v for k, v in payload.items() if k != "instrumentKey"}
+        result = await asyncio.to_thread(
+            lambda: runtime.exchange_router.place_order(instrument_key=instrument_key, **order_kwargs)
+        )
+        if not result.ok:
+            raise HTTPException(status_code=400, detail=result.error)
+        direction_str = str(payload.get("direction", "long")).lower()
+        try:
+            direction = TradeDirection(direction_str)
+        except ValueError:
+            direction = TradeDirection.LONG
+        size = float(payload.get("size", 0))
+        reasoning = str(payload.get("reasoning", "Manual exchange trade"))
+        status = TradeStatus.OPEN if result.filled_size else TradeStatus.PLANNED
+        snapshot_payload = runtime._trading_snapshot_payload(instrument_key)
+        snapshot_id = None
+        if snapshot_payload:
+            snap = await asyncio.to_thread(
+                runtime.trade_store.save_snapshot,
+                instrument_key=instrument_key,
+                payload=snapshot_payload,
+            )
+            snapshot_id = snap.id
+        trade = await asyncio.to_thread(
+            runtime.trade_store.create_trade,
+            instrument_key=instrument_key,
+            direction=direction,
+            size=size,
+            intent_price=result.average_price,
+            stop_price=None,
+            target_prices=tuple(),
+            reasoning_text=reasoning,
+            session_id=None,
+            snapshot_id=snapshot_id,
+            market_kind=result.exchange,
+            fill_source=result.exchange,
+            status=status,
+            external_order_id=result.order_id,
+        )
+        if result.filled_size and result.average_price is not None:
+            await asyncio.to_thread(
+                runtime.trade_store.record_fill,
+                trade_id=trade.id,
+                kind=FillKind.ENTRY,
+                price=float(result.average_price),
+                quantity=float(result.filled_size),
+                trigger_reason=f"{result.exchange} order filled",
+                fill_source=result.exchange,
+                external_order_id=result.order_id,
+            )
+        await runtime.broadcast()
+        resp = result.to_payload()
+        resp["localTradeId"] = trade.id
+        return resp
+
+    @app.delete("/api/exchange/orders/{exchange}/{order_id}")
+    async def cancel_exchange_order_endpoint(
+        exchange: str,
+        order_id: str,
+        symbol: str = "",
+    ) -> dict[str, Any]:
+        """说明：撤销交易所挂单。"""
+        ok = runtime.exchange_router.cancel_order(
+            exchange=exchange,
+            order_id=order_id,
+            symbol=symbol,
+        )
+        if not ok:
+            raise HTTPException(status_code=400, detail="cancel failed")
+        await runtime.broadcast()
+        return {"cancelled": True}
 
     @app.get("/api/news")
     async def get_news_endpoint(limit: int = 50) -> dict[str, Any]:

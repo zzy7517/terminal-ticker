@@ -15,13 +15,14 @@ stock_poll_interval_seconds = 5
 
 [agent]
 enabled = true
-provider = "codex"
-api_mode = "codex_responses"
-model = "gpt-5.4"
+provider = "anthropic"
+api_mode = "anthropic_messages"
+model = "global.anthropic.claude-opus-4-6-v1"
 timeout_seconds = 45
 max_candles = 40
 reasoning_effort = "medium"
-
+max_iterations = 10
+use_tools = true
 [analysis]
 enabled = true
 interval = "5m"
@@ -37,3 +38,9 @@ reuters_url = "https://www.reuters.com/sitemap_news.xml"
 request_timeout_seconds = 10.0
 retention_days = 30
 recent_limit = 50
+
+[social_feed]
+enabled = true
+recent_limit = 100
+retention_days = 30
+max_items = 2000
