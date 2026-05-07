@@ -45,8 +45,21 @@ class AgentModelRegistry:
             raise LLMProviderUnavailable(f"Unsupported agent provider: {profile.provider}")
         return provider.factory(config, profile)
 
-    async def list_available_models(self, config: AgentConfig) -> list[dict]:
-        profile = self.resolve(config)
+    async def list_available_models(
+        self, config: AgentConfig, *, provider_override: str | None = None,
+    ) -> list[dict]:
+        if provider_override:
+            from ..config.agent_models import normalize_api_mode, normalize_model, normalize_reasoning_effort
+            profile = AgentModelProfile(
+                provider=provider_override,
+                api_mode=normalize_api_mode(provider_override),
+                model=normalize_model(provider_override, None),
+                reasoning_effort=normalize_reasoning_effort(None),
+                supports_reasoning=provider_override != "anthropic",
+                requires_account_id=provider_override == "codex",
+            )
+        else:
+            profile = self.resolve(config)
         provider = self._providers.get(profile.provider)
         if provider is None:
             raise LLMProviderUnavailable(f"Unsupported agent provider: {profile.provider}")

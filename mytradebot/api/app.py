@@ -57,17 +57,21 @@ from ..config import (
     BITGET_SOURCE,
     HYPERLIQUID_TESTNET_SOURCE,
     NewsConfig,
+    ProviderProfile,
     SocialFeedConfig,
     load_config,
     parse_agent_config,
     parse_analysis_config,
     parse_news_config,
     parse_social_feed_config,
+    _primary_from_profiles,
 )
 from ..config.agent_models import (
+    SUPPORTED_AGENT_PROVIDERS,
     normalize_api_mode,
     normalize_model,
     normalize_provider,
+    normalize_reasoning_effort,
 )
 from ..market_data.alpaca import search_assets as search_alpaca_assets
 from ..runtime.controller import TickerController
@@ -286,6 +290,14 @@ def serialize_market_state(
                 "reasoningEffort": config.agent.reasoning_effort,
                 "maxIterations": config.agent.max_iterations,
                 "useTools": config.agent.use_tools,
+                "providerProfiles": {
+                    name: {
+                        "enabled": profile.enabled,
+                        "model": profile.model,
+                        "reasoningEffort": profile.reasoning_effort,
+                    }
+                    for name, profile in config.agent.provider_profiles.items()
+                },
             },
             "display": {
                 "refreshIntervalMs": config.display.refresh_interval_ms,
@@ -765,15 +777,18 @@ class MarketRuntime:
             await self.reload_from_source()
         return {"changed": changed, "state": self.snapshot()}
 
-    async def list_agent_models(self) -> dict[str, Any]:
-        """说明：返回当前 Agent provider 可见的模型列表。"""
+    async def list_agent_models(self, provider: str | None = None) -> dict[str, Any]:
+        """说明：返回指定或当前 Agent provider 可见的模型列表。"""
         try:
-            models = await list_available_agent_models(self.config.agent)
+            models = await list_available_agent_models(
+                self.config.agent, provider_override=provider,
+            )
         except (LLMProviderUnavailable, LLMProviderError) as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+        resolved_provider = provider or self.config.agent.provider
         return {
-            "provider": self.config.agent.provider,
-            "apiMode": self.config.agent.api_mode,
+            "provider": resolved_provider,
+            "apiMode": normalize_api_mode(resolved_provider),
             "activeModel": self.config.agent.model,
             "models": models,
         }
@@ -789,6 +804,44 @@ class MarketRuntime:
             update_agent_config_in_watchlist,
             source_path,
             next_config,
+        )
+        self.agent_analyses = {}
+        if changed:
+            await self.reload_from_source()
+        else:
+            await self.broadcast()
+        return {"changed": changed, "state": self.snapshot()}
+
+    async def update_provider_profile(
+        self, provider_name: str, payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：更新单个 provider profile 并持久化。"""
+        source_path = self._require_source_path()
+        if provider_name not in SUPPORTED_AGENT_PROVIDERS:
+            raise HTTPException(status_code=400, detail=f"Unknown provider: {provider_name}")
+        current = self.config.agent
+        profiles = dict(current.provider_profiles)
+        old = profiles.get(provider_name, ProviderProfile())
+        profiles[provider_name] = ProviderProfile(
+            enabled=payload.get("enabled", old.enabled),
+            model=normalize_model(provider_name, payload.get("model", old.model)),
+            reasoning_effort=normalize_reasoning_effort(payload.get("reasoningEffort", old.reasoning_effort)),
+        )
+        primary_provider, primary_model, primary_effort = _primary_from_profiles(profiles)
+        next_config = AgentConfig(
+            enabled=current.enabled,
+            provider=primary_provider,
+            api_mode=normalize_api_mode(primary_provider),
+            model=primary_model,
+            timeout_seconds=current.timeout_seconds,
+            max_candles=current.max_candles,
+            reasoning_effort=primary_effort,
+            max_iterations=current.max_iterations,
+            use_tools=current.use_tools,
+            provider_profiles=profiles,
+        )
+        changed = await asyncio.to_thread(
+            update_agent_config_in_watchlist, source_path, next_config,
         )
         self.agent_analyses = {}
         if changed:
@@ -1651,6 +1704,18 @@ def create_app(
         """说明：处理 Agent 可用模型列表请求。"""
         return await runtime.list_agent_models()
 
+    @app.get("/api/agent/providers/{provider_name}/models")
+    async def list_provider_models_endpoint(provider_name: str) -> dict[str, Any]:
+        """说明：拉取指定 provider 的可用模型列表。"""
+        return await runtime.list_agent_models(provider=provider_name)
+
+    @app.post("/api/agent/providers/{provider_name}")
+    async def update_provider_profile_endpoint(
+        provider_name: str, payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：更新单个 provider profile（启用/模型/推理强度）。"""
+        return await runtime.update_provider_profile(provider_name, payload)
+
     @app.post("/api/agent/config")
     async def update_agent_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         """说明：处理 Agent 配置更新请求。"""
@@ -2078,30 +2143,30 @@ def create_app(
 
 
 def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) -> AgentConfig:
-    """说明：合并前端 Agent 设置并重新规范化。"""
+    """说明：合并前端 Agent 共享设置并保留 provider profiles。"""
+    profiles = dict(current.provider_profiles)
+    primary_provider, primary_model, primary_effort = _primary_from_profiles(profiles)
     raw: dict[str, Any] = {
         "enabled": current.enabled,
-        "provider": current.provider,
-        "api_mode": current.api_mode,
-        "model": current.model,
         "timeout_seconds": current.timeout_seconds,
         "max_candles": current.max_candles,
-        "reasoning_effort": current.reasoning_effort,
         "max_iterations": current.max_iterations,
         "use_tools": current.use_tools,
+        "providers": {
+            name: {
+                "enabled": p.enabled,
+                "model": p.model,
+                "reasoning_effort": p.reasoning_effort,
+            }
+            for name, p in profiles.items()
+        },
     }
     field_map = {
         "enabled": "enabled",
-        "provider": "provider",
-        "apiMode": "api_mode",
-        "api_mode": "api_mode",
-        "model": "model",
         "timeoutSeconds": "timeout_seconds",
         "timeout_seconds": "timeout_seconds",
         "maxCandles": "max_candles",
         "max_candles": "max_candles",
-        "reasoningEffort": "reasoning_effort",
-        "reasoning_effort": "reasoning_effort",
         "maxIterations": "max_iterations",
         "max_iterations": "max_iterations",
         "useTools": "use_tools",
@@ -2110,10 +2175,6 @@ def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) ->
     for incoming, normalized in field_map.items():
         if incoming in payload:
             raw[normalized] = payload[incoming]
-    incoming_provider = payload.get("provider")
-    if isinstance(incoming_provider, str) and incoming_provider.strip().lower() != current.provider:
-        if "apiMode" not in payload and "api_mode" not in payload:
-            raw["api_mode"] = None
     return parse_agent_config(raw)
 
 

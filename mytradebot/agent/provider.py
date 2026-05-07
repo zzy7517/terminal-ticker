@@ -233,11 +233,15 @@ def create_llm_provider(config: AgentConfig) -> LLMProvider:
     return DEFAULT_AGENT_MODEL_REGISTRY.create_provider(config)
 
 
-async def list_available_agent_models(config: AgentConfig) -> list[dict[str, Any]]:
-    """说明：列出当前 Agent provider 可用的模型。"""
+async def list_available_agent_models(
+    config: AgentConfig, *, provider_override: str | None = None,
+) -> list[dict[str, Any]]:
+    """说明：列出指定或当前 Agent provider 可用的模型。"""
     from .model_registry import DEFAULT_AGENT_MODEL_REGISTRY
 
-    return await DEFAULT_AGENT_MODEL_REGISTRY.list_available_models(config)
+    return await DEFAULT_AGENT_MODEL_REGISTRY.list_available_models(
+        config, provider_override=provider_override,
+    )
 
 
 def _result_from_text(text: str, *, provider: str, model: str) -> AgentAnalysisResult:

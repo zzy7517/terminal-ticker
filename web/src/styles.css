@@ -1664,6 +1664,77 @@ textarea:focus-visible {
 }
 
 /* ── Provider settings ────────────────────────────────────────────── */
+.provider-cards-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.provider-card {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.provider-card.enabled {
+  border-color: var(--accent);
+}
+
+.provider-card-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.provider-card-title {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.provider-card-title > div {
+  display: grid;
+  gap: 2px;
+}
+
+.provider-card-title strong {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.provider-card-title small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.provider-card-body {
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.provider-shared-settings {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 16px;
+}
+
+.provider-shared-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
 .provider-layout {
   display: grid;
   gap: 14px;

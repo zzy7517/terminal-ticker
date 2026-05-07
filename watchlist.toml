@@ -15,12 +15,12 @@ stock_poll_interval_seconds = 5
 
 [agent]
 enabled = true
-provider = "anthropic"
-api_mode = "anthropic_messages"
-model = "global.anthropic.claude-opus-4-6-v1"
+provider = "codex"
+api_mode = "codex_responses"
+model = "gpt-5.4-mini"
 timeout_seconds = 45
 max_candles = 40
-reasoning_effort = "medium"
+reasoning_effort = "high"
 max_iterations = 10
 use_tools = true
 [analysis]

@@ -959,7 +959,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.json()["models"][0]["slug"], "gpt-5.4-mini")
 
     def test_agent_config_endpoint_persists_settings(self) -> None:
-        """Verify browser can save agent provider settings."""
+        """Verify browser can save agent provider and shared settings."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "watchlist.toml"
             config_path.write_text(
@@ -981,24 +981,32 @@ class WebTests(unittest.TestCase):
             )
 
             with TestClient(app) as client:
-                response = client.post(
+                provider_response = client.post(
+                    "/api/agent/providers/codex",
+                    json={
+                        "enabled": True,
+                        "model": "gpt-5.4",
+                        "reasoningEffort": "high",
+                    },
+                )
+                shared_response = client.post(
                     "/api/agent/config",
                     json={
                         "enabled": False,
-                        "provider": "codex",
-                        "apiMode": "codex_responses",
-                        "model": "gpt-5.4",
                         "maxCandles": 30,
-                        "reasoningEffort": "high",
                     },
                 )
 
             persisted = load_config(config_path)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json()["state"]["config"]["agent"]["enabled"])
+        self.assertEqual(provider_response.status_code, 200)
+        self.assertEqual(shared_response.status_code, 200)
+        self.assertFalse(shared_response.json()["state"]["config"]["agent"]["enabled"])
         self.assertEqual(persisted.agent.model, "gpt-5.4")
         self.assertEqual(persisted.agent.max_candles, 30)
+        self.assertEqual(
+            persisted.agent.provider_profiles["codex"].model, "gpt-5.4",
+        )
 
     def test_analysis_config_endpoint_persists_interval(self) -> None:
         """Verify browser can switch K-line intervals through the runtime."""

@@ -6,8 +6,14 @@ from pathlib import Path
 from typing import Any, Iterable
 import tomllib
 
+from dataclasses import field
+
 from .agent_models import (
+    ANTHROPIC_PROVIDER,
+    CODEX_PROVIDER,
+    DEFAULT_ANTHROPIC_MODEL,
     DEFAULT_CODEX_MODEL,
+    SUPPORTED_AGENT_PROVIDERS,
     normalize_api_mode,
     normalize_model,
     normalize_provider,
@@ -98,6 +104,21 @@ class CacheConfig:
 
 
 @dataclass(frozen=True)
+class ProviderProfile:
+    """说明：单个 LLM provider 的启用状态和模型选择。"""
+    enabled: bool = False
+    model: str = ""
+    reasoning_effort: str = "medium"
+
+
+def _default_provider_profiles() -> dict[str, ProviderProfile]:
+    return {
+        CODEX_PROVIDER: ProviderProfile(enabled=True, model=DEFAULT_CODEX_MODEL),
+        ANTHROPIC_PROVIDER: ProviderProfile(enabled=False, model=DEFAULT_ANTHROPIC_MODEL),
+    }
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     """说明：封装 LLM Agent 的 provider、模型和请求参数。"""
     enabled: bool = True
@@ -109,6 +130,7 @@ class AgentConfig:
     reasoning_effort: str = "medium"
     max_iterations: int = 10
     use_tools: bool = True
+    provider_profiles: dict[str, ProviderProfile] = field(default_factory=_default_provider_profiles)
 
 
 @dataclass(frozen=True)
@@ -335,29 +357,81 @@ def _normalize_reasoning_effort(raw_value: Any) -> str:
     return normalize_reasoning_effort(raw_value)
 
 
+def _parse_provider_profiles(
+    raw_agent: dict[str, Any],
+) -> dict[str, ProviderProfile]:
+    """说明：从 [agent.providers.*] 子表或旧格式迁移出 per-provider 配置。"""
+    raw_providers = raw_agent.get("providers")
+    if isinstance(raw_providers, dict) and raw_providers:
+        profiles: dict[str, ProviderProfile] = {}
+        for name in (CODEX_PROVIDER, ANTHROPIC_PROVIDER):
+            raw = raw_providers.get(name, {})
+            if not isinstance(raw, dict):
+                raw = {}
+            profiles[name] = ProviderProfile(
+                enabled=_normalize_bool(raw.get("enabled"), f"agent.providers.{name}.enabled", False),
+                model=normalize_model(name, raw.get("model")),
+                reasoning_effort=_normalize_reasoning_effort(raw.get("reasoning_effort")),
+            )
+        return profiles
+
+    # 旧格式迁移：单一 provider/model 字段 → 对应 profile 启用
+    legacy_provider = raw_agent.get("provider")
+    legacy_model = raw_agent.get("model")
+    legacy_effort = raw_agent.get("reasoning_effort")
+    defaults = _default_provider_profiles()
+    if legacy_provider is not None:
+        prov = _normalize_agent_provider(legacy_provider)
+        for name in defaults:
+            if name == prov:
+                defaults[name] = ProviderProfile(
+                    enabled=True,
+                    model=normalize_model(name, legacy_model),
+                    reasoning_effort=_normalize_reasoning_effort(legacy_effort),
+                )
+            else:
+                defaults[name] = ProviderProfile(
+                    enabled=False,
+                    model=normalize_model(name, None),
+                    reasoning_effort="medium",
+                )
+    return defaults
+
+
+def _primary_from_profiles(profiles: dict[str, ProviderProfile]) -> tuple[str, str, str]:
+    """说明：从 profiles 中选出首个启用的 provider，返回 (provider, model, reasoning_effort)。"""
+    for name in (CODEX_PROVIDER, ANTHROPIC_PROVIDER):
+        profile = profiles.get(name)
+        if profile and profile.enabled:
+            return name, profile.model, profile.reasoning_effort
+    return CODEX_PROVIDER, DEFAULT_CODEX_MODEL, "medium"
+
+
 def parse_agent_config(raw_agent: dict[str, Any] | None) -> AgentConfig:
     """说明：把原始 Agent 配置解析为 AgentConfig。"""
     if raw_agent is None:
         raw_agent = {}
     if not isinstance(raw_agent, dict):
         raise ValueError("agent must be a table")
-    agent_provider = _normalize_agent_provider(raw_agent.get("provider"))
+    profiles = _parse_provider_profiles(raw_agent)
+    primary_provider, primary_model, primary_effort = _primary_from_profiles(profiles)
     return AgentConfig(
         enabled=_normalize_bool(raw_agent.get("enabled"), "agent.enabled", True),
-        provider=agent_provider,
-        api_mode=normalize_api_mode(agent_provider, raw_agent.get("api_mode")),
-        model=normalize_model(agent_provider, raw_agent.get("model")),
+        provider=primary_provider,
+        api_mode=normalize_api_mode(primary_provider, None),
+        model=primary_model,
         timeout_seconds=_coerce_float(
             raw_agent.get("timeout_seconds"),
             "agent.timeout_seconds",
             45.0,
         ),
         max_candles=_coerce_min_int(raw_agent.get("max_candles"), "agent.max_candles", 40, 10),
-        reasoning_effort=_normalize_reasoning_effort(raw_agent.get("reasoning_effort")),
+        reasoning_effort=primary_effort,
         max_iterations=_coerce_min_int(
             raw_agent.get("max_iterations"), "agent.max_iterations", 10, 1,
         ),
         use_tools=_normalize_bool(raw_agent.get("use_tools"), "agent.use_tools", True),
+        provider_profiles=profiles,
     )
 
 

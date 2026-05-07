@@ -9,6 +9,7 @@ from . import (
     AgentConfig,
     AnalysisConfig,
     NewsConfig,
+    ProviderProfile,
     SocialFeedConfig,
     ALPACA_SOURCE,
     BITGET_SOURCE,
@@ -449,32 +450,31 @@ def update_instrument_analysis_interval_in_watchlist(
 
 
 def _format_agent_config(config: AgentConfig) -> list[str]:
-    """说明：把 AgentConfig 渲染成顶层 TOML 表。"""
+    """说明：把 AgentConfig 渲染成顶层 TOML 表（含 per-provider 子表）。"""
     lines = [
         "[agent]",
         f"enabled = {'true' if config.enabled else 'false'}",
-        f"provider = {_toml_string(config.provider)}",
-        f"api_mode = {_toml_string(config.api_mode)}",
-        f"model = {_toml_string(config.model)}",
+        f"timeout_seconds = {config.timeout_seconds:g}",
+        f"max_candles = {config.max_candles}",
+        f"max_iterations = {config.max_iterations}",
+        f"use_tools = {'true' if config.use_tools else 'false'}",
     ]
-    lines.extend(
-        [
-            f"timeout_seconds = {config.timeout_seconds:g}",
-            f"max_candles = {config.max_candles}",
-            f"reasoning_effort = {_toml_string(config.reasoning_effort)}",
-            f"max_iterations = {config.max_iterations}",
-            f"use_tools = {'true' if config.use_tools else 'false'}",
-        ]
-    )
+    for name, profile in config.provider_profiles.items():
+        lines.append("")
+        lines.append(f"[agent.providers.{name}]")
+        lines.append(f"enabled = {'true' if profile.enabled else 'false'}")
+        lines.append(f"model = {_toml_string(profile.model)}")
+        lines.append(f"reasoning_effort = {_toml_string(profile.reasoning_effort)}")
     return lines
 
 
 def _replace_top_level_table(text: str, table_name: str, next_lines: list[str]) -> str:
-    """说明：插入或替换一个顶层 TOML 表。"""
+    """说明：插入或替换一个顶层 TOML 表（含子表）。"""
     lines = text.splitlines()
     start_index: int | None = None
     end_index: int | None = None
     header = f"[{table_name}]"
+    sub_prefix = f"[{table_name}."
     for index, line in enumerate(lines):
         if line.strip() == header:
             start_index = index
@@ -482,6 +482,8 @@ def _replace_top_level_table(text: str, table_name: str, next_lines: list[str]) 
             for next_index in range(index + 1, len(lines)):
                 stripped = lines[next_index].strip()
                 if stripped.startswith("[") and stripped.endswith("]"):
+                    if stripped.startswith(sub_prefix):
+                        continue
                     end_index = next_index
                     break
             break

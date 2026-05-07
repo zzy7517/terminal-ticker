@@ -2,6 +2,7 @@ import type {
   AgentAnalysis,
   AgentConfigUpdate,
   AgentModelsResponse,
+  ProviderProfileUpdate,
   AgentSessionHistoryResponse,
   AgentSessionMutationResponse,
   AgentSessionResponse,
@@ -248,7 +249,33 @@ export async function fetchAgentModels(): Promise<AgentModelsResponse> {
   return response.json();
 }
 
-// Saves LLM provider settings to the local watchlist configuration.
+// Fetches model catalog for a specific provider.
+export async function fetchProviderModels(provider: string): Promise<AgentModelsResponse> {
+  const response = await fetch(`/api/agent/providers/${encodeURIComponent(provider)}/models`);
+  if (!response.ok) {
+    throw await responseError(response, 'provider model refresh failed');
+  }
+  return response.json();
+}
+
+// Updates a single provider profile (enabled, model, reasoning effort).
+export async function saveProviderProfile(
+  provider: string,
+  update: ProviderProfileUpdate,
+): Promise<MarketState> {
+  const response = await fetch(`/api/agent/providers/${encodeURIComponent(provider)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'provider profile save failed');
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
+// Saves shared agent settings to the local watchlist configuration.
 export async function saveAgentConfig(config: AgentConfigUpdate): Promise<MarketState> {
   const response = await fetch('/api/agent/config', {
     method: 'POST',

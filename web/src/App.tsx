@@ -51,7 +51,7 @@ import {
   fetchAgentSessionHistory,
   fetchRecentSocialFeed,
   fetchSocialAuthStatus,
-  fetchAgentModels,
+
   fetchState,
   getTradeDetail,
   listLessons,
@@ -61,6 +61,8 @@ import {
   resetAgentSession,
   resumeAgentSession,
   saveAgentConfig,
+  fetchProviderModels,
+  saveProviderProfile,
   saveInstrumentAnalysisInterval,
   saveNewsConfig,
   saveSocialAuth,
@@ -74,7 +76,6 @@ import {
 } from './api';
 import type {
   AgentAnalysis,
-  AgentConfigUpdate,
   AgentMessage,
   AgentModelOption,
   AgentSessionResponse,
@@ -1820,6 +1821,7 @@ function AgentSessionPanel({
   disabled,
   selectedProvider,
   selectedModel,
+  providerProfiles,
   onProviderChange,
   onModelChange,
   onPromptChange,
@@ -1835,12 +1837,16 @@ function AgentSessionPanel({
   disabled: boolean;
   selectedProvider: string;
   selectedModel: string;
+  providerProfiles: Record<string, { enabled: boolean; model: string; reasoningEffort: string }>;
   onProviderChange: (provider: string, defaultModel: string) => void;
   onModelChange: (model: string) => void;
   onPromptChange: (value: string) => void;
   onSend: () => Promise<void>;
   onReset: () => Promise<void>;
 }) {
+  const enabledOptions = AGENT_PROVIDER_OPTIONS.filter(
+    (o) => providerProfiles[o.provider]?.enabled,
+  );
   const messages = session?.messages ?? [];
   const canSend = !disabled && !busy && !sessionLoading && !sessionActionKey;
   const sessionTime = session?.session
@@ -1874,13 +1880,21 @@ function AgentSessionPanel({
           value={selectedProvider}
           onChange={(event) => {
             const option = AGENT_PROVIDER_OPTIONS.find((o) => o.provider === event.target.value);
-            if (option) onProviderChange(option.provider, option.defaultModel);
+            if (option) {
+              const profile = providerProfiles[option.provider];
+              onProviderChange(option.provider, profile?.model || option.defaultModel);
+            }
           }}
           disabled={busy}
         >
-          {AGENT_PROVIDER_OPTIONS.map((option) => (
-            <option key={option.provider} value={option.provider}>{option.label}</option>
-          ))}
+          {enabledOptions.length > 0
+            ? enabledOptions.map((option) => (
+                <option key={option.provider} value={option.provider}>{option.label}</option>
+              ))
+            : AGENT_PROVIDER_OPTIONS.map((option) => (
+                <option key={option.provider} value={option.provider}>{option.label}</option>
+              ))
+          }
         </select>
         <input
           className="session-model-input"
@@ -2278,6 +2292,7 @@ function WorkspaceView({
                 disabled={!selectedKey || !selectedQuote?.candles.length}
                 selectedProvider={agentProvider}
                 selectedModel={agentModel}
+                providerProfiles={state?.config.agent.providerProfiles ?? {}}
                 onProviderChange={onAgentProviderChange}
                 onModelChange={onAgentModelChange}
                 onPromptChange={setAgentPrompt}
@@ -2319,7 +2334,193 @@ function WorkspaceView({
   );
 }
 
-// Handles model discovery and persistence for the configured LLM provider adapter.
+// Per-provider card with enable toggle, model picker, and auto-save.
+function ProviderCard({
+  option,
+  profile,
+  onState,
+}: {
+  option: (typeof AGENT_PROVIDER_OPTIONS)[number];
+  profile: { enabled: boolean; model: string; reasoningEffort: string } | undefined;
+  onState: (state: MarketState) => void;
+}) {
+  const enabled = profile?.enabled ?? false;
+  const selectedModel = profile?.model ?? option.defaultModel;
+  const selectedEffort = profile?.reasoningEffort ?? 'medium';
+  const [models, setModels] = useState<AgentModelOption[]>([]);
+  const [modelSearch, setModelSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState('');
+
+  async function toggleEnabled() {
+    const nextEnabled = !enabled;
+    setStatus(nextEnabled ? '启用中...' : '关闭中...');
+    try {
+      const nextState = await saveProviderProfile(option.provider, { enabled: nextEnabled });
+      onState(nextState);
+      if (nextEnabled) {
+        setStatus('已启用，正在拉取模型列表...');
+        await loadModels();
+      } else {
+        setModels([]);
+        setStatus('已关闭。');
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Toggle failed.');
+    }
+  }
+
+  async function loadModels() {
+    setLoading(true);
+    try {
+      const payload = await fetchProviderModels(option.provider);
+      const visible = payload.models.filter((m) => m.supportedInApi && m.visibility !== 'hide');
+      setModels(visible);
+      setStatus(`${visible.length} 个模型可用。`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Model refresh failed.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function selectModel(slug: string, effort?: string) {
+    setStatus('保存模型选择...');
+    try {
+      const nextState = await saveProviderProfile(option.provider, {
+        model: slug,
+        reasoningEffort: effort || selectedEffort,
+      });
+      onState(nextState);
+      setStatus('已保存。');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Save failed.');
+    }
+  }
+
+  async function updateEffort(effort: string) {
+    try {
+      const nextState = await saveProviderProfile(option.provider, { reasoningEffort: effort });
+      onState(nextState);
+    } catch { /* ignore */ }
+  }
+
+  const visibleModels = models.filter((m) => {
+    const keyword = modelSearch.trim().toLowerCase();
+    if (!keyword) return true;
+    return `${m.displayName} ${m.slug} ${m.description}`.toLowerCase().includes(keyword);
+  });
+
+  return (
+    <div className={`provider-card ${enabled ? 'enabled' : 'disabled'}`}>
+      <div className="provider-card-head">
+        <div className="provider-card-title">
+          <div className="provider-item-icon">
+            {option.provider === 'anthropic' ? <Sparkles size={18} /> : <Bot size={18} />}
+          </div>
+          <div>
+            <strong>{option.label}</strong>
+            <small>{option.description}</small>
+          </div>
+        </div>
+        <label className="switch-row" onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" checked={enabled} onChange={toggleEnabled} />
+          <span className="switch-slider" />
+        </label>
+      </div>
+
+      {enabled && (
+        <div className="provider-card-body">
+          <div className="provider-section">
+            <div className="provider-section-card">
+              <div className="provider-section-head">
+                <strong>模型</strong>
+                <span className="provider-inline-badge">{selectedModel}</span>
+              </div>
+            </div>
+            {option.supportsReasoning && (
+              <div className="provider-section-card">
+                <div className="provider-section-head">
+                  <strong>Reasoning</strong>
+                </div>
+                <select
+                  value={selectedEffort}
+                  onChange={(e) => updateEffort(e.target.value)}
+                >
+                  {REASONING_OPTIONS.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div className="models-panel">
+            <div className="models-panel-head">
+              <div>
+                <strong>模型列表</strong>
+                <small>选择此 provider 使用的模型。</small>
+              </div>
+              <button className="shell-button muted" type="button" onClick={loadModels} disabled={loading}>
+                {loading ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}
+                刷新
+              </button>
+            </div>
+
+            <div className="settings-search models-search">
+              <Search size={17} />
+              <input
+                value={modelSearch}
+                onChange={(e) => setModelSearch(e.target.value)}
+                placeholder="Search models..."
+              />
+            </div>
+
+            <div className="model-list">
+              {visibleModels.map((m) => {
+                const isSelected = selectedModel === m.slug;
+                return (
+                  <button
+                    className={`model-row ${isSelected ? 'selected' : ''}`}
+                    key={m.slug}
+                    type="button"
+                    onClick={() => selectModel(m.slug, m.defaultReasoningEffort)}
+                  >
+                    <div className="model-copy">
+                      <div className="model-title-row">
+                        <strong>{m.displayName || m.slug}</strong>
+                        {isSelected && <span className="provider-inline-badge">Selected</span>}
+                      </div>
+                      <div className="model-meta-row">
+                        <span>{m.slug}</span>
+                        <span>{formatContextWindow(m.contextWindow)}</span>
+                        <span>{m.defaultReasoningEffort || '-'}</span>
+                      </div>
+                      {m.description && <small>{m.description}</small>}
+                    </div>
+                  </button>
+                );
+              })}
+              {models.length > 0 && visibleModels.length === 0 && (
+                <div className="provider-empty">No models match this search.</div>
+              )}
+              {models.length === 0 && !loading && (
+                <div className="provider-empty">点击"刷新"拉取模型列表。</div>
+              )}
+            </div>
+          </div>
+
+          {status && <div className="provider-status-bar">{status}</div>}
+        </div>
+      )}
+
+      {!enabled && status && <div className="provider-status-bar">{status}</div>}
+    </div>
+  );
+}
+
+
+// Manages per-provider toggles, shared agent settings, and model selection.
 function ProviderSettingsPanel({
   state,
   onState,
@@ -2328,341 +2529,124 @@ function ProviderSettingsPanel({
   onState: (state: MarketState) => void;
 }) {
   const config = state?.config.agent;
-  const configSignature = config ? JSON.stringify(config) : '';
-  const [draft, setDraft] = useState<AgentConfigUpdate | null>(null);
-  const [models, setModels] = useState<AgentModelOption[]>([]);
-  const [providerSearch, setProviderSearch] = useState('');
-  const [modelSearch, setModelSearch] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState('Changes are local until saved.');
+  const profiles = config?.providerProfiles ?? {};
+  const [sharedSaving, setSharedSaving] = useState(false);
+  const [sharedStatus, setSharedStatus] = useState('');
 
+  const [sharedDraft, setSharedDraft] = useState({
+    enabled: config?.enabled ?? true,
+    timeoutSeconds: config?.timeoutSeconds ?? 45,
+    maxCandles: config?.maxCandles ?? 40,
+    maxIterations: config?.maxIterations ?? 10,
+    useTools: config?.useTools ?? true,
+  });
+
+  const configSig = config ? `${config.enabled}|${config.timeoutSeconds}|${config.maxCandles}|${config.maxIterations}|${config.useTools}` : '';
   useEffect(() => {
     if (!config) return;
-    setDraft({
+    setSharedDraft({
       enabled: config.enabled,
-      provider: config.provider,
-      apiMode: config.apiMode,
-      model: config.model,
       timeoutSeconds: config.timeoutSeconds,
       maxCandles: config.maxCandles,
-      reasoningEffort: config.reasoningEffort,
       maxIterations: config.maxIterations,
       useTools: config.useTools,
     });
-  }, [configSignature]);
+  }, [configSig]);
 
-  // Refreshes the provider model catalog and updates the draft selection if needed.
-  async function refreshModels() {
-    if (draft && config && draft.provider !== config.provider) {
-      setStatus('Save the provider switch before fetching that provider model list.');
-      return;
-    }
-    setRefreshing(true);
-    setStatus('Refreshing model catalog...');
+  async function saveShared() {
+    setSharedSaving(true);
+    setSharedStatus('保存共享设置...');
     try {
-      const payload = await fetchAgentModels();
-      const visible = payload.models.filter((model) => model.supportedInApi && model.visibility !== 'hide');
-      setModels(visible);
-      setStatus(`${visible.length} models ready.`);
-      setDraft((current) => {
-        if (!current) return current;
-        if (visible.some((model) => model.slug === current.model) || !visible[0]) {
-          return current;
-        }
-        return {
-          ...current,
-          model: visible[0].slug,
-          reasoningEffort: visible[0].defaultReasoningEffort || current.reasoningEffort,
-        };
-      });
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Refresh failed.');
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  // Writes the current provider-settings draft to the local TOML file.
-  async function persistConfig() {
-    if (!draft) return;
-    setSaving(true);
-    setStatus('Saving provider settings...');
-    try {
-      const nextState = await saveAgentConfig(draft);
+      const nextState = await saveAgentConfig(sharedDraft);
       onState(nextState);
-      setStatus('All changes saved.');
+      setSharedStatus('已保存。');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Save failed.');
+      setSharedStatus(error instanceof Error ? error.message : 'Save failed.');
     } finally {
-      setSaving(false);
+      setSharedSaving(false);
     }
-  }
-
-  if (!draft) {
-    return <div className="settings-loading">Loading settings...</div>;
-  }
-
-  const currentProvider =
-    AGENT_PROVIDER_OPTIONS.find((option) => option.provider === draft.provider) ?? AGENT_PROVIDER_OPTIONS[0];
-  const providerOptions = AGENT_PROVIDER_OPTIONS.filter((option) =>
-    `${option.provider} ${option.label} ${option.description}`.toLowerCase().includes(
-      providerSearch.trim().toLowerCase(),
-    ),
-  );
-  const modelOptions = models.some((model) => model.slug === draft.model)
-    ? models
-    : [
-        {
-          slug: draft.model,
-          displayName: draft.model,
-          description: '',
-          visibility: 'active',
-          supportedInApi: true,
-          defaultReasoningEffort: currentProvider.supportsReasoning ? draft.reasoningEffort : '',
-          supportedReasoningEfforts: currentProvider.supportsReasoning ? REASONING_OPTIONS : [],
-          contextWindow: null,
-          preferWebsockets: currentProvider.provider === 'codex',
-        },
-        ...models,
-      ];
-  const visibleModels = modelOptions.filter((model) => {
-    const keyword = modelSearch.trim().toLowerCase();
-    if (!keyword) return true;
-    return `${model.displayName} ${model.slug} ${model.description}`.toLowerCase().includes(keyword);
-  });
-  const selectedModel = modelOptions.find((model) => model.slug === draft.model);
-  const reasoningOptions = currentProvider.supportsReasoning && selectedModel?.supportedReasoningEfforts.length
-    ? selectedModel.supportedReasoningEfforts
-    : REASONING_OPTIONS;
-
-  function selectProvider(option: (typeof AGENT_PROVIDER_OPTIONS)[number]) {
-    setModels([]);
-    setModelSearch('');
-    setDraft((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        provider: option.provider,
-        apiMode: option.apiMode,
-        model: option.defaultModel,
-        reasoningEffort: option.supportsReasoning ? current.reasoningEffort : 'medium',
-      };
-    });
-    setStatus(`Save to switch the active provider to ${option.label}.`);
   }
 
   return (
     <>
-          <header className="settings-stage-head">
-            <div>
-              <div className="eyebrow">Configuration</div>
-              <h2>Providers</h2>
-            </div>
-            <div className="settings-stage-actions">
-              <button className="shell-button muted" type="button" onClick={refreshModels} disabled={refreshing}>
-                {refreshing ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
-                Fetch models
-              </button>
-              <button className="shell-button primary" type="button" onClick={persistConfig} disabled={saving}>
-                {saving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
-                Save
-              </button>
-            </div>
-          </header>
+      <header className="settings-stage-head">
+        <div>
+          <div className="eyebrow">Configuration</div>
+          <h2>Providers</h2>
+        </div>
+      </header>
 
-          <div className="provider-layout">
-            <section className="provider-catalog">
-              <div className="provider-toolbar">
-                <div className="settings-search">
-                  <Search size={17} />
-                  <input
-                    value={providerSearch}
-                    onChange={(event) => setProviderSearch(event.target.value)}
-                    placeholder="Search providers..."
-                  />
-                </div>
-              </div>
+      <div className="provider-cards-layout">
+        {AGENT_PROVIDER_OPTIONS.map((option) => (
+          <ProviderCard
+            key={option.provider}
+            option={option}
+            profile={profiles[option.provider]}
+            onState={onState}
+          />
+        ))}
+      </div>
 
-              <div className="provider-list">
-                {providerOptions.length ? (
-                  providerOptions.map((option) => {
-                    const selected = draft.provider === option.provider;
-                    return (
-                      <button
-                        className={`provider-item ${selected ? 'selected' : ''}`}
-                        key={option.provider}
-                        type="button"
-                        onClick={() => selectProvider(option)}
-                      >
-                        <div className="provider-item-icon">
-                          {option.provider === 'anthropic' ? <Sparkles size={18} /> : <Bot size={18} />}
-                        </div>
-                        <div className="provider-item-copy">
-                          <strong>{option.label}</strong>
-                          <small>{option.description}</small>
-                        </div>
-                        {selected && <span className="provider-item-dot" />}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="provider-empty">No providers match this search.</div>
-                )}
-              </div>
-            </section>
-
-            <section className="provider-detail">
-              <div className="provider-hero">
-                <div>
-                  <div className="provider-hero-title">
-                    <h3>{currentProvider.label}</h3>
-                    <span className={`provider-state-badge ${draft.provider === currentProvider.provider ? 'active' : 'inactive'}`}>
-                      {draft.provider === currentProvider.provider ? 'Default' : ''}
-                    </span>
-                  </div>
-                  <p>{currentProvider.detail}</p>
-                </div>
-              </div>
-
-              <div className="provider-section">
-                <div className="provider-section-card">
-                  <div className="provider-section-head">
-                    <strong>Provider</strong>
-                    <span className="provider-inline-badge">Selected</span>
-                  </div>
-                  <div className="provider-fixed-field">{draft.provider}</div>
-                </div>
-                <div className="provider-section-card">
-                  <div className="provider-section-head">
-                    <strong>API Mode</strong>
-                    <span className="provider-inline-badge">Auto</span>
-                  </div>
-                  <div className="provider-fixed-field">{draft.apiMode}</div>
-                </div>
-              </div>
-
-              <div className="provider-form-grid">
-                <label>
-                  <span>Reasoning Effort</span>
-                  {currentProvider.supportsReasoning ? (
-                    <select
-                      value={draft.reasoningEffort}
-                      onChange={(event) => setDraft({ ...draft, reasoningEffort: event.target.value })}
-                    >
-                      {reasoningOptions.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <div className="provider-fixed-field">Not used</div>
-                  )}
-                </label>
-                <label>
-                  <span>Timeout Seconds</span>
-                  <input
-                    min={5}
-                    step={5}
-                    type="number"
-                    value={draft.timeoutSeconds}
-                    onChange={(event) =>
-                      setDraft({ ...draft, timeoutSeconds: Math.max(5, Number(event.target.value) || 5) })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>Max Candles</span>
-                  <input
-                    min={10}
-                    step={5}
-                    type="number"
-                    value={draft.maxCandles}
-                    onChange={(event) =>
-                      setDraft({ ...draft, maxCandles: Math.max(10, Number(event.target.value) || 10) })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>Max Iterations</span>
-                  <input
-                    min={1}
-                    step={1}
-                    type="number"
-                    value={draft.maxIterations}
-                    onChange={(event) =>
-                      setDraft({ ...draft, maxIterations: Math.max(1, Number(event.target.value) || 1) })
-                    }
-                  />
-                </label>
-                <label className="switch-row provider-form-switch">
-                  <span>Use Tools</span>
-                  <input
-                    checked={draft.useTools}
-                    onChange={(event) => setDraft({ ...draft, useTools: event.target.checked })}
-                    type="checkbox"
-                  />
-                  <span className="switch-slider" />
-                </label>
-              </div>
-
-              <div className="models-panel">
-                <div className="models-panel-head">
-                  <div>
-                    <strong>Models</strong>
-                    <small>选择当前 provider 使用的活动模型。</small>
-                  </div>
-                  <span className="models-count">{visibleModels.length} shown</span>
-                </div>
-
-                <div className="settings-search models-search">
-                  <Search size={17} />
-                  <input
-                    value={modelSearch}
-                    onChange={(event) => setModelSearch(event.target.value)}
-                    placeholder="Search models..."
-                  />
-                </div>
-
-                <div className="model-list">
-                  {visibleModels.map((model) => {
-                    const selected = draft.model === model.slug;
-                    return (
-                      <button
-                        className={`model-row ${selected ? 'selected' : ''}`}
-                        key={model.slug}
-                        type="button"
-                        onClick={() =>
-                          setDraft({
-                            ...draft,
-                            model: model.slug,
-                            reasoningEffort: model.defaultReasoningEffort || draft.reasoningEffort,
-                          })
-                        }
-                      >
-                        <div className="model-copy">
-                          <div className="model-title-row">
-                            <strong>{model.displayName || model.slug}</strong>
-                            {selected && <span className="provider-inline-badge">Selected</span>}
-                          </div>
-                          <div className="model-meta-row">
-                            <span>{model.slug}</span>
-                            <span>{formatContextWindow(model.contextWindow)}</span>
-                            <span>{model.defaultReasoningEffort || '-'}</span>
-                          </div>
-                          {model.description && <small>{model.description}</small>}
-                        </div>
-                      </button>
-                    );
-                  })}
-                  {visibleModels.length === 0 && (
-                    <div className="provider-empty">No models match this search.</div>
-                  )}
-                </div>
-              </div>
-
-              <div className="provider-status-bar">{status}</div>
-            </section>
-          </div>
+      <div className="provider-shared-settings">
+        <div className="provider-section-head">
+          <strong>共享设置</strong>
+          <small>适用于所有 provider 的通用参数。</small>
+        </div>
+        <div className="provider-form-grid">
+          <label>
+            <span>Timeout Seconds</span>
+            <input
+              min={5}
+              step={5}
+              type="number"
+              value={sharedDraft.timeoutSeconds}
+              onChange={(e) =>
+                setSharedDraft({ ...sharedDraft, timeoutSeconds: Math.max(5, Number(e.target.value) || 5) })
+              }
+            />
+          </label>
+          <label>
+            <span>Max Candles</span>
+            <input
+              min={10}
+              step={5}
+              type="number"
+              value={sharedDraft.maxCandles}
+              onChange={(e) =>
+                setSharedDraft({ ...sharedDraft, maxCandles: Math.max(10, Number(e.target.value) || 10) })
+              }
+            />
+          </label>
+          <label>
+            <span>Max Iterations</span>
+            <input
+              min={1}
+              step={1}
+              type="number"
+              value={sharedDraft.maxIterations}
+              onChange={(e) =>
+                setSharedDraft({ ...sharedDraft, maxIterations: Math.max(1, Number(e.target.value) || 1) })
+              }
+            />
+          </label>
+          <label className="switch-row provider-form-switch">
+            <span>Use Tools</span>
+            <input
+              checked={sharedDraft.useTools}
+              onChange={(e) => setSharedDraft({ ...sharedDraft, useTools: e.target.checked })}
+              type="checkbox"
+            />
+            <span className="switch-slider" />
+          </label>
+        </div>
+        <div className="provider-shared-actions">
+          <button className="shell-button primary" type="button" onClick={saveShared} disabled={sharedSaving}>
+            {sharedSaving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
+            保存共享设置
+          </button>
+          {sharedStatus && <span className="provider-status-bar">{sharedStatus}</span>}
+        </div>
+      </div>
     </>
   );
 }

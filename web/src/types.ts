@@ -106,6 +106,12 @@ export interface AgentSessionMutationResponse {
   state: MarketState;
 }
 
+export interface ProviderProfileState {
+  enabled: boolean;
+  model: string;
+  reasoningEffort: string;
+}
+
 export interface AgentConfig {
   enabled: boolean;
   provider: string;
@@ -116,18 +122,21 @@ export interface AgentConfig {
   reasoningEffort: string;
   maxIterations: number;
   useTools: boolean;
+  providerProfiles: Record<string, ProviderProfileState>;
 }
 
 export interface AgentConfigUpdate {
   enabled: boolean;
-  provider: string;
-  apiMode: string;
-  model: string;
   timeoutSeconds: number;
   maxCandles: number;
-  reasoningEffort: string;
   maxIterations: number;
   useTools: boolean;
+}
+
+export interface ProviderProfileUpdate {
+  enabled?: boolean;
+  model?: string;
+  reasoningEffort?: string;
 }
 
 export interface AnalysisConfigUpdate {
