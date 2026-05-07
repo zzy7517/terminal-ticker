@@ -65,25 +65,6 @@ def build_market_context(
     }
 
 
-def build_multi_market_context(
-    items: tuple[tuple[MarketInstrument, QuoteState, str], ...],
-    *,
-    max_candles: int,
-) -> dict[str, Any]:
-    """Serialize multiple instruments for comparison-style tool results."""
-    return {
-        "instruments": [
-            build_market_context(
-                instrument=instrument,
-                quote=quote,
-                interval=interval,
-                max_candles=max_candles,
-            )
-            for instrument, quote, interval in items
-        ],
-    }
-
-
 def _serialized_timeframes(
     quote: QuoteState,
     *,

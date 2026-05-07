@@ -23,7 +23,7 @@ from ..agent import (
     create_llm_provider,
     list_available_agent_models,
 )
-from ..agent.market_context import build_market_context, build_multi_market_context
+from ..agent.market_context import build_market_context
 from ..config import (
     AgentConfig,
     ALPACA_SOURCE,
@@ -146,26 +146,6 @@ class MarketContextProvider:
             interval=instrument.analysis_interval or self._runtime.config.analysis.interval,
             max_candles=max_candles,
         )
-
-    def get_multi_market_context(
-        self,
-        instrument_keys: tuple[str, ...],
-        *,
-        max_candles: int = 25,
-    ) -> dict[str, Any]:
-        items: list[tuple[MarketInstrument, QuoteState, str]] = []
-        for key in instrument_keys[:6]:
-            resolved_key = self._resolve_instrument_key(key)
-            instrument = self._runtime._instrument_by_key(resolved_key)
-            quote = self._runtime.controller.quotes.get(resolved_key)
-            if quote is None:
-                continue
-            items.append((
-                instrument,
-                quote,
-                instrument.analysis_interval or self._runtime.config.analysis.interval,
-            ))
-        return build_multi_market_context(tuple(items), max_candles=max_candles) if items else {}
 
     def resolve_instrument_key(self, instrument_key: str) -> str:
         return self._resolve_instrument_key(instrument_key)

@@ -292,57 +292,6 @@ def build_market_tools(
         handler=list_instruments,
     ))
 
-    async def get_multi_market_context(
-        instrument_keys: list[str],
-        max_candles: int = 25,
-    ) -> str:
-        """批量获取多个标的的行情上下文。"""
-        keys = [str(key) for key in instrument_keys if str(key).strip()]
-        capped_keys = keys[:6]
-        blocked = [
-            _candidate_error(key)
-            for key in capped_keys
-            if _candidate_error(key)
-        ]
-        if blocked:
-            return _json_output({"error": blocked[0]})
-        getter = getattr(context_provider, "get_multi_market_context", None)
-        if not callable(getter):
-            return _json_output({"error": "market context provider does not support get_multi_market_context"})
-        context = getter(tuple(capped_keys), max_candles=max_candles)
-        if not context:
-            return _json_output({"error": "No market context available for requested instruments"})
-        return _json_output(context)
-
-    registry.register(ToolDefinition(
-        name="get_multi_market_context",
-        description=(
-            "批量读取多个标的的行情上下文，用于强弱对比、相关性观察或跨品种分析。"
-            "一次最多 6 个标的；涉及跨标的行情问题时优先使用本工具。"
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "instrument_keys": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "标的 key 列表，优先来自 list_instruments",
-                    "minItems": 1,
-                    "maxItems": 6,
-                },
-                "max_candles": {
-                    "type": "integer",
-                    "description": "每个周期最多返回的 K 线数量，默认 25，范围 1-50",
-                    "default": 25,
-                    "minimum": 1,
-                    "maximum": 50,
-                },
-            },
-            "required": ["instrument_keys"],
-        },
-        handler=get_multi_market_context,
-    ))
-
     return registry
 
 

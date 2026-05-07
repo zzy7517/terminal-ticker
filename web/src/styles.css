@@ -1207,8 +1207,8 @@ textarea:focus-visible {
 
 .session-message.user {
   background: var(--accent-tint);
-  width: fit-content;
-  max-width: 80%;
+  inline-size: fit-content;
+  max-inline-size: min(42ch, 72%);
   justify-self: end;
 }
 
