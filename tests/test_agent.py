@@ -165,6 +165,29 @@ class AgentTests(unittest.TestCase):
             "external_web_access": True,
         }])
 
+    def test_codex_tools_payload_respects_absent_local_web_search(self) -> None:
+        """Verify Codex does not add hosted web_search when callers omit search tools."""
+        self.assertEqual(_codex_tools_payload(None), [])
+        self.assertEqual(_codex_tools_payload([]), [])
+
+        payload = _codex_tools_payload([
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_quote",
+                    "description": "market quote",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+        ])
+
+        self.assertEqual(payload, [{
+            "type": "function",
+            "name": "get_quote",
+            "description": "market quote",
+            "parameters": {"type": "object", "properties": {}},
+        }])
+
     def test_codex_stream_parser_ignores_hosted_web_search_as_local_tool(self) -> None:
         """Verify hosted web_search calls do not get re-executed by the local loop."""
 

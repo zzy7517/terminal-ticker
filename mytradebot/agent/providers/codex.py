@@ -226,12 +226,16 @@ def _codex_model_option(item: dict[str, Any]) -> dict[str, Any]:
 def _codex_tools_payload(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     """Convert loop function tools to Codex Responses tools and add hosted web search."""
     codex_tools: list[dict[str, Any]] = []
+    has_local_web_search = False
     for tool in tools or []:
         function = tool.get("function") if isinstance(tool, dict) else None
         if not isinstance(function, dict):
             continue
         name = str(function.get("name") or "").strip()
-        if not name or name in _CODEX_LOCAL_WEB_SEARCH_FUNCTION_NAMES:
+        if not name:
+            continue
+        if name in _CODEX_LOCAL_WEB_SEARCH_FUNCTION_NAMES:
+            has_local_web_search = True
             continue
         codex_tools.append({
             "type": "function",
@@ -240,7 +244,8 @@ def _codex_tools_payload(tools: list[dict[str, Any]] | None) -> list[dict[str, A
             "parameters": function.get("parameters", {}),
         })
 
-    codex_tools.append(_codex_web_search_tool_spec())
+    if has_local_web_search:
+        codex_tools.append(_codex_web_search_tool_spec())
     return codex_tools
 
 
