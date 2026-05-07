@@ -3088,6 +3088,7 @@ textarea:focus-visible {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   gap: 16px;
+  height: calc(100vh - 190px);
   min-height: 0;
 }
 
@@ -3223,7 +3224,8 @@ textarea:focus-visible {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-lg);
   background: var(--panel);
-  max-height: calc(100vh - 190px);
+  height: 100%;
+  max-height: none;
   min-height: 0;
   overflow: hidden;
   padding: 12px 14px;
@@ -3238,11 +3240,34 @@ textarea:focus-visible {
   padding-right: 2px;
 }
 .agent-tab-layout .agent-session-card {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 .agent-tab-layout .session-transcript {
   max-height: none;
-  min-height: 260px;
+  min-height: 0;
+}
+
+@media (max-width: 960px) {
+  .agent-tab-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .agent-tab-layout .session-history {
+    height: auto;
+    max-height: 260px;
+  }
+
+  .agent-tab-layout .agent-session-card {
+    height: auto;
+  }
+
+  .agent-tab-layout .session-transcript {
+    min-height: 260px;
+  }
 }
 
 /* ── News Settings page ───────────────────────────────────────────── */

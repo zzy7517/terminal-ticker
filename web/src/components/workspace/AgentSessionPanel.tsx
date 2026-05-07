@@ -128,8 +128,10 @@ export function AgentSessionPanel({
   const contextPickerRef = useRef<HTMLDivElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const transcriptScrollBySessionRef = useRef<Map<string, number>>(new Map());
+  const shouldFollowTranscriptRef = useRef(true);
   const messages = agentSession?.messages ?? [];
   const sessionId = agentSession?.session?.id ?? null;
+  const lastMessage = messages[messages.length - 1] ?? null;
   const toolResultsById = useMemo(() => {
     const results = new Map<string, AgentMessage>();
     for (const message of messages) {
@@ -164,7 +166,23 @@ export function AgentSessionPanel({
     const transcript = transcriptRef.current;
     if (!transcript || !sessionId) return;
     transcript.scrollTop = transcriptScrollBySessionRef.current.get(sessionId) ?? 0;
+    shouldFollowTranscriptRef.current = transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 48;
   }, [sessionId, sessionLoading]);
+
+  useLayoutEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript || !sessionId || sessionLoading || !shouldFollowTranscriptRef.current) return;
+    transcript.scrollTop = transcript.scrollHeight;
+    transcriptScrollBySessionRef.current.set(sessionId, transcript.scrollTop);
+  }, [
+    sessionId,
+    sessionLoading,
+    messages.length,
+    lastMessage?.id,
+    lastMessage?.content,
+    lastMessage?.error,
+    pendingToolCalls.size,
+  ]);
 
   const enabledProviders = AGENT_PROVIDER_OPTIONS.filter(
     (o) => providerProfiles[o.provider]?.enabled,
@@ -323,7 +341,9 @@ export function AgentSessionPanel({
         ref={transcriptRef}
         onScroll={(event) => {
           if (!sessionId) return;
-          transcriptScrollBySessionRef.current.set(sessionId, event.currentTarget.scrollTop);
+          const transcript = event.currentTarget;
+          shouldFollowTranscriptRef.current = transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 48;
+          transcriptScrollBySessionRef.current.set(sessionId, transcript.scrollTop);
         }}
       >
         {sessionLoading && (

@@ -15,15 +15,12 @@ stock_poll_interval_seconds = 5
 
 [agent]
 enabled = true
-timeout_seconds = 45
 max_candles = 40
-max_iterations = 10
-use_tools = true
 
 [agent.providers.codex]
 enabled = true
-models = ["gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.5"]
-model_efforts = {"gpt-5.4-mini" = "high", "gpt-5.3-codex" = "medium", "gpt-5.5" = "xhigh"}
+models = ["gpt-5.3-codex", "gpt-5.5"]
+model_efforts = {"gpt-5.3-codex" = "medium", "gpt-5.5" = "xhigh"}
 
 [agent.providers.anthropic]
 enabled = true
