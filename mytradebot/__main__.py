@@ -3,19 +3,27 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 import uvicorn
 
 from .config import AppConfig, build_runtime_config, load_config
-from .logging_config import DEFAULT_LOG_LEVEL, configure_logging
+from .logging_config import DEFAULT_LOG_LEVEL, configure_logging, normalize_log_level, uvicorn_log_level
 from .market_data.router import resolve_instruments
 from .api.app import create_app
 
 LOGGER = logging.getLogger(__name__)
 
 
-def parse_args() -> argparse.Namespace:
+def _parse_log_level(value: str) -> str:
+    try:
+        return normalize_log_level(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """说明：解析命令行参数。"""
     parser = argparse.ArgumentParser(
         prog="mytradebot",
@@ -36,10 +44,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--log-level",
         default=DEFAULT_LOG_LEVEL,
-        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        type=_parse_log_level,
+        metavar="{debug,info,warning,error,critical}",
         help=f"application log level (default: {DEFAULT_LOG_LEVEL})",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def resolve_config(args: argparse.Namespace) -> AppConfig:
@@ -64,7 +73,14 @@ def main() -> int:
     instruments = resolve_instruments(config.instruments)
     app = create_app(config=config, instruments=instruments)
     LOGGER.info("Starting mytradebot on %s:%s with %s instruments", args.host, args.port, len(instruments))
-    uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level.lower())
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        log_level=uvicorn_log_level(args.log_level),
+        log_config=None,
+        access_log=False,
+    )
     return 0
 
 

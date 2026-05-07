@@ -313,6 +313,8 @@ class MarketRuntime:
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
         self.clients.add(websocket)
+        client_host = websocket.client.host if websocket.client else "-"
+        LOGGER.info("websocket connected: client=%s clients=%d", client_host, len(self.clients))
         await websocket.send_json(self.snapshot())
         try:
             while True:
@@ -321,6 +323,7 @@ class MarketRuntime:
             pass
         finally:
             self.clients.discard(websocket)
+            LOGGER.info("websocket disconnected: client=%s clients=%d", client_host, len(self.clients))
 
     # ------------------------------------------------------------------
     # Search
@@ -1091,6 +1094,14 @@ class MarketRuntime:
             channel = await self.agent_runs.start(session_id)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        LOGGER.info(
+            "agent stream started: identifier=%s session=%s run=%s provider=%s model=%s",
+            identifier,
+            session_id,
+            channel.run_id,
+            agent_cfg.provider,
+            agent_cfg.model,
+        )
         after_seq = _request_int(payload.get("afterSeq", payload.get("after_seq")), default=0)
         task = asyncio.create_task(
             self._run_streaming_agent_session(
@@ -1114,6 +1125,12 @@ class MarketRuntime:
                     yield sse_event(event)
             finally:
                 await self.agent_runs.unsubscribe(session_id, channel.run_id, queue)
+                LOGGER.info(
+                    "agent stream detached: identifier=%s session=%s run=%s",
+                    identifier,
+                    session_id,
+                    channel.run_id,
+                )
 
         return event_stream()
 
@@ -1188,6 +1205,12 @@ class MarketRuntime:
                     "state": self.snapshot(),
                 })
             await self.agent_runs.finish(session_id, run_id, error=error_message)
+            LOGGER.info(
+                "agent stream finished: session=%s run=%s error=%s",
+                session_id,
+                run_id,
+                bool(error_message),
+            )
 
     # ------------------------------------------------------------------
     # Candle loading
