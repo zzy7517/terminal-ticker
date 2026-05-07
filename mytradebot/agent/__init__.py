@@ -3,14 +3,12 @@ from __future__ import annotations
 
 from . import provider as _provider
 from .provider import (
-    AgentAnalysisResult,
     LLMProvider,
     LLMProviderError,
     LLMProviderUnavailable,
     build_agent_context,
     create_llm_provider,
     list_available_agent_models,
-    _result_from_text,
 )
 from .loop import AgentLoop, ChatResponse, LoopResult, LoopStep
 from .runtime import AgentRuntime, AgentRuntimeServices, ToolPack
@@ -54,7 +52,6 @@ for _name in dir(_provider):
         globals().setdefault(_name, getattr(_provider, _name))
 
 __all__ = [
-    "AgentAnalysisResult",
     "AgentLoop",
     "AgentRuntime",
     "AgentRuntimeServices",
@@ -96,5 +93,4 @@ __all__ = [
     "DEFAULT_AGENT_MODEL_REGISTRY",
     "_codex_request_headers",
     "_read_codex_cli_credentials",
-    "_result_from_text",
 ]

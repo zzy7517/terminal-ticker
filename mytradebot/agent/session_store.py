@@ -64,14 +64,14 @@ class AgentSessionSummary:
 
 @dataclass(frozen=True)
 class AgentMessage:
-    """说明：封装一个会话中的用户或 assistant 消息。"""
+    """说明：封装一个会话中的 transcript 消息。"""
 
     id: int
     session_id: str
     role: str
     content: str
     created_at: str
-    analysis: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
     context: dict[str, Any] | None = None
     error: str | None = None
 
@@ -83,7 +83,7 @@ class AgentMessage:
             "role": self.role,
             "content": self.content,
             "createdAt": self.created_at,
-            "analysis": self.analysis,
+            "metadata": self.metadata,
             "error": self.error,
         }
         if include_context:
@@ -298,16 +298,18 @@ class AgentSessionStore:
         session_id: str,
         role: str,
         content: str,
-        analysis: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
         error: str | None = None,
     ) -> AgentMessage:
         """说明：追加一条会话消息并刷新会话更新时间。"""
         role_value = role.strip().lower()
-        if role_value not in {"user", "assistant", "system"}:
-            raise ValueError("agent message role must be user, assistant, or system")
+        if role_value == "toolresult":
+            role_value = "toolResult"
+        if role_value not in {"user", "assistant", "system", "toolResult"}:
+            raise ValueError("agent message role must be user, assistant, system, or toolResult")
         now = time.time()
-        analysis_json = _json_dumps(analysis) if analysis is not None else None
+        metadata_json = _json_dumps(metadata) if metadata is not None else None
         context_json = _json_dumps(context) if context is not None else None
         with self._connect() as connection:
             cursor = connection.execute(
@@ -317,7 +319,7 @@ class AgentSessionStore:
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (session_id, role_value, content, now, analysis_json, context_json, error),
+                (session_id, role_value, content, now, metadata_json, context_json, error),
             )
             connection.execute(
                 "UPDATE agent_sessions SET updated_at = ? WHERE id = ?",
@@ -493,19 +495,33 @@ class AgentSessionStore:
         messages = self.list_messages(session_id, limit=limit)
         history: list[dict[str, Any]] = []
         for message in messages:
+            if message.role == "toolResult":
+                metadata = message.metadata or {}
+                history.append({
+                    "role": "tool",
+                    "tool_call_id": str(metadata.get("toolCallId") or ""),
+                    "content": message.content,
+                })
+                continue
             item: dict[str, Any] = {
                 "role": message.role,
                 "content": message.content,
                 "created_at": message.created_at,
             }
-            if message.analysis:
-                item["analysis"] = {
-                    "summary": message.analysis.get("summary"),
-                    "bias": message.analysis.get("bias"),
-                    "confidence": message.analysis.get("confidence"),
-                    "invalidation": message.analysis.get("invalidation"),
-                    "watch_plan": message.analysis.get("watchPlan") or message.analysis.get("watch_plan"),
-                }
+            tool_calls = (message.metadata or {}).get("toolCalls")
+            if message.role == "assistant" and isinstance(tool_calls, list) and tool_calls:
+                item["tool_calls"] = [
+                    {
+                        "id": str(call.get("id") or ""),
+                        "type": "function",
+                        "function": {
+                            "name": str(call.get("name") or ""),
+                            "arguments": _json_dumps(call.get("arguments") or {}),
+                        },
+                    }
+                    for call in tool_calls
+                    if isinstance(call, dict)
+                ]
             if message.error:
                 item["error"] = message.error
             history.append(item)
@@ -536,7 +552,7 @@ def _message_from_row(row: sqlite3.Row) -> AgentMessage:
         role=str(row["role"]),
         content=str(row["content"]),
         created_at=_iso_from_timestamp(float(row["created_at"])),
-        analysis=_json_loads(row["analysis_json"]),
+        metadata=_json_loads(row["analysis_json"]),
         context=_json_loads(row["context_json"]),
         error=str(row["error"]) if row["error"] is not None else None,
     )

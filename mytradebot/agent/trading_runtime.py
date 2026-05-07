@@ -3,14 +3,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from ..config import AgentConfig
 from ..domain.quotes import QuoteState
 from ..market_data.router import MarketInstrument
 from ..trading import TradeStore
-from .loop import AgentLLMProvider, LoopResult
-from .provider import AgentAnalysisResult, _result_from_text, build_agent_context
+from .loop import AgentEventHandler, AgentLLMProvider, LoopResult
+from .provider import build_agent_context
 from .runtime import AgentRuntime, AgentRuntimeServices, ToolPack
 from .tools import (
     build_market_tools,
@@ -37,15 +38,21 @@ class TradingAgentRuntimeServices:
 class TradingAgentTurnResult:
     """Result of one trading-domain agent turn."""
 
-    analysis: AgentAnalysisResult
     loop_result: LoopResult
     context: dict[str, Any]
+    provider: AgentLLMProvider
 
     def to_payload(self) -> dict[str, Any]:
         """Return the API payload shape used by the frontend."""
-        payload = self.analysis.to_payload()
-        payload["loopResult"] = self.loop_result.to_payload()
-        return payload
+        return {
+            "available": self.loop_result.finished,
+            "provider": str(getattr(self.provider, "name", "")),
+            "model": str(getattr(self.provider, "model", "")),
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+            "content": self.loop_result.content,
+            "error": self.loop_result.error,
+            "loopResult": self.loop_result.to_payload(),
+        }
 
 
 class TradingAgentRuntime:
@@ -71,6 +78,7 @@ class TradingAgentRuntime:
         user_prompt: str,
         history: tuple[dict[str, Any], ...],
         analysis_interval: str,
+        event_handler: AgentEventHandler | None = None,
     ) -> TradingAgentTurnResult:
         """Run one trading analysis turn with the current market snapshot."""
         context = build_agent_context(
@@ -95,11 +103,12 @@ class TradingAgentRuntime:
                 history,
                 current_user_prompt=user_prompt,
             ),
+            event_handler=event_handler,
         )
         return TradingAgentTurnResult(
-            analysis=_analysis_from_loop_result(loop_result, self.provider),
             loop_result=loop_result,
             context=context,
+            provider=self.provider,
         )
 
     def _tool_packs(self, session_id: str) -> tuple[ToolPack, ...]:
@@ -151,30 +160,6 @@ class TradingAgentRuntime:
             f"{bullets}\n"
             "在给出计划和开单前请参考上述教训，避免重复错误。\n"
         )
-
-
-def _analysis_from_loop_result(
-    loop_result: LoopResult,
-    provider: AgentLLMProvider,
-) -> AgentAnalysisResult:
-    if loop_result.finished and not loop_result.content.strip():
-        return AgentAnalysisResult.unavailable(
-            provider=provider.name,
-            model=provider.model,
-            error="Agent returned no output text.",
-        )
-    if loop_result.finished:
-        return _result_from_text(
-            loop_result.content,
-            provider=provider.name,
-            model=provider.model,
-        )
-    return AgentAnalysisResult.unavailable(
-        provider=provider.name,
-        model=provider.model,
-        error=loop_result.error or "Agent loop did not finish.",
-        raw_text=loop_result.content or None,
-    )
 
 
 def _history_without_current_turn(

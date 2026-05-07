@@ -15,7 +15,6 @@ from mytradebot.agent import (
     build_market_tools,
     _codex_request_headers,
     _read_codex_cli_credentials,
-    _result_from_text,
 )
 from mytradebot.agent.providers.codex import _collect_response_stream_full, _messages_to_codex_input
 
@@ -29,36 +28,6 @@ def _fake_jwt(claims: dict) -> str:
 
 class AgentTests(unittest.TestCase):
     """Group tests for agent provider support."""
-
-    def test_parse_agent_result_from_json_text(self) -> None:
-        """Verify strict JSON agent output is normalized."""
-        result = _result_from_text(
-            json.dumps(
-                {
-                    "summary": "Breakout is developing.",
-                    "bias": "bullish",
-                    "confidence": 72,
-                    "key_levels": [{"label": "support", "price": "198.5", "reason": "prior low"}],
-                    "watch_plan": ["Watch retest."],
-                    "invalidation": "Lose 198.5",
-                    "risk_notes": ["Not financial advice."],
-                }
-            ),
-            provider="codex",
-            model="gpt-test",
-        )
-
-        self.assertTrue(result.available)
-        self.assertEqual(result.bias, "bullish")
-        self.assertEqual(result.confidence, 72)
-        self.assertEqual(result.key_levels[0]["price"], 198.5)
-
-    def test_invalid_agent_result_is_unavailable(self) -> None:
-        """Verify non-JSON model output degrades safely."""
-        result = _result_from_text("not json", provider="codex", model="gpt-test")
-
-        self.assertFalse(result.available)
-        self.assertIn("JSON", result.error)
 
     def test_read_codex_cli_credentials_from_codex_home(self) -> None:
         """Verify provider reads Codex CLI auth.json directly."""
@@ -248,13 +217,19 @@ class AgentTests(unittest.TestCase):
                 session_id=session.id,
                 role="assistant",
                 content="Trend is constructive.",
-                analysis={
-                    "summary": "Trend is constructive.",
-                    "bias": "bullish",
-                    "confidence": 70,
-                    "watchPlan": ["Wait for a pullback."],
-                    "invalidation": "Lose 200.",
+                metadata={
+                    "toolCalls": [{
+                        "id": "call_1",
+                        "name": "get_candles",
+                        "arguments": {"interval": "5m"},
+                    }],
                 },
+            )
+            store.append_message(
+                session_id=session.id,
+                role="toolResult",
+                content='{"candles":[]}',
+                metadata={"toolCallId": "call_1", "toolName": "get_candles", "error": False},
             )
 
             reopened = AgentSessionStore(path)
@@ -292,9 +267,10 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(payload["session"]["id"], session.id)
         self.assertEqual(payload["session"]["apiMode"], "codex_responses")
         self.assertEqual(payload["session"]["reasoningEffort"], "medium")
-        self.assertEqual([message["role"] for message in payload["messages"]], ["user", "assistant"])
-        self.assertEqual(payload["messages"][1]["analysis"]["summary"], "Trend is constructive.")
-        self.assertEqual(history[-1]["analysis"]["watch_plan"], ["Wait for a pullback."])
+        self.assertEqual([message["role"] for message in payload["messages"]], ["user", "assistant", "toolResult"])
+        self.assertEqual(payload["messages"][1]["metadata"]["toolCalls"][0]["name"], "get_candles")
+        self.assertEqual(history[-1]["role"], "tool")
+        self.assertEqual(history[-1]["tool_call_id"], "call_1")
         self.assertEqual(refreshed_session.id, session.id)
         self.assertEqual(refreshed_session.model, "gpt-next")
         self.assertEqual(refreshed_session.reasoning_effort, "high")
@@ -302,7 +278,7 @@ class AgentTests(unittest.TestCase):
         self.assertFalse(previous_payload["session"]["active"])
         self.assertEqual(len(history_rows), 2)
         self.assertEqual(history_rows[1].preview, "How does this K-line window look?")
-        self.assertEqual(history_rows[1].message_count, 2)
+        self.assertEqual(history_rows[1].message_count, 3)
         self.assertEqual(resumed.id, session.id)
         self.assertEqual(active_after_delete.id, next_session.id)
         self.assertIsNone(deleted_payload)

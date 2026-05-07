@@ -70,15 +70,16 @@ import {
   saveSocialAuth,
   saveSocialFeedConfig,
   searchInstruments,
-  sendAgentMessage,
+  streamAgentMessage,
   clearSocialAuth,
   triggerNewsRefresh,
   triggerXFollowingRefresh,
   triggerTradeReview,
 } from './api';
 import type {
-  AgentAnalysis,
   AgentMessage,
+  AgentStreamEvent,
+  AgentToolCall,
   AgentModelOption,
   AgentSessionResponse,
   AgentSessionSummary,
@@ -88,7 +89,6 @@ import type {
   Instrument,
   InstrumentSearchResult,
   Lesson,
-  LoopStep,
   MarketState,
   NewsConfigUpdate,
   NewsDecision,
@@ -1626,113 +1626,102 @@ function WatchlistSettingsPanel({
   );
 }
 
-// Renders agent text without depending on the provider's structured fields.
-function AgentAnalysisBlock({ analysis }: { analysis: AgentAnalysis }) {
-  const text = readableAgentText(analysis);
-  return (
-    <>
-      {analysis.loopResult && <AgentLoopSteps steps={analysis.loopResult.steps} />}
-      <p className="session-message-text">{text}</p>
-    </>
-  );
-}
-
-// Renders every visible step from an agent loop iteration.
-function AgentLoopSteps({ steps }: { steps: LoopStep[] }) {
-  if (steps.length === 0) return null;
-
-  return (
-    <div className="agent-tool-steps">
-      {steps.map((step, index) => (
-        <div key={index} className="agent-tool-step">
-          <div className="tool-step-summary">
-            <Zap size={12} />
-            <span className="tool-name">{loopStepLabel(step)}</span>
-            {step.toolResult?.error && <span className="tool-error-badge">error</span>}
-          </div>
-          <div className="tool-step-detail">
-            {step.toolCall?.arguments && Object.keys(step.toolCall.arguments).length > 0 && (
-              <div className="tool-args">
-                <small>Arguments</small>
-                <pre>{JSON.stringify(step.toolCall.arguments, null, 2)}</pre>
-              </div>
-            )}
-            {step.toolResult && (
-              <div className={`tool-output ${step.toolResult.error ? 'error' : ''}`}>
-                <small>Output</small>
-                <pre>{step.toolResult.output}</pre>
-              </div>
-            )}
-            {step.stepType === 'assistant' && step.content && (
-              <div className="tool-output">
-                <small>Assistant response</small>
-                <pre>{readableLoopContent(step.content)}</pre>
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function loopStepLabel(step: LoopStep) {
-  if (step.stepType === 'tool_call') return `call ${step.toolCall?.name ?? 'tool'}`;
-  if (step.stepType === 'tool_result') return `result ${step.toolResult?.name ?? 'tool'}`;
-  return 'assistant response';
-}
-
 // Renders one persisted chat turn in the chart-agent transcript.
-function AgentTranscriptMessage({ message }: { message: AgentMessage }) {
-  const analysis = message.analysis;
+function AgentTranscriptMessage({
+  message,
+  pendingToolCalls,
+  toolResultsById,
+}: {
+  message: AgentMessage;
+  pendingToolCalls: Set<string>;
+  toolResultsById: Map<string, AgentMessage>;
+}) {
+  if (message.role === 'toolResult') return null;
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
-  const content = analysis ? readableAgentText(analysis) : message.error || message.content || 'No content.';
+  const content = message.error || message.content || (message.role === 'assistant' ? '' : 'No content.');
+  const toolCalls = message.role === 'assistant' ? message.metadata?.toolCalls ?? [] : [];
   return (
     <div className={`session-message ${message.role}`}>
       <div className="session-message-head">
         <span>{label}</span>
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
       </div>
-      {message.role === 'assistant' && analysis ? (
-        <>
-          {analysis.loopResult && <AgentLoopSteps steps={analysis.loopResult.steps} />}
-          <p className="session-message-text">{content}</p>
-        </>
-      ) : (
-        <p className="session-message-text">{content}</p>
+      {content && <p className="session-message-text">{content}</p>}
+      {toolCalls.length > 0 && (
+        <AgentToolCalls
+          pendingToolCalls={pendingToolCalls}
+          toolCalls={toolCalls}
+          toolResultsById={toolResultsById}
+        />
       )}
     </div>
   );
 }
 
-function readableAgentText(analysis: AgentAnalysis) {
-  return analysis.displayText || analysis.summary || analysis.error || readableLoopContent(analysis.rawText) || 'Agent response unavailable.';
+function AgentToolCalls({
+  pendingToolCalls,
+  toolCalls,
+  toolResultsById,
+}: {
+  pendingToolCalls: Set<string>;
+  toolCalls: AgentToolCall[];
+  toolResultsById: Map<string, AgentMessage>;
+}) {
+  return (
+    <div className="agent-tool-steps">
+      {toolCalls.map((call) => {
+        const result = toolResultsById.get(call.id);
+        const isPending = pendingToolCalls.has(call.id) && !result;
+        return (
+          <div key={call.id} className="agent-tool-step">
+            <div className="tool-step-summary">
+              <Zap size={12} />
+              <span className="tool-name">call {call.name}</span>
+              {isPending && <span className="tool-pending-badge">running</span>}
+              {result?.metadata?.error && <span className="tool-error-badge">error</span>}
+            </div>
+            <div className="tool-step-detail">
+              {Object.keys(call.arguments ?? {}).length > 0 && (
+                <div className="tool-args">
+                  <small>Arguments</small>
+                  <pre>{JSON.stringify(call.arguments, null, 2)}</pre>
+                </div>
+              )}
+              {result && (
+                <div className={`tool-output ${result.metadata?.error ? 'error' : ''}`}>
+                  <small>Output</small>
+                  <pre>{result.content}</pre>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
-function readableLoopContent(content: string | null | undefined) {
-  if (!content) return '';
-  try {
-    const payload = JSON.parse(content);
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return content;
-    const parts: string[] = [];
-    if (typeof payload.summary === 'string' && payload.summary.trim()) {
-      parts.push(payload.summary.trim());
-    }
-    const bias = typeof payload.bias === 'string' ? payload.bias : '';
-    const confidence = Number.isFinite(Number(payload.confidence)) ? Number(payload.confidence) : null;
-    if (bias || confidence !== null) {
-      parts.push(`Bias: ${bias || 'neutral'}${confidence !== null ? ` · Confidence: ${confidence}%` : ''}`);
-    }
-    if (Array.isArray(payload.watch_plan) && payload.watch_plan.length > 0) {
-      parts.push(`Watch plan:\n${payload.watch_plan.map((item: unknown) => `- ${String(item)}`).join('\n')}`);
-    }
-    if (typeof payload.invalidation === 'string' && payload.invalidation.trim()) {
-      parts.push(`Invalidation: ${payload.invalidation.trim()}`);
-    }
-    return parts.join('\n\n') || content;
-  } catch {
-    return content;
-  }
+function upsertAgentMessage(messages: AgentMessage[], message: AgentMessage) {
+  const index = messages.findIndex((item) => item.id === message.id);
+  if (index < 0) return [...messages, message];
+  const next = messages.slice();
+  next[index] = { ...next[index], ...message };
+  return next;
+}
+
+function streamMessageToAgentMessage(
+  raw: Extract<AgentStreamEvent, { message: unknown }>['message'],
+  fallback: { id: number; sessionId: string; createdAt: string },
+): AgentMessage {
+  return {
+    id: typeof raw.id === 'number' ? raw.id : fallback.id,
+    sessionId: typeof raw.sessionId === 'string' ? raw.sessionId : fallback.sessionId,
+    role: raw.role,
+    content: raw.content,
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : fallback.createdAt,
+    metadata: raw.metadata ?? null,
+    error: raw.error ?? null,
+  };
 }
 
 // Renders persisted chart-agent session rows with restore/delete actions.
@@ -1828,12 +1817,12 @@ function AgentSessionHistoryList({
 
 // Renders the active per-instrument chart-agent session and compose box.
 function AgentSessionPanel({
-  analysis,
   session,
   prompt,
   sessionActionKey,
   sessionLoading,
   busy,
+  pendingToolCalls,
   disabled,
   selectedProvider,
   selectedModel,
@@ -1844,12 +1833,12 @@ function AgentSessionPanel({
   onSend,
   onReset,
 }: {
-  analysis: AgentAnalysis | undefined;
   session: AgentSessionResponse | null;
   prompt: string;
   sessionActionKey: string | null;
   sessionLoading: boolean;
   busy: boolean;
+  pendingToolCalls: Set<string>;
   disabled: boolean;
   selectedProvider: string;
   selectedModel: string;
@@ -1864,6 +1853,17 @@ function AgentSessionPanel({
   const [modelPickerSearch, setModelPickerSearch] = useState('');
   const pickerRef = useRef<HTMLDivElement>(null);
   const messages = session?.messages ?? [];
+  const toolResultsById = useMemo(() => {
+    const results = new Map<string, AgentMessage>();
+    for (const message of messages) {
+      if (message.role !== 'toolResult') continue;
+      const callId = message.metadata?.toolCallId;
+      if (typeof callId === 'string' && callId) {
+        results.set(callId, message);
+      }
+    }
+    return results;
+  }, [messages]);
   const canSend = !disabled && !busy && !sessionLoading && !sessionActionKey;
   const sessionTime = session?.session
     ? new Date(session.session.updatedAt).toLocaleTimeString()
@@ -1902,7 +1902,7 @@ function AgentSessionPanel({
         <span className="agent-bias neutral">{busy ? 'running' : 'idle'}</span>
       </div>
       <div className="session-toolbar">
-        <span>{session?.session?.model ?? analysis?.model ?? '-'}</span>
+        <span>{session?.session?.model ?? selectedModel ?? '-'}</span>
         <small>{sessionLoading ? 'Loading' : sessionTime}</small>
         <button
           aria-label="Start new agent session"
@@ -1993,18 +1993,14 @@ function AgentSessionPanel({
           </div>
         )}
         {!sessionLoading && messages.map((message) => (
-          <AgentTranscriptMessage key={message.id} message={message} />
+          <AgentTranscriptMessage
+            key={message.id}
+            message={message}
+            pendingToolCalls={pendingToolCalls}
+            toolResultsById={toolResultsById}
+          />
         ))}
-        {!sessionLoading && messages.length === 0 && analysis && (
-          <div className="session-message assistant">
-            <div className="session-message-head">
-              <span>Latest</span>
-              <time>{new Date(analysis.updatedAt).toLocaleTimeString()}</time>
-            </div>
-            <AgentAnalysisBlock analysis={analysis} />
-          </div>
-        )}
-        {!sessionLoading && messages.length === 0 && !analysis && (
+        {!sessionLoading && messages.length === 0 && (
           <div className="session-empty">
             <History size={16} />
             <span>No turns in this chart session.</span>
@@ -2043,7 +2039,6 @@ function WorkspaceView({
   selectedKey,
   selectedInstrument,
   selectedQuote,
-  selectedAgent,
   theme,
   agentSession,
   agentSessionHistory,
@@ -2051,6 +2046,7 @@ function WorkspaceView({
   agentProvider,
   agentModel,
   agentBusyKey,
+  pendingToolCalls,
   agentSessionActionKey,
   agentSessionHistoryLoading,
   agentSessionLoading,
@@ -2082,7 +2078,6 @@ function WorkspaceView({
   selectedKey: string | null;
   selectedInstrument: Instrument | undefined;
   selectedQuote: Quote | undefined;
-  selectedAgent: AgentAnalysis | undefined;
   theme: ThemeName;
   agentSession: AgentSessionResponse | null;
   agentSessionHistory: AgentSessionSummary[];
@@ -2090,6 +2085,7 @@ function WorkspaceView({
   agentProvider: string;
   agentModel: string;
   agentBusyKey: string | null;
+  pendingToolCalls: Set<string>;
   agentSessionActionKey: string | null;
   agentSessionHistoryLoading: boolean;
   agentSessionLoading: boolean;
@@ -2363,12 +2359,12 @@ function WorkspaceView({
           {activeTab === 'agent' && (
             <div className="agent-tab-layout">
               <AgentSessionPanel
-                analysis={selectedAgent}
                 session={agentSession}
                 prompt={agentPrompt}
                 sessionActionKey={agentSessionActionKey}
                 sessionLoading={agentSessionLoading}
                 busy={agentBusyKey === selectedKey}
+                pendingToolCalls={pendingToolCalls}
                 disabled={!selectedKey || !selectedQuote?.candles.length}
                 selectedProvider={agentProvider}
                 selectedModel={agentModel}
@@ -3419,6 +3415,8 @@ export default function App() {
   const [agentSessionActionKey, setAgentSessionActionKey] = useState<string | null>(null);
   const [agentSession, setAgentSession] = useState<AgentSessionResponse | null>(null);
   const [agentSessionHistory, setAgentSessionHistory] = useState<AgentSessionSummary[]>([]);
+  const [pendingToolCalls, setPendingToolCalls] = useState<Set<string>>(() => new Set());
+  const streamMessageIdsRef = useRef<Map<string, number>>(new Map());
   const [agentPrompt, setAgentPrompt] = useState('');
   const [agentProvider, setAgentProvider] = useState<string>(
     () => state?.config.agent.provider ?? AGENT_PROVIDER_OPTIONS[0].provider,
@@ -3523,7 +3521,6 @@ export default function App() {
 
   const selectedInstrument = state?.instruments.find((instrument) => instrument.key === selectedKey);
   const selectedQuote = selectedKey ? state?.quotes[selectedKey] : undefined;
-  const selectedAgent = selectedKey ? state?.agentAnalyses[selectedKey] : undefined;
   const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
   const historyKey = selectedKey ? `${selectedKey}:${currentInterval}` : null;
   const selectedAgentSession =
@@ -3637,45 +3634,111 @@ export default function App() {
   // Sends the current prompt to the selected instrument's active agent session.
   async function runAgentAnalysis() {
     if (!selectedKey) return;
-    setAgentBusyKey(selectedKey);
+    const key = selectedKey;
+    setAgentBusyKey(key);
+    setPendingToolCalls(new Set());
+    streamMessageIdsRef.current.clear();
     try {
-      const payload = await sendAgentMessage(selectedKey, agentPrompt, {
-        provider: agentProvider,
-        model: agentModel,
-      });
-      setState(payload.state);
-      setAgentSession(payload.session);
-      setAgentSessionHistory(payload.history.sessions);
+      await streamAgentMessage(
+        key,
+        agentPrompt,
+        {
+          provider: agentProvider,
+          model: agentModel,
+        },
+        (event) => {
+          if (event.type === 'tool_execution_start') {
+            setPendingToolCalls((current) => {
+              const next = new Set(current);
+              next.add(event.toolCall.id);
+              return next;
+            });
+            return;
+          }
+          if (event.type === 'tool_execution_end') {
+            setPendingToolCalls((current) => {
+              const next = new Set(current);
+              next.delete(event.toolCall.id);
+              return next;
+            });
+            return;
+          }
+          if (event.type === 'message_start' || event.type === 'message_update' || event.type === 'message_end') {
+            const raw = event.message;
+            const clientId = raw.clientId;
+            let fallbackId = typeof raw.id === 'number' ? raw.id : 0;
+            if (!fallbackId) {
+              if (clientId && streamMessageIdsRef.current.has(clientId)) {
+                fallbackId = streamMessageIdsRef.current.get(clientId) ?? 0;
+              } else {
+                fallbackId = -Date.now() - streamMessageIdsRef.current.size;
+                if (clientId) streamMessageIdsRef.current.set(clientId, fallbackId);
+              }
+            }
+            const createdAt = new Date().toISOString();
+            setAgentSession((current) => {
+              const session = current ?? { session: null, messages: [] };
+              const message = streamMessageToAgentMessage(raw, {
+                id: fallbackId,
+                sessionId: session.session?.id ?? '',
+                createdAt,
+              });
+              return {
+                ...session,
+                messages: upsertAgentMessage(session.messages, message),
+              };
+            });
+            return;
+          }
+          if (event.type === 'session_update') {
+            setState(event.state);
+            setAgentSession(event.session);
+            setAgentSessionHistory(event.history.sessions);
+            setPendingToolCalls(new Set());
+            streamMessageIdsRef.current.clear();
+            return;
+          }
+          if (event.type === 'error') {
+            const createdAt = new Date().toISOString();
+            setAgentSession((current) => {
+              const session = current ?? { session: null, messages: [] };
+              const message: AgentMessage = {
+                id: -Date.now(),
+                sessionId: session.session?.id ?? '',
+                role: 'assistant',
+                content: event.error,
+                createdAt,
+                metadata: null,
+                error: event.error,
+              };
+              return {
+                ...session,
+                messages: upsertAgentMessage(session.messages, message),
+              };
+            });
+          }
+        },
+      );
       setAgentPrompt('');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'agent analysis failed';
-      const fallback: AgentAnalysis = {
-        available: false,
-        provider: agentProvider,
-        model: agentModel,
-        updatedAt: new Date().toISOString(),
-        summary: '',
-        bias: 'neutral',
-        confidence: 0,
-        keyLevels: [],
-        watchPlan: [],
-        invalidation: '',
-        riskNotes: [],
-        error: message,
-        rawText: null,
-      };
-      setState((current) =>
-        current && selectedKey
-          ? {
-              ...current,
-              agentAnalyses: {
-                ...current.agentAnalyses,
-                [selectedKey]: fallback,
-              },
-            }
-          : current,
-      );
+      setAgentSession((current) => {
+        const session = current ?? { session: null, messages: [] };
+        return {
+          ...session,
+          messages: upsertAgentMessage(session.messages, {
+            id: -Date.now(),
+            sessionId: session.session?.id ?? '',
+            role: 'assistant',
+            content: message,
+            createdAt: new Date().toISOString(),
+            metadata: null,
+            error: message,
+          }),
+        };
+      });
     } finally {
+      setPendingToolCalls(new Set());
       setAgentBusyKey(null);
     }
   }
@@ -3774,7 +3837,6 @@ export default function App() {
       selectedKey={selectedKey}
       selectedInstrument={selectedInstrument}
       selectedQuote={selectedQuote}
-      selectedAgent={selectedAgent}
       theme={theme}
       agentSession={selectedAgentSession}
       agentSessionHistory={selectedAgentSessionHistory}
@@ -3782,6 +3844,7 @@ export default function App() {
       agentProvider={agentProvider}
       agentModel={agentModel}
       agentBusyKey={agentBusyKey}
+      pendingToolCalls={pendingToolCalls}
       agentSessionActionKey={agentSessionActionKey}
       agentSessionHistoryLoading={agentSessionHistoryLoadingKey === selectedKey}
       agentSessionLoading={agentSessionLoadingKey === selectedKey}

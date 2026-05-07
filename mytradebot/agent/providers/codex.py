@@ -1,7 +1,7 @@
-"""Codex provider for the mytradebot analysis agent.
+"""Codex provider for the mytradebot transcript agent.
 
-本模块负责把本地生成的结构化行情上下文发送给 Codex 后端，并把返回文本
-转换成项目通用的 ``AgentAnalysisResult``。它的职责边界比较窄：
+本模块负责把 agent transcript 和工具 schema 发送给 Codex 后端，并把流式文本
+和工具调用转换成通用 ``ChatResponse``。它的职责边界比较窄：
 
 - 凭证解析：优先读取 ``MYTRADEBOT_CODEX_API_KEY`` / ``CODEX_API_KEY``，
   缺省时复用 Codex CLI 写入的 ``~/.codex/auth.json`` 登录态。
@@ -31,14 +31,8 @@ from ...config.agent_models import (
     DEFAULT_CODEX_BASE_URL,
     resolve_agent_model,
 )
-from ..loop import ChatResponse, ToolCall as LoopToolCall
-from ..provider import (
-    AGENT_INSTRUCTIONS,
-    AgentAnalysisResult,
-    LLMProviderError,
-    LLMProviderUnavailable,
-    _result_from_text,
-)
+from ..loop import ChatResponse, StreamDeltaHandler, ToolCall as LoopToolCall
+from ..provider import LLMProviderError, LLMProviderUnavailable
 
 CODEX_ENV_API_KEYS = ("MYTRADEBOT_CODEX_API_KEY", "CODEX_API_KEY")
 DEFAULT_CODEX_TIMEOUT_SECONDS = 45.0
@@ -71,109 +65,11 @@ class CodexProvider:
             raise LLMProviderUnavailable(f"Unsupported Codex api_mode: {self.profile.api_mode}")
         self.model = self.profile.model
 
-    async def analyze(self, context: dict[str, Any]) -> AgentAnalysisResult:
-        """分析一次结构化行情上下文，并把异常降级为 unavailable 结果。
-
-        Args:
-            context: 已由 API 层组装好的行情/策略上下文，必须可被 JSON 序列化。
-
-        Returns:
-            ``AgentAnalysisResult``。成功时来自 Codex 输出文本解析；凭证缺失、
-            HTTP 错误、流式事件错误或空输出都会转换成 unavailable，避免实时
-            ticker 运行循环因为单次 LLM 调用失败而中断。
-        """
-        try:
-            credentials = _resolve_codex_credentials()
-            response_data = await self._request_analysis(credentials, context)
-            text = _extract_response_text(response_data)
-            if not text:
-                return AgentAnalysisResult.unavailable(
-                    provider=self.name,
-                    model=self.model,
-                    error="Codex returned no output text.",
-                )
-            return _result_from_text(text, provider=self.name, model=self.model)
-        except LLMProviderUnavailable as exc:
-            return AgentAnalysisResult.unavailable(
-                provider=self.name,
-                model=self.model,
-                error=str(exc),
-            )
-        except Exception as exc:
-            return AgentAnalysisResult.unavailable(
-                provider=self.name,
-                model=self.model,
-                error=str(exc) or exc.__class__.__name__,
-            )
-
-    async def _request_analysis(
-        self,
-        credentials: dict[str, str],
-        context: dict[str, Any],
-    ) -> dict[str, Any]:
-        """调用 Codex Responses 风格的流式分析接口。
-
-        请求体把系统分析指令放在 ``instructions``，把结构化行情上下文压缩成
-        单个 ``input_text``。这里显式使用 ``stream=True``，因为当前后端集成
-        依赖 SSE 事件中的 ``response.output_text.delta`` / ``done`` 文本。
-
-        Args:
-            credentials: ``_resolve_codex_credentials`` 返回的凭证字典，至少包含
-                ``api_key``，可能包含 ``account_id``。
-            context: 要发送给模型的结构化行情上下文。
-
-        Returns:
-            包含 ``output_text`` 的字典，形状与非流式 Responses 常见返回保持接近，
-            方便复用 ``_extract_response_text``。
-
-        Raises:
-            LLMProviderError: HTTP 非 2xx、流式事件报告失败或错误事件时抛出。
-        """
-        api_root = DEFAULT_CODEX_BASE_URL.rstrip("/")
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "instructions": AGENT_INSTRUCTIONS,
-            "input": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": json.dumps(context, ensure_ascii=False, separators=(",", ":")),
-                        }
-                    ],
-                }
-            ],
-            "store": False,
-            "stream": True,
-            "reasoning": {
-                "effort": self.profile.reasoning_effort,
-                "summary": "auto",
-            },
-        }
-        headers = {
-            "Authorization": f"Bearer {credentials['api_key']}",
-            "Content-Type": "application/json",
-            **_codex_request_headers(credentials["api_key"], credentials.get("account_id")),
-        }
-        timeout = httpx.Timeout(DEFAULT_CODEX_TIMEOUT_SECONDS)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream(
-                "POST",
-                f"{api_root}/responses",
-                json=payload,
-                headers=headers,
-            ) as response:
-                if response.status_code >= 400:
-                    body = (await response.aread()).decode(errors="replace")
-                    raise LLMProviderError(_response_error_message(response.status_code, body))
-                output_text = await _collect_response_stream_text(response)
-        return {"output_text": output_text}
-
     async def chat(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        on_delta: StreamDeltaHandler | None = None,
     ) -> ChatResponse:
         """Agent loop 用的 chat 接口，走 Codex Responses API 并支持 tool calling。"""
         credentials = _resolve_codex_credentials()
@@ -218,7 +114,7 @@ class CodexProvider:
                 if response.status_code >= 400:
                     body = (await response.aread()).decode(errors="replace")
                     raise LLMProviderError(_response_error_message(response.status_code, body))
-                result = await _collect_response_stream_full(response)
+                result = await _collect_response_stream_full(response, on_delta=on_delta)
 
         return result
 
@@ -252,54 +148,6 @@ class CodexProvider:
         if not isinstance(data, dict) or not isinstance(data.get("models"), list):
             raise LLMProviderError("Codex returned an invalid model list.")
         return [_codex_model_option(item) for item in data["models"] if isinstance(item, dict)]
-
-
-async def _collect_response_stream_text(response: httpx.Response) -> str:
-    """从 SSE 响应流中收集最终文本。
-
-    Codex Responses 流会按行返回 ``data: ...`` 事件。正常文本可能以 delta 形式
-    分片到达，也可能在 done 事件里给出完整文本；这里优先拼接 delta，缺省时
-    回退到 done 文本。非 JSON 行、空 data 和 ``[DONE]`` 都按协议噪声跳过。
-
-    Args:
-        response: 已建立的 httpx 流式响应对象。
-
-    Returns:
-        去除首尾空白后的模型输出文本；如果没有任何可用文本则返回空字符串。
-
-    Raises:
-        LLMProviderError: 流中出现 ``response.failed``、``response.incomplete`` 或
-        ``error`` 事件时抛出。
-    """
-    chunks: list[str] = []
-    done_text: str | None = None
-    async for line in response.aiter_lines():
-        if not line.startswith("data: "):
-            continue
-        raw_data = line.removeprefix("data: ").strip()
-        if not raw_data or raw_data == "[DONE]":
-            continue
-        try:
-            event = json.loads(raw_data)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict):
-            continue
-        event_type = event.get("type")
-        if event_type == "response.output_text.delta":
-            delta = event.get("delta")
-            if isinstance(delta, str):
-                chunks.append(delta)
-        elif event_type == "response.output_text.done":
-            text = event.get("text")
-            if isinstance(text, str):
-                done_text = text
-        elif event_type in {"response.failed", "response.incomplete", "error"}:
-            raise LLMProviderError(_event_error_message(event))
-    text = "".join(chunks).strip()
-    if text:
-        return text
-    return (done_text or "").strip()
 
 
 def _response_error_message(status_code: int, body: str) -> str:
@@ -619,7 +467,11 @@ def _render_tool_calls_for_replay(tool_calls: Any) -> str:
     return "\n".join(lines)
 
 
-async def _collect_response_stream_full(response: httpx.Response) -> ChatResponse:
+async def _collect_response_stream_full(
+    response: httpx.Response,
+    *,
+    on_delta: StreamDeltaHandler | None = None,
+) -> ChatResponse:
     """收集 Responses API 流式响应，解析文本和 tool calls。"""
     text_chunks: list[str] = []
     done_text: str | None = None
@@ -645,6 +497,8 @@ async def _collect_response_stream_full(response: httpx.Response) -> ChatRespons
             delta = event.get("delta")
             if isinstance(delta, str):
                 text_chunks.append(delta)
+                if on_delta is not None:
+                    await on_delta(delta)
         elif event_type == "response.output_text.done":
             text = event.get("text")
             if isinstance(text, str):
@@ -714,6 +568,8 @@ async def _collect_response_stream_full(response: httpx.Response) -> ChatRespons
         ))
 
     text = "".join(text_chunks).strip() or (done_text or "").strip()
+    if on_delta is not None and done_text and not text_chunks:
+        await on_delta(done_text)
 
     return ChatResponse(
         content=text if text else None,
@@ -748,36 +604,3 @@ def _function_call_item_key(item: dict[str, Any], event: dict[str, Any]) -> str:
     return ""
 
 
-def _extract_response_text(data: dict[str, Any]) -> str:
-    """从 Responses 风格返回结构中提取文本。
-
-    当前流式路径会传入 ``{"output_text": ...}``，但这个函数也兼容常见的非流式
-    ``output[].content`` 结构，方便将来切换请求模式或复用解析逻辑。无法识别的
-    content 会被跳过，而不是抛异常。
-
-    Args:
-        data: Responses 风格的响应数据。
-
-    Returns:
-        拼接并去除首尾空白后的文本；没有可识别文本时返回空字符串。
-    """
-    output_text = data.get("output_text")
-    if isinstance(output_text, str) and output_text.strip():
-        return output_text.strip()
-    text_parts: list[str] = []
-    output = data.get("output")
-    if isinstance(output, list):
-        for item in output:
-            if not isinstance(item, dict):
-                continue
-            content = item.get("content")
-            if isinstance(content, str):
-                text_parts.append(content)
-            elif isinstance(content, list):
-                for part in content:
-                    if not isinstance(part, dict):
-                        continue
-                    text = part.get("text")
-                    if isinstance(text, str):
-                        text_parts.append(text)
-    return "".join(text_parts).strip()

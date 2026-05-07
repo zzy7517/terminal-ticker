@@ -1,7 +1,7 @@
 import type {
-  AgentAnalysis,
   AgentConfigUpdate,
   AgentModelsResponse,
+  AgentStreamEvent,
   ProviderProfileUpdate,
   AgentSessionHistoryResponse,
   AgentSessionMutationResponse,
@@ -202,29 +202,51 @@ export async function deleteAgentSession(key: string, sessionId: string): Promis
   return response.json();
 }
 
-// Appends a user turn to the active chart-agent session and waits for the provider result.
-export async function sendAgentMessage(
+export async function streamAgentMessage(
   key: string,
   message: string,
-  options?: { provider?: string; model?: string },
-): Promise<{
-  result: AgentAnalysis;
-  session: AgentSessionResponse;
-  history: AgentSessionHistoryResponse;
-  state: MarketState;
-}> {
+  options: { provider?: string; model?: string } | undefined,
+  onEvent: (event: AgentStreamEvent) => void,
+): Promise<void> {
   const body: Record<string, string> = { message };
   if (options?.provider) body.provider = options.provider;
   if (options?.model) body.model = options.model;
-  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages`, {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw await responseError(response, 'agent message failed');
+    throw await responseError(response, 'agent stream failed');
   }
-  return response.json();
+  if (!response.body) {
+    throw new Error('agent stream failed: response body is empty');
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split('\n\n');
+    buffer = frames.pop() ?? '';
+    for (const frame of frames) {
+      const data = frame
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+      if (data) onEvent(JSON.parse(data) as AgentStreamEvent);
+    }
+  }
+  buffer += decoder.decode();
+  const data = buffer
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trimStart())
+    .join('\n');
+  if (data) onEvent(JSON.parse(data) as AgentStreamEvent);
 }
 
 // Starts a clean active chart-agent session without deleting historical sessions.

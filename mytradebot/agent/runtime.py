@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
-from .loop import AgentLLMProvider, AgentLoop, LoopResult
+from .loop import AgentEventHandler, AgentLLMProvider, AgentLoop, LoopResult
 from .tools import AfterToolHook, BeforeToolHook, ToolRegistry, merge_registries
 
 
@@ -62,7 +62,8 @@ class AgentRuntime:
         self,
         *,
         user_message: str,
-        conversation_history: list[dict[str, str]] | None = None,
+        conversation_history: list[dict[str, Any]] | None = None,
+        event_handler: AgentEventHandler | None = None,
     ) -> LoopResult:
         """Run one model/tool turn using the current runtime composition."""
         loop = AgentLoop(
@@ -74,4 +75,5 @@ class AgentRuntime:
         return await loop.run(
             user_message=user_message,
             conversation_history=conversation_history,
+            event_handler=event_handler,
         )

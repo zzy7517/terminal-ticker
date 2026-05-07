@@ -1,5 +1,3 @@
-export type Bias = 'bullish' | 'bearish' | 'neutral';
-
 export interface CandlePoint {
   time: number;
   open: number;
@@ -23,42 +21,49 @@ export interface LoopToolResult {
 }
 
 export interface LoopStep {
-  stepType: 'tool_call' | 'tool_result' | 'assistant';
+  stepType: 'tool_call' | 'tool_result';
   timestamp: number;
   toolCall?: LoopToolCall;
   toolResult?: LoopToolResult;
-  content?: string;
 }
 
 export interface LoopResult {
   content: string;
   steps: LoopStep[];
+  messages: Array<{
+    role: string;
+    content: string;
+    metadata: Record<string, unknown> | null;
+    error: string | null;
+  }>;
   iterations: number;
   totalTokens: number;
   finished: boolean;
   error: string | null;
 }
 
-export interface AgentAnalysis {
+export interface AgentResponse {
   available: boolean;
   provider: string;
   model: string;
   updatedAt: string;
-  summary: string;
-  bias: 'bullish' | 'bearish' | 'neutral' | 'mixed';
-  confidence: number;
-  keyLevels: Array<{
-    label: string;
-    price: number | null;
-    reason: string;
-  }>;
-  watchPlan: string[];
-  invalidation: string;
-  riskNotes: string[];
+  content: string;
   error: string | null;
-  rawText: string | null;
-  displayText?: string;
-  loopResult?: LoopResult;
+  loopResult: LoopResult | null;
+}
+
+export interface AgentToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface AgentMessageMetadata {
+  toolCalls?: AgentToolCall[];
+  toolCallId?: string;
+  toolName?: string;
+  error?: boolean;
+  [key: string]: unknown;
 }
 
 export interface AgentSession {
@@ -82,10 +87,10 @@ export interface AgentSessionSummary extends AgentSession {
 export interface AgentMessage {
   id: number;
   sessionId: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'toolResult';
   content: string;
   createdAt: string;
-  analysis: AgentAnalysis | null;
+  metadata: AgentMessageMetadata | null;
   error: string | null;
 }
 
@@ -103,6 +108,17 @@ export interface AgentSessionMutationResponse {
   history: AgentSessionHistoryResponse;
   state: MarketState;
 }
+
+export type AgentStreamEvent =
+  | { type: 'agent_start' }
+  | { type: 'turn_start'; iteration: number }
+  | { type: 'turn_end'; iteration: number }
+  | { type: 'message_start' | 'message_update' | 'message_end'; message: Partial<AgentMessage> & { clientId?: string; role: AgentMessage['role']; content: string; metadata?: AgentMessageMetadata | null; error?: string | null }; delta?: string }
+  | { type: 'tool_execution_start'; toolCall: AgentToolCall }
+  | { type: 'tool_execution_end'; toolCall: AgentToolCall; toolResult: LoopToolResult }
+  | { type: 'agent_end'; error: string | null }
+  | { type: 'error'; error: string }
+  | { type: 'session_update'; session: AgentSessionResponse; history: AgentSessionHistoryResponse; state: MarketState };
 
 export interface ProviderProfileState {
   enabled: boolean;
@@ -339,7 +355,7 @@ export interface MarketState {
   instruments: Instrument[];
   groups: Record<string, string[]>;
   quotes: Record<string, Quote>;
-  agentAnalyses: Record<string, AgentAnalysis>;
+  agentAnalyses: Record<string, AgentResponse>;
   openTrades: Trade[];
   exchangePositions: ExchangePosition[];
   exchangeOrders: ExchangeOrder[];

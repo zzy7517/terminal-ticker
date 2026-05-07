@@ -6,7 +6,7 @@ import json
 import logging
 import math
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -15,12 +15,11 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from ..agent import (
-    AgentAnalysisResult,
     AgentRuntimeServices,
     AgentSessionRuntime,
     AgentSessionStore,
@@ -129,6 +128,29 @@ def _agent_session_config_kwargs(config: AgentConfig) -> dict[str, Any]:
         "api_mode": config.api_mode,
         "reasoning_effort": config.reasoning_effort,
     }
+
+
+def _agent_response_payload(
+    *,
+    provider: str,
+    model: str,
+    content: str,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Build the generic agent turn response payload."""
+    return {
+        "available": error is None,
+        "provider": provider,
+        "model": model,
+        "updatedAt": _utc_now_iso(),
+        "content": content,
+        "error": error,
+        "loopResult": None,
+    }
+
+
+def _sse_event(event: dict[str, Any]) -> str:
+    return f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
 
 def _agent_tool_audit_hook(call: Any, result: Any, tool: Any) -> None:
@@ -1018,11 +1040,7 @@ class MarketRuntime:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         session_payload = await self._agent_session_payload(session.id)
-        analysis = _latest_session_analysis(session_payload)
-        if analysis is None:
-            self.agent_analyses.pop(instrument.key, None)
-        else:
-            self.agent_analyses[instrument.key] = analysis
+        self.agent_analyses.pop(instrument.key, None)
         await self.broadcast()
         return {
             "session": session_payload,
@@ -1043,14 +1061,9 @@ class MarketRuntime:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         if next_session is None:
             session_payload = {"session": None, "messages": []}
-            self.agent_analyses.pop(instrument.key, None)
         else:
             session_payload = await self._agent_session_payload(next_session.id)
-            analysis = _latest_session_analysis(session_payload)
-            if analysis is None:
-                self.agent_analyses.pop(instrument.key, None)
-            else:
-                self.agent_analyses[instrument.key] = analysis
+        self.agent_analyses.pop(instrument.key, None)
         await self.broadcast()
         return {
             "deleted": True,
@@ -1272,14 +1285,18 @@ class MarketRuntime:
         await session_runtime.append_user_message(user_prompt)
 
         if not quote.candles:
-            result = AgentAnalysisResult.unavailable(
+            payload = _agent_response_payload(
                 provider=agent_cfg.provider,
                 model=agent_cfg.model,
+                content="",
                 error="No OHLCV candles are available for this instrument yet.",
             )
-            payload = result.to_payload()
-            self.agent_analyses[instrument.key] = payload
-            await session_runtime.record_assistant_analysis(payload)
+            await session_runtime.append_transcript_message({
+                "role": "assistant",
+                "content": payload["error"],
+                "metadata": None,
+                "error": payload["error"],
+            })
             await self.broadcast()
             return {
                 "result": payload,
@@ -1290,34 +1307,14 @@ class MarketRuntime:
 
         history = await session_runtime.history_for_context(limit=8)
 
-        if hasattr(provider, "chat"):
-            return await self._run_agent_loop(
-                instrument=instrument,
-                quote=quote,
-                session_runtime=session_runtime,
-                user_prompt=user_prompt,
-                history=history,
-                agent_cfg=agent_cfg,
-            )
-
-        context = build_agent_context(
+        return await self._run_agent_loop(
             instrument=instrument,
             quote=quote,
-            interval=instrument.analysis_interval or self.config.analysis.interval,
-            max_candles=agent_cfg.max_candles,
-            session_history=history,
+            session_runtime=session_runtime,
+            user_prompt=user_prompt,
+            history=history,
+            agent_cfg=agent_cfg,
         )
-        result = await provider.analyze(context)
-        payload = result.to_payload()
-        self.agent_analyses[instrument.key] = payload
-        await session_runtime.record_assistant_analysis(payload, context=context)
-        await self.broadcast()
-        return {
-            "result": payload,
-            "session": await session_runtime.payload(),
-            "history": await session_runtime.history_payload(instrument.key),
-            "state": self.snapshot(),
-        }
 
     async def _run_agent_loop(
         self,
@@ -1328,6 +1325,7 @@ class MarketRuntime:
         user_prompt: str,
         history: tuple[dict[str, Any], ...],
         agent_cfg: AgentConfig | None = None,
+        event_handler: Callable[[dict[str, Any]], Any] | None = None,
     ) -> dict[str, Any]:
         """通过 trading domain runtime 执行带工具调用的 LLM 分析。"""
         cfg = agent_cfg or self.config.agent
@@ -1351,10 +1349,14 @@ class MarketRuntime:
             user_prompt=user_prompt,
             history=history,
             analysis_interval=instrument.analysis_interval or self.config.analysis.interval,
+            event_handler=event_handler,
         )
         payload = turn_result.to_payload()
-        self.agent_analyses[instrument.key] = payload
-        await session_runtime.record_assistant_analysis(payload)
+        await session_runtime.append_transcript_messages(
+            [message.to_payload() for message in turn_result.loop_result.messages],
+            context=turn_result.context,
+        )
+        self.agent_analyses.pop(instrument.key, None)
         await self.broadcast()
         return {
             "result": payload,
@@ -1362,6 +1364,89 @@ class MarketRuntime:
             "history": await session_runtime.history_payload(instrument.key),
             "state": self.snapshot(),
         }
+
+    async def stream_agent_message(
+        self,
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> AsyncIterator[str]:
+        """Run one agent turn and stream pi-mono style transcript events as SSE."""
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+        async def emit(event: dict[str, Any]) -> None:
+            await queue.put(event)
+
+        async def worker() -> None:
+            try:
+                message = payload.get("message", payload.get("prompt"))
+                agent_cfg = self._effective_agent_config(payload.get("provider"), payload.get("model"))
+                instrument = self._instrument_by_key(instrument_key)
+                quote = self.controller.quotes.get(instrument.key)
+                if quote is None:
+                    raise HTTPException(status_code=404, detail="Quote is not available.")
+                provider = create_llm_provider(agent_cfg)
+                session_runtime = await AgentSessionRuntime.get_or_create_active(
+                    store=self.agent_session_store,
+                    instrument_key=instrument.key,
+                    title=_agent_session_title(instrument),
+                    config=agent_cfg,
+                    provider=provider,
+                    runtime_services=AgentRuntimeServices(
+                        after_tool_hooks=(_agent_tool_audit_hook,),
+                    ),
+                )
+                user_prompt = _normalize_agent_prompt(str(message) if message is not None else None)
+                user_message = await session_runtime.append_user_message(user_prompt)
+                await emit({"type": "message_end", "message": user_message})
+
+                if not quote.candles:
+                    error = "No OHLCV candles are available for this instrument yet."
+                    assistant = await session_runtime.append_transcript_message({
+                        "role": "assistant",
+                        "content": error,
+                        "metadata": None,
+                        "error": error,
+                    })
+                    await emit({"type": "error", "error": error})
+                    await emit({"type": "message_end", "message": assistant})
+                else:
+                    history = await session_runtime.history_for_context(limit=8)
+                    await self._run_agent_loop(
+                        instrument=instrument,
+                        quote=quote,
+                        session_runtime=session_runtime,
+                        user_prompt=user_prompt,
+                        history=history,
+                        agent_cfg=agent_cfg,
+                        event_handler=emit,
+                    )
+
+                await emit({
+                    "type": "session_update",
+                    "session": await session_runtime.payload(),
+                    "history": await session_runtime.history_payload(instrument.key),
+                    "state": self.snapshot(),
+                })
+            except HTTPException as exc:
+                await emit({"type": "error", "error": str(exc.detail)})
+            except Exception as exc:
+                logger.exception("agent stream failed")
+                await emit({"type": "error", "error": str(exc) or exc.__class__.__name__})
+            finally:
+                await queue.put(None)
+
+        task = asyncio.create_task(worker())
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield _sse_event(event)
+        finally:
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 
     async def _agent_session_payload(self, session_id: str) -> dict[str, Any]:
         """说明：异步读取一个 session payload。"""
@@ -1566,22 +1651,14 @@ class MarketRuntime:
             "输出严格 JSON，字段: lesson (string), category (string), tags (array of string)。\n\n"
             f"{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
         )
-        if hasattr(provider, "chat"):
-            response = await provider.chat(
-                messages=[
-                    {"role": "system", "content": "你是 price action 交易复盘助手，只输出 JSON。"},
-                    {"role": "user", "content": prompt_text},
-                ],
-                tools=None,
-            )
-            content = response.content or ""
-        else:
-            # 回退到 analyze pipeline（不会拿到结构化 lesson，这里尽力而为）
-            result = await provider.analyze({
-                "instructions": "请生成复盘 JSON，字段 lesson / category / tags。",
-                "payload": payload,
-            })
-            content = (result.summary or "") if hasattr(result, "summary") else ""
+        response = await provider.chat(
+            messages=[
+                {"role": "system", "content": "你是 price action 交易复盘助手，只输出 JSON。"},
+                {"role": "user", "content": prompt_text},
+            ],
+            tools=None,
+        )
+        content = response.content or ""
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError:
@@ -1780,6 +1857,18 @@ def create_app(
             prompt=str(message) if message is not None else None,
             override_provider=payload.get("provider"),
             override_model=payload.get("model"),
+        )
+
+    @app.post("/api/agent/sessions/{instrument_key}/messages/stream")
+    async def stream_agent_session_message_endpoint(
+        instrument_key: str,
+        payload: dict[str, Any],
+    ) -> StreamingResponse:
+        """追加用户问题并以 SSE 推送 transcript 事件。"""
+        return StreamingResponse(
+            runtime.stream_agent_message(instrument_key, payload),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     @app.post("/api/agent/sessions/{instrument_key}/reset")

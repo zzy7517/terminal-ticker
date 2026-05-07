@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from mytradebot.agent import AgentAnalysisResult, AgentSessionStore, ChatResponse
+from mytradebot.agent import AgentSessionStore, ChatResponse
 from mytradebot.config import (
     AppConfig,
     DisplayConfig,
@@ -592,21 +592,17 @@ class WebTests(unittest.TestCase):
         self.assertIn("BTCUSDT", persisted_text)
 
     def test_agent_analysis_endpoint_runs_provider_and_caches_result(self) -> None:
-        """Verify manual agent endpoint analyzes current candles."""
+        """Verify manual agent endpoint appends generic transcript messages."""
         class FakeProvider:
             """Return a deterministic agent result."""
 
-            async def analyze(self, context):
-                self.context = context
-                return AgentAnalysisResult(
-                    available=True,
-                    provider="codex",
-                    model="fake",
-                    updated_at="2026-04-28T00:00:00+00:00",
-                    summary="AAPL is trending.",
-                    bias="bullish",
-                    confidence=70,
-                )
+            name = "codex"
+            model = "fake"
+
+            async def chat(self, messages, tools=None):
+                self.messages = messages
+                self.tools = tools
+                return ChatResponse(content="AAPL is trending.")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             instrument = AlpacaInstrument("AAPL", "AAPL")
@@ -639,7 +635,8 @@ class WebTests(unittest.TestCase):
         history_payload = history_response.json()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(payload["result"]["available"])
-        self.assertEqual(payload["state"]["agentAnalyses"][instrument.key]["summary"], "AAPL is trending.")
+        self.assertEqual(payload["result"]["content"], "AAPL is trending.")
+        self.assertNotIn(instrument.key, payload["state"]["agentAnalyses"])
         self.assertEqual(payload["session"]["session"]["instrumentKey"], instrument.key)
         self.assertEqual(payload["session"]["session"]["apiMode"], "codex_responses")
         self.assertIn("history", payload)
@@ -647,12 +644,13 @@ class WebTests(unittest.TestCase):
             [message["role"] for message in payload["session"]["messages"]],
             ["user", "assistant"],
         )
+        self.assertEqual(payload["session"]["messages"][1]["content"], "AAPL is trending.")
         self.assertEqual(
-            provider.context["session"]["recent_history"][0]["content"],
+            provider.messages[-1]["content"].splitlines()[-1],
             "What changed since the prior candle?",
         )
         self.assertEqual(persisted_response.status_code, 200)
-        self.assertEqual(persisted_payload["messages"][1]["analysis"]["summary"], "AAPL is trending.")
+        self.assertEqual(persisted_payload["messages"][1]["content"], "AAPL is trending.")
         self.assertEqual(history_response.status_code, 200)
         self.assertEqual(history_payload["sessions"][0]["messageCount"], 2)
         self.assertEqual(history_payload["sessions"][0]["preview"], "What changed since the prior candle?")
@@ -677,7 +675,6 @@ class WebTests(unittest.TestCase):
                 session_id=first.id,
                 role="assistant",
                 content="Old analysis.",
-                analysis={"summary": "Old analysis.", "bias": "neutral", "confidence": 40},
             )
             second = store.create_session(
                 instrument_key=instrument.key,
@@ -713,7 +710,7 @@ class WebTests(unittest.TestCase):
         delete_payload = delete_response.json()
         self.assertEqual(resume_response.status_code, 200)
         self.assertEqual(resume_payload["session"]["session"]["id"], first.id)
-        self.assertEqual(resume_payload["state"]["agentAnalyses"][instrument.key]["summary"], "Old analysis.")
+        self.assertNotIn(instrument.key, resume_payload["state"]["agentAnalyses"])
         self.assertEqual(delete_response.status_code, 200)
         self.assertTrue(delete_payload["deleted"])
         self.assertEqual(delete_payload["session"]["session"]["id"], second.id)
@@ -740,7 +737,6 @@ class WebTests(unittest.TestCase):
                 session_id=only_session.id,
                 role="assistant",
                 content="Lonely analysis.",
-                analysis={"summary": "Lonely analysis.", "bias": "neutral", "confidence": 30},
             )
             app = create_app(
                 config=AppConfig(instruments=tuple(), display=DisplayConfig()),
@@ -751,7 +747,7 @@ class WebTests(unittest.TestCase):
             )
 
             with TestClient(app) as client:
-                # Prime agentAnalyses so we can confirm it gets cleared.
+                # Resume first so delete exercises active-session cleanup.
                 client.post(f"/api/agent/sessions/alpaca:AAPL/history/{only_session.id}/resume")
                 delete_response = client.delete(
                     f"/api/agent/sessions/alpaca:AAPL/history/{only_session.id}",
