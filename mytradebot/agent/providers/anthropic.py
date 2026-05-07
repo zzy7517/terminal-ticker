@@ -15,14 +15,8 @@ from ...config.agent_models import (
     AgentModelProfile,
     resolve_agent_model,
 )
-from ..loop import ChatResponse, ToolCall
-from ..provider import (
-    AGENT_INSTRUCTIONS,
-    AgentAnalysisResult,
-    LLMProviderError,
-    LLMProviderUnavailable,
-    _result_from_text,
-)
+from ..loop import ChatResponse, StreamDeltaHandler, ToolCall
+from ..provider import LLMProviderError, LLMProviderUnavailable
 
 DEFAULT_ANTHROPIC_BASE_URL = "https://claude-proxy.p1.cn/api"
 DEFAULT_ANTHROPIC_TIMEOUT_SECONDS = 45.0
@@ -52,42 +46,11 @@ class AnthropicProvider:
         self._base_url = _first_env(ANTHROPIC_ENV_BASE_URLS) or DEFAULT_ANTHROPIC_BASE_URL
         self._max_tokens = _resolve_max_tokens()
 
-    async def analyze(self, context: dict[str, Any]) -> AgentAnalysisResult:
-        """兼容旧的 analyze 接口，把结构化行情上下文转成单轮 messages 请求。"""
-        messages = [
-            {"role": "system", "content": AGENT_INSTRUCTIONS},
-            {
-                "role": "user",
-                "content": json.dumps(context, ensure_ascii=False, separators=(",", ":")),
-            },
-        ]
-        try:
-            response = await self.chat(messages)
-            text = response.content or ""
-            if not text:
-                return AgentAnalysisResult.unavailable(
-                    provider=self.name,
-                    model=self.model,
-                    error="Anthropic returned no output text.",
-                )
-            return _result_from_text(text, provider=self.name, model=self.model)
-        except LLMProviderUnavailable as exc:
-            return AgentAnalysisResult.unavailable(
-                provider=self.name,
-                model=self.model,
-                error=str(exc),
-            )
-        except Exception as exc:
-            return AgentAnalysisResult.unavailable(
-                provider=self.name,
-                model=self.model,
-                error=str(exc) or exc.__class__.__name__,
-            )
-
     async def chat(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        on_delta: StreamDeltaHandler | None = None,
     ) -> ChatResponse:
         """调用 Anthropic Messages API，支持 Anthropic tool_use/tool_result 循环。"""
         api_key = _resolve_anthropic_api_key()
@@ -96,6 +59,7 @@ class AnthropicProvider:
             "model": self.model,
             "max_tokens": self._max_tokens,
             "messages": anthropic_messages,
+            "stream": True,
         }
         if system_text:
             payload["system"] = system_text
@@ -106,17 +70,11 @@ class AnthropicProvider:
         headers = _anthropic_headers(api_key, url)
         timeout = httpx.Timeout(DEFAULT_ANTHROPIC_TIMEOUT_SECONDS)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(url, json=payload, headers=headers)
-
-        if response.status_code >= 400:
-            raise LLMProviderError(_anthropic_error_message(response.status_code, response.text))
-        try:
-            data = response.json()
-        except json.JSONDecodeError as exc:
-            raise LLMProviderError("Anthropic returned a non-JSON response.") from exc
-        if not isinstance(data, dict):
-            raise LLMProviderError("Anthropic returned an invalid response.")
-        return _parse_anthropic_response(data)
+            async with client.stream("POST", url, json=payload, headers=headers) as response:
+                if response.status_code >= 400:
+                    body = (await response.aread()).decode(errors="replace")
+                    raise LLMProviderError(_anthropic_error_message(response.status_code, body))
+                return await _collect_anthropic_stream_response(response, on_delta=on_delta)
 
     async def list_models(self) -> list[dict[str, Any]]:
         """返回本地可配置的 Anthropic 模型列表。
@@ -303,6 +261,105 @@ def _anthropic_tool_schemas(tools: list[dict[str, Any]]) -> list[dict[str, Any]]
     return schemas
 
 
+async def _collect_anthropic_stream_response(
+    response: httpx.Response,
+    *,
+    on_delta: StreamDeltaHandler | None = None,
+) -> ChatResponse:
+    """Collect Anthropic SSE events into a ChatResponse while forwarding text deltas."""
+    text_parts: list[str] = []
+    tool_blocks: dict[int, dict[str, Any]] = {}
+    stop_reason = "stop"
+    usage: dict[str, int] = {}
+
+    async for line in response.aiter_lines():
+        if not line.startswith("data: "):
+            continue
+        raw_data = line.removeprefix("data: ").strip()
+        if not raw_data:
+            continue
+        try:
+            event = json.loads(raw_data)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("type")
+        if event_type == "error":
+            raise LLMProviderError(_anthropic_stream_error_message(event))
+        if event_type == "message_start":
+            raw_usage = (event.get("message") or {}).get("usage")
+            if isinstance(raw_usage, dict):
+                _merge_anthropic_usage(usage, raw_usage)
+            continue
+        if event_type == "message_delta":
+            delta = event.get("delta")
+            if isinstance(delta, dict) and delta.get("stop_reason"):
+                stop_reason = str(delta["stop_reason"])
+            raw_usage = event.get("usage")
+            if isinstance(raw_usage, dict):
+                _merge_anthropic_usage(usage, raw_usage)
+            continue
+        if event_type == "content_block_start":
+            index = event.get("index")
+            block = event.get("content_block")
+            if isinstance(index, int) and isinstance(block, dict) and block.get("type") == "tool_use":
+                tool_blocks[index] = {
+                    "id": str(block.get("id") or ""),
+                    "name": str(block.get("name") or ""),
+                    "input": block.get("input") if isinstance(block.get("input"), dict) else {},
+                    "input_json": "",
+                }
+            continue
+        if event_type == "content_block_delta":
+            index = event.get("index")
+            delta = event.get("delta")
+            if not isinstance(delta, dict):
+                continue
+            delta_type = delta.get("type")
+            if delta_type == "text_delta":
+                text = delta.get("text")
+                if isinstance(text, str):
+                    text_parts.append(text)
+                    if on_delta is not None:
+                        await on_delta(text)
+            elif delta_type == "input_json_delta" and isinstance(index, int):
+                partial = delta.get("partial_json")
+                if isinstance(partial, str):
+                    block = tool_blocks.setdefault(index, {"id": "", "name": "", "input": {}, "input_json": ""})
+                    block["input_json"] = str(block.get("input_json") or "") + partial
+
+    tool_calls: list[ToolCall] = []
+    for index in sorted(tool_blocks):
+        block = tool_blocks[index]
+        name = str(block.get("name") or "").strip()
+        if not name:
+            continue
+        arguments = block.get("input")
+        raw_json = str(block.get("input_json") or "")
+        if raw_json:
+            try:
+                parsed = json.loads(raw_json)
+                if isinstance(parsed, dict):
+                    arguments = parsed
+            except json.JSONDecodeError:
+                arguments = {}
+        tool_calls.append(
+            ToolCall(
+                id=str(block.get("id") or f"toolu_{index}"),
+                name=name,
+                arguments=arguments if isinstance(arguments, dict) else {},
+            )
+        )
+
+    return ChatResponse(
+        content="".join(text_parts).strip() or None,
+        tool_calls=tool_calls,
+        finish_reason="tool_calls" if tool_calls else stop_reason,
+        usage=usage,
+    )
+
+
 def _parse_anthropic_response(data: dict[str, Any]) -> ChatResponse:
     text_parts: list[str] = []
     tool_calls: list[ToolCall] = []
@@ -358,6 +415,25 @@ def _anthropic_error_message(status_code: int, body: str) -> str:
         detail = body.strip()[:200]
     suffix = f": {detail}" if detail else ""
     return f"Anthropic request failed: HTTP {status_code}{suffix}"
+
+
+def _anthropic_stream_error_message(event: dict[str, Any]) -> str:
+    error = event.get("error")
+    if isinstance(error, dict):
+        return str(error.get("message") or error)
+    if error is not None:
+        return str(error)
+    return "Anthropic stream returned an error event."
+
+
+def _merge_anthropic_usage(target: dict[str, int], raw_usage: dict[str, Any]) -> None:
+    for source_key, target_key in (
+        ("input_tokens", "prompt_tokens"),
+        ("output_tokens", "completion_tokens"),
+    ):
+        value = raw_usage.get(source_key)
+        if isinstance(value, int):
+            target[target_key] = value
 
 
 def _anthropic_model_option(slug: str) -> dict[str, Any]:

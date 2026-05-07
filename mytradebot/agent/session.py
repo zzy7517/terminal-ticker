@@ -49,13 +49,14 @@ class AgentSessionRuntime:
             runtime_services=runtime_services or AgentRuntimeServices(),
         )
 
-    async def append_user_message(self, content: str) -> None:
-        await asyncio.to_thread(
+    async def append_user_message(self, content: str) -> dict[str, Any]:
+        message = await asyncio.to_thread(
             self.store.append_message,
             session_id=self.session.id,
             role="user",
             content=content,
         )
+        return message.to_payload()
 
     async def history_for_context(self, *, limit: int = 8) -> tuple[dict[str, Any], ...]:
         return await asyncio.to_thread(
@@ -64,30 +65,38 @@ class AgentSessionRuntime:
             limit=limit,
         )
 
-    async def record_assistant_analysis(
+    async def append_transcript_message(
         self,
-        analysis_payload: dict[str, Any],
+        message: dict[str, Any],
         *,
         context: dict[str, Any] | None = None,
-    ) -> None:
-        loop_result = analysis_payload.get("loopResult")
-        loop_content = loop_result.get("content") if isinstance(loop_result, dict) else None
-        content = str(
-            analysis_payload.get("displayText")
-            or analysis_payload.get("summary")
-            or analysis_payload.get("error")
-            or loop_content
-            or "Agent response unavailable."
-        )
-        await asyncio.to_thread(
+    ) -> dict[str, Any]:
+        stored = await asyncio.to_thread(
             self.store.append_message,
             session_id=self.session.id,
-            role="assistant",
-            content=content,
-            analysis=analysis_payload,
+            role=str(message.get("role") or ""),
+            content=str(message.get("content") or ""),
+            metadata=message.get("metadata") if isinstance(message.get("metadata"), dict) else None,
             context=context,
-            error=analysis_payload.get("error") if not analysis_payload.get("available") else None,
+            error=str(message.get("error")) if message.get("error") else None,
         )
+        return stored.to_payload()
+
+    async def append_transcript_messages(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        stored: list[dict[str, Any]] = []
+        for index, message in enumerate(messages):
+            stored.append(
+                await self.append_transcript_message(
+                    message,
+                    context=context if index == 0 else None,
+                )
+            )
+        return stored
 
     async def payload(self) -> dict[str, Any]:
         payload = await asyncio.to_thread(self.store.session_payload, self.session.id)
