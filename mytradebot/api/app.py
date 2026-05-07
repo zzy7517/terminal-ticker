@@ -27,10 +27,10 @@ from ..agent import (
     LLMProviderUnavailable,
     TradingAgentRuntime,
     TradingAgentRuntimeServices,
-    build_agent_context,
     create_llm_provider,
     list_available_agent_models,
 )
+from ..agent.market_context import build_market_context, build_multi_market_context
 from ..news import NewsService, NewsStore
 from ..news.providers.reuters import ReutersSitemapProvider
 from ..social_feed import SocialFeedService, SocialFeedStore, XAuthStore
@@ -401,6 +401,50 @@ class MarketContextProvider:
 
     def list_instruments(self) -> tuple[MarketInstrument, ...]:
         return self._runtime.instruments
+
+    def get_market_context(
+        self,
+        instrument_key: str,
+        *,
+        max_candles: int = 40,
+    ) -> dict[str, Any]:
+        """说明：构造一个标的的完整行情上下文工具结果。"""
+        resolved_key = self._resolve_instrument_key(instrument_key)
+        instrument = self._runtime._instrument_by_key(resolved_key)
+        quote = self._runtime.controller.quotes.get(resolved_key)
+        if quote is None:
+            return {}
+        return build_market_context(
+            instrument=instrument,
+            quote=quote,
+            interval=instrument.analysis_interval or self._runtime.config.analysis.interval,
+            max_candles=max_candles,
+        )
+
+    def get_multi_market_context(
+        self,
+        instrument_keys: tuple[str, ...],
+        *,
+        max_candles: int = 25,
+    ) -> dict[str, Any]:
+        """说明：批量构造多个标的的行情上下文工具结果。"""
+        items: list[tuple[MarketInstrument, QuoteState, str]] = []
+        for key in instrument_keys[:6]:
+            resolved_key = self._resolve_instrument_key(key)
+            instrument = self._runtime._instrument_by_key(resolved_key)
+            quote = self._runtime.controller.quotes.get(resolved_key)
+            if quote is None:
+                continue
+            items.append((
+                instrument,
+                quote,
+                instrument.analysis_interval or self._runtime.config.analysis.interval,
+            ))
+        return build_multi_market_context(tuple(items), max_candles=max_candles) if items else {}
+
+    def resolve_instrument_key(self, instrument_key: str) -> str:
+        """说明：返回当前 runtime 中的 canonical instrument key。"""
+        return self._resolve_instrument_key(instrument_key)
 
     def _resolve_instrument_key(self, instrument_key: str) -> str:
         """兼容模型可能传入的旧式 Bitget key，例如 bitget:BTCUSDT:USDT-FUTURES。"""
@@ -1005,6 +1049,72 @@ class MarketRuntime:
         )
         return payload or {"session": None, "messages": []}
 
+    async def list_agent_sessions(self) -> dict[str, Any]:
+        """说明：列出全局 Agent 会话历史。"""
+        return await self._agent_session_history_payload()
+
+    async def create_agent_session(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """说明：创建一个不绑定标的的 Agent 会话。"""
+        payload = payload or {}
+        agent_cfg = self._effective_agent_config(payload.get("provider"), payload.get("model"))
+        title = str(payload.get("title") or "New Agent Session")
+        session = await asyncio.to_thread(
+            self.agent_session_store.create_global_session,
+            title=title,
+            provider=agent_cfg.provider,
+            model=agent_cfg.model,
+            **_agent_session_config_kwargs(agent_cfg),
+        )
+        await self.broadcast()
+        return {
+            **(await self._agent_session_payload(session.id)),
+            "history": await self._agent_session_history_payload(),
+        }
+
+    async def get_agent_session_resource(self, identifier: str) -> dict[str, Any]:
+        """说明：读取 session-first 会话；若不是 session id，则回退到 legacy instrument active 会话。"""
+        payload = await self._agent_session_payload(identifier)
+        if payload["session"] is not None:
+            return payload
+        return await self.get_agent_session(identifier)
+
+    async def update_agent_session(self, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：更新全局 session 元数据。"""
+        title = str(payload.get("title") or "").strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="title is required.")
+        try:
+            session = await asyncio.to_thread(
+                self.agent_session_store.rename_session,
+                session_id,
+                title,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        await self.broadcast()
+        return {
+            "session": await self._agent_session_payload(session.id),
+            "history": await self._agent_session_history_payload(),
+            "state": self.snapshot(),
+        }
+
+    async def delete_agent_session_by_id(self, session_id: str) -> dict[str, Any]:
+        """说明：按 session id 删除全局 Agent 会话。"""
+        try:
+            deleted = await asyncio.to_thread(
+                self.agent_session_store.delete_session_by_id,
+                session_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        await self.broadcast()
+        return {
+            "deleted": deleted,
+            "session": {"session": None, "messages": []},
+            "history": await self._agent_session_history_payload(),
+            "state": self.snapshot(),
+        }
+
     async def reset_agent_session(self, instrument_key: str) -> dict[str, Any]:
         """说明：为某个标的创建一个新的 active Agent 会话。"""
         instrument = self._instrument_by_key(instrument_key)
@@ -1263,13 +1373,9 @@ class MarketRuntime:
         override_provider: str | None = None,
         override_model: str | None = None,
     ) -> dict[str, Any]:
-        """说明：对单个标的执行一次会话式 LLM 分析，支持 agent loop with tools。"""
+        """说明：legacy 单标的入口；会话仍兼容旧 active 语义，行情由工具按需读取。"""
         agent_cfg = self._effective_agent_config(override_provider, override_model)
         instrument = self._instrument_by_key(instrument_key)
-        quote = self.controller.quotes.get(instrument.key)
-        if quote is None:
-            raise HTTPException(status_code=404, detail="Quote is not available.")
-
         provider = create_llm_provider(agent_cfg)
         session_runtime = await AgentSessionRuntime.get_or_create_active(
             store=self.agent_session_store,
@@ -1283,48 +1389,45 @@ class MarketRuntime:
         )
         user_prompt = _normalize_agent_prompt(prompt)
         await session_runtime.append_user_message(user_prompt)
-
-        if not quote.candles:
-            payload = _agent_response_payload(
-                provider=agent_cfg.provider,
-                model=agent_cfg.model,
-                content="",
-                error="No OHLCV candles are available for this instrument yet.",
-            )
-            await session_runtime.append_transcript_message({
-                "role": "assistant",
-                "content": payload["error"],
-                "metadata": None,
-                "error": payload["error"],
-            })
-            await self.broadcast()
-            return {
-                "result": payload,
-                "session": await session_runtime.payload(),
-                "history": await session_runtime.history_payload(instrument.key),
-                "state": self.snapshot(),
-            }
-
         history = await session_runtime.history_for_context(limit=8)
-
         return await self._run_agent_loop(
-            instrument=instrument,
-            quote=quote,
             session_runtime=session_runtime,
             user_prompt=user_prompt,
             history=history,
             agent_cfg=agent_cfg,
+            candidate_instrument_keys=(instrument.key,),
+            history_instrument_key=instrument.key,
+        )
+
+    async def analyze_agent_session(
+        self,
+        session_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """说明：session-first 非流式消息入口。"""
+        message = payload.get("message", payload.get("prompt"))
+        agent_cfg = self._effective_agent_config(payload.get("provider"), payload.get("model"))
+        session_runtime = await self._session_runtime_by_id(session_id, agent_cfg)
+        user_prompt = _normalize_agent_prompt(str(message) if message is not None else None)
+        await session_runtime.append_user_message(user_prompt)
+        history = await session_runtime.history_for_context(limit=8)
+        return await self._run_agent_loop(
+            session_runtime=session_runtime,
+            user_prompt=user_prompt,
+            history=history,
+            agent_cfg=agent_cfg,
+            candidate_instrument_keys=self._candidate_instrument_keys(payload),
         )
 
     async def _run_agent_loop(
         self,
         *,
-        instrument: MarketInstrument,
-        quote: QuoteState,
         session_runtime: AgentSessionRuntime,
         user_prompt: str,
         history: tuple[dict[str, Any], ...],
         agent_cfg: AgentConfig | None = None,
+        candidate_instrument_keys: tuple[str, ...] = tuple(),
+        history_instrument_key: str | None = None,
         event_handler: Callable[[dict[str, Any]], Any] | None = None,
     ) -> dict[str, Any]:
         """通过 trading domain runtime 执行带工具调用的 LLM 分析。"""
@@ -1343,31 +1446,30 @@ class MarketRuntime:
         )
 
         turn_result = await runtime.run_turn(
-            instrument=instrument,
-            quote=quote,
             session_id=session_runtime.session.id,
             user_prompt=user_prompt,
             history=history,
-            analysis_interval=instrument.analysis_interval or self.config.analysis.interval,
+            candidate_instrument_keys=candidate_instrument_keys,
             event_handler=event_handler,
         )
         payload = turn_result.to_payload()
         await session_runtime.append_transcript_messages(
             [message.to_payload() for message in turn_result.loop_result.messages],
-            context=turn_result.context,
+            context=turn_result.context if turn_result.context else None,
         )
-        self.agent_analyses.pop(instrument.key, None)
+        for key in candidate_instrument_keys:
+            self.agent_analyses.pop(key, None)
         await self.broadcast()
         return {
             "result": payload,
             "session": await session_runtime.payload(),
-            "history": await session_runtime.history_payload(instrument.key),
+            "history": await self._agent_session_history_payload(history_instrument_key),
             "state": self.snapshot(),
         }
 
     async def stream_agent_message(
         self,
-        instrument_key: str,
+        identifier: str,
         payload: dict[str, Any],
     ) -> AsyncIterator[str]:
         """Run one agent turn and stream pi-mono style transcript events as SSE."""
@@ -1380,57 +1482,31 @@ class MarketRuntime:
             try:
                 message = payload.get("message", payload.get("prompt"))
                 agent_cfg = self._effective_agent_config(payload.get("provider"), payload.get("model"))
-                instrument = self._instrument_by_key(instrument_key)
-                quote = self.controller.quotes.get(instrument.key)
-                if quote is None:
-                    raise HTTPException(status_code=404, detail="Quote is not available.")
-                provider = create_llm_provider(agent_cfg)
-                session_runtime = await AgentSessionRuntime.get_or_create_active(
-                    store=self.agent_session_store,
-                    instrument_key=instrument.key,
-                    title=_agent_session_title(instrument),
-                    config=agent_cfg,
-                    provider=provider,
-                    runtime_services=AgentRuntimeServices(
-                        after_tool_hooks=(_agent_tool_audit_hook,),
-                    ),
-                )
+                session_runtime, legacy_key = await self._session_runtime_for_identifier(identifier, agent_cfg)
                 user_prompt = _normalize_agent_prompt(str(message) if message is not None else None)
                 user_message = await session_runtime.append_user_message(user_prompt)
                 await emit({"type": "message_end", "message": user_message})
-
-                if not quote.candles:
-                    error = "No OHLCV candles are available for this instrument yet."
-                    assistant = await session_runtime.append_transcript_message({
-                        "role": "assistant",
-                        "content": error,
-                        "metadata": None,
-                        "error": error,
-                    })
-                    await emit({"type": "error", "error": error})
-                    await emit({"type": "message_end", "message": assistant})
-                else:
-                    history = await session_runtime.history_for_context(limit=8)
-                    await self._run_agent_loop(
-                        instrument=instrument,
-                        quote=quote,
-                        session_runtime=session_runtime,
-                        user_prompt=user_prompt,
-                        history=history,
-                        agent_cfg=agent_cfg,
-                        event_handler=emit,
-                    )
+                history = await session_runtime.history_for_context(limit=8)
+                await self._run_agent_loop(
+                    session_runtime=session_runtime,
+                    user_prompt=user_prompt,
+                    history=history,
+                    agent_cfg=agent_cfg,
+                    candidate_instrument_keys=self._candidate_instrument_keys(payload, legacy_key=legacy_key),
+                    history_instrument_key=legacy_key,
+                    event_handler=emit,
+                )
 
                 await emit({
                     "type": "session_update",
                     "session": await session_runtime.payload(),
-                    "history": await session_runtime.history_payload(instrument.key),
+                    "history": await self._agent_session_history_payload(legacy_key),
                     "state": self.snapshot(),
                 })
             except HTTPException as exc:
                 await emit({"type": "error", "error": str(exc.detail)})
             except Exception as exc:
-                logger.exception("agent stream failed")
+                LOGGER.exception("agent stream failed")
                 await emit({"type": "error", "error": str(exc) or exc.__class__.__name__})
             finally:
                 await queue.put(None)
@@ -1453,13 +1529,91 @@ class MarketRuntime:
         payload = await asyncio.to_thread(self.agent_session_store.session_payload, session_id)
         return payload or {"session": None, "messages": []}
 
-    async def _agent_session_history_payload(self, instrument_key: str) -> dict[str, Any]:
-        """说明：异步读取某个标的的 session 历史列表。"""
+    async def _agent_session_history_payload(self, instrument_key: str | None = None) -> dict[str, Any]:
+        """说明：异步读取 session 历史列表。instrument_key 为 None 时返回全局历史。"""
         sessions = await asyncio.to_thread(
             self.agent_session_store.list_sessions,
             instrument_key,
         )
         return {"sessions": [session.to_payload() for session in sessions]}
+
+    async def _session_runtime_by_id(
+        self,
+        session_id: str,
+        agent_cfg: AgentConfig,
+    ) -> AgentSessionRuntime:
+        """说明：构造 session-first runtime。"""
+        session = await asyncio.to_thread(self.agent_session_store.get_session, session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail=f"agent session not found: {session_id}")
+        provider = create_llm_provider(agent_cfg)
+        if (
+            session.provider != agent_cfg.provider
+            or session.model != agent_cfg.model
+            or session.api_mode != agent_cfg.api_mode
+            or session.reasoning_effort != agent_cfg.reasoning_effort
+        ):
+            session = await asyncio.to_thread(
+                self.agent_session_store.update_session_metadata,
+                session.id,
+                provider=agent_cfg.provider,
+                model=agent_cfg.model,
+                api_mode=agent_cfg.api_mode,
+                reasoning_effort=agent_cfg.reasoning_effort,
+            )
+        return AgentSessionRuntime(
+            session=session,
+            store=self.agent_session_store,
+            config=agent_cfg,
+            provider=provider,
+            runtime_services=AgentRuntimeServices(
+                after_tool_hooks=(_agent_tool_audit_hook,),
+            ),
+        )
+
+    async def _session_runtime_for_identifier(
+        self,
+        identifier: str,
+        agent_cfg: AgentConfig,
+    ) -> tuple[AgentSessionRuntime, str | None]:
+        """说明：identifier 优先按 session id 解释，否则按 legacy instrument key 解释。"""
+        session = await asyncio.to_thread(self.agent_session_store.get_session, identifier)
+        if session is not None:
+            return await self._session_runtime_by_id(identifier, agent_cfg), None
+        instrument = self._instrument_by_key(identifier)
+        provider = create_llm_provider(agent_cfg)
+        runtime = await AgentSessionRuntime.get_or_create_active(
+            store=self.agent_session_store,
+            instrument_key=instrument.key,
+            title=_agent_session_title(instrument),
+            config=agent_cfg,
+            provider=provider,
+            runtime_services=AgentRuntimeServices(
+                after_tool_hooks=(_agent_tool_audit_hook,),
+            ),
+        )
+        return runtime, instrument.key
+
+    def _candidate_instrument_keys(
+        self,
+        payload: dict[str, Any],
+        *,
+        legacy_key: str | None = None,
+    ) -> tuple[str, ...]:
+        """说明：解析本轮非持久化候选标的列表。"""
+        raw = payload.get("candidateInstrumentKeys")
+        if raw is None:
+            return (legacy_key,) if legacy_key else tuple()
+        if not isinstance(raw, list):
+            raise HTTPException(status_code=400, detail="candidateInstrumentKeys must be an array.")
+        provider = MarketContextProvider(self)
+        keys: list[str] = []
+        for item in raw[:12]:
+            key = provider.resolve_instrument_key(str(item))
+            self._instrument_by_key(key)
+            if key not in keys:
+                keys.append(key)
+        return tuple(keys)
 
     async def load_older_candles(self, instrument_key: str) -> dict[str, Any]:
         """说明：为图表继续向前加载一批历史 K 线。"""
@@ -1690,12 +1844,11 @@ class MarketRuntime:
         if quote is None:
             return {}
         try:
-            context = build_agent_context(
+            context = build_market_context(
                 instrument=instrument,
                 quote=quote,
                 interval=instrument.analysis_interval or self.config.analysis.interval,
                 max_candles=self.config.agent.max_candles,
-                session_history=tuple(),
             )
         except Exception:
             context = {}
@@ -1825,10 +1978,30 @@ def create_app(
         """说明：处理 Agent 配置更新请求。"""
         return await runtime.update_agent_config(payload)
 
-    @app.get("/api/agent/sessions/{instrument_key}")
-    async def get_agent_session_endpoint(instrument_key: str) -> dict[str, Any]:
-        """说明：读取某个标的当前 active Agent 会话。"""
-        return await runtime.get_agent_session(instrument_key)
+    @app.get("/api/agent/sessions")
+    async def list_agent_sessions_endpoint() -> dict[str, Any]:
+        """说明：列出全局 Agent 会话历史。"""
+        return await runtime.list_agent_sessions()
+
+    @app.post("/api/agent/sessions")
+    async def create_agent_session_endpoint(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """说明：创建不绑定标的的 Agent 会话。"""
+        return await runtime.create_agent_session(payload)
+
+    @app.get("/api/agent/sessions/{identifier}")
+    async def get_agent_session_endpoint(identifier: str) -> dict[str, Any]:
+        """说明：读取 session-first 会话，或回退到 legacy 标的 active 会话。"""
+        return await runtime.get_agent_session_resource(identifier)
+
+    @app.patch("/api/agent/sessions/{session_id}")
+    async def update_agent_session_endpoint(session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：更新 Agent 会话标题。"""
+        return await runtime.update_agent_session(session_id, payload)
+
+    @app.delete("/api/agent/sessions/{session_id}")
+    async def delete_agent_session_by_id_endpoint(session_id: str) -> dict[str, Any]:
+        """说明：删除一个 session-first Agent 会话。"""
+        return await runtime.delete_agent_session_by_id(session_id)
 
     @app.get("/api/agent/sessions/{instrument_key}/history")
     async def list_agent_session_history_endpoint(instrument_key: str) -> dict[str, Any]:
@@ -1852,11 +2025,17 @@ def create_app(
     ) -> dict[str, Any]:
         """说明：追加用户问题并触发一次会话式 Agent 分析。"""
         message = payload.get("message", payload.get("prompt"))
+        session_payload = dict(payload)
+        if message is not None:
+            session_payload["message"] = str(message)
+        session = await runtime._agent_session_payload(instrument_key)
+        if session["session"] is not None:
+            return await runtime.analyze_agent_session(instrument_key, session_payload)
         return await runtime.analyze_instrument(
             instrument_key,
-            prompt=str(message) if message is not None else None,
-            override_provider=payload.get("provider"),
-            override_model=payload.get("model"),
+            prompt=session_payload.get("message"),
+            override_provider=session_payload.get("provider"),
+            override_model=session_payload.get("model"),
         )
 
     @app.post("/api/agent/sessions/{instrument_key}/messages/stream")

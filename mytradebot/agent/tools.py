@@ -174,12 +174,35 @@ def _parse_bitget_instrument_key(instrument_key: str) -> tuple[str, str]:
     )
 
 
-def build_market_tools(context_provider: Any) -> ToolRegistry:
+def build_market_tools(
+    context_provider: Any,
+    *,
+    candidate_instrument_keys: tuple[str, ...] = tuple(),
+) -> ToolRegistry:
     """构建内置行情工具集。context_provider 提供行情数据访问。"""
     registry = ToolRegistry()
+    candidate_keys = tuple(key for key in candidate_instrument_keys if key)
+    candidate_set = set(candidate_keys)
+
+    def _resolve_key(instrument_key: str) -> str:
+        resolver = getattr(context_provider, "resolve_instrument_key", None)
+        if callable(resolver):
+            return str(resolver(instrument_key))
+        return instrument_key
+
+    def _candidate_error(instrument_key: str) -> str | None:
+        if not candidate_set:
+            return None
+        resolved = _resolve_key(instrument_key)
+        if resolved not in candidate_set:
+            return f"{resolved} is outside this turn's candidateInstrumentKeys"
+        return None
 
     async def get_quote(instrument_key: str) -> str:
         """获取指定标的的最新报价快照。"""
+        candidate_error = _candidate_error(instrument_key)
+        if candidate_error:
+            return _json_output({"error": candidate_error})
         quote = context_provider.get_quote(instrument_key)
         if quote is None:
             return _json_output({"error": f"No quote available for {instrument_key}"})
@@ -216,6 +239,9 @@ def build_market_tools(context_provider: Any) -> ToolRegistry:
         interval: str | None = None,
     ) -> str:
         """获取指定标的的最近 K 线数据。"""
+        candidate_error = _candidate_error(instrument_key)
+        if candidate_error:
+            return _json_output({"error": candidate_error})
         candles = context_provider.get_candles(instrument_key, interval=interval)
         if not candles:
             target = f"{instrument_key} @ {interval}" if interval else instrument_key
@@ -261,6 +287,8 @@ def build_market_tools(context_provider: Any) -> ToolRegistry:
     async def list_instruments() -> str:
         """列出当前 watchlist 中的所有标的。"""
         instruments = context_provider.list_instruments()
+        if candidate_set:
+            instruments = tuple(inst for inst in instruments if inst.key in candidate_set)
         return _json_output([{
             "key": inst.key,
             "symbol": inst.symbol,
@@ -277,6 +305,99 @@ def build_market_tools(context_provider: Any) -> ToolRegistry:
             "properties": {},
         },
         handler=list_instruments,
+    ))
+
+    async def get_market_context(
+        instrument_key: str,
+        max_candles: int = 40,
+    ) -> str:
+        """获取指定标的的完整行情上下文。"""
+        candidate_error = _candidate_error(instrument_key)
+        if candidate_error:
+            return _json_output({"error": candidate_error})
+        getter = getattr(context_provider, "get_market_context", None)
+        if not callable(getter):
+            return _json_output({"error": "market context provider does not support get_market_context"})
+        context = getter(instrument_key, max_candles=max_candles)
+        if not context:
+            return _json_output({"error": f"No market context available for {instrument_key}"})
+        return _json_output(context)
+
+    registry.register(ToolDefinition(
+        name="get_market_context",
+        description=(
+            "按标的读取完整行情上下文，包括报价、主周期 K 线和多周期 K 线。"
+            "凡是涉及实时价格、K 线、交易计划或标的对比，必须先调用本工具或 get_multi_market_context。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "instrument_key": {
+                    "type": "string",
+                    "description": "标的唯一标识，优先使用 list_instruments 返回的 key",
+                },
+                "max_candles": {
+                    "type": "integer",
+                    "description": "每个周期最多返回的 K 线数量，默认 40，范围 1-100",
+                    "default": 40,
+                    "minimum": 1,
+                    "maximum": 100,
+                },
+            },
+            "required": ["instrument_key"],
+        },
+        handler=get_market_context,
+    ))
+
+    async def get_multi_market_context(
+        instrument_keys: list[str],
+        max_candles: int = 25,
+    ) -> str:
+        """批量获取多个标的的行情上下文。"""
+        keys = [str(key) for key in instrument_keys if str(key).strip()]
+        capped_keys = keys[:6]
+        blocked = [
+            _candidate_error(key)
+            for key in capped_keys
+            if _candidate_error(key)
+        ]
+        if blocked:
+            return _json_output({"error": blocked[0]})
+        getter = getattr(context_provider, "get_multi_market_context", None)
+        if not callable(getter):
+            return _json_output({"error": "market context provider does not support get_multi_market_context"})
+        context = getter(tuple(capped_keys), max_candles=max_candles)
+        if not context:
+            return _json_output({"error": "No market context available for requested instruments"})
+        return _json_output(context)
+
+    registry.register(ToolDefinition(
+        name="get_multi_market_context",
+        description=(
+            "批量读取多个标的的行情上下文，用于强弱对比、相关性观察或跨品种分析。"
+            "一次最多 6 个标的；涉及跨标的行情问题时优先使用本工具。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "instrument_keys": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "标的 key 列表，优先来自 list_instruments",
+                    "minItems": 1,
+                    "maxItems": 6,
+                },
+                "max_candles": {
+                    "type": "integer",
+                    "description": "每个周期最多返回的 K 线数量，默认 25，范围 1-50",
+                    "default": 25,
+                    "minimum": 1,
+                    "maximum": 50,
+                },
+            },
+            "required": ["instrument_keys"],
+        },
+        handler=get_multi_market_context,
     ))
 
     return registry

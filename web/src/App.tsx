@@ -48,9 +48,11 @@ import {
   addHyperliquidTestnetSymbol,
   cancelExchangeOrder,
   connectStateSocket,
-  deleteAgentSession,
+  createAgentSession,
+  deleteAgentSessionById,
   fetchAgentSession,
   fetchAgentSessionHistory,
+  fetchAgentSessions,
   fetchRecentSocialFeed,
   fetchSocialAuthStatus,
 
@@ -60,8 +62,6 @@ import {
   listTrades,
   loadOlderCandles,
   removeWatchlistInstrument,
-  resetAgentSession,
-  resumeAgentSession,
   saveAgentConfig,
   fetchProviderModels,
   saveProviderProfile,
@@ -1724,7 +1724,7 @@ function streamMessageToAgentMessage(
   };
 }
 
-// Renders persisted chart-agent session rows with restore/delete actions.
+// Renders persisted agent session rows with restore/delete actions.
 function AgentSessionHistoryList({
   activeSessionId,
   busyActionKey,
@@ -1740,13 +1740,13 @@ function AgentSessionHistoryList({
   onDelete: (sessionId: string) => Promise<void>;
   onResume: (sessionId: string) => Promise<void>;
 }) {
-  const visibleHistory = history.slice(0, 8);
+  const visibleHistory = history;
 
   return (
     <div className="session-history">
       <div className="session-history-head">
         <span>
-          <History size={13} /> History
+          <History size={13} /> Chats
         </span>
         <small>{loading ? 'Loading' : `${history.length} saved`}</small>
       </div>
@@ -1768,7 +1768,7 @@ function AgentSessionHistoryList({
                 className="session-history-main"
                 disabled={isActive || Boolean(busyActionKey)}
                 onClick={() => void onResume(item.id)}
-                title={isActive ? 'Active session' : 'Resume session'}
+                title={isActive ? 'Active session' : 'Open session'}
                 type="button"
               >
                 <span>{title}</span>
@@ -1781,11 +1781,11 @@ function AgentSessionHistoryList({
                   {isActive ? 'active' : item.reasoningEffort ?? '-'}
                 </span>
                 <button
-                  aria-label="Resume saved agent session"
+                  aria-label="Open saved agent session"
                   className="session-icon-action"
                   disabled={isActive || Boolean(busyActionKey)}
                   onClick={() => void onResume(item.id)}
-                  title="Resume session"
+                  title="Open session"
                   type="button"
                 >
                   {busyActionKey === resumeKey ? <Loader2 className="spin" size={13} /> : <RefreshCw size={13} />}
@@ -1819,6 +1819,8 @@ function AgentSessionHistoryList({
 function AgentSessionPanel({
   session,
   prompt,
+  instruments,
+  candidateKeys,
   sessionActionKey,
   sessionLoading,
   busy,
@@ -1829,12 +1831,16 @@ function AgentSessionPanel({
   providerProfiles,
   onProviderChange,
   onModelChange,
+  onCandidateToggle,
+  onCandidateClear,
   onPromptChange,
   onSend,
   onReset,
 }: {
   session: AgentSessionResponse | null;
   prompt: string;
+  instruments: Instrument[];
+  candidateKeys: string[];
   sessionActionKey: string | null;
   sessionLoading: boolean;
   busy: boolean;
@@ -1845,13 +1851,17 @@ function AgentSessionPanel({
   providerProfiles: Record<string, { enabled: boolean; models: string[]; modelEfforts: Record<string, string> }>;
   onProviderChange: (provider: string, defaultModel: string) => void;
   onModelChange: (model: string) => void;
+  onCandidateToggle: (key: string) => void;
+  onCandidateClear: () => void;
   onPromptChange: (value: string) => void;
   onSend: () => Promise<void>;
   onReset: () => Promise<void>;
 }) {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerSearch, setModelPickerSearch] = useState('');
+  const [contextPickerOpen, setContextPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const contextPickerRef = useRef<HTMLDivElement>(null);
   const messages = session?.messages ?? [];
   const toolResultsById = useMemo(() => {
     const results = new Map<string, AgentMessage>();
@@ -1870,15 +1880,18 @@ function AgentSessionPanel({
     : 'No session';
 
   useEffect(() => {
-    if (!modelPickerOpen) return;
+    if (!modelPickerOpen && !contextPickerOpen) return;
     function handleClick(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
         setModelPickerOpen(false);
       }
+      if (contextPickerRef.current && !contextPickerRef.current.contains(e.target as Node)) {
+        setContextPickerOpen(false);
+      }
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [modelPickerOpen]);
+  }, [contextPickerOpen, modelPickerOpen]);
 
   const enabledProviders = AGENT_PROVIDER_OPTIONS.filter(
     (o) => providerProfiles[o.provider]?.enabled,
@@ -1892,12 +1905,15 @@ function AgentSessionPanel({
   }
 
   const currentProviderOption = AGENT_PROVIDER_OPTIONS.find((o) => o.provider === selectedProvider);
+  const candidateLabels = candidateKeys
+    .map((key) => instruments.find((instrument) => instrument.key === key)?.label ?? key)
+    .join(', ');
 
   return (
     <div className="agent-card agent-readout agent-session-card">
       <div className="agent-card-head">
         <span className="panel-label with-icon">
-          <Sparkles size={14} /> Chart Session
+          <Sparkles size={14} /> Agent Session
         </span>
         <span className="agent-bias neutral">{busy ? 'running' : 'idle'}</span>
       </div>
@@ -1907,7 +1923,7 @@ function AgentSessionPanel({
         <button
           aria-label="Start new agent session"
           className="session-icon-action"
-          disabled={busy || sessionLoading || !session?.session}
+          disabled={busy || sessionLoading}
           onClick={onReset}
           type="button"
         >
@@ -1985,6 +2001,47 @@ function AgentSessionPanel({
           </div>
         )}
       </div>
+      <div className="session-context-picker" ref={contextPickerRef}>
+        <button
+          className="session-model-trigger"
+          type="button"
+          disabled={busy || instruments.length === 0}
+          onClick={() => setContextPickerOpen(!contextPickerOpen)}
+        >
+          <ChartNoAxesCombined size={13} />
+          <span>{candidateKeys.length ? candidateLabels : 'All instruments available'}</span>
+          <ChevronDown size={14} />
+        </button>
+        {contextPickerOpen && (
+          <div className="session-model-dropdown session-context-dropdown">
+            <div className="session-model-group-head">
+              <span>Tool candidates only</span>
+              {candidateKeys.length > 0 && (
+                <button className="context-clear-button" type="button" onClick={onCandidateClear}>
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="session-model-dropdown-list">
+              {instruments.map((instrument) => {
+                const active = candidateKeys.includes(instrument.key);
+                return (
+                  <button
+                    key={instrument.key}
+                    className={`session-model-option ${active ? 'active' : ''}`}
+                    type="button"
+                    onClick={() => onCandidateToggle(instrument.key)}
+                  >
+                    {active && <Check size={14} />}
+                    <span>{instrument.label}</span>
+                    <span className="session-model-effort">{instrument.symbol}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
       <div className="session-transcript">
         {sessionLoading && (
           <div className="session-empty">
@@ -2003,7 +2060,7 @@ function AgentSessionPanel({
         {!sessionLoading && messages.length === 0 && (
           <div className="session-empty">
             <History size={16} />
-            <span>No turns in this chart session.</span>
+            <span>No turns in this agent session.</span>
           </div>
         )}
       </div>
@@ -2017,7 +2074,7 @@ function AgentSessionPanel({
               if (canSend) void onSend();
             }
           }}
-          placeholder="Ask about this chart"
+          placeholder="Ask the agent. Use the instrument picker only when you want to narrow tool calls."
           rows={3}
           value={prompt}
         />
@@ -2043,6 +2100,7 @@ function WorkspaceView({
   agentSession,
   agentSessionHistory,
   agentPrompt,
+  agentCandidateKeys,
   agentProvider,
   agentModel,
   agentBusyKey,
@@ -2059,6 +2117,8 @@ function WorkspaceView({
   setSelectedKey,
   setState,
   setAgentPrompt,
+  onAgentCandidateToggle,
+  onAgentCandidateClear,
   onAgentProviderChange,
   onAgentModelChange,
   updateAnalysisInterval,
@@ -2082,6 +2142,7 @@ function WorkspaceView({
   agentSession: AgentSessionResponse | null;
   agentSessionHistory: AgentSessionSummary[];
   agentPrompt: string;
+  agentCandidateKeys: string[];
   agentProvider: string;
   agentModel: string;
   agentBusyKey: string | null;
@@ -2098,6 +2159,8 @@ function WorkspaceView({
   setSelectedKey: (value: string) => void;
   setState: (state: MarketState) => void;
   setAgentPrompt: (value: string) => void;
+  onAgentCandidateToggle: (key: string) => void;
+  onAgentCandidateClear: () => void;
   onAgentProviderChange: (provider: string, defaultModel: string) => void;
   onAgentModelChange: (model: string) => void;
   updateAnalysisInterval: (value: string) => void;
@@ -2167,7 +2230,8 @@ function WorkspaceView({
         </div>
       </header>
 
-      <section className={`workspace ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <section className={`workspace ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${activeTab !== 'chart' ? 'workspace-no-sidebar' : ''}`}>
+        {activeTab === 'chart' && (
         <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
           {!sidebarCollapsed && (
             <>
@@ -2254,6 +2318,7 @@ function WorkspaceView({
             </div>
           )}
         </aside>
+        )}
 
         <section className="main-content">
           <div className="workspace-tabs" role="tablist">
@@ -2358,23 +2423,6 @@ function WorkspaceView({
 
           {activeTab === 'agent' && (
             <div className="agent-tab-layout">
-              <AgentSessionPanel
-                session={agentSession}
-                prompt={agentPrompt}
-                sessionActionKey={agentSessionActionKey}
-                sessionLoading={agentSessionLoading}
-                busy={agentBusyKey === selectedKey}
-                pendingToolCalls={pendingToolCalls}
-                disabled={!selectedKey || !selectedQuote?.candles.length}
-                selectedProvider={agentProvider}
-                selectedModel={agentModel}
-                providerProfiles={state?.config.agent.providerProfiles ?? {}}
-                onProviderChange={onAgentProviderChange}
-                onModelChange={onAgentModelChange}
-                onPromptChange={setAgentPrompt}
-                onSend={runAgentAnalysis}
-                onReset={resetAgentConversation}
-              />
               <AgentSessionHistoryList
                 activeSessionId={agentSession?.session?.id ?? null}
                 busyActionKey={agentSessionActionKey}
@@ -2382,6 +2430,27 @@ function WorkspaceView({
                 loading={agentSessionHistoryLoading}
                 onDelete={deleteAgentConversation}
                 onResume={resumeAgentConversation}
+              />
+              <AgentSessionPanel
+                session={agentSession}
+                prompt={agentPrompt}
+                instruments={state?.instruments ?? []}
+                candidateKeys={agentCandidateKeys}
+                sessionActionKey={agentSessionActionKey}
+                sessionLoading={agentSessionLoading}
+                busy={Boolean(agentBusyKey)}
+                pendingToolCalls={pendingToolCalls}
+                disabled={!state}
+                selectedProvider={agentProvider}
+                selectedModel={agentModel}
+                providerProfiles={state?.config.agent.providerProfiles ?? {}}
+                onProviderChange={onAgentProviderChange}
+                onModelChange={onAgentModelChange}
+                onCandidateToggle={onAgentCandidateToggle}
+                onCandidateClear={onAgentCandidateClear}
+                onPromptChange={setAgentPrompt}
+                onSend={runAgentAnalysis}
+                onReset={resetAgentConversation}
               />
             </div>
           )}
@@ -3415,6 +3484,7 @@ export default function App() {
   const [agentSessionActionKey, setAgentSessionActionKey] = useState<string | null>(null);
   const [agentSession, setAgentSession] = useState<AgentSessionResponse | null>(null);
   const [agentSessionHistory, setAgentSessionHistory] = useState<AgentSessionSummary[]>([]);
+  const [agentCandidateKeys, setAgentCandidateKeys] = useState<string[]>([]);
   const [pendingToolCalls, setPendingToolCalls] = useState<Set<string>>(() => new Set());
   const streamMessageIdsRef = useRef<Map<string, number>>(new Map());
   const [agentPrompt, setAgentPrompt] = useState('');
@@ -3523,48 +3593,29 @@ export default function App() {
   const selectedQuote = selectedKey ? state?.quotes[selectedKey] : undefined;
   const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
   const historyKey = selectedKey ? `${selectedKey}:${currentInterval}` : null;
-  const selectedAgentSession =
-    agentSession?.session?.instrumentKey === selectedKey || (!agentSession?.session && selectedKey)
-      ? agentSession
-      : null;
-  const selectedAgentSessionHistory = selectedKey
-    ? agentSessionHistory.filter((item) => item.instrumentKey === selectedKey)
-    : [];
 
   useEffect(() => {
-    if (!selectedKey) {
-      setAgentSession(null);
-      setAgentSessionHistory([]);
-      setAgentSessionActionKey(null);
-      setAgentPrompt('');
-      return;
-    }
     let disposed = false;
-    const key = selectedKey;
-    setAgentSessionLoadingKey(key);
+    const key = 'global';
     setAgentSessionHistoryLoadingKey(key);
-    setAgentPrompt('');
-    fetchAgentSession(key)
-      .then((payload) => {
-        if (!disposed) {
-          setAgentSession(payload);
-        }
-      })
-      .catch((error) => {
-        console.error(error);
-        if (!disposed) {
-          setAgentSession(null);
-        }
-      })
-      .finally(() => {
-        if (!disposed) {
-          setAgentSessionLoadingKey(null);
-        }
-      });
-    fetchAgentSessionHistory(key)
+    fetchAgentSessions()
       .then((payload) => {
         if (!disposed) {
           setAgentSessionHistory(payload.sessions);
+          if (!agentSession?.session && payload.sessions[0]) {
+            setAgentSessionLoadingKey(key);
+            fetchAgentSession(payload.sessions[0].id)
+              .then((sessionPayload) => {
+                if (!disposed) setAgentSession(sessionPayload);
+              })
+              .catch((error) => {
+                console.error(error);
+                if (!disposed) setAgentSession(null);
+              })
+              .finally(() => {
+                if (!disposed) setAgentSessionLoadingKey(null);
+              });
+          }
         }
       })
       .catch((error) => {
@@ -3581,7 +3632,14 @@ export default function App() {
     return () => {
       disposed = true;
     };
-  }, [selectedKey]);
+  }, []);
+
+  useEffect(() => {
+    if (!state) return;
+    setAgentCandidateKeys((current) =>
+      current.filter((key) => state.instruments.some((instrument) => instrument.key === key)),
+    );
+  }, [state]);
 
   // Saves a per-instrument K-line interval change from the top-bar selector.
   async function updateAnalysisInterval(interval: string) {
@@ -3631,20 +3689,37 @@ export default function App() {
     }
   }
 
-  // Sends the current prompt to the selected instrument's active agent session.
+  function toggleAgentCandidate(key: string) {
+    setAgentCandidateKeys((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
+    );
+  }
+
+  // Sends the current prompt to the current decoupled agent session.
   async function runAgentAnalysis() {
-    if (!selectedKey) return;
-    const key = selectedKey;
-    setAgentBusyKey(key);
+    let targetSessionId = agentSession?.session?.id ?? null;
+    setAgentBusyKey(targetSessionId ?? 'new');
     setPendingToolCalls(new Set());
     streamMessageIdsRef.current.clear();
     try {
+      if (!targetSessionId) {
+        const created = await createAgentSession({
+          provider: agentProvider,
+          model: agentModel,
+        });
+        targetSessionId = created.session?.id ?? null;
+        setAgentSession(created);
+        setAgentSessionHistory(created.history.sessions);
+      }
+      if (!targetSessionId) throw new Error('agent session create failed');
+      setAgentBusyKey(targetSessionId);
       await streamAgentMessage(
-        key,
+        targetSessionId,
         agentPrompt,
         {
           provider: agentProvider,
           model: agentModel,
+          candidateInstrumentKeys: agentCandidateKeys,
         },
         (event) => {
           if (event.type === 'tool_execution_start') {
@@ -3680,7 +3755,7 @@ export default function App() {
               const session = current ?? { session: null, messages: [] };
               const message = streamMessageToAgentMessage(raw, {
                 id: fallbackId,
-                sessionId: session.session?.id ?? '',
+                sessionId: session.session?.id ?? targetSessionId ?? '',
                 createdAt,
               });
               return {
@@ -3704,7 +3779,7 @@ export default function App() {
               const session = current ?? { session: null, messages: [] };
               const message: AgentMessage = {
                 id: -Date.now(),
-                sessionId: session.session?.id ?? '',
+                sessionId: session.session?.id ?? targetSessionId ?? '',
                 role: 'assistant',
                 content: event.error,
                 createdAt,
@@ -3728,7 +3803,7 @@ export default function App() {
           ...session,
           messages: upsertAgentMessage(session.messages, {
             id: -Date.now(),
-            sessionId: session.session?.id ?? '',
+            sessionId: session.session?.id ?? targetSessionId ?? '',
             role: 'assistant',
             content: message,
             createdAt: new Date().toISOString(),
@@ -3743,21 +3818,17 @@ export default function App() {
     }
   }
 
-  // Starts a fresh active agent session and clears the cached readout for this symbol.
+  // Starts a fresh decoupled agent session.
   async function resetAgentConversation() {
-    if (!selectedKey) return;
-    const key = selectedKey;
-    setAgentBusyKey(key);
+    setAgentBusyKey('new');
     try {
-      const payload = await resetAgentSession(key);
+      const payload = await createAgentSession({
+        provider: agentProvider,
+        model: agentModel,
+      });
       setAgentSession(payload);
       setAgentSessionHistory(payload.history.sessions);
       setAgentPrompt('');
-      setState((current) => {
-        if (!current) return current;
-        const { [key]: _removed, ...agentAnalyses } = current.agentAnalyses;
-        return { ...current, agentAnalyses };
-      });
     } catch (error) {
       console.error(error);
     } finally {
@@ -3765,17 +3836,16 @@ export default function App() {
     }
   }
 
-  // Restores a saved agent session for the selected symbol.
+  // Opens a saved decoupled agent session.
   async function resumeAgentConversation(sessionId: string) {
-    if (!selectedKey || agentSessionActionKey) return;
-    const key = selectedKey;
+    if (agentSessionActionKey) return;
     const actionKey = `resume:${sessionId}`;
     setAgentSessionActionKey(actionKey);
     try {
-      const payload = await resumeAgentSession(key, sessionId);
-      setState(payload.state);
-      setAgentSession(payload.session);
-      setAgentSessionHistory(payload.history.sessions);
+      const payload = await fetchAgentSession(sessionId);
+      const history = await fetchAgentSessionHistory();
+      setAgentSession(payload);
+      setAgentSessionHistory(history.sessions);
       setAgentPrompt('');
     } catch (error) {
       console.error(error);
@@ -3786,16 +3856,17 @@ export default function App() {
 
   // Deletes a saved agent session after explicit user confirmation.
   async function deleteAgentConversation(sessionId: string) {
-    if (!selectedKey || agentSessionActionKey) return;
+    if (agentSessionActionKey) return;
     const confirmed = window.confirm('Delete this saved agent session?');
     if (!confirmed) return;
-    const key = selectedKey;
     const actionKey = `delete:${sessionId}`;
     setAgentSessionActionKey(actionKey);
     try {
-      const payload = await deleteAgentSession(key, sessionId);
+      const payload = await deleteAgentSessionById(sessionId);
       setState(payload.state);
-      setAgentSession(payload.session);
+      setAgentSession((current) => (
+        current?.session?.id === sessionId ? { session: null, messages: [] } : current
+      ));
       setAgentSessionHistory(payload.history.sessions);
       setAgentPrompt('');
     } catch (error) {
@@ -3838,16 +3909,17 @@ export default function App() {
       selectedInstrument={selectedInstrument}
       selectedQuote={selectedQuote}
       theme={theme}
-      agentSession={selectedAgentSession}
-      agentSessionHistory={selectedAgentSessionHistory}
+      agentSession={agentSession}
+      agentSessionHistory={agentSessionHistory}
       agentPrompt={agentPrompt}
+      agentCandidateKeys={agentCandidateKeys}
       agentProvider={agentProvider}
       agentModel={agentModel}
       agentBusyKey={agentBusyKey}
       pendingToolCalls={pendingToolCalls}
       agentSessionActionKey={agentSessionActionKey}
-      agentSessionHistoryLoading={agentSessionHistoryLoadingKey === selectedKey}
-      agentSessionLoading={agentSessionLoadingKey === selectedKey}
+      agentSessionHistoryLoading={agentSessionHistoryLoadingKey === 'global'}
+      agentSessionLoading={agentSessionLoadingKey === 'global'}
       analysisIntervalBusy={analysisIntervalBusy}
       olderBusyKey={olderBusyKey}
       exhaustedHistoryKeys={exhaustedHistoryKeys}
@@ -3857,6 +3929,8 @@ export default function App() {
       setSelectedKey={setSelectedKey}
       setState={setState}
       setAgentPrompt={setAgentPrompt}
+      onAgentCandidateToggle={toggleAgentCandidate}
+      onAgentCandidateClear={() => setAgentCandidateKeys([])}
       onAgentProviderChange={(provider, defaultModel) => {
         setAgentProvider(provider);
         setAgentModel(defaultModel);

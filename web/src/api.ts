@@ -160,7 +160,33 @@ export async function removeWatchlistInstrument(key: string): Promise<MarketStat
   return payload.state;
 }
 
-// Loads the active chart-agent session for one instrument.
+// Lists all saved agent sessions for the decoupled chat workspace.
+export async function fetchAgentSessions(): Promise<AgentSessionHistoryResponse> {
+  const response = await fetch('/api/agent/sessions');
+  if (!response.ok) {
+    throw await responseError(response, 'agent sessions fetch failed');
+  }
+  return response.json();
+}
+
+// Creates a new decoupled agent session.
+export async function createAgentSession(options?: {
+  title?: string;
+  provider?: string;
+  model?: string;
+}): Promise<AgentSessionResponse & { history: AgentSessionHistoryResponse }> {
+  const response = await fetch('/api/agent/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options ?? {}),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'agent session create failed');
+  }
+  return response.json();
+}
+
+// Loads an agent session by id, or a legacy active chart-agent session by instrument key.
 export async function fetchAgentSession(key: string): Promise<AgentSessionResponse> {
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}`);
   if (!response.ok) {
@@ -169,9 +195,11 @@ export async function fetchAgentSession(key: string): Promise<AgentSessionRespon
   return response.json();
 }
 
-// Lists saved chart-agent sessions for one instrument.
-export async function fetchAgentSessionHistory(key: string): Promise<AgentSessionHistoryResponse> {
-  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/history`);
+// Lists saved sessions. Passing a key uses the legacy per-instrument history route.
+export async function fetchAgentSessionHistory(key?: string): Promise<AgentSessionHistoryResponse> {
+  const response = await fetch(
+    key ? `/api/agent/sessions/${encodeURIComponent(key)}/history` : '/api/agent/sessions',
+  );
   if (!response.ok) {
     throw await responseError(response, 'agent session history fetch failed');
   }
@@ -202,15 +230,27 @@ export async function deleteAgentSession(key: string, sessionId: string): Promis
   return response.json();
 }
 
+// Deletes a decoupled session by id.
+export async function deleteAgentSessionById(sessionId: string): Promise<AgentSessionMutationResponse> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'agent session delete failed');
+  }
+  return response.json();
+}
+
 export async function streamAgentMessage(
   key: string,
   message: string,
-  options: { provider?: string; model?: string } | undefined,
+  options: { provider?: string; model?: string; candidateInstrumentKeys?: string[] } | undefined,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<void> {
-  const body: Record<string, string> = { message };
+  const body: Record<string, string | string[]> = { message };
   if (options?.provider) body.provider = options.provider;
   if (options?.model) body.model = options.model;
+  if (options?.candidateInstrumentKeys) body.candidateInstrumentKeys = options.candidateInstrumentKeys;
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -761,8 +761,8 @@ class WebTests(unittest.TestCase):
         self.assertEqual(delete_payload["history"]["sessions"], [])
         self.assertNotIn(instrument.key, delete_payload["state"]["agentAnalyses"])
 
-    def test_agent_loop_prompt_includes_market_context_snapshot(self) -> None:
-        """Verify tool loop still gets authoritative market context before any tool calls."""
+    def test_agent_loop_prompt_uses_market_context_tool(self) -> None:
+        """Verify tool loop uses explicit market-context tools instead of prompt injection."""
         class FakeLoopProvider:
             name = "codex"
             model = "fake-loop"
@@ -812,11 +812,14 @@ class WebTests(unittest.TestCase):
         prompt = provider.messages[-1]["content"]
         self.assertEqual(response.status_code, 200)
         self.assertTrue(payload["result"]["available"])
-        self.assertIn("当前行情上下文", prompt)
-        self.assertIn('"instrument"', prompt)
-        self.assertIn('"candles"', prompt)
+        self.assertNotIn("当前行情上下文", prompt)
+        self.assertNotIn('"candles"', prompt)
         self.assertIn("alpaca:AAPL", prompt)
+        self.assertIn("get_market_context", prompt)
         self.assertTrue(provider.tools)
+        tool_names = {tool["function"]["name"] for tool in provider.tools}
+        self.assertIn("get_market_context", tool_names)
+        self.assertIn("get_multi_market_context", tool_names)
         user_messages = [message for message in provider.messages if message["role"] == "user"]
         self.assertEqual(len(user_messages), 1)
         self.assertEqual(user_messages[0]["content"], prompt)

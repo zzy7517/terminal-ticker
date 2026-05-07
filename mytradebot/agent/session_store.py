@@ -12,14 +12,36 @@ import uuid
 
 DEFAULT_AGENT_SESSION_FILENAME = "agent_sessions.sqlite3"
 DEFAULT_CACHE_SUBDIR = "mytradebot"
+_GLOBAL_SESSION_INSTRUMENT_KEY = ""
+_LIST_SESSIONS_SQL = """
+    SELECT
+        s.*,
+        COUNT(m.id) AS message_count,
+        COALESCE(
+            (
+                SELECT SUBSTR(REPLACE(REPLACE(m1.content, X'0A', ' '), X'0D', ' '), 1, 120)
+                FROM agent_messages m1
+                WHERE m1.session_id = s.id AND m1.role = 'user'
+                ORDER BY m1.created_at, m1.id
+                LIMIT 1
+            ),
+            ''
+        ) AS preview
+    FROM agent_sessions s
+    LEFT JOIN agent_messages m ON m.session_id = s.id
+    {where}
+    GROUP BY s.id
+    ORDER BY s.updated_at DESC, s.created_at DESC
+    LIMIT ?
+"""
 
 
 @dataclass(frozen=True)
 class AgentSession:
-    """说明：封装一个标的下的 Agent 会话元数据。"""
+    """说明：封装一个本地 Agent 会话元数据。"""
 
     id: str
-    instrument_key: str
+    instrument_key: str | None
     title: str
     provider: str
     model: str
@@ -115,7 +137,7 @@ class AgentSessionStore:
             """
             CREATE TABLE IF NOT EXISTS agent_sessions (
                 id TEXT PRIMARY KEY,
-                instrument_key TEXT NOT NULL,
+                instrument_key TEXT,
                 title TEXT NOT NULL,
                 provider TEXT NOT NULL,
                 model TEXT NOT NULL,
@@ -156,6 +178,7 @@ class AgentSessionStore:
 
     def get_active_session(self, instrument_key: str) -> AgentSession | None:
         """说明：读取某个标的当前 active 的会话。"""
+        stored_key = _stored_instrument_key(instrument_key)
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -165,28 +188,38 @@ class AgentSessionStore:
                 ORDER BY updated_at DESC
                 LIMIT 1
                 """,
-                (instrument_key,),
+                (stored_key,),
+            ).fetchone()
+        return _session_from_row(row) if row else None
+
+    def get_session(self, session_id: str) -> AgentSession | None:
+        """说明：按 id 读取 session 元数据。"""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?",
+                (session_id,),
             ).fetchone()
         return _session_from_row(row) if row else None
 
     def create_session(
         self,
         *,
-        instrument_key: str,
+        instrument_key: str | None = None,
         title: str,
         provider: str,
         model: str,
         api_mode: str | None = None,
         reasoning_effort: str | None = None,
     ) -> AgentSession:
-        """说明：创建一个新 active 会话，并停用同标的旧 active 会话。"""
+        """说明：创建一个新 active 会话，并停用同作用域旧 active 会话。"""
         session_id = str(uuid.uuid4())
         now = time.time()
-        clean_title = title.strip() or instrument_key
+        stored_key = _stored_instrument_key(instrument_key)
+        clean_title = title.strip() or (instrument_key or "New Agent Session")
         with self._connect() as connection:
             connection.execute(
                 "UPDATE agent_sessions SET active = 0 WHERE instrument_key = ? AND active = 1",
-                (instrument_key,),
+                (stored_key,),
             )
             connection.execute(
                 """
@@ -198,7 +231,7 @@ class AgentSessionStore:
                 """,
                 (
                     session_id,
-                    instrument_key,
+                    stored_key,
                     clean_title,
                     provider,
                     model,
@@ -213,6 +246,25 @@ class AgentSessionStore:
                 (session_id,),
             ).fetchone()
         return _session_from_row(row)
+
+    def create_global_session(
+        self,
+        *,
+        title: str,
+        provider: str,
+        model: str,
+        api_mode: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> AgentSession:
+        """说明：创建一个不绑定标的的全局 Agent 会话。"""
+        return self.create_session(
+            instrument_key=None,
+            title=title,
+            provider=provider,
+            model=model,
+            api_mode=api_mode,
+            reasoning_effort=reasoning_effort,
+        )
 
     def get_or_create_active_session(
         self,
@@ -256,15 +308,21 @@ class AgentSessionStore:
         self,
         session_id: str,
         *,
-        title: str,
-        provider: str,
-        model: str,
-        api_mode: str | None,
-        reasoning_effort: str | None,
+        title: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        api_mode: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> AgentSession:
         """说明：刷新 active 会话当前使用的 provider/model 展示元数据。"""
-        clean_title = title.strip()
         with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if existing is None:
+                raise ValueError(f"agent session not found: {session_id}")
+            clean_title = (title.strip() if title is not None else str(existing["title"]).strip())
             connection.execute(
                 """
                 UPDATE agent_sessions
@@ -277,10 +335,14 @@ class AgentSessionStore:
                 """,
                 (
                     clean_title,
-                    provider,
-                    model,
-                    api_mode,
-                    reasoning_effort,
+                    provider if provider is not None else str(existing["provider"]),
+                    model if model is not None else str(existing["model"]),
+                    api_mode if api_mode is not None else _optional_str(existing["api_mode"]),
+                    (
+                        reasoning_effort
+                        if reasoning_effort is not None
+                        else _optional_str(existing["reasoning_effort"])
+                    ),
                     session_id,
                 ),
             )
@@ -288,9 +350,11 @@ class AgentSessionStore:
                 "SELECT * FROM agent_sessions WHERE id = ?",
                 (session_id,),
             ).fetchone()
-        if row is None:
-            raise ValueError(f"agent session not found: {session_id}")
         return _session_from_row(row)
+
+    def rename_session(self, session_id: str, title: str) -> AgentSession:
+        """说明：只更新会话标题。"""
+        return self.update_session_metadata(session_id, title=title)
 
     def append_message(
         self,
@@ -386,37 +450,23 @@ class AgentSessionStore:
 
     def list_sessions(
         self,
-        instrument_key: str,
+        instrument_key: str | None = None,
         *,
         limit: int = 20,
     ) -> tuple[AgentSessionSummary, ...]:
-        """说明：按更新时间倒序列出某个标的的历史会话摘要。"""
+        """说明：按更新时间倒序列出历史会话摘要；instrument_key 为 None 时列出全局历史。"""
         clean_limit = max(1, min(int(limit), 100))
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                    s.*,
-                    COUNT(m.id) AS message_count,
-                    COALESCE(
-                        (
-                            SELECT SUBSTR(REPLACE(REPLACE(m1.content, X'0A', ' '), X'0D', ' '), 1, 120)
-                            FROM agent_messages m1
-                            WHERE m1.session_id = s.id AND m1.role = 'user'
-                            ORDER BY m1.created_at, m1.id
-                            LIMIT 1
-                        ),
-                        ''
-                    ) AS preview
-                FROM agent_sessions s
-                LEFT JOIN agent_messages m ON m.session_id = s.id
-                WHERE s.instrument_key = ?
-                GROUP BY s.id
-                ORDER BY s.updated_at DESC, s.created_at DESC
-                LIMIT ?
-                """,
-                (instrument_key, clean_limit),
-            ).fetchall()
+            if instrument_key is None:
+                rows = connection.execute(
+                    _LIST_SESSIONS_SQL.replace("{where}", ""),
+                    (clean_limit,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    _LIST_SESSIONS_SQL.replace("{where}", "WHERE s.instrument_key = ?"),
+                    (_stored_instrument_key(instrument_key), clean_limit),
+                ).fetchall()
         return tuple(
             AgentSessionSummary(
                 session=_session_from_row(row),
@@ -426,8 +476,13 @@ class AgentSessionStore:
             for row in rows
         )
 
+    def list_all_sessions(self, *, limit: int = 100) -> tuple[AgentSessionSummary, ...]:
+        """说明：列出所有 Agent 会话，供解耦后的历史侧栏使用。"""
+        return self.list_sessions(None, limit=limit)
+
     def activate_session(self, *, instrument_key: str, session_id: str) -> AgentSession:
         """说明：把指定历史会话恢复为某标的的 active 会话。"""
+        stored_key = _stored_instrument_key(instrument_key)
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -435,13 +490,37 @@ class AgentSessionStore:
                 FROM agent_sessions
                 WHERE id = ? AND instrument_key = ?
                 """,
-                (session_id, instrument_key),
+                (session_id, stored_key),
             ).fetchone()
             if row is None:
                 raise ValueError(f"agent session not found: {session_id}")
             connection.execute(
                 "UPDATE agent_sessions SET active = 0 WHERE instrument_key = ? AND active = 1",
-                (instrument_key,),
+                (stored_key,),
+            )
+            connection.execute(
+                "UPDATE agent_sessions SET active = 1 WHERE id = ?",
+                (session_id,),
+            )
+            refreshed = connection.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        return _session_from_row(refreshed)
+
+    def activate_session_by_id(self, session_id: str) -> AgentSession:
+        """说明：把任意 session 标记为其作用域下的 active 会话。"""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"agent session not found: {session_id}")
+            stored_key = _stored_instrument_key(_optional_str(row["instrument_key"]))
+            connection.execute(
+                "UPDATE agent_sessions SET active = 0 WHERE instrument_key = ? AND active = 1",
+                (stored_key,),
             )
             connection.execute(
                 "UPDATE agent_sessions SET active = 1 WHERE id = ?",
@@ -455,6 +534,7 @@ class AgentSessionStore:
 
     def delete_session(self, *, instrument_key: str, session_id: str) -> AgentSession | None:
         """说明：删除指定历史会话，并保证此后该标的恰好剩一个 active 会话（若仍有剩余）。"""
+        stored_key = _stored_instrument_key(instrument_key)
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -462,7 +542,7 @@ class AgentSessionStore:
                 FROM agent_sessions
                 WHERE id = ? AND instrument_key = ?
                 """,
-                (session_id, instrument_key),
+                (session_id, stored_key),
             ).fetchone()
             if row is None:
                 raise ValueError(f"agent session not found: {session_id}")
@@ -475,7 +555,7 @@ class AgentSessionStore:
                 ORDER BY active DESC, updated_at DESC, created_at DESC
                 LIMIT 1
                 """,
-                (instrument_key,),
+                (stored_key,),
             ).fetchone()
             if next_row is None:
                 return None
@@ -489,6 +569,18 @@ class AgentSessionStore:
                     (next_row["id"],),
                 ).fetchone()
         return _session_from_row(next_row)
+
+    def delete_session_by_id(self, session_id: str) -> bool:
+        """说明：按 session id 删除会话。"""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM agent_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"agent session not found: {session_id}")
+            connection.execute("DELETE FROM agent_sessions WHERE id = ?", (session_id,))
+        return True
 
     def history_for_context(self, session_id: str, *, limit: int = 8) -> tuple[dict[str, Any], ...]:
         """说明：把最近消息压缩成可发送给 LLM 的会话上下文。"""
@@ -532,7 +624,7 @@ def _session_from_row(row: sqlite3.Row) -> AgentSession:
     """说明：把 SQLite row 转成 AgentSession。"""
     return AgentSession(
         id=str(row["id"]),
-        instrument_key=str(row["instrument_key"]),
+        instrument_key=_optional_str(row["instrument_key"]),
         title=str(row["title"]),
         provider=str(row["provider"]),
         model=str(row["model"]),
@@ -590,6 +682,12 @@ def _ensure_agent_session_columns(connection: sqlite3.Connection) -> None:
     for column, statement in migrations.items():
         if column not in columns:
             connection.execute(statement)
+
+
+def _stored_instrument_key(instrument_key: str | None) -> str:
+    """说明：SQLite 兼容层；空字符串表示新设计下不绑定标的的全局 session。"""
+    return (instrument_key or _GLOBAL_SESSION_INSTRUMENT_KEY).strip()
+
 
 def _optional_str(value: Any) -> str | None:
     """说明：把可空 SQLite 值转成字符串。"""

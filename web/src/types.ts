@@ -68,7 +68,7 @@ export interface AgentMessageMetadata {
 
 export interface AgentSession {
   id: string;
-  instrumentKey: string;
+  instrumentKey: string | null;
   title: string;
   provider: string;
   model: string;

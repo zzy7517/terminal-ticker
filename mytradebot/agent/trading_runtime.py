@@ -1,17 +1,13 @@
 """Trading domain runtime built on the generic agent runtime."""
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from ..config import AgentConfig
-from ..domain.quotes import QuoteState
-from ..market_data.router import MarketInstrument
 from ..trading import TradeStore
 from .loop import AgentEventHandler, AgentLLMProvider, LoopResult
-from .provider import build_agent_context
 from .runtime import AgentRuntime, AgentRuntimeServices, ToolPack
 from .tools import (
     build_market_tools,
@@ -39,7 +35,7 @@ class TradingAgentTurnResult:
     """Result of one trading-domain agent turn."""
 
     loop_result: LoopResult
-    context: dict[str, Any]
+    context: dict[str, Any] | None
     provider: AgentLLMProvider
 
     def to_payload(self) -> dict[str, Any]:
@@ -72,32 +68,22 @@ class TradingAgentRuntime:
     async def run_turn(
         self,
         *,
-        instrument: MarketInstrument,
-        quote: QuoteState,
         session_id: str,
         user_prompt: str,
         history: tuple[dict[str, Any], ...],
-        analysis_interval: str,
+        candidate_instrument_keys: tuple[str, ...] = tuple(),
         event_handler: AgentEventHandler | None = None,
     ) -> TradingAgentTurnResult:
-        """Run one trading analysis turn with the current market snapshot."""
-        context = build_agent_context(
-            instrument=instrument,
-            quote=quote,
-            interval=analysis_interval,
-            max_candles=self.config.max_candles,
-            session_history=tuple(),
-        )
+        """Run one trading analysis turn. Market data is available through tools."""
         runtime = AgentRuntime(
             provider=self.provider,
-            tool_packs=self._tool_packs(session_id),
+            tool_packs=self._tool_packs(session_id, candidate_instrument_keys=candidate_instrument_keys),
             services=self.services.runtime_services,
         )
         loop_result = await runtime.run(
             user_message=self._build_prompt(
-                instrument=instrument,
-                context=context,
                 user_prompt=user_prompt,
+                candidate_instrument_keys=candidate_instrument_keys,
             ),
             conversation_history=_history_without_current_turn(
                 history,
@@ -107,14 +93,25 @@ class TradingAgentRuntime:
         )
         return TradingAgentTurnResult(
             loop_result=loop_result,
-            context=context,
+            context=None,
             provider=self.provider,
         )
 
-    def _tool_packs(self, session_id: str) -> tuple[ToolPack, ...]:
+    def _tool_packs(
+        self,
+        session_id: str,
+        *,
+        candidate_instrument_keys: tuple[str, ...],
+    ) -> tuple[ToolPack, ...]:
         services = self.services
         return (
-            ToolPack("market", lambda: build_market_tools(services.context_provider)),
+            ToolPack(
+                "market",
+                lambda: build_market_tools(
+                    services.context_provider,
+                    candidate_instrument_keys=candidate_instrument_keys,
+                ),
+            ),
             ToolPack(
                 "trading",
                 lambda: build_trading_tools(
@@ -131,36 +128,24 @@ class TradingAgentRuntime:
     def _build_prompt(
         self,
         *,
-        instrument: MarketInstrument,
-        context: dict[str, Any],
         user_prompt: str,
+        candidate_instrument_keys: tuple[str, ...],
     ) -> str:
-        lessons_block = self._lessons_block(instrument.key)
+        candidates = (
+            "\n".join(f"- {key}" for key in candidate_instrument_keys)
+            if candidate_instrument_keys
+            else "- 未指定；需要行情时先调用 list_instruments。"
+        )
         return (
-            f"当前分析标的: {instrument.label} ({instrument.key})\n\n"
-            "当前行情上下文(JSON，工具返回值优先于这里的快照):\n"
-            f"{json.dumps(context, ensure_ascii=False, separators=(',', ':'))}"
-            f"{lessons_block}\n\n"
+            "你是交易研究助手。Agent session 与图表选中标的完全解耦。\n"
+            "不要假设当前对话天然绑定任何标的；如果用户问题没有涉及行情、K 线、价格、交易计划或下单理由，可以直接回答。\n"
+            "如果问题涉及实时行情、K 线、多周期结构、标的对比、交易计划或下单理由，必须先调用 "
+            "list_instruments、get_market_context 或 get_multi_market_context 获取上下文。\n"
+            "下单工具必须使用明确的 instrument_key；用户没有明确目标时先追问或调用 list_instruments，不能使用隐式默认。\n\n"
+            "本轮 UI 候选标的（仅用于缩小工具候选范围，不是会话绑定关系）:\n"
+            f"{candidates}\n\n"
             f"{user_prompt}"
         )
-
-    def _lessons_block(self, instrument_key: str) -> str:
-        lessons = self.services.trade_store.list_lessons(
-            instrument_key=instrument_key,
-            limit=5,
-        )
-        if not lessons:
-            return ""
-        bullets = "\n".join(
-            f"- [{lesson['category'] or 'general'}] {lesson['text']}"
-            for lesson in lessons
-        )
-        return (
-            "\n\n过去同标的交易复盘 (最多 5 条，时间倒序):\n"
-            f"{bullets}\n"
-            "在给出计划和开单前请参考上述教训，避免重复错误。\n"
-        )
-
 
 def _history_without_current_turn(
     history: tuple[dict[str, Any], ...],

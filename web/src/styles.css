@@ -320,6 +320,11 @@ textarea:focus-visible {
   grid-template-columns: 56px minmax(0, 1fr);
 }
 
+.workspace.workspace-no-sidebar,
+.workspace.sidebar-collapsed.workspace-no-sidebar {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* ── Sidebar ──────────────────────────────────────────────────────── */
 .sidebar {
   background: var(--panel);
@@ -2123,7 +2128,8 @@ textarea:focus-visible {
 }
 
 /* ── Session model picker (chat panel) ────────────────────────────── */
-.session-model-picker {
+.session-model-picker,
+.session-context-picker {
   position: relative;
 }
 
@@ -2166,6 +2172,22 @@ textarea:focus-visible {
   z-index: 100;
   display: flex;
   flex-direction: column;
+}
+
+.session-context-dropdown {
+  min-width: 320px;
+}
+
+.context-clear-button {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  margin-left: auto;
+  padding: 0;
+  text-transform: uppercase;
 }
 
 .session-model-dropdown-search {
@@ -2671,6 +2693,15 @@ textarea:focus-visible {
   .stat-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .agent-tab-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-tab-layout .session-history {
+    max-height: 260px;
+    min-height: 0;
+  }
 }
 
 @media (max-width: 640px) {
@@ -2967,8 +2998,8 @@ textarea:focus-visible {
 
 /* ── Agent tab layout ─────────────────────────────────────────────── */
 .agent-tab-layout {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   gap: 16px;
   min-height: 0;
 }
@@ -3105,12 +3136,23 @@ textarea:focus-visible {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-lg);
   background: var(--panel);
+  max-height: calc(100vh - 190px);
+  min-height: 520px;
+  overflow: hidden;
   padding: 12px 14px;
 }
 .agent-tab-layout .session-history-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 6px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.agent-tab-layout .agent-session-card {
+  min-height: 520px;
+}
+.agent-tab-layout .session-transcript {
+  max-height: none;
+  min-height: 260px;
 }
 
 /* ── News Settings page ───────────────────────────────────────────── */
