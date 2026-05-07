@@ -911,6 +911,29 @@ textarea:focus-visible {
   text-transform: uppercase;
 }
 
+.context-badge {
+  align-items: center;
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 10px;
+  gap: 4px;
+  padding: 2px 6px;
+}
+
+.context-badge.warning {
+  border-color: var(--caution);
+  color: var(--caution);
+}
+
+.context-badge.danger {
+  border-color: var(--negative);
+  color: var(--negative);
+}
+
 /* ── Agent session card ───────────────────────────────────────────── */
 .agent-session-card {
   display: grid;
@@ -1021,10 +1044,27 @@ textarea:focus-visible {
   gap: 6px;
 }
 
-.session-history-head small {
-  color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 10px;
+.session-new-btn {
+  align-items: center;
+  background: none;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  padding: 3px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.session-new-btn:hover:not(:disabled) {
+  background: var(--accent-tint);
+  color: var(--text-primary);
+}
+
+.session-new-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .session-history-list {
@@ -1146,6 +1186,9 @@ textarea:focus-visible {
 
 .session-message.user {
   background: var(--accent-tint);
+  width: fit-content;
+  max-width: 80%;
+  justify-self: end;
 }
 
 :root[data-theme="dark"] .session-message.user {

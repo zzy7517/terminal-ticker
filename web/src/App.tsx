@@ -25,6 +25,7 @@ import {
   Save,
   Search,
   Settings,
+  SquarePen,
   Sparkles,
   Sun,
   Trash2,
@@ -1730,6 +1731,7 @@ function AgentSessionHistoryList({
   busyActionKey,
   history,
   loading,
+  onNew,
   onDelete,
   onResume,
 }: {
@@ -1737,6 +1739,7 @@ function AgentSessionHistoryList({
   busyActionKey: string | null;
   history: AgentSessionSummary[];
   loading: boolean;
+  onNew: () => Promise<void>;
   onDelete: (sessionId: string) => Promise<void>;
   onResume: (sessionId: string) => Promise<void>;
 }) {
@@ -1760,7 +1763,15 @@ function AgentSessionHistoryList({
         <span>
           <History size={13} /> Chats
         </span>
-        <small>{loading ? 'Loading' : `${history.length} saved`}</small>
+        <button
+          className="session-new-btn"
+          disabled={Boolean(busyActionKey)}
+          onClick={() => void onNew()}
+          title="New Chat"
+          type="button"
+        >
+          <SquarePen size={14} />
+        </button>
       </div>
       <div className="session-history-list">
         {loading && (
@@ -1832,6 +1843,8 @@ function AgentSessionPanel({
   onPromptChange,
   onSend,
   onReset,
+  modelCache,
+  contextUsage,
 }: {
   session: AgentSessionResponse | null;
   prompt: string;
@@ -1852,6 +1865,8 @@ function AgentSessionPanel({
   onPromptChange: (value: string) => void;
   onSend: () => Promise<void>;
   onReset: () => Promise<void>;
+  modelCache: Record<string, AgentModelOption[]>;
+  contextUsage: { promptTokens: number; totalTokens: number } | null;
 }) {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerSearch, setModelPickerSearch] = useState('');
@@ -1905,6 +1920,12 @@ function AgentSessionPanel({
     .map((key) => instruments.find((instrument) => instrument.key === key)?.label ?? key)
     .join(', ');
 
+  const cachedModel = (modelCache[selectedProvider] ?? []).find((m) => m.slug === selectedModel);
+  const contextWindow = cachedModel?.contextWindow ?? null;
+  const contextPercent = contextUsage && contextWindow && contextWindow > 0
+    ? Math.round((contextUsage.promptTokens / contextWindow) * 100)
+    : null;
+
   return (
     <div className="agent-card agent-readout agent-session-card">
       <div className="agent-card-head">
@@ -1912,6 +1933,11 @@ function AgentSessionPanel({
           <Sparkles size={14} /> Agent Session
         </span>
         <span className="agent-bias neutral">{busy ? 'running' : 'idle'}</span>
+        {contextPercent !== null && (
+          <span className={`context-badge${contextPercent > 90 ? ' danger' : contextPercent > 70 ? ' warning' : ''}`}>
+            <CircleDot size={10} /> {contextPercent}% context
+          </span>
+        )}
       </div>
       <div className="session-toolbar">
         <small>{sessionLoading ? 'Loading' : sessionTime}</small>
@@ -2127,6 +2153,8 @@ function WorkspaceView({
   onThemeToggle,
   openSettings,
   openWatchlistSettings,
+  modelCache,
+  contextUsage,
 }: {
   state: MarketState | null;
   socketStatus: string;
@@ -2169,6 +2197,8 @@ function WorkspaceView({
   onThemeToggle: () => void;
   openSettings: () => void;
   openWatchlistSettings: () => void;
+  modelCache: Record<string, AgentModelOption[]>;
+  contextUsage: { promptTokens: number; totalTokens: number } | null;
 }) {
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
   const collapsedKeys = state?.instruments.map((instrument) => instrument.key) ?? [];
@@ -2425,6 +2455,7 @@ function WorkspaceView({
                 busyActionKey={agentSessionActionKey}
                 history={agentSessionHistory}
                 loading={agentSessionHistoryLoading}
+                onNew={resetAgentConversation}
                 onDelete={deleteAgentConversation}
                 onResume={resumeAgentConversation}
               />
@@ -2448,6 +2479,8 @@ function WorkspaceView({
                 onPromptChange={setAgentPrompt}
                 onSend={runAgentAnalysis}
                 onReset={resetAgentConversation}
+                modelCache={modelCache}
+                contextUsage={contextUsage}
               />
             </div>
           )}
@@ -2480,18 +2513,23 @@ function WorkspaceView({
 function ProviderSettingsPanel({
   state,
   onState,
+  modelCache,
+  onModelCacheUpdate,
 }: {
   state: MarketState | null;
   onState: (state: MarketState) => void;
+  modelCache: Record<string, AgentModelOption[]>;
+  onModelCacheUpdate: (updater: (prev: Record<string, AgentModelOption[]>) => Record<string, AgentModelOption[]>) => void;
 }) {
   const config = state?.config.agent;
   const profiles = config?.providerProfiles ?? {};
   const [activeProvider, setActiveProvider] = useState<string>(AGENT_PROVIDER_OPTIONS[0].provider);
   const [providerSearch, setProviderSearch] = useState('');
-  const [models, setModels] = useState<AgentModelOption[]>([]);
   const [modelSearch, setModelSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
+
+  const models = modelCache[activeProvider] ?? [];
 
   const option = AGENT_PROVIDER_OPTIONS.find((o) => o.provider === activeProvider) ?? AGENT_PROVIDER_OPTIONS[0];
   const profile = profiles[activeProvider];
@@ -2500,7 +2538,6 @@ function ProviderSettingsPanel({
 
   function switchProvider(provider: string) {
     setActiveProvider(provider);
-    setModels([]);
     setModelSearch('');
     setStatus('');
   }
@@ -2515,7 +2552,7 @@ function ProviderSettingsPanel({
         setStatus('已启用，正在拉取模型列表...');
         await loadModels();
       } else {
-        setModels([]);
+        onModelCacheUpdate((prev) => { const next = { ...prev }; delete next[activeProvider]; return next; });
         setStatus('已关闭。');
       }
     } catch (error) {
@@ -2528,7 +2565,7 @@ function ProviderSettingsPanel({
     try {
       const payload = await fetchProviderModels(activeProvider);
       const visible = payload.models.filter((m) => m.supportedInApi && m.visibility !== 'hide');
-      setModels(visible);
+      onModelCacheUpdate((prev) => ({ ...prev, [activeProvider]: visible }));
       setStatus(`${visible.length} 个模型可用。`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Model refresh failed.');
@@ -3513,6 +3550,26 @@ export default function App() {
     }
   }, [profilesSig]);
 
+  useEffect(() => {
+    if (!state?.config.agent.providerProfiles) return;
+    const profiles = state.config.agent.providerProfiles;
+    const enabledProviders = AGENT_PROVIDER_OPTIONS
+      .filter((o) => profiles[o.provider]?.enabled)
+      .map((o) => o.provider);
+    for (const provider of enabledProviders) {
+      if (modelCache[provider]?.length) continue;
+      fetchProviderModels(provider)
+        .then((payload) => {
+          const visible = payload.models.filter((m) => m.supportedInApi && m.visibility !== 'hide');
+          setModelCache((prev) => ({ ...prev, [provider]: visible }));
+        })
+        .catch(() => {});
+    }
+  }, [profilesSig]);
+
+  const [modelCache, setModelCache] = useState<Record<string, AgentModelOption[]>>({});
+  const [contextUsage, setContextUsage] = useState<{ promptTokens: number; totalTokens: number } | null>(null);
+
   const [analysisIntervalBusy, setAnalysisIntervalBusy] = useState(false);
   const [olderBusyKey, setOlderBusyKey] = useState<string | null>(null);
   const [exhaustedHistoryKeys, setExhaustedHistoryKeys] = useState<Set<string>>(() => new Set());
@@ -3762,6 +3819,15 @@ export default function App() {
             });
             return;
           }
+          if (event.type === 'agent_end') {
+            if (typeof event.totalTokens === 'number') {
+              setContextUsage({
+                promptTokens: event.promptTokens ?? 0,
+                totalTokens: event.totalTokens,
+              });
+            }
+            return;
+          }
           if (event.type === 'session_update') {
             setState(event.state);
             setAgentSession(event.session);
@@ -3818,6 +3884,7 @@ export default function App() {
   // Starts a fresh decoupled agent session.
   async function resetAgentConversation() {
     setAgentBusyKey('new');
+    setContextUsage(null);
     try {
       const payload = await createAgentSession({
         provider: agentProvider,
@@ -3882,7 +3949,7 @@ export default function App() {
         onBack={() => navigateToRoute({ view: 'workspace' })}
       >
         {route.section === 'providers' ? (
-          <ProviderSettingsPanel state={state} onState={setState} />
+          <ProviderSettingsPanel state={state} onState={setState} modelCache={modelCache} onModelCacheUpdate={setModelCache} />
         ) : route.section === 'agent-context' ? (
           <AgentContextSettingsPanel state={state} onState={setState} />
         ) : route.section === 'news' ? (
@@ -3942,6 +4009,8 @@ export default function App() {
       onThemeToggle={() => setTheme((current) => nextTheme(current))}
       openSettings={() => navigateToRoute({ view: 'settings', section: 'providers' })}
       openWatchlistSettings={() => navigateToRoute({ view: 'settings', section: 'watchlist' })}
+      modelCache={modelCache}
+      contextUsage={contextUsage}
     />
   );
 }

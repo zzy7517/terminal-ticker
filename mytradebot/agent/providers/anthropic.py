@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from ...config import AgentConfig
 from ...config.agent_models import (
@@ -77,16 +80,16 @@ class AnthropicProvider:
                 return await _collect_anthropic_stream_response(response, on_delta=on_delta)
 
     async def list_models(self) -> list[dict[str, Any]]:
-        """返回本地可配置的 Anthropic 模型列表。
-
-        这个 proxy 的示例请求只暴露了 /messages。模型发现先保持本地静态列表；
-        如需多个模型，可用 MYTRADEBOT_ANTHROPIC_MODELS 逗号分隔补充。
-        """
-        slugs = [self.model, DEFAULT_ANTHROPIC_MODEL]
-        env_models = _first_env(ANTHROPIC_ENV_MODELS)
-        if env_models:
-            slugs.extend(item.strip() for item in env_models.split(","))
-        return [_anthropic_model_option(slug) for slug in _unique_nonempty(slugs)]
+        """从 Anthropic Models API 获取可用模型列表，失败时回退到本地静态列表。"""
+        try:
+            return await _fetch_anthropic_models(self._base_url)
+        except Exception:
+            logger.debug("Anthropic models API unavailable, falling back to static list", exc_info=True)
+            slugs = [self.model, DEFAULT_ANTHROPIC_MODEL]
+            env_models = _first_env(ANTHROPIC_ENV_MODELS)
+            if env_models:
+                slugs.extend(item.strip() for item in env_models.split(","))
+            return [_anthropic_model_option(slug) for slug in _unique_nonempty(slugs)]
 
 
 def _first_env(names: tuple[str, ...]) -> str:
@@ -114,6 +117,13 @@ def _resolve_max_tokens() -> int:
         return max(1, int(raw_value))
     except ValueError:
         return 1200
+
+
+def _models_endpoint(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        return f"{base}/models"
+    return f"{base}/v1/models"
 
 
 def _messages_endpoint(base_url: str) -> str:
@@ -436,7 +446,7 @@ def _merge_anthropic_usage(target: dict[str, int], raw_usage: dict[str, Any]) ->
             target[target_key] = value
 
 
-def _anthropic_model_option(slug: str) -> dict[str, Any]:
+def _anthropic_model_option(slug: str, *, context_window: int | None = None) -> dict[str, Any]:
     return {
         "slug": slug,
         "displayName": slug,
@@ -445,9 +455,45 @@ def _anthropic_model_option(slug: str) -> dict[str, Any]:
         "supportedInApi": True,
         "defaultReasoningEffort": "",
         "supportedReasoningEfforts": [],
-        "contextWindow": None,
+        "contextWindow": context_window,
         "preferWebsockets": False,
     }
+
+
+async def _fetch_anthropic_models(base_url: str) -> list[dict[str, Any]]:
+    """调用 GET /v1/models 获取 Anthropic 可用模型列表。"""
+    api_key = _resolve_anthropic_api_key()
+    url = _models_endpoint(base_url)
+    headers = _anthropic_headers(api_key, url)
+    timeout = httpx.Timeout(10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.get(url, headers=headers, params={"limit": 100})
+        resp.raise_for_status()
+        data = resp.json()
+    models: list[dict[str, Any]] = []
+    for item in data.get("data", []):
+        if not isinstance(item, dict):
+            continue
+        slug = item.get("id", "")
+        if not slug:
+            continue
+        ctx = item.get("max_input_tokens")
+        context_window = ctx if isinstance(ctx, int) else None
+        display_name = item.get("display_name") or slug
+        models.append({
+            "slug": slug,
+            "displayName": display_name,
+            "description": item.get("type", "Anthropic model"),
+            "visibility": "public",
+            "supportedInApi": True,
+            "defaultReasoningEffort": "",
+            "supportedReasoningEfforts": [],
+            "contextWindow": context_window,
+            "preferWebsockets": False,
+        })
+    if not models:
+        raise ValueError("Empty model list from Anthropic API")
+    return models
 
 
 def _unique_nonempty(values: list[str]) -> list[str]:

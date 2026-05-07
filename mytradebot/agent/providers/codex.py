@@ -477,6 +477,7 @@ async def _collect_response_stream_full(
     done_text: str | None = None
     tool_calls: list[LoopToolCall] = []
     pending_fc: dict[str, dict[str, Any]] = {}
+    usage: dict[str, int] = {}
 
     async for line in response.aiter_lines():
         if not line.startswith("data: "):
@@ -549,6 +550,15 @@ async def _collect_response_stream_full(
                         pending_fc[call_key]["name"] = item["name"]
                     if item.get("arguments"):
                         pending_fc[call_key]["arguments"] = item["arguments"]
+        elif event_type == "response.completed":
+            resp = event.get("response")
+            if isinstance(resp, dict):
+                raw_usage = resp.get("usage")
+                if isinstance(raw_usage, dict):
+                    for src, dst in (("input_tokens", "prompt_tokens"), ("output_tokens", "completion_tokens")):
+                        val = raw_usage.get(src)
+                        if isinstance(val, int):
+                            usage[dst] = val
         elif event_type in {"response.failed", "response.incomplete", "error"}:
             raise LLMProviderError(_event_error_message(event))
 
@@ -575,6 +585,7 @@ async def _collect_response_stream_full(
         content=text if text else None,
         tool_calls=tool_calls,
         finish_reason="tool_calls" if tool_calls else "stop",
+        usage=usage,
     )
 
 

@@ -38,6 +38,7 @@ export interface LoopResult {
   }>;
   iterations: number;
   totalTokens: number;
+  promptTokens?: number;
   finished: boolean;
   error: string | null;
 }
@@ -116,7 +117,7 @@ export type AgentStreamEvent =
   | { type: 'message_start' | 'message_update' | 'message_end'; message: Partial<AgentMessage> & { clientId?: string; role: AgentMessage['role']; content: string; metadata?: AgentMessageMetadata | null; error?: string | null }; delta?: string }
   | { type: 'tool_execution_start'; toolCall: AgentToolCall }
   | { type: 'tool_execution_end'; toolCall: AgentToolCall; toolResult: LoopToolResult }
-  | { type: 'agent_end'; error: string | null }
+  | { type: 'agent_end'; error: string | null; totalTokens?: number; promptTokens?: number }
   | { type: 'error'; error: string }
   | { type: 'session_update'; session: AgentSessionResponse; history: AgentSessionHistoryResponse; state: MarketState };
 

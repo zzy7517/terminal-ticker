@@ -105,6 +105,7 @@ class LoopResult:
     messages: list[TranscriptMessage] = field(default_factory=list)
     iterations: int = 0
     total_tokens: int = 0
+    prompt_tokens: int = 0
     finished: bool = True
     error: str | None = None
 
@@ -115,6 +116,7 @@ class LoopResult:
             "messages": [message.to_payload() for message in self.messages],
             "iterations": self.iterations,
             "totalTokens": self.total_tokens,
+            "promptTokens": self.prompt_tokens,
             "finished": self.finished,
             "error": self.error,
         }
@@ -149,6 +151,7 @@ class AgentLoop:
         steps: list[LoopStep] = []
         transcript_messages: list[TranscriptMessage] = []
         total_tokens = 0
+        prompt_tokens = 0
         iteration = 0
         await _emit(event_handler, {"type": "agent_start"})
 
@@ -205,18 +208,23 @@ class AgentLoop:
                 logger.error("agent loop provider error: %s", exc)
                 error_text = str(exc) or exc.__class__.__name__
                 await _emit(event_handler, {"type": "error", "error": error_text})
-                await _emit(event_handler, {"type": "agent_end", "error": error_text})
+                await _emit(event_handler, {
+                    "type": "agent_end", "error": error_text,
+                    "totalTokens": total_tokens, "promptTokens": prompt_tokens,
+                })
                 return LoopResult(
                     content="",
                     steps=steps,
                     messages=transcript_messages,
                     iterations=iteration,
                     total_tokens=total_tokens,
+                    prompt_tokens=prompt_tokens,
                     finished=False,
                     error=error_text,
                 )
 
             total_tokens += sum(response.usage.values())
+            prompt_tokens = response.usage.get("prompt_tokens", prompt_tokens)
             content = response.content or "".join(streamed_parts)
             tool_call_payloads = _tool_call_metadata(response.tool_calls)
             assistant_metadata = {"toolCalls": tool_call_payloads} if tool_call_payloads else None
@@ -241,24 +249,32 @@ class AgentLoop:
                 if not content.strip():
                     error_text = "Agent returned no output text."
                     await _emit(event_handler, {"type": "error", "error": error_text})
-                    await _emit(event_handler, {"type": "agent_end", "error": error_text})
+                    await _emit(event_handler, {
+                        "type": "agent_end", "error": error_text,
+                        "totalTokens": total_tokens, "promptTokens": prompt_tokens,
+                    })
                     return LoopResult(
                         content="",
                         steps=steps,
                         messages=transcript_messages,
                         iterations=iteration,
                         total_tokens=total_tokens,
+                        prompt_tokens=prompt_tokens,
                         finished=False,
                         error=error_text,
                     )
                 await _emit(event_handler, {"type": "turn_end", "iteration": iteration})
-                await _emit(event_handler, {"type": "agent_end", "error": None})
+                await _emit(event_handler, {
+                    "type": "agent_end", "error": None,
+                    "totalTokens": total_tokens, "promptTokens": prompt_tokens,
+                })
                 return LoopResult(
                     content=content,
                     steps=steps,
                     messages=transcript_messages,
                     iterations=iteration,
                     total_tokens=total_tokens,
+                    prompt_tokens=prompt_tokens,
                 )
 
             assistant_msg: dict[str, Any] = {"role": "assistant", "content": content}
@@ -324,13 +340,17 @@ class AgentLoop:
 
         error_text = f"Reached max iterations ({self.max_iterations})"
         await _emit(event_handler, {"type": "error", "error": error_text})
-        await _emit(event_handler, {"type": "agent_end", "error": error_text})
+        await _emit(event_handler, {
+            "type": "agent_end", "error": error_text,
+            "totalTokens": total_tokens, "promptTokens": prompt_tokens,
+        })
         return LoopResult(
             content="Agent reached maximum iteration limit.",
             steps=steps,
             messages=transcript_messages,
             iterations=iteration,
             total_tokens=total_tokens,
+            prompt_tokens=prompt_tokens,
             finished=False,
             error=error_text,
         )
