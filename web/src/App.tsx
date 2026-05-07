@@ -2226,6 +2226,54 @@ function WorkspaceView({
         </div>
       </header>
 
+      <div className="workspace-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'chart'}
+          className={`workspace-tab ${activeTab === 'chart' ? 'active' : ''}`}
+          onClick={() => setActiveTab('chart')}
+        >
+          Chart
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'agent'}
+          className={`workspace-tab ${activeTab === 'agent' ? 'active' : ''}`}
+          onClick={() => setActiveTab('agent')}
+        >
+          Agent
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'news'}
+          className={`workspace-tab ${activeTab === 'news' ? 'active' : ''}`}
+          onClick={() => setActiveTab('news')}
+        >
+          News
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'social'}
+          className={`workspace-tab ${activeTab === 'social' ? 'active' : ''}`}
+          onClick={() => setActiveTab('social')}
+        >
+          Social
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'positions'}
+          className={`workspace-tab ${activeTab === 'positions' ? 'active' : ''}`}
+          onClick={() => setActiveTab('positions')}
+        >
+          Positions
+        </button>
+      </div>
+
       <section className={`workspace ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${activeTab !== 'chart' ? 'workspace-no-sidebar' : ''}`}>
         {activeTab === 'chart' && (
         <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
@@ -2317,55 +2365,6 @@ function WorkspaceView({
         )}
 
         <section className="main-content">
-          <div className="workspace-tabs" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'chart'}
-              className={`workspace-tab ${activeTab === 'chart' ? 'active' : ''}`}
-              onClick={() => setActiveTab('chart')}
-            >
-              Chart
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'agent'}
-              className={`workspace-tab ${activeTab === 'agent' ? 'active' : ''}`}
-              onClick={() => setActiveTab('agent')}
-            >
-              Agent
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'news'}
-              className={`workspace-tab ${activeTab === 'news' ? 'active' : ''}`}
-              onClick={() => setActiveTab('news')}
-            >
-              News
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'social'}
-              className={`workspace-tab ${activeTab === 'social' ? 'active' : ''}`}
-              onClick={() => setActiveTab('social')}
-            >
-              Social
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'positions'}
-              className={`workspace-tab ${activeTab === 'positions' ? 'active' : ''}`}
-              onClick={() => setActiveTab('positions')}
-            >
-              Positions
-            </button>
-          </div>
-
-          <div className="main-content-body">
           {activeTab === 'chart' && (
             <div className="chart-section">
               <div className="chart-panel-inner">
@@ -2470,7 +2469,6 @@ function WorkspaceView({
           {activeTab === 'positions' && (
             <PositionsPanel state={state} />
           )}
-          </div>
         </section>
       </section>
     </main>

@@ -594,10 +594,10 @@ textarea:focus-visible {
 .main-content {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  max-height: calc(100vh - 80px);
+  gap: 12px;
+  max-height: calc(100vh - 120px);
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .workspace-tabs {
@@ -606,17 +606,11 @@ textarea:focus-visible {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
   display: flex;
-  flex-shrink: 0;
   gap: 2px;
-  margin-bottom: 12px;
+  margin: 0 auto 12px 0;
+  max-width: 1740px;
   padding: 3px;
   width: fit-content;
-}
-
-.main-content-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
 }
 
 .workspace-tab {
