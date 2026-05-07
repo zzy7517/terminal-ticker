@@ -1864,15 +1864,6 @@ textarea:focus-visible {
   padding: 20px;
 }
 
-.news-settings-detail-stack {
-  align-self: start;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 0;
-  overflow-y: auto;
-}
-
 .provider-hero {
   background: var(--canvas);
   border-radius: var(--radius-lg);
@@ -2980,107 +2971,6 @@ textarea:focus-visible {
   -webkit-box-orient: vertical;
   overflow: hidden;
   margin-top: 2px;
-}
-
-.news-item__decisions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-/* news_analyst decision badges */
-.news-decision-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--line-soft);
-  background: var(--panel-raised);
-  color: var(--text-muted);
-  font-weight: 500;
-  white-space: nowrap;
-}
-.news-decision-badge--opened {
-  border-color: var(--accent);
-  background: var(--accent-tint);
-  color: var(--accent);
-}
-.news-decision-badge--cooldown,
-.news-decision-badge--low_confidence,
-.news-decision-badge--entry_too_far,
-.news-decision-badge--gated {
-  border-color: var(--warn-border, #d4a843);
-  background: var(--warn-tint, rgba(212, 168, 67, 0.08));
-  color: var(--warn-text, #b08520);
-}
-.news-decision-badge--llm_error {
-  border-color: var(--err-border, #c44d4d);
-  background: var(--err-tint, rgba(196, 77, 77, 0.08));
-  color: var(--err-text, #a23030);
-}
-.news-decision-badge--filter_miss {
-  /* 默认配色已经够淡 */
-  opacity: 0.65;
-}
-.news-decision-badge--long .news-decision-badge__dir {
-  color: #2e9e5b;
-}
-.news-decision-badge--short .news-decision-badge__dir {
-  color: #c44d4d;
-}
-
-/* News Analyst settings: 只读 universe 列表 */
-.news-analyst-universe {
-  margin-top: 16px;
-}
-.news-analyst-universe__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.news-analyst-universe__item {
-  display: grid;
-  grid-template-columns: 60px minmax(140px, 200px) 1fr;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  background: var(--panel-raised);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-}
-.news-analyst-universe__symbol {
-  font-size: 14px;
-  font-weight: 600;
-}
-.news-analyst-universe__key {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: monospace;
-}
-.news-analyst-universe__aliases {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.news-analyst-universe__alias {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent-tint);
-  color: var(--accent);
-  border: 1px solid var(--line-soft);
-}
-@media (max-width: 720px) {
-  .news-analyst-universe__item {
-    grid-template-columns: 1fr;
-    gap: 4px;
-  }
 }
 
 /* ── Agent tab layout ─────────────────────────────────────────────── */

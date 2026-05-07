@@ -14,7 +14,6 @@ mytradebot 是一个本地优先的行情监控和交易研究工作台。它把
 - **测试网 / 模拟盘交易**：Agent 或 API 可以向 Hyperliquid testnet 或 Bitget 模拟盘提交测试订单，并把结果同步记录到本地交易表。
 - **交易复盘**：Positions 页面可以查看 open/planned/history/fills/lessons，也可以手动触发 review。
 - **新闻流**：Reuters sitemap provider 会拉取新闻，写入本地 SQLite，并通过 Web UI 展示最新新闻。
-- **新闻驱动分析**：可选的 `news_analyst` 会筛选新闻、结合 1H/15m 行情和 lessons 调用 LLM，输出可复盘的决策记录。
 
 ## 架构
 
@@ -26,7 +25,6 @@ FastAPI backend  <---->  SQLite stores
         |
         +-- feed worker
         +-- agent runtime
-        +-- news analyst
         |
         v
 React + Vite frontend
@@ -40,7 +38,6 @@ React + Vite frontend
 - `mytradebot/agent/`：LLM provider、agent loop、工具和 session 存储。
 - `mytradebot/trading/`：交易数据模型、SQLite store、Hyperliquid testnet / Bitget Demo Trading 客户端和 review controller。
 - `mytradebot/news/`：Reuters 新闻抓取、存储和 API 数据源。
-- `mytradebot/news_analyst/`：新闻筛选、LLM 分析、交易 gate 和决策记录。
 - `web/src/App.tsx`：主 UI，包含 Chart、Agent、Positions 和设置页面。
 
 ## 快速启动
@@ -125,18 +122,6 @@ enabled = true
 poll_interval_seconds = 300
 retention_days = 30
 recent_limit = 50
-
-[news_analyst]
-enabled = false
-min_confidence = 0.7
-max_entry_distance_pct = 0.5
-default_size = 1.0
-llm_timeout_seconds = 20
-cooldown_minutes = 30
-
-[[news_analyst.universe]]
-instrument_key = "alpaca:SPY"
-aliases = ["S&P 500", "SPX", "SPY"]
 ```
 
 `symbols` 支持两种写法：
@@ -301,19 +286,9 @@ Content-Type: application/json
 
 `instrument_key` 使用当前 watchlist 里的 Bitget key，例如 `USDT-FUTURES:BTCUSDT` 或 `SPOT:ETHUSDT`。
 
-## 新闻和 News Analyst
+## 新闻
 
 新闻模块默认从 Reuters sitemap 拉取新闻，写入本地 store，并通过 `/api/news` 给前端展示。
-
-`news_analyst` 是独立的可选模块。启用后，它会：
-
-1. 从最近新闻里筛出候选 headline。
-2. 映射到配置里的交易 universe。
-3. 读取对应标的的 1H / 15m K 线和本地 lessons。
-4. 调用 `[agent]` 里选定的 LLM provider 生成方向、置信度、入场、止损、止盈。
-5. 通过 confidence、entry distance、cooldown 等 gate 后，写入可复盘的交易决策。
-
-它不会真实下单，只写入本地 planned 交易记录用于复盘。
 
 ## Web UI
 

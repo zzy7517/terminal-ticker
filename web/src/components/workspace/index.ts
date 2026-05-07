@@ -2,7 +2,7 @@ export { ConnectionBadge } from './ConnectionBadge';
 export { StatTile } from './StatTile';
 export { CandlestickPane, intervalOptions } from './CandlestickPane';
 export { WatchlistRow } from './WatchlistRow';
-export { NewsPanel, DecisionBadge } from './NewsPanel';
+export { NewsPanel } from './NewsPanel';
 export { SocialFeedPanel } from './SocialFeedPanel';
 export { PositionsPanel } from './PositionsPanel';
 export { AgentSessionHistoryList } from './AgentSessionHistoryList';

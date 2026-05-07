@@ -277,7 +277,6 @@ export function WorkspaceView() {
             <div className="news-tab-panel">
               <NewsPanel
                 items={state?.recentNews ?? []}
-                decisions={state?.recentNewsDecisions ?? []}
                 lastStatus={state?.newsStatus?.lastStatus}
                 lastError={state?.newsStatus?.lastError ?? null}
               />

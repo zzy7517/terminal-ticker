@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { NewsDecision, NewsItem } from '../../types';
+import type { NewsItem } from '../../types';
 import { triggerNewsRefresh } from '../../api';
 
 function formatRelativeTime(iso: string): string {
@@ -24,56 +24,12 @@ function newsItemsSignature(items: NewsItem[]): string {
   return items.map((item) => `${item.url}|${item.publishedAtMs}|${item.title}`).join('\n');
 }
 
-function indexDecisionsByUrl(
-  decisions: NewsDecision[] | undefined,
-): Map<string, NewsDecision[]> {
-  const map = new Map<string, NewsDecision[]>();
-  if (!decisions) return map;
-  for (const d of decisions) {
-    const arr = map.get(d.news_url) ?? [];
-    arr.push(d);
-    map.set(d.news_url, arr);
-  }
-  return map;
-}
-
-export function DecisionBadge({ decision }: { decision: NewsDecision }) {
-  const stepLabels: Record<NewsDecision['step'], string> = {
-    opened: '已下单',
-    cooldown: '冷却中',
-    low_confidence: '置信度低',
-    entry_too_far: '价偏离',
-    gated: '规则拦',
-    llm_error: 'LLM 错',
-    filter_miss: '未命中',
-  };
-  const symbol = decision.instrument_key.split(':').pop() ?? decision.instrument_key;
-  const dir = decision.direction;
-  const className = `news-decision-badge news-decision-badge--${decision.step}${
-    dir === 'long' ? ' news-decision-badge--long'
-      : dir === 'short' ? ' news-decision-badge--short' : ''
-  }`;
-  const tooltip = decision.reason || stepLabels[decision.step];
-  return (
-    <span className={className} title={tooltip}>
-      {symbol} · {stepLabels[decision.step]}
-      {decision.step === 'opened' && dir && (
-        <span className="news-decision-badge__dir">
-          {' '}{dir === 'long' ? '↑' : '↓'}
-        </span>
-      )}
-    </span>
-  );
-}
-
 export function NewsPanel({
   items,
-  decisions,
   lastStatus,
   lastError,
 }: {
   items: NewsItem[];
-  decisions?: NewsDecision[];
   lastStatus?: string;
   lastError?: string | null;
 }) {
@@ -82,7 +38,6 @@ export function NewsPanel({
   const [feedback, setFeedback] = useState<string | null>(null);
   const upstreamSignature = useMemo(() => newsItemsSignature(items), [items]);
   const displayItems = localItems?.items ?? items;
-  const decisionIndex = useMemo(() => indexDecisionsByUrl(decisions), [decisions]);
 
   useEffect(() => {
     if (localItems && upstreamSignature !== localItems.upstreamSignature) {
@@ -137,37 +92,27 @@ export function NewsPanel({
         {displayItems.length === 0 && (
           <div className="news-panel__empty">暂无新闻，点击"立即刷新"拉取。</div>
         )}
-        {displayItems.map((item) => {
-          const itemDecisions = decisionIndex.get(item.url) ?? [];
-          return (
-            <a
-              className="news-item"
-              href={item.url}
-              key={item.url}
-              target="_blank"
-              rel="noreferrer"
-              title={item.title}
-            >
-              <div className="news-item__title">{item.title}</div>
-              {item.summary && (
-                <div className="news-item__summary">{item.summary}</div>
+        {displayItems.map((item) => (
+          <a
+            className="news-item"
+            href={item.url}
+            key={item.url}
+            target="_blank"
+            rel="noreferrer"
+            title={item.title}
+          >
+            <div className="news-item__title">{item.title}</div>
+            {item.summary && (
+              <div className="news-item__summary">{item.summary}</div>
+            )}
+            <div className="news-item__meta">
+              <span>{formatRelativeTime(item.publishedAt)}</span>
+              {item.keywords.length > 0 && (
+                <span className="news-item__keywords">· {item.keywords.slice(0, 3).join(' · ')}</span>
               )}
-              <div className="news-item__meta">
-                <span>{formatRelativeTime(item.publishedAt)}</span>
-                {item.keywords.length > 0 && (
-                  <span className="news-item__keywords">· {item.keywords.slice(0, 3).join(' · ')}</span>
-                )}
-              </div>
-              {itemDecisions.length > 0 && (
-                <div className="news-item__decisions">
-                  {itemDecisions.map((d) => (
-                    <DecisionBadge key={d.id} decision={d} />
-                  ))}
-                </div>
-              )}
-            </a>
-          );
-        })}
+            </div>
+          </a>
+        ))}
       </div>
     </div>
   );

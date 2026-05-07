@@ -391,16 +391,6 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
         items = runtime.news_service.recent(limit=resolved)
         return {"news": [item.to_payload() for item in items], "enabled": True}
 
-    @app.get("/api/news/decisions")
-    async def get_news_decisions_endpoint(limit: int = 50) -> dict[str, Any]:
-        if runtime.news_analyst is None:
-            return {"decisions": [], "enabled": False}
-        resolved = max(1, min(int(limit), 200))
-        return {
-            "decisions": runtime.news_analyst.decision_store.recent(limit=resolved),
-            "enabled": True,
-        }
-
     @app.post("/api/news/config")
     async def update_news_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         return await runtime.update_news_config(payload)

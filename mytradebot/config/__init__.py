@@ -169,55 +169,6 @@ class SocialFeedConfig:
 
 
 @dataclass(frozen=True)
-class NewsUniverseEntry:
-    """说明：news_analyst 白名单的一个品种条目。"""
-    instrument_key: str
-    aliases: tuple[str, ...]
-
-
-_DEFAULT_NEWS_UNIVERSE: tuple[NewsUniverseEntry, ...] = (
-    NewsUniverseEntry(
-        instrument_key="alpaca:SPY",
-        aliases=("S&P 500", "S&P500", "SPX", "标普", "S&P", "SPY"),
-    ),
-    NewsUniverseEntry(
-        instrument_key="alpaca:QQQ",
-        aliases=("Nasdaq", "Nasdaq 100", "Nasdaq100", "NDX", "纳指", "纳斯达克", "QQQ"),
-    ),
-    NewsUniverseEntry(
-        instrument_key="alpaca:GLD",
-        aliases=("gold", "黄金", "XAU", "bullion", "GLD"),
-    ),
-    NewsUniverseEntry(
-        instrument_key="alpaca:SLV",
-        aliases=("silver", "白银", "XAG", "SLV"),
-    ),
-    NewsUniverseEntry(
-        instrument_key="alpaca:USO",
-        aliases=("oil", "原油", "WTI", "Brent", "crude", "OPEC", "USO"),
-    ),
-)
-
-
-@dataclass(frozen=True)
-class NewsAnalystConfig:
-    """说明：news → LLM → 自动记录本地交易决策的配置。
-
-    universe 是品种白名单。一条新闻可能同时命中多个品种 (例如"美联储降息"
-    可能影响 SPY 和 QQQ)，每个命中品种独立跑 verify+gate+记录。
-
-    扩展 TODO 见 mytradebot/news_analyst/service.py 顶部。
-    """
-    enabled: bool = False
-    universe: tuple[NewsUniverseEntry, ...] = _DEFAULT_NEWS_UNIVERSE
-    min_confidence: float = 0.7
-    max_entry_distance_pct: float = 0.5  # entry 离当前价的允许偏离 (%)
-    default_size: float = 1.0            # 本地 planned 记录的头寸大小
-    llm_timeout_seconds: float = 20.0
-    cooldown_minutes: int = 30           # 同品种同方向 N 分钟内不重复开
-
-
-@dataclass(frozen=True)
 class InstrumentConfig:
     """说明：封装 watchlist 中尚未解析到 provider 的标的配置。"""
     symbol: str
@@ -260,7 +211,6 @@ class AppConfig:
     agent: AgentConfig = AgentConfig()
     news: NewsConfig = NewsConfig()
     social_feed: SocialFeedConfig = SocialFeedConfig()
-    news_analyst: NewsAnalystConfig = NewsAnalystConfig()
 
 
 def _normalize_inst_type(raw_value: Any) -> str | None:
@@ -569,104 +519,6 @@ def parse_social_feed_config(raw_social_feed: dict[str, Any] | None) -> SocialFe
     )
 
 
-def parse_news_analyst_config(raw: dict[str, Any] | None) -> NewsAnalystConfig:
-    """说明：把 [news_analyst] section 解析成 NewsAnalystConfig。
-
-    支持两种 universe 格式（向后兼容）：
-    1) 新格式（多品种）:
-        [[news_analyst.universe]]
-        instrument_key = "alpaca:SPY"
-        aliases = ["SPX","S&P 500"]
-    2) 旧格式（MVP 单品种）:
-        instrument_key = "alpaca:SPY"
-        aliases = ["SPX","S&P 500"]
-       自动包成 1-entry universe。
-    """
-    if raw is None:
-        raw = {}
-    if not isinstance(raw, dict):
-        raise ValueError("news_analyst must be a table")
-    defaults = NewsAnalystConfig()
-
-    universe = _parse_news_universe(raw, defaults)
-
-    return NewsAnalystConfig(
-        enabled=_normalize_bool(raw.get("enabled"), "news_analyst.enabled", defaults.enabled),
-        universe=universe,
-        min_confidence=_coerce_float(
-            raw.get("min_confidence"), "news_analyst.min_confidence", defaults.min_confidence,
-        ),
-        max_entry_distance_pct=_coerce_float(
-            raw.get("max_entry_distance_pct"),
-            "news_analyst.max_entry_distance_pct",
-            defaults.max_entry_distance_pct,
-        ),
-        default_size=_coerce_float(
-            raw.get("default_size"), "news_analyst.default_size", defaults.default_size,
-        ),
-        llm_timeout_seconds=_coerce_float(
-            raw.get("llm_timeout_seconds"),
-            "news_analyst.llm_timeout_seconds",
-            defaults.llm_timeout_seconds,
-        ),
-        cooldown_minutes=_coerce_min_int(
-            raw.get("cooldown_minutes"),
-            "news_analyst.cooldown_minutes",
-            defaults.cooldown_minutes,
-            0,
-        ),
-    )
-
-
-def _parse_news_universe(
-    raw: dict[str, Any], defaults: NewsAnalystConfig,
-) -> tuple[NewsUniverseEntry, ...]:
-    """说明：解析 universe，新/老格式都支持；缺省才退默认 5 品种。"""
-    raw_universe = raw.get("universe")
-    if raw_universe is not None:
-        if not isinstance(raw_universe, list):
-            raise ValueError("news_analyst.universe must be a list of tables")
-        entries: list[NewsUniverseEntry] = []
-        for idx, entry in enumerate(raw_universe):
-            if not isinstance(entry, dict):
-                raise ValueError(f"news_analyst.universe[{idx}] must be a table")
-            key = entry.get("instrument_key")
-            if not isinstance(key, str) or not key.strip():
-                raise ValueError(f"news_analyst.universe[{idx}].instrument_key required")
-            aliases_raw = entry.get("aliases")
-            if not isinstance(aliases_raw, list):
-                raise ValueError(
-                    f"news_analyst.universe[{idx}].aliases must be a list of strings"
-                )
-            aliases = tuple(
-                str(a).strip() for a in aliases_raw if isinstance(a, str) and a.strip()
-            )
-            if not aliases:
-                raise ValueError(
-                    f"news_analyst.universe[{idx}].aliases must contain at least one alias"
-                )
-            entries.append(NewsUniverseEntry(instrument_key=key.strip(), aliases=aliases))
-        return tuple(entries)
-
-    # 老格式兼容: instrument_key + aliases 平铺。
-    legacy_key = raw.get("instrument_key")
-    legacy_aliases = raw.get("aliases")
-    if legacy_key is not None or legacy_aliases is not None:
-        if legacy_key is not None and not isinstance(legacy_key, str):
-            raise ValueError("news_analyst.instrument_key must be a string")
-        if legacy_aliases is not None and not isinstance(legacy_aliases, list):
-            raise ValueError("news_analyst.aliases must be a list of strings")
-        key = (legacy_key or defaults.universe[0].instrument_key).strip()
-        aliases = tuple(
-            str(a).strip() for a in (legacy_aliases or []) if isinstance(a, str) and a.strip()
-        )
-        if not aliases:
-            aliases = defaults.universe[0].aliases
-        return (NewsUniverseEntry(instrument_key=key, aliases=aliases),)
-
-    return defaults.universe
-
-
 def parse_cache_config(raw_cache: dict[str, Any] | None) -> CacheConfig:
     """说明：把原始缓存配置解析为 CacheConfig。"""
     if raw_cache is None:
@@ -842,7 +694,6 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
     agent = parse_agent_config(data.get("agent", {}))
     news = parse_news_config(data.get("news", {}))
     social_feed = parse_social_feed_config(data.get("social_feed", {}))
-    news_analyst = parse_news_analyst_config(data.get("news_analyst", {}))
 
     return AppConfig(
         instruments=instruments,
@@ -852,7 +703,6 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         agent=agent,
         news=news,
         social_feed=social_feed,
-        news_analyst=news_analyst,
         source_path=source_path,
     )
 

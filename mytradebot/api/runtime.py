@@ -197,7 +197,6 @@ class MarketRuntime:
         self._flush_handle: asyncio.TimerHandle | None = None
         self._flush_delay: float = 2.0
         self.news_service: NewsService | None = None
-        self.news_analyst = None  # type: ignore[var-annotated]
         if config.news.enabled:
             news_store = NewsStore()
             news_provider = ReutersSitemapProvider(
@@ -212,8 +211,6 @@ class MarketRuntime:
                 retention_days=config.news.retention_days,
                 recent_limit=config.news.recent_limit,
             )
-            if config.news_analyst.enabled:
-                self._wire_news_analyst()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -280,9 +277,6 @@ class MarketRuntime:
                 "lastError": self.news_service.last_error,
                 "lastFetchedAtMs": self.news_service.last_fetched_at_ms,
             })
-        recent_news_decisions: list[dict[str, Any]] = []
-        if self.news_analyst is not None:
-            recent_news_decisions = self.news_analyst.decision_store.recent(limit=50)
         return serialize_market_state(
             config=self.config,
             instruments=self.instruments,
@@ -294,7 +288,6 @@ class MarketRuntime:
             exchange_orders=exchange_orders,
             recent_news=recent_news,
             news_status=news_status,
-            recent_news_decisions=recent_news_decisions,
         )
 
     async def broadcast(self) -> None:
@@ -1268,52 +1261,6 @@ class MarketRuntime:
             max_items=config.max_items,
         )
 
-    def _wire_news_analyst(self) -> None:
-        from ..agent.provider import create_llm_provider, LLMProviderUnavailable
-        from ..news_analyst import NewsAnalyst, NewsDecisionStore
-
-        try:
-            llm_provider = create_llm_provider(self.config.agent)
-        except LLMProviderUnavailable as exc:
-            LOGGER.warning("news_analyst disabled: %s", exc)
-            return
-
-        decision_store = NewsDecisionStore(self.trade_store.path)
-
-        def _current_price(instrument_key: str) -> float | None:
-            quote = self.controller.quotes.get(instrument_key)
-            return quote.price if quote is not None else None
-
-        def _candles(instrument_key: str, interval: str, limit: int):
-            quote = self.controller.quotes.get(instrument_key)
-            if quote is None:
-                return ()
-            mtf = quote.multi_timeframe_candles or {}
-            candles = mtf.get(interval) or ()
-            return tuple(candles[-limit:]) if limit > 0 else tuple(candles)
-
-        async def _llm_chat(messages: list[dict[str, Any]]) -> Any:
-            return await llm_provider.chat(messages)
-
-        analyst = NewsAnalyst(
-            config=self.config.news_analyst,
-            decision_store=decision_store,
-            trade_store=self.trade_store,
-            llm_chat=_llm_chat,
-            current_price_provider=_current_price,
-            candle_provider=_candles,
-        )
-        self.news_analyst = analyst
-        assert self.news_service is not None
-        self.news_service.on_top_changed = analyst.on_top_changed
-        universe = self.config.news_analyst.universe
-        LOGGER.info(
-            "news_analyst enabled: universe=%d aliases=%d min_confidence=%.2f",
-            len(universe),
-            sum(len(entry.aliases) for entry in universe),
-            self.config.news_analyst.min_confidence,
-        )
-
     def _apply_social_feed_service_state(self, next_config: SocialFeedConfig) -> None:
         if not next_config.enabled:
             self.social_feed_service = None
@@ -1325,12 +1272,10 @@ class MarketRuntime:
             if self.news_service is not None:
                 await self.news_service.stop()
                 self.news_service = None
-            self.news_analyst = None
             return
         if self.news_service is not None:
             await self.news_service.stop()
             self.news_service = None
-        self.news_analyst = None
         store = NewsStore()
         provider = ReutersSitemapProvider(
             url=next_config.reuters_url,
@@ -1345,8 +1290,6 @@ class MarketRuntime:
             recent_limit=next_config.recent_limit,
         )
         self.news_service = service
-        if self.config.news_analyst.enabled:
-            self._wire_news_analyst()
         if self.running:
             await service.start()
 

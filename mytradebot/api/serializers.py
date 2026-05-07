@@ -121,7 +121,6 @@ def serialize_market_state(
     exchange_orders: list[dict[str, Any]] | None = None,
     recent_news: list[dict[str, Any]] | None = None,
     news_status: dict[str, Any] | None = None,
-    recent_news_decisions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     groups: dict[str, list[str]] = {}
     for instrument in instruments:
@@ -168,20 +167,6 @@ def serialize_market_state(
                 "requestTimeoutSeconds": config.news.request_timeout_seconds,
                 "retentionDays": config.news.retention_days,
             },
-            "newsAnalyst": {
-                "enabled": config.news_analyst.enabled,
-                "minConfidence": config.news_analyst.min_confidence,
-                "maxEntryDistancePct": config.news_analyst.max_entry_distance_pct,
-                "defaultSize": config.news_analyst.default_size,
-                "cooldownMinutes": config.news_analyst.cooldown_minutes,
-                "universe": [
-                    {
-                        "instrumentKey": e.instrument_key,
-                        "aliases": list(e.aliases),
-                    }
-                    for e in config.news_analyst.universe
-                ],
-            },
             "socialFeed": {
                 "enabled": config.social_feed.enabled,
                 "recentLimit": config.social_feed.recent_limit,
@@ -208,5 +193,4 @@ def serialize_market_state(
         "exchangeOrders": exchange_orders or [],
         "recentNews": recent_news or [],
         "newsStatus": news_status or {},
-        "recentNewsDecisions": recent_news_decisions or [],
     }
