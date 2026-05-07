@@ -7,15 +7,12 @@ from inspect import isawaitable
 from typing import Any, Awaitable, Callable
 
 from ..trading import (
-    BITGET_DEMO_FILL_SOURCE,
     FillKind,
     HYPERLIQUID_FILL_SOURCE,
-    BitgetDemoTradingError,
     HyperliquidTradingError,
     TradeDirection,
     TradeStatus,
     TradeStore,
-    open_bitget_demo_position,
     open_testnet_position as open_hyperliquid_testnet_position,
 )
 from ..trading import bitget as bitget_trading
@@ -160,18 +157,6 @@ async def _maybe_await(value: Any) -> Any:
     if isawaitable(value):
         return await value
     return value
-
-
-def _parse_bitget_instrument_key(instrument_key: str) -> tuple[str, str]:
-    """说明：兼容当前 Bitget key 和旧文档里的 source 前缀写法。"""
-    parts = [part.strip() for part in instrument_key.split(":") if part.strip()]
-    if len(parts) == 2 and parts[0].upper() in {"SPOT", "USDT-FUTURES"}:
-        return parts[1].upper(), parts[0].upper()
-    if len(parts) == 3 and parts[0].lower() == BITGET_SOURCE:
-        return parts[1].upper(), parts[2].upper()
-    raise ValueError(
-        "bitget instrument_key must look like USDT-FUTURES:BTCUSDT or bitget:BTCUSDT:USDT-FUTURES"
-    )
 
 
 def build_market_tools(

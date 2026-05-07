@@ -13,7 +13,6 @@ from .agent_models import (
     CODEX_PROVIDER,
     DEFAULT_ANTHROPIC_MODEL,
     DEFAULT_CODEX_MODEL,
-    SUPPORTED_AGENT_PROVIDERS,
     normalize_api_mode,
     normalize_model,
     normalize_provider,

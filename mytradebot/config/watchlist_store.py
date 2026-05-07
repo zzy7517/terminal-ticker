@@ -9,7 +9,6 @@ from . import (
     AgentConfig,
     AnalysisConfig,
     NewsConfig,
-    ProviderProfile,
     SocialFeedConfig,
     ALPACA_SOURCE,
     BITGET_SOURCE,

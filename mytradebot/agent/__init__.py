@@ -1,12 +1,10 @@
 """文件用途：Agent 包入口，兼容旧导入并转发 provider 实现。"""
 from __future__ import annotations
 
-from . import provider as _provider
 from .provider import (
     LLMProvider,
     LLMProviderError,
     LLMProviderUnavailable,
-    build_agent_context,
     create_llm_provider,
     list_available_agent_models,
 )
@@ -47,10 +45,6 @@ from .session_store import (
     default_agent_session_path,
 )
 
-for _name in dir(_provider):
-    if not _name.startswith("__"):
-        globals().setdefault(_name, getattr(_provider, _name))
-
 __all__ = [
     "AgentLoop",
     "AgentRuntime",
@@ -76,7 +70,6 @@ __all__ = [
     "TradingAgentRuntimeServices",
     "TradingAgentTurnResult",
     "ToolResult",
-    "build_agent_context",
     "build_market_tools",
     "build_news_tools",
     "build_social_feed_tools",

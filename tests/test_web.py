@@ -25,13 +25,12 @@ from mytradebot.market_data.hyperliquid import HyperliquidInstrument
 from mytradebot.domain.quotes import QuoteState
 from mytradebot.domain.price_action import Candle
 from mytradebot.api.app import (
-    MarketContextProvider,
     PROJECT_ROOT,
     WEB_DIST,
-    MarketRuntime,
     create_app,
-    serialize_market_state,
 )
+from mytradebot.api.runtime import MarketContextProvider, MarketRuntime
+from mytradebot.api.serializers import serialize_market_state
 from mytradebot.trading import BitgetDemoOrderResult
 from mytradebot.trading.store import TradeStore
 
@@ -183,7 +182,7 @@ class WebTests(unittest.TestCase):
             runtime.trade_store = TradeStore(Path(tmp_dir) / "trades.sqlite3")
 
             with patch(
-                "mytradebot.api.app.open_bitget_demo_position",
+                "mytradebot.api.runtime.open_bitget_demo_position",
                 return_value=BitgetDemoOrderResult(
                     raw={"code": "00000", "data": {"orderId": "bg-1", "clientOid": "cid-1"}},
                     external_order_id="bg-1",
@@ -374,7 +373,7 @@ class WebTests(unittest.TestCase):
         )
 
         with patch(
-            "mytradebot.api.app.search_alpaca_assets",
+            "mytradebot.api.runtime.search_alpaca_assets",
             return_value=(AlpacaAsset("AAPL", name="Apple Inc.", exchange="NASDAQ"),),
         ):
             with TestClient(app) as client:
@@ -402,7 +401,7 @@ class WebTests(unittest.TestCase):
         )
         spot = BitgetInstrument("BTCUSDT", "SPOT", "BTCUSDT", "BTC", "USDT", "spot")
 
-        with patch("mytradebot.api.app.search_bitget_instruments", return_value=(spot, instrument)):
+        with patch("mytradebot.api.runtime.search_bitget_instruments", return_value=(spot, instrument)):
             with TestClient(app) as client:
                 response = client.get(
                     "/api/instruments/search",
@@ -438,7 +437,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("mytradebot.api.app.resolve_instruments", return_value=(alpaca, bitget)):
+            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(alpaca, bitget)):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/watchlist/bitget",
@@ -480,7 +479,7 @@ class WebTests(unittest.TestCase):
             auto_start=False,
         )
 
-        with patch("mytradebot.api.app.open_hyperliquid_testnet_position") as opened:
+        with patch("mytradebot.api.runtime.open_hyperliquid_testnet_position") as opened:
             with TestClient(app) as client:
                 response = client.post(
                     "/api/hyperliquid-testnet/trades/hyperliquid-testnet%3ABTC",
@@ -514,7 +513,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("mytradebot.api.app.resolve_instruments", return_value=(bitget, alpaca)):
+            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(bitget, alpaca)):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/watchlist/alpaca",
@@ -551,7 +550,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("mytradebot.api.app.resolve_instruments", return_value=(alpaca,)):
+            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(alpaca,)):
                 with TestClient(app) as client:
                     response = client.delete("/api/watchlist/instruments/USDT-FUTURES%3ABTCUSDT")
             persisted_text = config_path.read_text()
@@ -621,7 +620,7 @@ class WebTests(unittest.TestCase):
             )
             provider = FakeProvider()
 
-            with patch("mytradebot.api.app.create_llm_provider", return_value=provider):
+            with patch("mytradebot.api.runtime.create_llm_provider", return_value=provider):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/alpaca:AAPL/messages",
@@ -801,7 +800,7 @@ class WebTests(unittest.TestCase):
             )
             provider = FakeLoopProvider()
 
-            with patch("mytradebot.api.app.create_llm_provider", return_value=provider):
+            with patch("mytradebot.api.runtime.create_llm_provider", return_value=provider):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/alpaca:AAPL/messages",
@@ -879,7 +878,7 @@ class WebTests(unittest.TestCase):
                 candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
 
-            with patch("mytradebot.api.app.create_llm_provider", return_value=FailingLoopProvider()):
+            with patch("mytradebot.api.runtime.create_llm_provider", return_value=FailingLoopProvider()):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/alpaca:AAPL/messages",
@@ -918,7 +917,7 @@ class WebTests(unittest.TestCase):
                 candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
 
-            with patch("mytradebot.api.app.create_llm_provider", return_value=EmptyLoopProvider()):
+            with patch("mytradebot.api.runtime.create_llm_provider", return_value=EmptyLoopProvider()):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/alpaca:AAPL/messages",
@@ -942,7 +941,7 @@ class WebTests(unittest.TestCase):
         )
 
         with patch(
-            "mytradebot.api.app.list_available_agent_models",
+            "mytradebot.api.runtime.list_available_agent_models",
             return_value=[
                 {
                     "slug": "gpt-5.4-mini",
