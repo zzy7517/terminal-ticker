@@ -985,7 +985,7 @@ class WebTests(unittest.TestCase):
                     "/api/agent/providers/codex",
                     json={
                         "enabled": True,
-                        "model": "gpt-5.4",
+                        "models": ["gpt-5.4"],
                         "reasoningEffort": "high",
                     },
                 )
@@ -1004,7 +1004,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(shared_state["maxCandles"], 30)
         provider_state = shared_state["providerProfiles"]["codex"]
         self.assertTrue(provider_state["enabled"])
-        self.assertEqual(provider_state["model"], "gpt-5.4")
+        self.assertIn("gpt-5.4", provider_state["models"])
 
     def test_analysis_config_endpoint_persists_interval(self) -> None:
         """Verify browser can switch K-line intervals through the runtime."""

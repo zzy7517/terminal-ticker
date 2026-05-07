@@ -84,7 +84,6 @@ class TradingAgentRuntime:
             provider=self.provider,
             tool_packs=self._tool_packs(session_id),
             services=self.services.runtime_services,
-            max_iterations=self.config.max_iterations,
         )
         loop_result = await runtime.run(
             user_message=self._build_prompt(

@@ -41,6 +41,7 @@ from ..provider import (
 )
 
 CODEX_ENV_API_KEYS = ("MYTRADEBOT_CODEX_API_KEY", "CODEX_API_KEY")
+DEFAULT_CODEX_TIMEOUT_SECONDS = 45.0
 
 
 class CodexProvider:
@@ -155,7 +156,7 @@ class CodexProvider:
             "Content-Type": "application/json",
             **_codex_request_headers(credentials["api_key"], credentials.get("account_id")),
         }
-        timeout = httpx.Timeout(self.config.timeout_seconds)
+        timeout = httpx.Timeout(DEFAULT_CODEX_TIMEOUT_SECONDS)
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
                 "POST",
@@ -209,7 +210,7 @@ class CodexProvider:
             "Content-Type": "application/json",
             **_codex_request_headers(credentials["api_key"], credentials.get("account_id")),
         }
-        timeout = httpx.Timeout(self.config.timeout_seconds)
+        timeout = httpx.Timeout(DEFAULT_CODEX_TIMEOUT_SECONDS)
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
                 "POST", f"{api_root}/responses", json=payload, headers=headers,
@@ -238,7 +239,7 @@ class CodexProvider:
             "Authorization": f"Bearer {credentials['api_key']}",
             **_codex_request_headers(credentials["api_key"], credentials.get("account_id")),
         }
-        timeout = httpx.Timeout(self.config.timeout_seconds)
+        timeout = httpx.Timeout(DEFAULT_CODEX_TIMEOUT_SECONDS)
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(
                 f"{api_root}/models",

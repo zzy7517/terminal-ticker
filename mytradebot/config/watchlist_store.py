@@ -454,17 +454,20 @@ def _format_agent_config(config: AgentConfig) -> list[str]:
     lines = [
         "[agent]",
         f"enabled = {'true' if config.enabled else 'false'}",
-        f"timeout_seconds = {config.timeout_seconds:g}",
         f"max_candles = {config.max_candles}",
-        f"max_iterations = {config.max_iterations}",
-        f"use_tools = {'true' if config.use_tools else 'false'}",
     ]
     for name, profile in config.provider_profiles.items():
         lines.append("")
         lines.append(f"[agent.providers.{name}]")
         lines.append(f"enabled = {'true' if profile.enabled else 'false'}")
-        lines.append(f"model = {_toml_string(profile.model)}")
-        lines.append(f"reasoning_effort = {_toml_string(profile.reasoning_effort)}")
+        models_arr = ", ".join(_toml_string(m) for m in profile.models)
+        lines.append(f"models = [{models_arr}]")
+        if profile.model_efforts:
+            efforts_parts = ", ".join(
+                f"{_toml_string(slug)} = {_toml_string(effort)}"
+                for slug, effort in profile.model_efforts
+            )
+            lines.append(f"model_efforts = {{{efforts_parts}}}")
     return lines
 
 

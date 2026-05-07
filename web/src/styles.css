@@ -2048,6 +2048,189 @@ textarea:focus-visible {
   padding-top: 12px;
 }
 
+/* ── Effort pills ─────────────────────────────────────────────────── */
+.effort-pills {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.effort-pill {
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line-soft);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  text-transform: capitalize;
+  transition: background 100ms, color 100ms;
+}
+
+.effort-pill:last-child {
+  border-right: 0;
+}
+
+.effort-pill:hover {
+  background: var(--accent-tint);
+}
+
+.effort-pill.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.model-effort-pills {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.model-effort-pills .effort-pill {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+/* ── Model toggle in settings ─────────────────────────────────────── */
+.model-toggle {
+  flex-shrink: 0;
+}
+
+.model-toggle .switch-slider {
+  height: 22px;
+  width: 40px;
+}
+
+.model-toggle .switch-slider::after {
+  height: 18px;
+  width: 18px;
+}
+
+.model-toggle input:checked + .switch-slider::after {
+  transform: translateX(18px);
+}
+
+/* ── Session model picker (chat panel) ────────────────────────────── */
+.session-model-picker {
+  position: relative;
+}
+
+.session-model-trigger {
+  align-items: center;
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 12px;
+  gap: 6px;
+  padding: 5px 10px;
+  transition: border-color 100ms;
+}
+
+.session-model-trigger:hover {
+  border-color: var(--accent);
+}
+
+.session-model-provider-icon {
+  align-items: center;
+  color: var(--accent);
+  display: inline-flex;
+}
+
+.session-model-dropdown {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  left: 0;
+  min-width: 260px;
+  max-height: 360px;
+  overflow: hidden;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-model-dropdown-search {
+  align-items: center;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+}
+
+.session-model-dropdown-search input {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  flex: 1;
+  font-size: 13px;
+  outline: none;
+}
+
+.session-model-dropdown-list {
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.session-model-group-head {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 6px;
+  padding: 8px 12px 4px;
+  text-transform: uppercase;
+}
+
+.session-model-option {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  padding: 6px 12px 6px 28px;
+  text-align: left;
+  transition: background 80ms;
+  width: 100%;
+}
+
+.session-model-option:hover {
+  background: var(--accent-tint);
+}
+
+.session-model-option.active {
+  color: var(--accent);
+  padding-left: 8px;
+  font-weight: 600;
+}
+
+.session-model-effort {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.session-model-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 12px;
+  text-align: center;
+}
+
 /* ── Switch row ───────────────────────────────────────────────────── */
 .switch-row {
   align-items: center;

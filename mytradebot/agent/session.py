@@ -40,8 +40,6 @@ class AgentSessionRuntime:
             model=config.model,
             api_mode=config.api_mode,
             reasoning_effort=config.reasoning_effort,
-            max_iterations=config.max_iterations,
-            use_tools=config.use_tools,
         )
         return cls(
             session=session,

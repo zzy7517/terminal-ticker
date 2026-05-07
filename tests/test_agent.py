@@ -238,8 +238,6 @@ class AgentTests(unittest.TestCase):
                 model="gpt-test",
                 api_mode="codex_responses",
                 reasoning_effort="medium",
-                max_iterations=6,
-                use_tools=True,
             )
             store.append_message(
                 session_id=session.id,
@@ -269,8 +267,6 @@ class AgentTests(unittest.TestCase):
                 model="gpt-next",
                 api_mode="codex_responses",
                 reasoning_effort="high",
-                max_iterations=8,
-                use_tools=False,
             )
             next_session = reopened.create_session(
                 instrument_key="alpaca:AAPL",
@@ -279,8 +275,6 @@ class AgentTests(unittest.TestCase):
                 model="gpt-test",
                 api_mode="codex_responses",
                 reasoning_effort="medium",
-                max_iterations=6,
-                use_tools=True,
             )
             previous_payload = reopened.session_payload(session.id)
             history_rows = reopened.list_sessions("alpaca:AAPL")
@@ -298,15 +292,12 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(payload["session"]["id"], session.id)
         self.assertEqual(payload["session"]["apiMode"], "codex_responses")
         self.assertEqual(payload["session"]["reasoningEffort"], "medium")
-        self.assertEqual(payload["session"]["maxIterations"], 6)
-        self.assertTrue(payload["session"]["useTools"])
         self.assertEqual([message["role"] for message in payload["messages"]], ["user", "assistant"])
         self.assertEqual(payload["messages"][1]["analysis"]["summary"], "Trend is constructive.")
         self.assertEqual(history[-1]["analysis"]["watch_plan"], ["Wait for a pullback."])
         self.assertEqual(refreshed_session.id, session.id)
         self.assertEqual(refreshed_session.model, "gpt-next")
         self.assertEqual(refreshed_session.reasoning_effort, "high")
-        self.assertFalse(refreshed_session.use_tools)
         self.assertEqual(next_session.instrument_key, "alpaca:AAPL")
         self.assertFalse(previous_payload["session"]["active"])
         self.assertEqual(len(history_rows), 2)

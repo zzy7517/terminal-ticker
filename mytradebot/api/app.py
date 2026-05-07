@@ -128,8 +128,6 @@ def _agent_session_config_kwargs(config: AgentConfig) -> dict[str, Any]:
     return {
         "api_mode": config.api_mode,
         "reasoning_effort": config.reasoning_effort,
-        "max_iterations": config.max_iterations,
-        "use_tools": config.use_tools,
     }
 
 
@@ -285,16 +283,13 @@ def serialize_market_state(
                 "provider": config.agent.provider,
                 "apiMode": config.agent.api_mode,
                 "model": config.agent.model,
-                "timeoutSeconds": config.agent.timeout_seconds,
                 "maxCandles": config.agent.max_candles,
                 "reasoningEffort": config.agent.reasoning_effort,
-                "maxIterations": config.agent.max_iterations,
-                "useTools": config.agent.use_tools,
                 "providerProfiles": {
                     name: {
                         "enabled": profile.enabled,
-                        "model": profile.model,
-                        "reasoningEffort": profile.reasoning_effort,
+                        "models": list(profile.models),
+                        "modelEfforts": dict(profile.model_efforts),
                     }
                     for name, profile in config.agent.provider_profiles.items()
                 },
@@ -818,10 +813,36 @@ class MarketRuntime:
         current = self.config.agent
         profiles = dict(current.provider_profiles)
         old = profiles.get(provider_name, ProviderProfile())
+        # models 支持三种 payload 格式：
+        # - "models": ["a","b"]  → 整体替换
+        # - "toggleModel": "x"  → 切换单个模型的选中状态
+        # - 都不传 → 保持原样
+        new_models = old.models
+        if "models" in payload:
+            raw = payload["models"]
+            new_models = tuple(normalize_model(provider_name, m) for m in raw if m)
+        elif "toggleModel" in payload:
+            slug = normalize_model(provider_name, payload["toggleModel"])
+            if slug in old.models:
+                new_models = tuple(m for m in old.models if m != slug)
+            else:
+                new_models = (*old.models, slug)
+        # model_efforts: per-model reasoning effort
+        new_efforts = dict(old.model_efforts)
+        if "modelEffort" in payload:
+            me = payload["modelEffort"]
+            if isinstance(me, dict) and "model" in me and "effort" in me:
+                effort_model = normalize_model(provider_name, me["model"])
+                new_efforts[effort_model] = normalize_reasoning_effort(me["effort"])
+        new_efforts = {
+            model: effort
+            for model, effort in new_efforts.items()
+            if model in new_models
+        }
         profiles[provider_name] = ProviderProfile(
             enabled=payload.get("enabled", old.enabled),
-            model=normalize_model(provider_name, payload.get("model", old.model)),
-            reasoning_effort=normalize_reasoning_effort(payload.get("reasoningEffort", old.reasoning_effort)),
+            models=new_models,
+            model_efforts=tuple(new_efforts.items()),
         )
         primary_provider, primary_model, primary_effort = _primary_from_profiles(profiles)
         next_config = AgentConfig(
@@ -829,11 +850,8 @@ class MarketRuntime:
             provider=primary_provider,
             api_mode=normalize_api_mode(primary_provider),
             model=primary_model,
-            timeout_seconds=current.timeout_seconds,
             max_candles=current.max_candles,
             reasoning_effort=primary_effort,
-            max_iterations=current.max_iterations,
-            use_tools=current.use_tools,
             provider_profiles=profiles,
         )
         self.config = replace(self.config, agent=next_config)
@@ -1272,7 +1290,7 @@ class MarketRuntime:
 
         history = await session_runtime.history_for_context(limit=8)
 
-        if agent_cfg.use_tools and hasattr(provider, "chat"):
+        if hasattr(provider, "chat"):
             return await self._run_agent_loop(
                 instrument=instrument,
                 quote=quote,
@@ -1467,16 +1485,16 @@ class MarketRuntime:
         provider = normalize_provider(override_provider) if override_provider else base.provider
         model = normalize_model(provider, override_model) if override_model else normalize_model(provider, None)
         api_mode = normalize_api_mode(provider)
+        profile = base.provider_profiles.get(provider)
+        reasoning_effort = profile.effort_for(model) if profile is not None else base.reasoning_effort
         return AgentConfig(
             enabled=True,
             provider=provider,
             api_mode=api_mode,
             model=model,
-            timeout_seconds=base.timeout_seconds,
             max_candles=base.max_candles,
-            reasoning_effort=base.reasoning_effort,
-            max_iterations=base.max_iterations,
-            use_tools=base.use_tools,
+            reasoning_effort=reasoning_effort,
+            provider_profiles=base.provider_profiles,
         )
 
     def _require_source_path(self) -> Path:
@@ -2157,29 +2175,20 @@ def _agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) ->
     primary_provider, primary_model, primary_effort = _primary_from_profiles(profiles)
     raw: dict[str, Any] = {
         "enabled": current.enabled,
-        "timeout_seconds": current.timeout_seconds,
         "max_candles": current.max_candles,
-        "max_iterations": current.max_iterations,
-        "use_tools": current.use_tools,
         "providers": {
             name: {
                 "enabled": p.enabled,
-                "model": p.model,
-                "reasoning_effort": p.reasoning_effort,
+                "models": list(p.models),
+                "model_efforts": dict(p.model_efforts),
             }
             for name, p in profiles.items()
         },
     }
     field_map = {
         "enabled": "enabled",
-        "timeoutSeconds": "timeout_seconds",
-        "timeout_seconds": "timeout_seconds",
         "maxCandles": "max_candles",
         "max_candles": "max_candles",
-        "maxIterations": "max_iterations",
-        "max_iterations": "max_iterations",
-        "useTools": "use_tools",
-        "use_tools": "use_tools",
     }
     for incoming, normalized in field_map.items():
         if incoming in payload:

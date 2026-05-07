@@ -39,7 +39,7 @@ class AgentRuntime:
         tool_packs: tuple[ToolPack, ...] = tuple(),
         services: AgentRuntimeServices | None = None,
         system_prompt: str | None = None,
-        max_iterations: int,
+        max_iterations: int = 10,
     ) -> None:
         self.provider = provider
         self.tool_packs = tool_packs

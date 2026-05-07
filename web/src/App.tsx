@@ -11,6 +11,8 @@ import {
   EyeOff,
   Eraser,
   History,
+  Check,
+  ChevronDown,
   KeyRound,
   Loader2,
   LockKeyhole,
@@ -128,12 +130,13 @@ const AGENT_PROVIDER_OPTIONS = [
   },
 ] as const;
 const PROVIDERS_HASH = '#/settings/providers';
+const AGENT_CONTEXT_HASH = '#/settings/agent-context';
 const WATCHLIST_HASH = '#/settings/watchlist';
 const NEWS_HASH = '#/settings/news';
 const SOCIAL_HASH = '#/settings/social';
 const THEME_STORAGE_KEY = 'mytradebot-theme';
 const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
-type SettingsSection = 'providers' | 'watchlist' | 'news' | 'social';
+type SettingsSection = 'providers' | 'agent-context' | 'watchlist' | 'news' | 'social';
 type SearchSource = 'bitget' | 'alpaca' | 'hyperliquid-testnet';
 type SourceHint = SearchSource;
 type ThemeName = 'light' | 'dark';
@@ -233,6 +236,9 @@ function readRouteFromHash(): AppRoute {
   if (window.location.hash.startsWith(SOCIAL_HASH)) {
     return { view: 'settings', section: 'social' };
   }
+  if (window.location.hash.startsWith(AGENT_CONTEXT_HASH)) {
+    return { view: 'settings', section: 'agent-context' };
+  }
   if (window.location.hash.startsWith(NEWS_HASH)) {
     return { view: 'settings', section: 'news' };
   }
@@ -251,6 +257,8 @@ function navigateToRoute(route: AppRoute) {
     const hash =
       route.section === 'social'
         ? SOCIAL_HASH
+        : route.section === 'agent-context'
+        ? AGENT_CONTEXT_HASH
         : route.section === 'news'
         ? NEWS_HASH
         : route.section === 'watchlist'
@@ -1280,6 +1288,14 @@ function SettingsFrame({
               <span>Providers</span>
             </button>
             <button
+              className={`settings-nav-item ${section === 'agent-context' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('agent-context')}
+            >
+              <Bot size={18} />
+              <span>Agent Context</span>
+            </button>
+            <button
               className={`settings-nav-item ${section === 'watchlist' ? 'active' : ''}`}
               type="button"
               onClick={() => onSection('watchlist')}
@@ -1837,21 +1853,45 @@ function AgentSessionPanel({
   disabled: boolean;
   selectedProvider: string;
   selectedModel: string;
-  providerProfiles: Record<string, { enabled: boolean; model: string; reasoningEffort: string }>;
+  providerProfiles: Record<string, { enabled: boolean; models: string[]; modelEfforts: Record<string, string> }>;
   onProviderChange: (provider: string, defaultModel: string) => void;
   onModelChange: (model: string) => void;
   onPromptChange: (value: string) => void;
   onSend: () => Promise<void>;
   onReset: () => Promise<void>;
 }) {
-  const enabledOptions = AGENT_PROVIDER_OPTIONS.filter(
-    (o) => providerProfiles[o.provider]?.enabled,
-  );
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelPickerSearch, setModelPickerSearch] = useState('');
+  const pickerRef = useRef<HTMLDivElement>(null);
   const messages = session?.messages ?? [];
   const canSend = !disabled && !busy && !sessionLoading && !sessionActionKey;
   const sessionTime = session?.session
     ? new Date(session.session.updatedAt).toLocaleTimeString()
     : 'No session';
+
+  useEffect(() => {
+    if (!modelPickerOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setModelPickerOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [modelPickerOpen]);
+
+  const enabledProviders = AGENT_PROVIDER_OPTIONS.filter(
+    (o) => providerProfiles[o.provider]?.enabled,
+  );
+  const kw = modelPickerSearch.trim().toLowerCase();
+
+  function selectPickerModel(provider: string, model: string) {
+    onProviderChange(provider, model);
+    setModelPickerOpen(false);
+    setModelPickerSearch('');
+  }
+
+  const currentProviderOption = AGENT_PROVIDER_OPTIONS.find((o) => o.provider === selectedProvider);
 
   return (
     <div className="agent-card agent-readout agent-session-card">
@@ -1874,36 +1914,76 @@ function AgentSessionPanel({
           <RefreshCw size={14} />
         </button>
       </div>
-      <div className="session-provider-bar">
-        <select
-          className="session-provider-select"
-          value={selectedProvider}
-          onChange={(event) => {
-            const option = AGENT_PROVIDER_OPTIONS.find((o) => o.provider === event.target.value);
-            if (option) {
-              const profile = providerProfiles[option.provider];
-              onProviderChange(option.provider, profile?.model || option.defaultModel);
-            }
-          }}
+      <div className="session-model-picker" ref={pickerRef}>
+        <button
+          className="session-model-trigger"
+          type="button"
           disabled={busy}
+          onClick={() => setModelPickerOpen(!modelPickerOpen)}
         >
-          {enabledOptions.length > 0
-            ? enabledOptions.map((option) => (
-                <option key={option.provider} value={option.provider}>{option.label}</option>
-              ))
-            : AGENT_PROVIDER_OPTIONS.map((option) => (
-                <option key={option.provider} value={option.provider}>{option.label}</option>
-              ))
-          }
-        </select>
-        <input
-          className="session-model-input"
-          type="text"
-          value={selectedModel}
-          onChange={(event) => onModelChange(event.target.value)}
-          disabled={busy}
-          placeholder="Model name"
-        />
+          {currentProviderOption && (
+            <span className="session-model-provider-icon">
+              {currentProviderOption.provider === 'anthropic' ? <Sparkles size={12} /> : <Bot size={12} />}
+            </span>
+          )}
+          <span>{selectedModel}</span>
+          <ChevronDown size={14} />
+        </button>
+        {modelPickerOpen && (
+          <div className="session-model-dropdown">
+            <div className="session-model-dropdown-search">
+              <Search size={14} />
+              <input
+                autoFocus
+                value={modelPickerSearch}
+                onChange={(e) => setModelPickerSearch(e.target.value)}
+                placeholder="Search models..."
+              />
+            </div>
+            <div className="session-model-dropdown-list">
+              {enabledProviders.map((opt) => {
+                const profile = providerProfiles[opt.provider];
+                const providerModels = (profile?.models ?? []).filter((m) =>
+                  !kw || m.toLowerCase().includes(kw) || opt.label.toLowerCase().includes(kw),
+                );
+                if (providerModels.length === 0) return null;
+                return (
+                  <div key={opt.provider} className="session-model-group">
+                    <div className="session-model-group-head">
+                      {opt.provider === 'anthropic' ? <Sparkles size={13} /> : <Bot size={13} />}
+                      <span>{opt.label}</span>
+                    </div>
+                    {providerModels.map((m) => {
+                      const active = selectedProvider === opt.provider && selectedModel === m;
+                      return (
+                        <button
+                          key={`${opt.provider}:${m}`}
+                          className={`session-model-option ${active ? 'active' : ''}`}
+                          type="button"
+                          onClick={() => selectPickerModel(opt.provider, m)}
+                        >
+                          {active && <Check size={14} />}
+                          <span>{m}</span>
+                          {profile?.modelEfforts?.[m] && (
+                            <span className="session-model-effort">{profile.modelEfforts[m]}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {enabledProviders.every((opt) => {
+                const profile = providerProfiles[opt.provider];
+                return (profile?.models ?? []).filter((m) =>
+                  !kw || m.toLowerCase().includes(kw) || opt.label.toLowerCase().includes(kw),
+                ).length === 0;
+              }) && (
+                <div className="session-model-empty">无匹配模型</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       <div className="session-transcript">
         {sessionLoading && (
@@ -2350,33 +2430,11 @@ function ProviderSettingsPanel({
   const [modelSearch, setModelSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
-  const [sharedSaving, setSharedSaving] = useState(false);
 
   const option = AGENT_PROVIDER_OPTIONS.find((o) => o.provider === activeProvider) ?? AGENT_PROVIDER_OPTIONS[0];
   const profile = profiles[activeProvider];
   const enabled = profile?.enabled ?? false;
-  const selectedModel = profile?.model ?? option.defaultModel;
-  const selectedEffort = profile?.reasoningEffort ?? 'medium';
-
-  const [sharedDraft, setSharedDraft] = useState({
-    timeoutSeconds: config?.timeoutSeconds ?? 45,
-    maxCandles: config?.maxCandles ?? 40,
-    maxIterations: config?.maxIterations ?? 10,
-    useTools: config?.useTools ?? true,
-  });
-
-  const configSig = config
-    ? `${config.timeoutSeconds}|${config.maxCandles}|${config.maxIterations}|${config.useTools}`
-    : '';
-  useEffect(() => {
-    if (!config) return;
-    setSharedDraft({
-      timeoutSeconds: config.timeoutSeconds,
-      maxCandles: config.maxCandles,
-      maxIterations: config.maxIterations,
-      useTools: config.useTools,
-    });
-  }, [configSig]);
+  const selectedModels = new Set(profile?.models ?? []);
 
   function switchProvider(provider: string) {
     setActiveProvider(provider);
@@ -2417,38 +2475,17 @@ function ProviderSettingsPanel({
     }
   }
 
-  async function selectModel(slug: string, effort?: string) {
+  async function toggleModel(slug: string, defaultEffort?: string) {
     setStatus('保存模型选择...');
     try {
-      const nextState = await saveProviderProfile(activeProvider, {
-        model: slug,
-        reasoningEffort: effort || selectedEffort,
-      });
+      const payload = selectedModels.has(slug) || !defaultEffort
+        ? { toggleModel: slug }
+        : { toggleModel: slug, modelEffort: { model: slug, effort: defaultEffort } };
+      const nextState = await saveProviderProfile(activeProvider, payload);
       onState(nextState);
       setStatus('已保存。');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Save failed.');
-    }
-  }
-
-  async function updateEffort(effort: string) {
-    try {
-      const nextState = await saveProviderProfile(activeProvider, { reasoningEffort: effort });
-      onState(nextState);
-    } catch { /* ignore */ }
-  }
-
-  async function saveShared() {
-    setSharedSaving(true);
-    setStatus('保存共享设置...');
-    try {
-      const nextState = await saveAgentConfig({ ...sharedDraft, enabled: config?.enabled ?? true });
-      onState(nextState);
-      setStatus('已保存。');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Save failed.');
-    } finally {
-      setSharedSaving(false);
     }
   }
 
@@ -2526,25 +2563,17 @@ function ProviderSettingsPanel({
           </div>
 
           {enabled && (() => {
-            const activeModelInfo = models.find((m) => m.slug === selectedModel);
-            const effortOptions = activeModelInfo?.supportedReasoningEfforts?.length
-              ? activeModelInfo.supportedReasoningEfforts
-              : [];
+            const efforts = profile?.modelEfforts ?? {};
+            async function setModelEffort(model: string, effort: string) {
+              try {
+                const nextState = await saveProviderProfile(activeProvider, {
+                  modelEffort: { model, effort },
+                });
+                onState(nextState);
+              } catch { /* ignore */ }
+            }
             return (
             <>
-              {effortOptions.length > 0 && (
-                <div className="provider-section-card">
-                  <div className="provider-section-head">
-                    <strong>Reasoning Effort</strong>
-                  </div>
-                  <select value={selectedEffort} onChange={(e) => updateEffort(e.target.value)}>
-                    {effortOptions.map((o) => (
-                      <option key={o} value={o}>{o}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
               <div className="models-panel">
                 <div className="models-panel-head">
                   <strong>Models</strong>
@@ -2571,26 +2600,50 @@ function ProviderSettingsPanel({
 
                 <div className="model-list">
                   {visibleModels.map((m) => {
-                    const isSelected = selectedModel === m.slug;
+                    const isSelected = selectedModels.has(m.slug);
+                    const modelEffortOptions = m.supportedReasoningEfforts?.length
+                      ? m.supportedReasoningEfforts
+                      : [];
+                    const currentEffort = efforts[m.slug] ?? m.defaultReasoningEffort ?? 'medium';
                     return (
-                      <button
-                        className={`model-row ${isSelected ? 'selected' : ''}`}
-                        key={m.slug}
-                        type="button"
-                        onClick={() => selectModel(m.slug, m.defaultReasoningEffort)}
-                      >
-                        <div className="model-copy">
+                      <div className={`model-row ${isSelected ? 'selected' : ''}`} key={m.slug}>
+                        <div
+                          className="model-copy"
+                          onClick={() => toggleModel(m.slug, m.defaultReasoningEffort)}
+                          role="button"
+                          tabIndex={0}
+                        >
                           <div className="model-title-row">
                             <strong>{m.displayName || m.slug}</strong>
                             <span className="model-slug">{m.slug}</span>
                           </div>
                           <div className="model-meta-row">
                             <span>{formatContextWindow(m.contextWindow)}</span>
-                            <span>{m.defaultReasoningEffort || '-'}</span>
                           </div>
+                          {isSelected && modelEffortOptions.length > 0 && (
+                            <div className="effort-pills model-effort-pills" onClick={(e) => e.stopPropagation()}>
+                              {modelEffortOptions.map((o) => (
+                                <button
+                                  key={o}
+                                  type="button"
+                                  className={`effort-pill ${currentEffort === o ? 'active' : ''}`}
+                                  onClick={() => setModelEffort(m.slug, o)}
+                                >
+                                  {o}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <span className={`model-selected-dot ${isSelected ? 'active' : ''}`} />
-                      </button>
+                        <label className="switch-row model-toggle" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleModel(m.slug, m.defaultReasoningEffort)}
+                          />
+                          <span className="switch-slider" />
+                        </label>
+                      </div>
                     );
                   })}
                   {models.length > 0 && visibleModels.length === 0 && (
@@ -2611,60 +2664,82 @@ function ProviderSettingsPanel({
             </div>
           )}
 
-          <div className="provider-shared-section">
-            <div className="provider-section-head">
-              <strong>共享设置</strong>
-            </div>
-            <div className="provider-form-grid">
-              <label>
-                <span>Timeout</span>
-                <input
-                  min={5} step={5} type="number"
-                  value={sharedDraft.timeoutSeconds}
-                  onChange={(e) =>
-                    setSharedDraft({ ...sharedDraft, timeoutSeconds: Math.max(5, Number(e.target.value) || 5) })
-                  }
-                />
-              </label>
-              <label>
-                <span>Max Candles</span>
-                <input
-                  min={10} step={5} type="number"
-                  value={sharedDraft.maxCandles}
-                  onChange={(e) =>
-                    setSharedDraft({ ...sharedDraft, maxCandles: Math.max(10, Number(e.target.value) || 10) })
-                  }
-                />
-              </label>
-              <label>
-                <span>Max Iterations</span>
-                <input
-                  min={1} step={1} type="number"
-                  value={sharedDraft.maxIterations}
-                  onChange={(e) =>
-                    setSharedDraft({ ...sharedDraft, maxIterations: Math.max(1, Number(e.target.value) || 1) })
-                  }
-                />
-              </label>
-              <label className="switch-row provider-form-switch">
-                <span>Use Tools</span>
-                <input
-                  checked={sharedDraft.useTools}
-                  onChange={(e) => setSharedDraft({ ...sharedDraft, useTools: e.target.checked })}
-                  type="checkbox"
-                />
-                <span className="switch-slider" />
-              </label>
-            </div>
-            <button className="shell-button primary" type="button" onClick={saveShared} disabled={sharedSaving}>
-              {sharedSaving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
-              Save
-            </button>
-          </div>
-
           <div className="provider-status-bar">{status}</div>
         </section>
       </div>
+    </>
+  );
+}
+
+// Keeps market-context sizing separate from provider/model configuration.
+function AgentContextSettingsPanel({
+  state,
+  onState,
+}: {
+  state: MarketState | null;
+  onState: (state: MarketState) => void;
+}) {
+  const config = state?.config.agent;
+  const [maxCandles, setMaxCandles] = useState(config?.maxCandles ?? 40);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState('Controls how much recent candle context the agent sees.');
+
+  useEffect(() => {
+    if (!config) return;
+    setMaxCandles(config.maxCandles);
+  }, [config?.maxCandles]);
+
+  async function saveContext() {
+    if (!config) return;
+    setSaving(true);
+    setStatus('Saving context settings...');
+    try {
+      const nextState = await saveAgentConfig({
+        enabled: config.enabled,
+        maxCandles,
+      });
+      onState(nextState);
+      setStatus('Saved.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Save failed.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <header className="settings-stage-head">
+        <div>
+          <div className="eyebrow">Agent</div>
+          <h2>Context</h2>
+        </div>
+      </header>
+      <section className="provider-shared-settings agent-context-settings">
+        <div className="provider-section-head">
+          <strong>Market Context</strong>
+          <small>Number of recent candles included in agent prompts and tools.</small>
+        </div>
+        <div className="provider-form-grid">
+          <label>
+            <span>Max Candles</span>
+            <input
+              min={10}
+              step={5}
+              type="number"
+              value={maxCandles}
+              onChange={(e) => setMaxCandles(Math.max(10, Number(e.target.value) || 10))}
+            />
+          </label>
+        </div>
+        <div className="provider-shared-actions">
+          <button className="shell-button primary" type="button" onClick={saveContext} disabled={saving}>
+            {saving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
+            Save
+          </button>
+          <span className="provider-status-bar">{status}</span>
+        </div>
+      </section>
     </>
   );
 }
@@ -3359,13 +3434,16 @@ export default function App() {
     if (!state?.config.agent.providerProfiles) return;
     const profiles = state.config.agent.providerProfiles;
     const currentProfile = profiles[agentProvider];
-    if (currentProfile?.enabled && currentProfile.model) {
-      setAgentModel(currentProfile.model);
+    if (currentProfile?.enabled && currentProfile.models?.length) {
+      if (!currentProfile.models.includes(agentModel)) {
+        setAgentModel(currentProfile.models[0]);
+      }
     } else {
       const firstEnabled = AGENT_PROVIDER_OPTIONS.find((o) => profiles[o.provider]?.enabled);
       if (firstEnabled) {
+        const fp = profiles[firstEnabled.provider];
         setAgentProvider(firstEnabled.provider);
-        setAgentModel(profiles[firstEnabled.provider]?.model || firstEnabled.defaultModel);
+        setAgentModel(fp?.models?.[0] || firstEnabled.defaultModel);
       }
     }
   }, [profilesSig]);
@@ -3674,6 +3752,8 @@ export default function App() {
       >
         {route.section === 'providers' ? (
           <ProviderSettingsPanel state={state} onState={setState} />
+        ) : route.section === 'agent-context' ? (
+          <AgentContextSettingsPanel state={state} onState={setState} />
         ) : route.section === 'news' ? (
           <NewsSettingsPanel state={state} onState={setState} />
         ) : route.section === 'social' ? (

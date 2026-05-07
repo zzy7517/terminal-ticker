@@ -168,7 +168,6 @@ class ConfigTests(unittest.TestCase):
                     "provider": "codex",
                     "api_mode": "codex_responses",
                     "model": "default",
-                    "timeout_seconds": 12,
                     "max_candles": 24,
                     "reasoning_effort": "high",
                 },
@@ -179,7 +178,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.agent.provider, "codex")
         self.assertEqual(config.agent.api_mode, "codex_responses")
         self.assertEqual(config.agent.model, DEFAULT_CODEX_MODEL)
-        self.assertEqual(config.agent.timeout_seconds, 12)
         self.assertEqual(config.agent.max_candles, 24)
         self.assertEqual(config.agent.reasoning_effort, "high")
 

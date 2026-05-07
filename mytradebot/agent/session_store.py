@@ -28,8 +28,6 @@ class AgentSession:
     active: bool
     api_mode: str | None = None
     reasoning_effort: str | None = None
-    max_iterations: int | None = None
-    use_tools: bool | None = None
 
     def to_payload(self) -> dict[str, Any]:
         """说明：转换成前端可消费的载荷。"""
@@ -44,8 +42,6 @@ class AgentSession:
             "active": self.active,
             "apiMode": self.api_mode,
             "reasoningEffort": self.reasoning_effort,
-            "maxIterations": self.max_iterations,
-            "useTools": self.use_tools,
         }
 
 
@@ -182,8 +178,6 @@ class AgentSessionStore:
         model: str,
         api_mode: str | None = None,
         reasoning_effort: str | None = None,
-        max_iterations: int | None = None,
-        use_tools: bool | None = None,
     ) -> AgentSession:
         """说明：创建一个新 active 会话，并停用同标的旧 active 会话。"""
         session_id = str(uuid.uuid4())
@@ -198,9 +192,9 @@ class AgentSessionStore:
                 """
                 INSERT INTO agent_sessions (
                     id, instrument_key, title, provider, model, created_at, updated_at, active,
-                    api_mode, reasoning_effort, max_iterations, use_tools
+                    api_mode, reasoning_effort
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                 """,
                 (
                     session_id,
@@ -212,8 +206,6 @@ class AgentSessionStore:
                     now,
                     api_mode,
                     reasoning_effort,
-                    max_iterations,
-                    _bool_to_db(use_tools),
                 ),
             )
             row = connection.execute(
@@ -231,8 +223,6 @@ class AgentSessionStore:
         model: str,
         api_mode: str | None = None,
         reasoning_effort: str | None = None,
-        max_iterations: int | None = None,
-        use_tools: bool | None = None,
     ) -> AgentSession:
         """说明：返回 active 会话，不存在时创建。"""
         session = self.get_active_session(instrument_key)
@@ -243,8 +233,6 @@ class AgentSessionStore:
                 or session.model != model
                 or session.api_mode != api_mode
                 or session.reasoning_effort != reasoning_effort
-                or session.max_iterations != max_iterations
-                or session.use_tools != use_tools
             ):
                 return self.update_session_metadata(
                     session.id,
@@ -253,8 +241,6 @@ class AgentSessionStore:
                     model=model,
                     api_mode=api_mode,
                     reasoning_effort=reasoning_effort,
-                    max_iterations=max_iterations,
-                    use_tools=use_tools,
                 )
             return session
         return self.create_session(
@@ -264,8 +250,6 @@ class AgentSessionStore:
             model=model,
             api_mode=api_mode,
             reasoning_effort=reasoning_effort,
-            max_iterations=max_iterations,
-            use_tools=use_tools,
         )
 
     def update_session_metadata(
@@ -277,8 +261,6 @@ class AgentSessionStore:
         model: str,
         api_mode: str | None,
         reasoning_effort: str | None,
-        max_iterations: int | None,
-        use_tools: bool | None,
     ) -> AgentSession:
         """说明：刷新 active 会话当前使用的 provider/model 展示元数据。"""
         clean_title = title.strip()
@@ -290,9 +272,7 @@ class AgentSessionStore:
                     provider = ?,
                     model = ?,
                     api_mode = ?,
-                    reasoning_effort = ?,
-                    max_iterations = ?,
-                    use_tools = ?
+                    reasoning_effort = ?
                 WHERE id = ?
                 """,
                 (
@@ -301,8 +281,6 @@ class AgentSessionStore:
                     model,
                     api_mode,
                     reasoning_effort,
-                    max_iterations,
-                    _bool_to_db(use_tools),
                     session_id,
                 ),
             )
@@ -547,8 +525,6 @@ def _session_from_row(row: sqlite3.Row) -> AgentSession:
         active=bool(row["active"]),
         api_mode=_optional_str(row["api_mode"]),
         reasoning_effort=_optional_str(row["reasoning_effort"]),
-        max_iterations=_optional_int(row["max_iterations"]),
-        use_tools=_optional_bool(row["use_tools"]),
     )
 
 
@@ -594,35 +570,12 @@ def _ensure_agent_session_columns(connection: sqlite3.Connection) -> None:
     migrations = {
         "api_mode": "ALTER TABLE agent_sessions ADD COLUMN api_mode TEXT",
         "reasoning_effort": "ALTER TABLE agent_sessions ADD COLUMN reasoning_effort TEXT",
-        "max_iterations": "ALTER TABLE agent_sessions ADD COLUMN max_iterations INTEGER",
-        "use_tools": "ALTER TABLE agent_sessions ADD COLUMN use_tools INTEGER",
     }
     for column, statement in migrations.items():
         if column not in columns:
             connection.execute(statement)
 
-
-def _bool_to_db(value: bool | None) -> int | None:
-    """说明：把可空 bool 转成 SQLite 友好的整数。"""
-    if value is None:
-        return None
-    return 1 if value else 0
-
-
 def _optional_str(value: Any) -> str | None:
     """说明：把可空 SQLite 值转成字符串。"""
     return str(value) if value not in (None, "") else None
 
-
-def _optional_int(value: Any) -> int | None:
-    """说明：把可空 SQLite 值转成整数。"""
-    if value is None:
-        return None
-    return int(value)
-
-
-def _optional_bool(value: Any) -> bool | None:
-    """说明：把可空 SQLite 值转成 bool。"""
-    if value is None:
-        return None
-    return bool(value)

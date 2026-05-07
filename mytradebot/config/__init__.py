@@ -105,16 +105,33 @@ class CacheConfig:
 
 @dataclass(frozen=True)
 class ProviderProfile:
-    """说明：单个 LLM provider 的启用状态和模型选择。"""
+    """说明：单个 LLM provider 的启用状态和已选模型列表。"""
     enabled: bool = False
-    model: str = ""
-    reasoning_effort: str = "medium"
+    models: tuple[str, ...] = ()
+    model_efforts: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def model(self) -> str:
+        """说明：首选模型（向后兼容）。"""
+        return self.models[0] if self.models else ""
+
+    @property
+    def reasoning_effort(self) -> str:
+        """说明：首选模型的 reasoning effort（向后兼容）。"""
+        return self.effort_for(self.model)
+
+    def effort_for(self, model: str) -> str:
+        """说明：返回指定模型的 reasoning effort，默认 medium。"""
+        for slug, effort in self.model_efforts:
+            if slug == model:
+                return effort
+        return "medium"
 
 
 def _default_provider_profiles() -> dict[str, ProviderProfile]:
     return {
-        CODEX_PROVIDER: ProviderProfile(enabled=True, model=DEFAULT_CODEX_MODEL),
-        ANTHROPIC_PROVIDER: ProviderProfile(enabled=False, model=DEFAULT_ANTHROPIC_MODEL),
+        CODEX_PROVIDER: ProviderProfile(enabled=True, models=(DEFAULT_CODEX_MODEL,)),
+        ANTHROPIC_PROVIDER: ProviderProfile(enabled=False, models=(DEFAULT_ANTHROPIC_MODEL,)),
     }
 
 
@@ -125,11 +142,8 @@ class AgentConfig:
     provider: str = "codex"
     api_mode: str = "codex_responses"
     model: str = DEFAULT_CODEX_MODEL
-    timeout_seconds: float = 45.0
     max_candles: int = 40
     reasoning_effort: str = "medium"
-    max_iterations: int = 10
-    use_tools: bool = True
     provider_profiles: dict[str, ProviderProfile] = field(default_factory=_default_provider_profiles)
 
 
@@ -357,6 +371,35 @@ def _normalize_reasoning_effort(raw_value: Any) -> str:
     return normalize_reasoning_effort(raw_value)
 
 
+def _parse_models_field(name: str, raw: dict[str, Any]) -> tuple[str, ...]:
+    """说明：从 provider 子表读取 models（数组）或 model（字符串），返回模型元组。"""
+    raw_models = raw.get("models")
+    if isinstance(raw_models, list):
+        return tuple(normalize_model(name, m) for m in raw_models if m)
+    raw_model = raw.get("model")
+    if raw_model is not None:
+        return (normalize_model(name, raw_model),)
+    return (normalize_model(name, None),)
+
+
+def _parse_model_efforts(name: str, raw: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    """说明：解析 per-model reasoning effort 映射。"""
+    raw_efforts = raw.get("model_efforts")
+    if isinstance(raw_efforts, dict):
+        return tuple(
+            (str(k), _normalize_reasoning_effort(v))
+            for k, v in raw_efforts.items()
+            if isinstance(k, str) and k
+        )
+    # 旧格式兼容：全局 reasoning_effort → 应用到所有 models
+    legacy = raw.get("reasoning_effort")
+    if legacy is not None:
+        models = _parse_models_field(name, raw)
+        effort = _normalize_reasoning_effort(legacy)
+        return tuple((m, effort) for m in models)
+    return ()
+
+
 def _parse_provider_profiles(
     raw_agent: dict[str, Any],
 ) -> dict[str, ProviderProfile]:
@@ -370,8 +413,8 @@ def _parse_provider_profiles(
                 raw = {}
             profiles[name] = ProviderProfile(
                 enabled=_normalize_bool(raw.get("enabled"), f"agent.providers.{name}.enabled", False),
-                model=normalize_model(name, raw.get("model")),
-                reasoning_effort=_normalize_reasoning_effort(raw.get("reasoning_effort")),
+                models=_parse_models_field(name, raw),
+                model_efforts=_parse_model_efforts(name, raw),
             )
         return profiles
 
@@ -382,18 +425,19 @@ def _parse_provider_profiles(
     defaults = _default_provider_profiles()
     if legacy_provider is not None:
         prov = _normalize_agent_provider(legacy_provider)
+        model_slug = normalize_model(prov, legacy_model)
+        effort = _normalize_reasoning_effort(legacy_effort)
         for name in defaults:
             if name == prov:
                 defaults[name] = ProviderProfile(
                     enabled=True,
-                    model=normalize_model(name, legacy_model),
-                    reasoning_effort=_normalize_reasoning_effort(legacy_effort),
+                    models=(model_slug,),
+                    model_efforts=((model_slug, effort),),
                 )
             else:
                 defaults[name] = ProviderProfile(
                     enabled=False,
-                    model=normalize_model(name, None),
-                    reasoning_effort="medium",
+                    models=(normalize_model(name, None),),
                 )
     return defaults
 
@@ -420,17 +464,8 @@ def parse_agent_config(raw_agent: dict[str, Any] | None) -> AgentConfig:
         provider=primary_provider,
         api_mode=normalize_api_mode(primary_provider, None),
         model=primary_model,
-        timeout_seconds=_coerce_float(
-            raw_agent.get("timeout_seconds"),
-            "agent.timeout_seconds",
-            45.0,
-        ),
         max_candles=_coerce_min_int(raw_agent.get("max_candles"), "agent.max_candles", 40, 10),
         reasoning_effort=primary_effort,
-        max_iterations=_coerce_min_int(
-            raw_agent.get("max_iterations"), "agent.max_iterations", 10, 1,
-        ),
-        use_tools=_normalize_bool(raw_agent.get("use_tools"), "agent.use_tools", True),
         provider_profiles=profiles,
     )
 

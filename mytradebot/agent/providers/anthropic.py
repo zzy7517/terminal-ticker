@@ -25,6 +25,7 @@ from ..provider import (
 )
 
 DEFAULT_ANTHROPIC_BASE_URL = "https://claude-proxy.p1.cn/api"
+DEFAULT_ANTHROPIC_TIMEOUT_SECONDS = 45.0
 ANTHROPIC_ENV_API_KEYS = (
     "MYTRADEBOT_ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
@@ -103,7 +104,7 @@ class AnthropicProvider:
 
         url = _messages_endpoint(self._base_url)
         headers = _anthropic_headers(api_key, url)
-        timeout = httpx.Timeout(self.config.timeout_seconds)
+        timeout = httpx.Timeout(DEFAULT_ANTHROPIC_TIMEOUT_SECONDS)
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, json=payload, headers=headers)
 

@@ -72,8 +72,6 @@ export interface AgentSession {
   active: boolean;
   apiMode: string | null;
   reasoningEffort: string | null;
-  maxIterations: number | null;
-  useTools: boolean | null;
 }
 
 export interface AgentSessionSummary extends AgentSession {
@@ -108,8 +106,8 @@ export interface AgentSessionMutationResponse {
 
 export interface ProviderProfileState {
   enabled: boolean;
-  model: string;
-  reasoningEffort: string;
+  models: string[];
+  modelEfforts: Record<string, string>;
 }
 
 export interface AgentConfig {
@@ -117,25 +115,21 @@ export interface AgentConfig {
   provider: string;
   apiMode: string;
   model: string;
-  timeoutSeconds: number;
   maxCandles: number;
   reasoningEffort: string;
-  maxIterations: number;
-  useTools: boolean;
   providerProfiles: Record<string, ProviderProfileState>;
 }
 
 export interface AgentConfigUpdate {
   enabled: boolean;
-  timeoutSeconds: number;
   maxCandles: number;
-  maxIterations: number;
-  useTools: boolean;
 }
 
 export interface ProviderProfileUpdate {
   enabled?: boolean;
-  model?: string;
+  models?: string[];
+  toggleModel?: string;
+  modelEffort?: { model: string; effort: string };
   reasoningEffort?: string;
 }
 

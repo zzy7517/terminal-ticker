@@ -22,13 +22,13 @@ use_tools = true
 
 [agent.providers.codex]
 enabled = true
-model = "gpt-5.5"
-reasoning_effort = "xhigh"
+models = ["gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.5"]
+model_efforts = {"gpt-5.4-mini" = "high", "gpt-5.3-codex" = "medium", "gpt-5.5" = "xhigh"}
 
 [agent.providers.anthropic]
 enabled = true
-model = "global.anthropic.claude-opus-4-6-v1"
-reasoning_effort = "medium"
+models = ["global.anthropic.claude-opus-4-6-v1"]
+model_efforts = {"global.anthropic.claude-opus-4-6-v1" = "medium"}
 [analysis]
 enabled = true
 interval = "5m"
