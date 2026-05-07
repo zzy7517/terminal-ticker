@@ -1742,6 +1742,18 @@ function AgentSessionHistoryList({
 }) {
   const visibleHistory = history;
 
+  function relativeTime(dateStr: string): string {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(dateStr).toLocaleDateString();
+  }
+
   return (
     <div className="session-history">
       <div className="session-history-head">
@@ -1759,7 +1771,6 @@ function AgentSessionHistoryList({
         )}
         {!loading && visibleHistory.map((item) => {
           const isActive = item.id === activeSessionId || item.active;
-          const resumeKey = `resume:${item.id}`;
           const deleteKey = `delete:${item.id}`;
           const title = item.preview || item.title || item.id;
           return (
@@ -1773,34 +1784,19 @@ function AgentSessionHistoryList({
               >
                 <span>{title}</span>
                 <small>
-                  {item.model} · {item.messageCount} msg · {new Date(item.updatedAt).toLocaleDateString()}
+                  {item.model} · {relativeTime(item.updatedAt)}
                 </small>
               </button>
-              <div className="session-history-actions">
-                <span className={`session-history-badge ${isActive ? 'active' : ''}`}>
-                  {isActive ? 'active' : item.reasoningEffort ?? '-'}
-                </span>
-                <button
-                  aria-label="Open saved agent session"
-                  className="session-icon-action"
-                  disabled={isActive || Boolean(busyActionKey)}
-                  onClick={() => void onResume(item.id)}
-                  title="Open session"
-                  type="button"
-                >
-                  {busyActionKey === resumeKey ? <Loader2 className="spin" size={13} /> : <RefreshCw size={13} />}
-                </button>
-                <button
-                  aria-label="Delete saved agent session"
-                  className="session-icon-action danger"
-                  disabled={Boolean(busyActionKey)}
-                  onClick={() => void onDelete(item.id)}
-                  title="Delete session"
-                  type="button"
-                >
-                  {busyActionKey === deleteKey ? <Loader2 className="spin" size={13} /> : <Trash2 size={13} />}
-                </button>
-              </div>
+              <button
+                aria-label="Delete session"
+                className="session-history-delete"
+                disabled={Boolean(busyActionKey)}
+                onClick={() => void onDelete(item.id)}
+                title="Delete session"
+                type="button"
+              >
+                {busyActionKey === deleteKey ? <Loader2 className="spin" size={13} /> : <Trash2 size={13} />}
+              </button>
             </div>
           );
         })}
@@ -2369,6 +2365,7 @@ function WorkspaceView({
             </button>
           </div>
 
+          <div className="main-content-body">
           {activeTab === 'chart' && (
             <div className="chart-section">
               <div className="chart-panel-inner">
@@ -2473,6 +2470,7 @@ function WorkspaceView({
           {activeTab === 'positions' && (
             <PositionsPanel state={state} />
           )}
+          </div>
         </section>
       </section>
     </main>
