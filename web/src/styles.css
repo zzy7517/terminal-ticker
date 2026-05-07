@@ -1190,7 +1190,8 @@ textarea:focus-visible {
 }
 
 .session-transcript {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   max-height: 440px;
   min-height: 100px;
@@ -1206,10 +1207,10 @@ textarea:focus-visible {
 }
 
 .session-message.user {
+  align-self: flex-end;
   background: var(--accent-tint);
   inline-size: fit-content;
   max-inline-size: min(42ch, 72%);
-  justify-self: end;
 }
 
 :root[data-theme="dark"] .session-message.user {
