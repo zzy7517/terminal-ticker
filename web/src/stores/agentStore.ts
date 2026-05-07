@@ -287,28 +287,42 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       .then((payload) => {
         if (disposed) return;
         const firstSessionId = payload.sessions[0]?.id ?? null;
+        const preloadedSessions = payload.preloadedSessions ?? [];
         set((s) => {
-          const runStateBySessionId = mergeHistoryRuns(payload.sessions, s.runStateBySessionId);
+          let agentSessionById = s.agentSessionById;
+          let runStateBySessionId = mergeHistoryRuns(payload.sessions, s.runStateBySessionId);
+          for (const sessionPayload of preloadedSessions) {
+            const sessionId = sessionPayload.session?.id;
+            if (!sessionId) continue;
+            agentSessionById = cacheSession(agentSessionById, sessionPayload);
+            runStateBySessionId = {
+              ...runStateBySessionId,
+              [sessionId]: mergeRunPayload(runStateBySessionId[sessionId], sessionId, sessionPayload.run),
+            };
+          }
           const next = {
             ...s,
+            agentSessionById,
             agentSessionHistory: payload.sessions,
             runStateBySessionId,
             activeAgentSessionId: s.activeAgentSessionId ?? firstSessionId,
           };
           return {
+            agentSessionById,
             agentSessionHistory: payload.sessions,
             runStateBySessionId,
             activeAgentSessionId: next.activeAgentSessionId,
             ...activeFields(next),
           };
         });
-        if (firstSessionId && !get().agentSessionById[firstSessionId]) {
+        const activeSessionId = get().activeAgentSessionId ?? firstSessionId;
+        if (activeSessionId && !get().agentSessionById[activeSessionId]) {
           set({ agentSessionLoadingKey: key });
-          fetchAgentSession(firstSessionId)
+          fetchAgentSession(activeSessionId)
             .then((sessionPayload) => {
               if (disposed) return;
               set((s) => {
-                const sessionId = sessionPayload.session?.id ?? firstSessionId;
+                const sessionId = sessionPayload.session?.id ?? activeSessionId;
                 const agentSessionById = cacheSession(s.agentSessionById, sessionPayload);
                 const runStateBySessionId = {
                   ...s.runStateBySessionId,

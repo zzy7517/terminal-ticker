@@ -113,6 +113,7 @@ export interface AgentSessionResponse {
 
 export interface AgentSessionHistoryResponse {
   sessions: AgentSessionSummary[];
+  preloadedSessions?: AgentSessionResponse[];
 }
 
 export interface AgentSessionMutationResponse {

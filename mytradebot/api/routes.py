@@ -81,8 +81,8 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
     # -- Agent sessions --
 
     @app.get("/api/agent/sessions")
-    async def list_agent_sessions_endpoint() -> dict[str, Any]:
-        return await runtime.list_agent_sessions()
+    async def list_agent_sessions_endpoint(limit: int = 20, preload: int = 10) -> dict[str, Any]:
+        return await runtime.list_agent_sessions(limit=limit, preload=preload)
 
     @app.post("/api/agent/sessions")
     async def create_agent_session_endpoint(payload: dict[str, Any] | None = None) -> dict[str, Any]:

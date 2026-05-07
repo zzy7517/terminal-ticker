@@ -693,6 +693,48 @@ class WebTests(unittest.TestCase):
         self.assertEqual(delete_payload["history"]["sessions"], [])
         self.assertNotIn(instrument.key, delete_payload["state"]["agentAnalyses"])
 
+    def test_agent_sessions_endpoint_preloads_first_ten_chat_payloads(self) -> None:
+        """Verify global chat listing includes the first ten full session payloads."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
+            for index in range(12):
+                session = store.create_global_session(
+                    title=f"Session {index}",
+                    provider="codex",
+                    model="gpt-test",
+                )
+                store.append_message(
+                    session_id=session.id,
+                    role="user",
+                    content=f"Prompt {index}",
+                )
+                store.append_message(
+                    session_id=session.id,
+                    role="assistant",
+                    content=f"Answer {index}",
+                )
+            app = create_app(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=tuple(),
+                controller_factory=DummyController,
+                agent_session_store=store,
+                auto_start=False,
+            )
+
+            with TestClient(app) as client:
+                response = client.get("/api/agent/sessions?limit=12&preload=10")
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(payload["sessions"]), 12)
+        self.assertEqual(len(payload["preloadedSessions"]), 10)
+        self.assertEqual(
+            [item["session"]["id"] for item in payload["preloadedSessions"]],
+            [item["id"] for item in payload["sessions"][:10]],
+        )
+        self.assertTrue(all(len(item["messages"]) == 2 for item in payload["preloadedSessions"]))
+        self.assertEqual(payload["preloadedSessions"][0]["run"]["status"], "idle")
+
     def test_agent_stream_reports_running_status_and_rejects_overlap(self) -> None:
         """Verify streaming runs expose per-session status and reject overlapping runs."""
         class BlockingProvider:

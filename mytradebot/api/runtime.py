@@ -660,8 +660,8 @@ class MarketRuntime:
             payload["run"] = await self.agent_runs.payload_for_session(str(session.get("id") or ""))
         return payload
 
-    async def list_agent_sessions(self) -> dict[str, Any]:
-        return await self._agent_session_history_payload()
+    async def list_agent_sessions(self, *, limit: int = 20, preload: int = 10) -> dict[str, Any]:
+        return await self._agent_session_history_payload(limit=limit, preload_limit=preload)
 
     async def create_agent_session(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = payload or {}
@@ -1302,10 +1302,17 @@ class MarketRuntime:
             payload["run"] = await self.agent_runs.payload_for_session(str(session.get("id") or session_id))
         return payload
 
-    async def _agent_session_history_payload(self, instrument_key: str | None = None) -> dict[str, Any]:
+    async def _agent_session_history_payload(
+        self,
+        instrument_key: str | None = None,
+        *,
+        limit: int = 20,
+        preload_limit: int = 0,
+    ) -> dict[str, Any]:
         sessions = await asyncio.to_thread(
             self.agent_session_store.list_sessions,
             instrument_key,
+            limit=limit,
         )
         payloads = [session.to_payload() for session in sessions]
         run_payloads = await self.agent_runs.payloads_for_sessions([
@@ -1313,7 +1320,20 @@ class MarketRuntime:
         ])
         for payload in payloads:
             payload["run"] = run_payloads.get(str(payload["id"]))
-        return {"sessions": payloads}
+        result: dict[str, Any] = {"sessions": payloads}
+        clean_preload_limit = max(0, min(int(preload_limit), 10, len(payloads)))
+        if clean_preload_limit:
+            preloaded = await asyncio.to_thread(
+                self.agent_session_store.session_payloads,
+                [str(payload["id"]) for payload in payloads[:clean_preload_limit]],
+            )
+            preloaded_payloads = list(preloaded)
+            for payload in preloaded_payloads:
+                session = payload.get("session")
+                if isinstance(session, dict):
+                    payload["run"] = run_payloads.get(str(session.get("id") or ""))
+            result["preloadedSessions"] = preloaded_payloads
+        return result
 
     async def _session_runtime_by_id(
         self,

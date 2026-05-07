@@ -440,6 +440,49 @@ class AgentSessionStore(BaseStore):
             "messages": [message.to_payload() for message in messages],
         }
 
+    def session_payloads(self, session_ids: tuple[str, ...] | list[str]) -> tuple[dict[str, Any], ...]:
+        """说明：批量返回多个会话的完整轻量载荷，并保持输入顺序。"""
+        ordered_ids = [str(session_id) for session_id in session_ids if str(session_id)]
+        if not ordered_ids:
+            return tuple()
+        unique_ids = tuple(dict.fromkeys(ordered_ids))
+        placeholders = ",".join("?" for _ in unique_ids)
+        with self._get_conn() as connection:
+            session_rows = connection.execute(
+                f"SELECT * FROM agent_sessions WHERE id IN ({placeholders})",
+                unique_ids,
+            ).fetchall()
+            message_rows = connection.execute(
+                f"""
+                SELECT *
+                FROM agent_messages
+                WHERE session_id IN ({placeholders})
+                ORDER BY session_id, created_at, id
+                """,
+                unique_ids,
+            ).fetchall()
+        sessions_by_id = {
+            str(row["id"]): _session_from_row(row)
+            for row in session_rows
+        }
+        messages_by_id: dict[str, list[dict[str, Any]]] = {session_id: [] for session_id in unique_ids}
+        for row in message_rows:
+            messages_by_id.setdefault(str(row["session_id"]), []).append(
+                _message_from_row(row).to_payload()
+            )
+        payloads_by_id = {
+            session_id: {
+                "session": session.to_payload(),
+                "messages": messages_by_id.get(session_id, []),
+            }
+            for session_id, session in sessions_by_id.items()
+        }
+        return tuple(
+            payloads_by_id[session_id]
+            for session_id in ordered_ids
+            if session_id in payloads_by_id
+        )
+
     def list_sessions(
         self,
         instrument_key: str | None = None,
@@ -669,4 +712,3 @@ def _stored_instrument_key(instrument_key: str | None) -> str:
 def _optional_str(value: Any) -> str | None:
     """说明：把可空 SQLite 值转成字符串。"""
     return str(value) if value not in (None, "") else None
-
