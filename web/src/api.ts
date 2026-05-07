@@ -2,6 +2,7 @@ import type {
   AgentConfigUpdate,
   AgentModelsResponse,
   AgentStreamEvent,
+  AgentStreamPayload,
   ProviderProfileUpdate,
   AgentSessionHistoryResponse,
   AgentSessionMutationResponse,
@@ -263,6 +264,40 @@ export async function streamAgentMessage(
   if (!response.body) {
     throw new Error('agent stream failed: response body is empty');
   }
+  const parseEvent = (data: string) => {
+    const parsed = JSON.parse(data) as AgentStreamEvent | AgentStreamPayload;
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      'event' in parsed &&
+      parsed.event &&
+      typeof parsed.event === 'object' &&
+      'type' in parsed.event &&
+      typeof parsed.event.type === 'string' &&
+      typeof parsed.sessionId === 'string'
+    ) {
+      return parsed;
+    }
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      'type' in parsed &&
+      typeof parsed.type === 'string'
+    ) {
+      return {
+        sessionId: key,
+        runId: '',
+        seq: 0,
+        event: parsed as AgentStreamPayload,
+      };
+    }
+    return {
+      sessionId: key,
+      runId: '',
+      seq: 0,
+      event: { type: 'error', error: 'Malformed agent stream event.' } satisfies AgentStreamPayload,
+    };
+  };
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -278,7 +313,7 @@ export async function streamAgentMessage(
         .filter((line) => line.startsWith('data:'))
         .map((line) => line.slice(5).trimStart())
         .join('\n');
-      if (data) onEvent(JSON.parse(data) as AgentStreamEvent);
+      if (data) onEvent(parseEvent(data));
     }
   }
   buffer += decoder.decode();
@@ -287,7 +322,7 @@ export async function streamAgentMessage(
     .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice(5).trimStart())
     .join('\n');
-  if (data) onEvent(JSON.parse(data) as AgentStreamEvent);
+  if (data) onEvent(parseEvent(data));
 }
 
 // Starts a clean active chart-agent session without deleting historical sessions.

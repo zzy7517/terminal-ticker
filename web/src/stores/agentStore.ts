@@ -160,11 +160,18 @@ function setSessionMessage(
   message: AgentMessage,
 ): Record<string, AgentSessionResponse> {
   const session = responseForSession(state, sessionId);
+  const messages = message.role === 'user' && message.id > 0
+    ? session.messages.filter((item) => !(
+        item.id < 0 &&
+        item.role === 'user' &&
+        item.content === message.content
+      ))
+    : session.messages;
   return {
     ...state.agentSessionById,
     [sessionId]: {
       ...session,
-      messages: upsertAgentMessage(session.messages, message),
+      messages: upsertAgentMessage(messages, message),
     },
   };
 }
@@ -356,6 +363,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       if (get().runStateBySessionId[runSessionId]?.status === 'running') return;
       const prompt = agentPrompt;
       set((s) => {
+        const optimisticUserMessage: AgentMessage = {
+          id: -Date.now(),
+          sessionId: runSessionId,
+          role: 'user',
+          content: prompt,
+          createdAt: new Date().toISOString(),
+          metadata: null,
+          error: null,
+        };
+        const agentSessionById = setSessionMessage(s, runSessionId, optimisticUserMessage);
         const runStateBySessionId = {
           ...s.runStateBySessionId,
           [runSessionId]: {
@@ -365,8 +382,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           },
         };
         const draftBySessionId = { ...s.draftBySessionId, [runSessionId]: '' };
-        const next = { ...s, runStateBySessionId, draftBySessionId };
-        return { runStateBySessionId, draftBySessionId, ...activeFields(next) };
+        const next = { ...s, agentSessionById, runStateBySessionId, draftBySessionId };
+        return { agentSessionById, runStateBySessionId, draftBySessionId, ...activeFields(next) };
       });
       await streamAgentMessage(
         runSessionId,
@@ -375,6 +392,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         (envelope) => {
           const sessionId = envelope.sessionId || runSessionId;
           const event = envelope.event;
+          if (!event) return;
           if (event.type === 'tool_execution_start') {
             set((s) => {
               const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
@@ -497,14 +515,24 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       if (targetSessionId) {
         const errorSessionId = targetSessionId;
         set((s) => {
+          const errorMessage: AgentMessage = {
+            id: -Date.now(),
+            sessionId: errorSessionId,
+            role: 'assistant',
+            content: message,
+            createdAt: new Date().toISOString(),
+            metadata: null,
+            error: message,
+          };
+          const agentSessionById = setSessionMessage(s, errorSessionId, errorMessage);
           const previous = s.runStateBySessionId[errorSessionId] ?? idleRun(errorSessionId);
           const runStateBySessionId = replaceRunState(
             s.runStateBySessionId,
             errorSessionId,
             { ...previous, status: 'error', error: message, pendingToolCalls: new Set<string>() },
           );
-          const next = { ...s, runStateBySessionId };
-          return { runStateBySessionId, ...activeFields(next) };
+          const next = { ...s, agentSessionById, runStateBySessionId };
+          return { agentSessionById, runStateBySessionId, ...activeFields(next) };
         });
       }
       console.error(error);

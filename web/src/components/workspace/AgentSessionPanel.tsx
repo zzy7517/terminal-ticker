@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
   Check,
@@ -126,7 +126,10 @@ export function AgentSessionPanel({
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const contextPickerRef = useRef<HTMLDivElement>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const transcriptScrollBySessionRef = useRef<Map<string, number>>(new Map());
   const messages = agentSession?.messages ?? [];
+  const sessionId = agentSession?.session?.id ?? null;
   const toolResultsById = useMemo(() => {
     const results = new Map<string, AgentMessage>();
     for (const message of messages) {
@@ -156,6 +159,12 @@ export function AgentSessionPanel({
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [contextPickerOpen, modelPickerOpen]);
+
+  useLayoutEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript || !sessionId) return;
+    transcript.scrollTop = transcriptScrollBySessionRef.current.get(sessionId) ?? 0;
+  }, [sessionId, sessionLoading]);
 
   const enabledProviders = AGENT_PROVIDER_OPTIONS.filter(
     (o) => providerProfiles[o.provider]?.enabled,
@@ -309,7 +318,14 @@ export function AgentSessionPanel({
         )}
       </div>
       </div>
-      <div className="session-transcript">
+      <div
+        className="session-transcript"
+        ref={transcriptRef}
+        onScroll={(event) => {
+          if (!sessionId) return;
+          transcriptScrollBySessionRef.current.set(sessionId, event.currentTarget.scrollTop);
+        }}
+      >
         {sessionLoading && (
           <div className="session-empty">
             <Loader2 className="spin" size={16} />
@@ -336,7 +352,7 @@ export function AgentSessionPanel({
           disabled={disabled || busy || sessionLoading}
           onChange={(event) => setAgentPrompt(event.target.value)}
           onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
               if (canSend) void runAgentAnalysis();
             }
