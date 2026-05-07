@@ -16,7 +16,11 @@ from mytradebot.agent import (
     _codex_request_headers,
     _read_codex_cli_credentials,
 )
-from mytradebot.agent.providers.codex import _collect_response_stream_full, _messages_to_codex_input
+from mytradebot.agent.providers.codex import (
+    _codex_tools_payload,
+    _collect_response_stream_full,
+    _messages_to_codex_input,
+)
 
 
 def _fake_jwt(claims: dict) -> str:
@@ -115,6 +119,105 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(response.tool_calls[0].id, "call_1")
         self.assertEqual(response.tool_calls[0].name, "get_quote")
         self.assertEqual(response.tool_calls[0].arguments, {"instrument_key": "alpaca:AAPL"})
+
+    def test_codex_tools_payload_replaces_local_web_search_with_hosted_tool(self) -> None:
+        """Verify Codex uses the native hosted web_search tool instead of the local wrapper."""
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "local search wrapper",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "web_fetch",
+                    "description": "local fetch wrapper",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_quote",
+                    "description": "market quote",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+        ]
+
+        payload = _codex_tools_payload(tools)
+
+        function_names = {
+            item["name"]
+            for item in payload
+            if item.get("type") == "function"
+        }
+        hosted_tools = [item for item in payload if item.get("type") == "web_search"]
+        self.assertNotIn("web_search", function_names)
+        self.assertIn("web_fetch", function_names)
+        self.assertIn("get_quote", function_names)
+        self.assertEqual(hosted_tools, [{
+            "type": "web_search",
+            "external_web_access": True,
+        }])
+
+    def test_codex_tools_payload_respects_absent_local_web_search(self) -> None:
+        """Verify Codex does not add hosted web_search when callers omit search tools."""
+        self.assertEqual(_codex_tools_payload(None), [])
+        self.assertEqual(_codex_tools_payload([]), [])
+
+        payload = _codex_tools_payload([
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_quote",
+                    "description": "market quote",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+        ])
+
+        self.assertEqual(payload, [{
+            "type": "function",
+            "name": "get_quote",
+            "description": "market quote",
+            "parameters": {"type": "object", "properties": {}},
+        }])
+
+    def test_codex_stream_parser_ignores_hosted_web_search_as_local_tool(self) -> None:
+        """Verify hosted web_search calls do not get re-executed by the local loop."""
+
+        class FakeResponse:
+            async def aiter_lines(self):
+                events = [
+                    {
+                        "type": "response.output_item.done",
+                        "item": {
+                            "type": "web_search_call",
+                            "id": "ws_1",
+                            "status": "completed",
+                            "action": {
+                                "type": "search",
+                                "query": "AI agent news",
+                            },
+                        },
+                    },
+                    {
+                        "type": "response.output_text.done",
+                        "text": "Searched the web and found current agent news.",
+                    },
+                ]
+                for event in events:
+                    yield "data: " + json.dumps(event)
+
+        response = asyncio.run(_collect_response_stream_full(FakeResponse()))
+
+        self.assertEqual(response.content, "Searched the web and found current agent news.")
+        self.assertEqual(response.tool_calls, [])
 
     def test_codex_history_replays_tool_calls_as_text_context(self) -> None:
         """Verify replayed tool calls avoid rejected Responses function_call input items."""

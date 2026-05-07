@@ -222,6 +222,8 @@ Agent 不是只看一段 prompt。打开 `agent.use_tools = true` 后，它可�
 - `get_trade_history`：读取历史交易、fills 和 lessons。
 - `web_search` / `web_fetch`：受限制的网页搜索和读取工具，会拒绝 localhost、内网地址和不安全 scheme。
 
+使用 Codex provider 时，`web_search` 会自动切到 Codex/Responses 原生 hosted web search，按 Codex 默认 live web access 暴露；本地 Exa/DuckDuckGo `web_search` wrapper 只作为非 Codex provider 的 function tool 暴露。`web_fetch` 仍是本地受限读取工具。
+
 `web_search` 默认使用 Exa MCP，并在失败时退回 DuckDuckGo HTML 搜索；不需要配置 Exa API key。可以用环境变量强制后端：
 
 ```bash
