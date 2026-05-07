@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from ..config import NewsAnalystConfig, NewsUniverseEntry
+from ..db import BaseStore
 from ..domain.price_action import Candle
 from ..news.types import NewsItem
 from ..trading.models import TradeDirection, TradeStatus
@@ -94,21 +95,17 @@ CREATE INDEX IF NOT EXISTS idx_news_decisions_created ON news_decisions(created_
 """
 
 
-class NewsDecisionStore:
+class NewsDecisionStore(BaseStore):
     """说明：news_decisions 表 CRUD。复用 TradeStore 的 SQLite 文件。"""
 
     def __init__(self, db_path: str | Path) -> None:
-        self.db_path = str(db_path)
-        with self._connect() as conn:
-            conn.executescript(_NEWS_DECISIONS_SCHEMA)
+        super().__init__(Path(db_path).expanduser())
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _init_schema(self, conn: sqlite3.Connection) -> None:
+        conn.executescript(_NEWS_DECISIONS_SCHEMA)
 
     def insert(self, decision: NewsDecision) -> int:
-        with self._connect() as conn:
+        with self._get_conn() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO news_decisions
@@ -126,7 +123,7 @@ class NewsDecisionStore:
             return int(cursor.lastrowid)
 
     def recent(self, limit: int = 50) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with self._get_conn() as conn:
             rows = conn.execute(
                 "SELECT * FROM news_decisions ORDER BY created_at_ms DESC LIMIT ?",
                 (limit,),

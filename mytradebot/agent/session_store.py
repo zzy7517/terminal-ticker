@@ -4,14 +4,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-import json
-import os
 import sqlite3
 import time
 import uuid
 
+from ..db import BaseStore, default_cache_dir, json_dumps, json_loads
+
 DEFAULT_AGENT_SESSION_FILENAME = "agent_sessions.sqlite3"
-DEFAULT_CACHE_SUBDIR = "mytradebot"
 _GLOBAL_SESSION_INSTRUMENT_KEY = ""
 _LIST_SESSIONS_SQL = """
     SELECT
@@ -115,25 +114,19 @@ class AgentMessage:
 
 def default_agent_session_path() -> Path:
     """说明：返回本地默认 Agent session SQLite 路径。"""
-    base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return base / DEFAULT_CACHE_SUBDIR / DEFAULT_AGENT_SESSION_FILENAME
+    return default_cache_dir() / DEFAULT_AGENT_SESSION_FILENAME
 
 
-class AgentSessionStore:
+class AgentSessionStore(BaseStore):
     """说明：SQLite-backed 的轻量 Agent 会话存储。"""
 
     def __init__(self, path: str | Path | None = None) -> None:
         """说明：初始化存储路径。"""
-        self.path = Path(path).expanduser() if path is not None else default_agent_session_path()
+        resolved = Path(path).expanduser() if path is not None else default_agent_session_path()
+        super().__init__(resolved)
 
-    def _connect(self) -> sqlite3.Connection:
-        """说明：打开 SQLite 连接并确保 schema 存在。"""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute(
+    def _init_schema(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS agent_sessions (
                 id TEXT PRIMARY KEY,
@@ -147,8 +140,8 @@ class AgentSessionStore:
             )
             """
         )
-        _ensure_agent_session_columns(connection)
-        connection.execute(
+        _ensure_agent_session_columns(conn)
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS agent_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,24 +155,23 @@ class AgentSessionStore:
             )
             """
         )
-        connection.execute(
+        conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_agent_sessions_active
             ON agent_sessions (instrument_key, active, updated_at)
             """
         )
-        connection.execute(
+        conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_agent_messages_session
             ON agent_messages (session_id, created_at, id)
             """
         )
-        return connection
 
     def get_active_session(self, instrument_key: str) -> AgentSession | None:
         """说明：读取某个标的当前 active 的会话。"""
         stored_key = _stored_instrument_key(instrument_key)
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 """
                 SELECT *
@@ -194,7 +186,7 @@ class AgentSessionStore:
 
     def get_session(self, session_id: str) -> AgentSession | None:
         """说明：按 id 读取 session 元数据。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?",
                 (session_id,),
@@ -216,7 +208,7 @@ class AgentSessionStore:
         now = time.time()
         stored_key = _stored_instrument_key(instrument_key)
         clean_title = title.strip() or (instrument_key or "New Agent Session")
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             connection.execute(
                 "UPDATE agent_sessions SET active = 0 WHERE instrument_key = ? AND active = 1",
                 (stored_key,),
@@ -315,7 +307,7 @@ class AgentSessionStore:
         reasoning_effort: str | None = None,
     ) -> AgentSession:
         """说明：刷新 active 会话当前使用的 provider/model 展示元数据。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             existing = connection.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?",
                 (session_id,),
@@ -373,9 +365,9 @@ class AgentSessionStore:
         if role_value not in {"user", "assistant", "system", "toolResult"}:
             raise ValueError("agent message role must be user, assistant, system, or toolResult")
         now = time.time()
-        metadata_json = _json_dumps(metadata) if metadata is not None else None
-        context_json = _json_dumps(context) if context is not None else None
-        with self._connect() as connection:
+        metadata_json = json_dumps(metadata) if metadata is not None else None
+        context_json = json_dumps(context) if context is not None else None
+        with self._get_conn() as connection:
             cursor = connection.execute(
                 """
                 INSERT INTO agent_messages (
@@ -397,7 +389,7 @@ class AgentSessionStore:
 
     def list_messages(self, session_id: str, *, limit: int | None = None) -> tuple[AgentMessage, ...]:
         """说明：按时间顺序读取某个会话的消息。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             if limit is None:
                 rows = connection.execute(
                     """
@@ -434,7 +426,7 @@ class AgentSessionStore:
 
     def session_payload(self, session_id: str) -> dict[str, Any] | None:
         """说明：返回一个会话的完整轻量载荷。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?",
                 (session_id,),
@@ -456,7 +448,7 @@ class AgentSessionStore:
     ) -> tuple[AgentSessionSummary, ...]:
         """说明：按更新时间倒序列出历史会话摘要；instrument_key 为 None 时列出全局历史。"""
         clean_limit = max(1, min(int(limit), 100))
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             if instrument_key is None:
                 rows = connection.execute(
                     _LIST_SESSIONS_SQL.replace("{where}", ""),
@@ -483,7 +475,7 @@ class AgentSessionStore:
     def activate_session(self, *, instrument_key: str, session_id: str) -> AgentSession:
         """说明：把指定历史会话恢复为某标的的 active 会话。"""
         stored_key = _stored_instrument_key(instrument_key)
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 """
                 SELECT *
@@ -510,7 +502,7 @@ class AgentSessionStore:
 
     def activate_session_by_id(self, session_id: str) -> AgentSession:
         """说明：把任意 session 标记为其作用域下的 active 会话。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?",
                 (session_id,),
@@ -535,7 +527,7 @@ class AgentSessionStore:
     def delete_session(self, *, instrument_key: str, session_id: str) -> AgentSession | None:
         """说明：删除指定历史会话，并保证此后该标的恰好剩一个 active 会话（若仍有剩余）。"""
         stored_key = _stored_instrument_key(instrument_key)
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 """
                 SELECT *
@@ -572,7 +564,7 @@ class AgentSessionStore:
 
     def delete_session_by_id(self, session_id: str) -> bool:
         """说明：按 session id 删除会话。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 "SELECT * FROM agent_sessions WHERE id = ?",
                 (session_id,),
@@ -608,7 +600,7 @@ class AgentSessionStore:
                         "type": "function",
                         "function": {
                             "name": str(call.get("name") or ""),
-                            "arguments": _json_dumps(call.get("arguments") or {}),
+                            "arguments": json_dumps(call.get("arguments") or {}),
                         },
                     }
                     for call in tool_calls
@@ -644,26 +636,11 @@ def _message_from_row(row: sqlite3.Row) -> AgentMessage:
         role=str(row["role"]),
         content=str(row["content"]),
         created_at=_iso_from_timestamp(float(row["created_at"])),
-        metadata=_json_loads(row["analysis_json"]),
-        context=_json_loads(row["context_json"]),
+        metadata=json_loads(row["analysis_json"]),
+        context=json_loads(row["context_json"]),
         error=str(row["error"]) if row["error"] is not None else None,
     )
 
-
-def _json_dumps(value: dict[str, Any]) -> str:
-    """说明：稳定地序列化结构化字段。"""
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-
-
-def _json_loads(value: Any) -> dict[str, Any] | None:
-    """说明：读取结构化 JSON 字段，失败时返回 None。"""
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        payload = json.loads(value)
-    except json.JSONDecodeError:
-        return None
-    return payload if isinstance(payload, dict) else None
 
 
 def _iso_from_timestamp(value: float) -> str:

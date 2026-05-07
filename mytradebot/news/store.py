@@ -2,28 +2,21 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from ..db import BaseStore, default_cache_dir, now_ms
+
 from .types import NewsItem
 
 DEFAULT_NEWS_FILENAME = "news.sqlite3"
-DEFAULT_CACHE_SUBDIR = "mytradebot"
 
 
 def default_news_store_path() -> Path:
     """说明：返回默认的 news SQLite 路径。"""
-    base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return base / DEFAULT_CACHE_SUBDIR / DEFAULT_NEWS_FILENAME
-
-
-def _now_ms() -> int:
-    """说明：返回当前 Unix 毫秒时间戳。"""
-    return int(time.time() * 1000)
+    return default_cache_dir() / DEFAULT_NEWS_FILENAME
 
 
 @dataclass(frozen=True)
@@ -35,25 +28,16 @@ class FetchCursor:
     last_modified: str | None
 
 
-class NewsStore:
+class NewsStore(BaseStore):
     """说明：SQLite 支撑的新闻条目与抓取游标存储。"""
 
     def __init__(self, path: str | Path | None = None) -> None:
         """说明：初始化存储路径。"""
-        self.path = Path(path).expanduser() if path is not None else default_news_store_path()
+        resolved = Path(path).expanduser() if path is not None else default_news_store_path()
+        super().__init__(resolved)
 
-    def _connect(self) -> sqlite3.Connection:
-        """说明：打开 SQLite 连接并确保 schema 存在。"""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        self._ensure_schema(connection)
-        return connection
-
-    def _ensure_schema(self, connection: sqlite3.Connection) -> None:
-        """说明：建表并补索引。"""
-        connection.execute(
+    def _init_schema(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS news_items (
                 url TEXT PRIMARY KEY,
@@ -66,10 +50,10 @@ class NewsStore:
             )
             """
         )
-        connection.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_news_published ON news_items(published_at_ms DESC)"
         )
-        connection.execute(
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS fetch_cursor (
                 source TEXT PRIMARY KEY,
@@ -79,7 +63,6 @@ class NewsStore:
             )
             """
         )
-        connection.commit()
 
     def upsert_items(self, items: Iterable[NewsItem]) -> list[NewsItem]:
         """说明：插入或更新条目，返回本次真正新增（URL 之前不存在）的条目。"""
@@ -87,7 +70,7 @@ class NewsStore:
         if not items_list:
             return []
         inserted: list[NewsItem] = []
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             for item in items_list:
                 row = connection.execute(
                     "SELECT url FROM news_items WHERE url = ?",
@@ -133,7 +116,7 @@ class NewsStore:
     def recent(self, limit: int = 50, since_ms: int | None = None) -> list[NewsItem]:
         """说明：按发布时间倒序返回最近的新闻。"""
         limit = max(1, int(limit))
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             if since_ms is None:
                 rows = connection.execute(
                     """
@@ -159,7 +142,7 @@ class NewsStore:
 
     def get_cursor(self, source: str) -> FetchCursor | None:
         """说明：读取某个源的抓取游标。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 "SELECT source, etag, last_modified FROM fetch_cursor WHERE source = ?",
                 (source,),
@@ -174,7 +157,7 @@ class NewsStore:
 
     def set_cursor(self, source: str, etag: str | None, last_modified: str | None) -> None:
         """说明：写入或更新某个源的抓取游标。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             connection.execute(
                 """
                 INSERT INTO fetch_cursor(source, etag, last_modified, updated_at_ms)
@@ -184,13 +167,13 @@ class NewsStore:
                     last_modified = excluded.last_modified,
                     updated_at_ms = excluded.updated_at_ms
                 """,
-                (source, etag, last_modified, _now_ms()),
+                (source, etag, last_modified, now_ms()),
             )
             connection.commit()
 
     def prune_older_than(self, cutoff_ms: int) -> int:
         """说明：清除早于 cutoff 的旧条目，返回删除数量。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             cursor = connection.execute(
                 "DELETE FROM news_items WHERE published_at_ms < ?",
                 (int(cutoff_ms),),

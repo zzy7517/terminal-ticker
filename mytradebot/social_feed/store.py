@@ -2,44 +2,31 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
-import time
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..db import BaseStore, default_cache_dir
+
 from .types import SocialAuthor, SocialFeedItem, SocialMetrics
 
-DEFAULT_CACHE_SUBDIR = "mytradebot"
 DEFAULT_SOCIAL_FEED_FILENAME = "social_feed.sqlite3"
 
 
 def default_social_feed_store_path() -> Path:
     """说明：返回默认 social feed SQLite 路径。"""
-    base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return base / DEFAULT_CACHE_SUBDIR / DEFAULT_SOCIAL_FEED_FILENAME
+    return default_cache_dir() / DEFAULT_SOCIAL_FEED_FILENAME
 
 
-def _now_ms() -> int:
-    return int(time.time() * 1000)
-
-
-class SocialFeedStore:
+class SocialFeedStore(BaseStore):
     """说明：SQLite 支撑的社交流缓存。"""
 
     def __init__(self, path: str | Path | None = None) -> None:
-        self.path = Path(path).expanduser() if path is not None else default_social_feed_store_path()
+        resolved = Path(path).expanduser() if path is not None else default_social_feed_store_path()
+        super().__init__(resolved)
 
-    def _connect(self) -> sqlite3.Connection:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        self._ensure_schema(connection)
-        return connection
-
-    def _ensure_schema(self, connection: sqlite3.Connection) -> None:
-        connection.execute(
+    def _init_schema(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS social_feed_items (
                 source TEXT NOT NULL,
@@ -64,13 +51,12 @@ class SocialFeedStore:
             )
             """
         )
-        connection.execute(
+        conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_social_feed_created
             ON social_feed_items(created_at_ms DESC)
             """
         )
-        connection.commit()
 
     def upsert_items(self, items: Iterable[SocialFeedItem]) -> list[SocialFeedItem]:
         """插入或更新条目，返回本次真正新增的内容。"""
@@ -78,7 +64,7 @@ class SocialFeedStore:
         if not items_list:
             return []
         inserted: list[SocialFeedItem] = []
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             for item in items_list:
                 exists = connection.execute(
                     """
@@ -160,7 +146,7 @@ class SocialFeedStore:
             like = f"%{text_query}%"
             params.extend([like, like, like])
         where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             rows = connection.execute(
                 f"""
                 SELECT *
@@ -175,7 +161,7 @@ class SocialFeedStore:
 
     def get_item(self, *, source: str, external_id: str) -> SocialFeedItem | None:
         """按来源和外部 ID 读取单条社交内容。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 """
                 SELECT *
@@ -188,7 +174,7 @@ class SocialFeedStore:
 
     def prune_items_older_than(self, cutoff_ms: int) -> int:
         """清理早于 cutoff 的社交流条目。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             cursor = connection.execute(
                 "DELETE FROM social_feed_items WHERE created_at_ms < ?",
                 (int(cutoff_ms),),
@@ -199,7 +185,7 @@ class SocialFeedStore:
     def trim_items(self, *, max_items: int) -> int:
         """只保留最新 max_items 条社交流缓存。"""
         resolved_max = max(1, int(max_items))
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             cursor = connection.execute(
                 """
                 DELETE FROM social_feed_items

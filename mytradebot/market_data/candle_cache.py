@@ -2,16 +2,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from pathlib import Path
 import sqlite3
 import time
 from typing import Callable
 
 from ..config import CacheConfig
+from ..db import BaseStore, default_cache_dir
 from ..domain.price_action import Candle
 
-DEFAULT_CACHE_SUBDIR = "mytradebot"
 DEFAULT_CACHE_FILENAME = "candles.sqlite3"
 INTERVAL_SECONDS = {
     "1m": 60,
@@ -40,8 +39,7 @@ class CandleFetchPlan:
 
 def default_cache_path() -> Path:
     """说明：返回平台本地默认 SQLite 缓存路径。"""
-    base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return base / DEFAULT_CACHE_SUBDIR / DEFAULT_CACHE_FILENAME
+    return default_cache_dir() / DEFAULT_CACHE_FILENAME
 
 
 def retention_seconds_for_window(interval: str, limit: int) -> int:
@@ -49,12 +47,12 @@ def retention_seconds_for_window(interval: str, limit: int) -> int:
     return INTERVAL_SECONDS.get(interval, 60) * max(1, limit)
 
 
-class CandleCache:
+class CandleCache(BaseStore):
     """说明：封装按标的和周期存取 K 线的 SQLite 缓存。"""
 
     def __init__(self, path: str | Path, *, retention_seconds: int = 86_400) -> None:
         """说明：初始化当前对象的运行状态。"""
-        self.path = Path(path).expanduser()
+        super().__init__(Path(path).expanduser())
         self.retention_seconds = retention_seconds
 
     @classmethod
@@ -65,11 +63,8 @@ class CandleCache:
             retention_seconds=config.candle_retention_seconds,
         )
 
-    def _connect(self) -> sqlite3.Connection:
-        """说明：打开连接并确保底层资源已经初始化。"""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path)
-        connection.execute(
+    def _init_schema(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS candles (
                 symbol_key TEXT NOT NULL,
@@ -85,13 +80,12 @@ class CandleCache:
             )
             """
         )
-        connection.execute(
+        conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_candles_lookup
             ON candles (symbol_key, interval, open_time_ms)
             """
         )
-        return connection
 
     def prune(
         self,
@@ -112,7 +106,7 @@ class CandleCache:
         if interval is not None:
             clauses.append("interval = ?")
             params.append(interval)
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             cursor = connection.execute(
                 f"DELETE FROM candles WHERE {' AND '.join(clauses)}",
                 params,
@@ -144,7 +138,7 @@ class CandleCache:
             )
             for candle in candles
         ]
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             connection.executemany(
                 """
                 INSERT INTO candles (
@@ -175,7 +169,7 @@ class CandleCache:
         """说明：读取某个标的和周期最新的缓存 K 线开盘时间。"""
         current_ms = _now_ms() if now_ms is None else now_ms
         cutoff_ms = current_ms - self._effective_retention(retention_seconds) * 1000
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 """
                 SELECT MAX(open_time_ms)
@@ -198,7 +192,7 @@ class CandleCache:
         """说明：读取某个标的和周期最新 K 线的缓存写入时间。"""
         current_ms = _now_ms() if now_ms is None else now_ms
         cutoff_ms = current_ms - self._effective_retention(retention_seconds) * 1000
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 """
                 SELECT fetched_at_ms
@@ -224,7 +218,7 @@ class CandleCache:
         """说明：读取某个标的和周期最近的缓存 K 线。"""
         current_ms = _now_ms() if now_ms is None else now_ms
         cutoff_ms = current_ms - self._effective_retention(retention_seconds) * 1000
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             rows = connection.execute(
                 """
                 SELECT symbol_key, open_time_ms, open, high, low, close, volume

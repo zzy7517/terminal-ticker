@@ -1,12 +1,11 @@
 """文件用途：交易记录 SQLite 存储层。"""
 from __future__ import annotations
 
-import json
-import os
 import sqlite3
-import time
 from pathlib import Path
 from typing import Any, Iterable
+
+from ..db import BaseStore, default_cache_dir, json_dumps, json_loads, now_ms
 
 from .models import (
     Fill,
@@ -18,56 +17,24 @@ from .models import (
 )
 
 DEFAULT_TRADE_FILENAME = "trades.sqlite3"
-DEFAULT_CACHE_SUBDIR = "mytradebot"
 DEFAULT_FILL_SOURCE = "simulated"
 
 
 def default_trade_store_path() -> Path:
     """说明：返回默认的 trades SQLite 路径。"""
-    base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return base / DEFAULT_CACHE_SUBDIR / DEFAULT_TRADE_FILENAME
+    return default_cache_dir() / DEFAULT_TRADE_FILENAME
 
 
-def _now_ms() -> int:
-    """说明：返回当前 Unix 毫秒时间戳。"""
-    return int(time.time() * 1000)
-
-
-def _json_dumps(value: Any) -> str:
-    """说明：稳定地序列化结构化字段。"""
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-
-
-def _json_loads(value: Any) -> Any:
-    """说明：读取结构化 JSON 字段，失败时返回 None。"""
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError:
-        return None
-
-
-class TradeStore:
+class TradeStore(BaseStore):
     """说明：SQLite 支撑的本地订单、成交和快照存储。"""
 
     def __init__(self, path: str | Path | None = None) -> None:
         """说明：初始化存储路径。"""
-        self.path = Path(path).expanduser() if path is not None else default_trade_store_path()
+        resolved = Path(path).expanduser() if path is not None else default_trade_store_path()
+        super().__init__(resolved)
 
-    def _connect(self) -> sqlite3.Connection:
-        """说明：打开 SQLite 连接并确保 schema 存在。"""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA journal_mode=WAL")
-        self._ensure_schema(connection)
-        return connection
-
-    def _ensure_schema(self, connection: sqlite3.Connection) -> None:
-        """说明：建表并补索引。"""
-        connection.execute(
+    def _init_schema(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +44,7 @@ class TradeStore:
             )
             """
         )
-        connection.execute(
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,7 +69,7 @@ class TradeStore:
             )
             """
         )
-        connection.execute(
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS fills (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,19 +85,19 @@ class TradeStore:
             )
             """
         )
-        connection.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_trades_status ON trades (status, opened_at_ms)"
         )
-        connection.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_trades_instrument ON trades (instrument_key, status)"
         )
-        connection.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_fills_trade ON fills (trade_id, filled_at_ms, id)"
         )
-        connection.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_snapshots_instrument ON snapshots (instrument_key, captured_at_ms)"
         )
-        connection.execute(
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS lessons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,10 +110,10 @@ class TradeStore:
             )
             """
         )
-        connection.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_lessons_instrument ON lessons (instrument_key, created_at_ms)"
         )
-        connection.execute(
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_lessons_trade ON lessons (trade_id)"
         )
 
@@ -158,9 +125,9 @@ class TradeStore:
         captured_at_ms: int | None = None,
     ) -> Snapshot:
         """说明：冻结一份多周期上下文快照。"""
-        at_ms = _now_ms() if captured_at_ms is None else captured_at_ms
-        payload_json = _json_dumps(payload)
-        with self._connect() as connection:
+        at_ms = now_ms() if captured_at_ms is None else captured_at_ms
+        payload_json = json_dumps(payload)
+        with self._get_conn() as connection:
             cursor = connection.execute(
                 """
                 INSERT INTO snapshots (instrument_key, captured_at_ms, payload_json)
@@ -178,7 +145,7 @@ class TradeStore:
 
     def get_snapshot(self, snapshot_id: int) -> Snapshot | None:
         """说明：按 ID 读取快照。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 "SELECT * FROM snapshots WHERE id = ?",
                 (snapshot_id,),
@@ -205,10 +172,10 @@ class TradeStore:
         """说明：新建本地订单记录，默认状态为 planned。"""
         if size <= 0:
             raise ValueError("trade size must be positive")
-        now = _now_ms()
+        now = now_ms()
         opened_at = now if status is TradeStatus.OPEN else None
-        target_json = _json_dumps([float(price) for price in target_prices])
-        with self._connect() as connection:
+        target_json = json_dumps([float(price) for price in target_prices])
+        with self._get_conn() as connection:
             cursor = connection.execute(
                 """
                 INSERT INTO trades (
@@ -247,7 +214,7 @@ class TradeStore:
 
     def get_trade(self, trade_id: int) -> Trade | None:
         """说明：按 ID 读取订单，含成交。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             row = connection.execute(
                 "SELECT * FROM trades WHERE id = ?",
                 (trade_id,),
@@ -282,7 +249,7 @@ class TradeStore:
             params.extend(status_values)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         limit_sql = f"LIMIT {int(limit)}" if limit is not None else ""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             rows = connection.execute(
                 f"SELECT * FROM trades {where} ORDER BY created_at_ms DESC, id DESC {limit_sql}",
                 params,
@@ -319,8 +286,8 @@ class TradeStore:
         """说明：登记一次成交。调用方负责驱动订单状态转移。"""
         if quantity <= 0:
             raise ValueError("fill quantity must be positive")
-        at_ms = _now_ms() if filled_at_ms is None else filled_at_ms
-        with self._connect() as connection:
+        at_ms = now_ms() if filled_at_ms is None else filled_at_ms
+        with self._get_conn() as connection:
             trade_row = connection.execute(
                 "SELECT id FROM trades WHERE id = ?",
                 (trade_id,),
@@ -367,8 +334,8 @@ class TradeStore:
 
     def mark_open(self, trade_id: int, *, opened_at_ms: int | None = None) -> Trade:
         """说明：把 planned 订单标记为 open。"""
-        at_ms = _now_ms() if opened_at_ms is None else opened_at_ms
-        with self._connect() as connection:
+        at_ms = now_ms() if opened_at_ms is None else opened_at_ms
+        with self._get_conn() as connection:
             connection.execute(
                 """
                 UPDATE trades
@@ -390,8 +357,8 @@ class TradeStore:
         closed_at_ms: int | None = None,
     ) -> Trade:
         """说明：把订单标记为 closed 并写入实现盈亏。"""
-        at_ms = _now_ms() if closed_at_ms is None else closed_at_ms
-        with self._connect() as connection:
+        at_ms = now_ms() if closed_at_ms is None else closed_at_ms
+        with self._get_conn() as connection:
             connection.execute(
                 """
                 UPDATE trades
@@ -407,8 +374,8 @@ class TradeStore:
 
     def cancel_trade(self, trade_id: int) -> Trade:
         """说明：取消 planned 订单，已 open 的不允许取消。"""
-        now = _now_ms()
-        with self._connect() as connection:
+        now = now_ms()
+        with self._get_conn() as connection:
             row = connection.execute(
                 "SELECT status FROM trades WHERE id = ?",
                 (trade_id,),
@@ -439,7 +406,7 @@ class TradeStore:
         target_prices: Iterable[float] | None = None,
     ) -> Trade:
         """说明：调整现有订单的止损和止盈价。传 None 表示不动。"""
-        now = _now_ms()
+        now = now_ms()
         sets: list[str] = ["updated_at_ms = ?"]
         params: list[Any] = [now]
         if stop_price is not None:
@@ -447,9 +414,9 @@ class TradeStore:
             params.append(float(stop_price))
         if target_prices is not None:
             sets.append("target_prices_json = ?")
-            params.append(_json_dumps([float(price) for price in target_prices]))
+            params.append(json_dumps([float(price) for price in target_prices]))
         params.append(trade_id)
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             cursor = connection.execute(
                 f"UPDATE trades SET {', '.join(sets)} WHERE id = ?",
                 params,
@@ -472,9 +439,9 @@ class TradeStore:
         created_at_ms: int | None = None,
     ) -> int:
         """说明：保存一条复盘 lesson，返回新 lesson id。"""
-        at_ms = _now_ms() if created_at_ms is None else created_at_ms
+        at_ms = now_ms() if created_at_ms is None else created_at_ms
         tag_list = [str(tag) for tag in tags]
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             cursor = connection.execute(
                 """
                 INSERT INTO lessons (
@@ -482,7 +449,7 @@ class TradeStore:
                 )
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (trade_id, instrument_key, at_ms, category, text, _json_dumps(tag_list)),
+                (trade_id, instrument_key, at_ms, category, text, json_dumps(tag_list)),
             )
             return int(cursor.lastrowid)
 
@@ -500,7 +467,7 @@ class TradeStore:
             params.append(instrument_key)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(int(limit))
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             rows = connection.execute(
                 f"SELECT * FROM lessons {where} ORDER BY created_at_ms DESC, id DESC LIMIT ?",
                 params,
@@ -509,7 +476,7 @@ class TradeStore:
 
     def trade_ids_without_review(self, *, limit: int = 10) -> tuple[int, ...]:
         """说明：返回已 closed 且尚无 lesson 的 trade id，最早的优先。"""
-        with self._connect() as connection:
+        with self._get_conn() as connection:
             rows = connection.execute(
                 """
                 SELECT t.id
@@ -526,7 +493,7 @@ class TradeStore:
 
 def _lesson_row_to_payload(row: sqlite3.Row) -> dict[str, Any]:
     """说明：lesson 记录转 payload。"""
-    tags = _json_loads(row["tags_json"])
+    tags = json_loads(row["tags_json"])
     return {
         "id": int(row["id"]),
         "tradeId": int(row["trade_id"]) if row["trade_id"] is not None else None,
@@ -540,7 +507,7 @@ def _lesson_row_to_payload(row: sqlite3.Row) -> dict[str, Any]:
 
 def _snapshot_from_row(row: sqlite3.Row) -> Snapshot:
     """说明：把 SQLite row 转成 Snapshot。"""
-    payload = _json_loads(row["payload_json"])
+    payload = json_loads(row["payload_json"])
     return Snapshot(
         id=int(row["id"]),
         instrument_key=str(row["instrument_key"]),
@@ -569,7 +536,7 @@ def _fill_from_row(row: sqlite3.Row) -> Fill:
 
 def _trade_from_row(row: sqlite3.Row, fill_rows: list[sqlite3.Row]) -> Trade:
     """说明：把 SQLite row 转成 Trade，含对应 fills。"""
-    targets_raw = _json_loads(row["target_prices_json"])
+    targets_raw = json_loads(row["target_prices_json"])
     target_prices: tuple[float, ...]
     if isinstance(targets_raw, list):
         target_prices = tuple(float(value) for value in targets_raw)
