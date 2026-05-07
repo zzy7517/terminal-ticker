@@ -999,7 +999,8 @@ textarea:focus-visible {
 .session-history {
   border-bottom: 1px solid var(--line-soft);
   border-top: 1px solid var(--line-soft);
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 10px 0;
 }
@@ -3150,19 +3151,21 @@ textarea:focus-visible {
   border-radius: var(--radius-lg);
   background: var(--panel);
   max-height: calc(100vh - 190px);
-  min-height: 520px;
+  min-height: 0;
   overflow: hidden;
   padding: 12px 14px;
 }
 .agent-tab-layout .session-history-list {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 2px;
 }
 .agent-tab-layout .agent-session-card {
-  min-height: 520px;
+  min-height: 0;
 }
 .agent-tab-layout .session-transcript {
   max-height: none;
