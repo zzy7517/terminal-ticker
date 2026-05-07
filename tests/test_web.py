@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from mytradebot.agent import AgentSessionStore, ChatResponse
@@ -86,7 +87,7 @@ class WebTests(unittest.TestCase):
 
     def test_web_dist_responses_disable_browser_cache(self) -> None:
         """Verify local web responses do not reuse stale frontend bundles."""
-        if not WEB_DIST.is_dir():
+        if not (WEB_DIST / "index.html").is_file():
             self.skipTest("web dist is not built in this checkout")
         instrument = AlpacaInstrument("AAPL", "AAPL")
         app = create_app(
@@ -759,6 +760,104 @@ class WebTests(unittest.TestCase):
         self.assertEqual(delete_payload["session"]["messages"], [])
         self.assertEqual(delete_payload["history"]["sessions"], [])
         self.assertNotIn(instrument.key, delete_payload["state"]["agentAnalyses"])
+
+    def test_agent_stream_reports_running_status_and_rejects_overlap(self) -> None:
+        """Verify streaming runs expose per-session status and reject overlapping runs."""
+        class BlockingProvider:
+            name = "codex"
+            model = "blocking"
+
+            async def chat(self, messages, tools=None):
+                started.set()
+                await release.wait()
+                return ChatResponse(content="stream complete")
+
+        async def scenario(runtime, session_id: str) -> None:
+            stream = await runtime.stream_agent_message(session_id, {"message": "First"})
+            first_frame = await stream.__anext__()
+            self.assertIn('"sessionId"', first_frame)
+            await asyncio.wait_for(started.wait(), timeout=2)
+
+            history = await runtime.list_agent_sessions()
+            self.assertEqual(history["sessions"][0]["run"]["status"], "running")
+            with self.assertRaises(HTTPException) as raised:
+                await runtime.stream_agent_message(session_id, {"message": "Second"})
+            self.assertEqual(raised.exception.status_code, 409)
+            with self.assertRaises(HTTPException) as delete_raised:
+                await runtime.delete_agent_session_by_id(session_id)
+            self.assertEqual(delete_raised.exception.status_code, 409)
+
+            release.set()
+            async for _ in stream:
+                pass
+            payload = await runtime._agent_session_payload(session_id)
+            self.assertEqual(payload["run"]["status"], "idle")
+            self.assertEqual(payload["messages"][-1]["content"], "stream complete")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
+            session = store.create_global_session(
+                title="Streaming",
+                provider="codex",
+                model="blocking",
+            )
+            app = create_app(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=tuple(),
+                controller_factory=DummyController,
+                agent_session_store=store,
+                auto_start=False,
+            )
+            started = asyncio.Event()
+            release = asyncio.Event()
+            with patch("mytradebot.api.runtime.create_llm_provider", return_value=BlockingProvider()):
+                asyncio.run(scenario(app.state.runtime, session.id))
+
+    def test_agent_stream_disconnect_does_not_cancel_background_run(self) -> None:
+        """Verify closing a stream subscriber leaves the session run alive."""
+        class BlockingProvider:
+            name = "codex"
+            model = "blocking"
+
+            async def chat(self, messages, tools=None):
+                started.set()
+                await release.wait()
+                return ChatResponse(content="finished after disconnect")
+
+        async def scenario(runtime, session_id: str) -> None:
+            stream = await runtime.stream_agent_message(session_id, {"message": "Run"})
+            await stream.__anext__()
+            await asyncio.wait_for(started.wait(), timeout=2)
+            await stream.aclose()
+            self.assertTrue(await runtime.agent_runs.is_running(session_id))
+
+            release.set()
+            for _ in range(20):
+                if not await runtime.agent_runs.is_running(session_id):
+                    break
+                await asyncio.sleep(0.05)
+            payload = await runtime._agent_session_payload(session_id)
+            self.assertEqual(payload["messages"][-1]["content"], "finished after disconnect")
+            self.assertEqual(payload["run"]["status"], "idle")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
+            session = store.create_global_session(
+                title="Disconnect",
+                provider="codex",
+                model="blocking",
+            )
+            app = create_app(
+                config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+                instruments=tuple(),
+                controller_factory=DummyController,
+                agent_session_store=store,
+                auto_start=False,
+            )
+            started = asyncio.Event()
+            release = asyncio.Event()
+            with patch("mytradebot.api.runtime.create_llm_provider", return_value=BlockingProvider()):
+                asyncio.run(scenario(app.state.runtime, session.id))
 
     def test_agent_loop_prompt_uses_market_context_tool(self) -> None:
         """Verify tool loop uses explicit market-context tools instead of prompt injection."""

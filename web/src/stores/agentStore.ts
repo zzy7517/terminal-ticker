@@ -1,10 +1,15 @@
 import { create } from 'zustand';
-import type { AgentMessage, AgentModelOption, AgentSessionResponse, AgentSessionSummary } from '../types';
+import type {
+  AgentMessage,
+  AgentModelOption,
+  AgentSessionResponse,
+  AgentSessionRun,
+  AgentSessionSummary,
+} from '../types';
 import {
   createAgentSession,
   deleteAgentSessionById,
   fetchAgentSession,
-  fetchAgentSessionHistory,
   fetchAgentSessions,
   fetchProviderModels,
   streamAgentMessage,
@@ -12,6 +17,13 @@ import {
 import { AGENT_PROVIDER_OPTIONS } from '../constants';
 import { streamMessageToAgentMessage, upsertAgentMessage } from '../utils';
 import { useMarketStore } from './marketStore';
+
+type ContextUsage = { promptTokens: number; totalTokens: number } | null;
+
+interface SessionRunProjection extends AgentSessionRun {
+  pendingToolCalls: Set<string>;
+  contextUsage: ContextUsage;
+}
 
 interface AgentState {
   agentSession: AgentSessionResponse | null;
@@ -26,7 +38,11 @@ interface AgentState {
   agentCandidateKeys: string[];
   pendingToolCalls: Set<string>;
   modelCache: Record<string, AgentModelOption[]>;
-  contextUsage: { promptTokens: number; totalTokens: number } | null;
+  contextUsage: ContextUsage;
+  activeAgentSessionId: string | null;
+  agentSessionById: Record<string, AgentSessionResponse>;
+  runStateBySessionId: Record<string, SessionRunProjection>;
+  draftBySessionId: Record<string, string>;
 
   setAgentSession: (session: AgentSessionResponse | null) => void;
   setAgentSessionHistory: (history: AgentSessionSummary[]) => void;
@@ -48,7 +64,118 @@ interface AgentState {
   deleteAgentConversation: (sessionId: string) => Promise<void>;
 }
 
-const streamMessageIdsRef = new Map<string, number>();
+type ActiveMirrorSource = Pick<
+  AgentState,
+  'activeAgentSessionId' | 'agentSessionById' | 'agentSessionHistory' | 'runStateBySessionId' | 'draftBySessionId'
+>;
+
+function idleRun(sessionId: string): SessionRunProjection {
+  return {
+    sessionId,
+    runId: null,
+    status: 'idle',
+    activeFlags: [],
+    lastSeq: 0,
+    error: null,
+    pendingToolCalls: new Set(),
+    contextUsage: null,
+  };
+}
+
+function mergeRunPayload(
+  previous: SessionRunProjection | undefined,
+  sessionId: string,
+  run?: AgentSessionRun,
+): SessionRunProjection {
+  const status = run?.status ?? previous?.status ?? 'idle';
+  return {
+    sessionId,
+    runId: run?.runId ?? previous?.runId ?? null,
+    status,
+    activeFlags: run?.activeFlags ?? previous?.activeFlags ?? [],
+    lastSeq: run?.lastSeq ?? previous?.lastSeq ?? 0,
+    error: run?.error ?? previous?.error ?? null,
+    pendingToolCalls: status === 'running' ? new Set(previous?.pendingToolCalls ?? []) : new Set(),
+    contextUsage: previous?.contextUsage ?? null,
+  };
+}
+
+function mergeHistoryRuns(
+  history: AgentSessionSummary[],
+  previous: Record<string, SessionRunProjection>,
+): Record<string, SessionRunProjection> {
+  const next = { ...previous };
+  for (const item of history) {
+    next[item.id] = mergeRunPayload(next[item.id], item.id, item.run);
+  }
+  return next;
+}
+
+function sessionFromSummary(summary: AgentSessionSummary): AgentSessionResponse {
+  return { session: summary, messages: [], run: summary.run };
+}
+
+function visibleSession(state: ActiveMirrorSource): AgentSessionResponse | null {
+  const activeId = state.activeAgentSessionId;
+  if (!activeId) return null;
+  const cached = state.agentSessionById[activeId];
+  if (cached) return cached;
+  const summary = state.agentSessionHistory.find((item) => item.id === activeId);
+  return summary ? sessionFromSummary(summary) : null;
+}
+
+function activeFields(state: ActiveMirrorSource): Pick<
+  AgentState,
+  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'contextUsage' | 'agentBusyKey'
+> {
+  const activeId = state.activeAgentSessionId;
+  const run = activeId ? state.runStateBySessionId[activeId] : undefined;
+  return {
+    agentSession: visibleSession(state),
+    agentPrompt: activeId ? state.draftBySessionId[activeId] ?? '' : '',
+    pendingToolCalls: new Set(run?.pendingToolCalls ?? []),
+    contextUsage: run?.contextUsage ?? null,
+    agentBusyKey: activeId && run?.status === 'running' ? activeId : null,
+  };
+}
+
+function cacheSession(
+  cache: Record<string, AgentSessionResponse>,
+  payload: AgentSessionResponse,
+): Record<string, AgentSessionResponse> {
+  const sessionId = payload.session?.id;
+  return sessionId ? { ...cache, [sessionId]: payload } : cache;
+}
+
+function responseForSession(state: AgentState, sessionId: string): AgentSessionResponse {
+  const cached = state.agentSessionById[sessionId];
+  if (cached) return cached;
+  const summary = state.agentSessionHistory.find((item) => item.id === sessionId);
+  return summary ? sessionFromSummary(summary) : { session: null, messages: [] };
+}
+
+function setSessionMessage(
+  state: AgentState,
+  sessionId: string,
+  message: AgentMessage,
+): Record<string, AgentSessionResponse> {
+  const session = responseForSession(state, sessionId);
+  return {
+    ...state.agentSessionById,
+    [sessionId]: {
+      ...session,
+      messages: upsertAgentMessage(session.messages, message),
+    },
+  };
+}
+
+function replaceRunState(
+  map: Record<string, SessionRunProjection>,
+  sessionId: string,
+  run: SessionRunProjection,
+): Record<string, SessionRunProjection> {
+  return { ...map, [sessionId]: run };
+}
 
 export const useAgentStore = create<AgentState>((set, get) => ({
   agentSession: null,
@@ -64,10 +191,38 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   pendingToolCalls: new Set(),
   modelCache: {},
   contextUsage: null,
+  activeAgentSessionId: null,
+  agentSessionById: {},
+  runStateBySessionId: {},
+  draftBySessionId: {},
 
-  setAgentSession: (session) => set({ agentSession: session }),
-  setAgentSessionHistory: (history) => set({ agentSessionHistory: history }),
-  setAgentPrompt: (prompt) => set({ agentPrompt: prompt }),
+  setAgentSession: (session) => set((s) => {
+    const activeAgentSessionId = session?.session?.id ?? null;
+    const agentSessionById = session ? cacheSession(s.agentSessionById, session) : s.agentSessionById;
+    const runStateBySessionId = activeAgentSessionId
+      ? {
+          ...s.runStateBySessionId,
+          [activeAgentSessionId]: mergeRunPayload(
+            s.runStateBySessionId[activeAgentSessionId],
+            activeAgentSessionId,
+            session?.run,
+          ),
+        }
+      : s.runStateBySessionId;
+    const next = { ...s, activeAgentSessionId, agentSessionById, runStateBySessionId };
+    return { activeAgentSessionId, agentSessionById, runStateBySessionId, ...activeFields(next) };
+  }),
+  setAgentSessionHistory: (history) => set((s) => {
+    const runStateBySessionId = mergeHistoryRuns(history, s.runStateBySessionId);
+    const next = { ...s, agentSessionHistory: history, runStateBySessionId };
+    return { agentSessionHistory: history, runStateBySessionId, ...activeFields(next) };
+  }),
+  setAgentPrompt: (prompt) => set((s) => ({
+    agentPrompt: prompt,
+    draftBySessionId: s.activeAgentSessionId
+      ? { ...s.draftBySessionId, [s.activeAgentSessionId]: prompt }
+      : s.draftBySessionId,
+  })),
   setAgentProvider: (provider) => set({ agentProvider: provider }),
   setAgentModel: (model) => set({ agentModel: model }),
   toggleAgentCandidate: (key) => set((s) => ({
@@ -124,11 +279,38 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     fetchAgentSessions()
       .then((payload) => {
         if (disposed) return;
-        set({ agentSessionHistory: payload.sessions });
-        if (!get().agentSession?.session && payload.sessions[0]) {
+        const firstSessionId = payload.sessions[0]?.id ?? null;
+        set((s) => {
+          const runStateBySessionId = mergeHistoryRuns(payload.sessions, s.runStateBySessionId);
+          const next = {
+            ...s,
+            agentSessionHistory: payload.sessions,
+            runStateBySessionId,
+            activeAgentSessionId: s.activeAgentSessionId ?? firstSessionId,
+          };
+          return {
+            agentSessionHistory: payload.sessions,
+            runStateBySessionId,
+            activeAgentSessionId: next.activeAgentSessionId,
+            ...activeFields(next),
+          };
+        });
+        if (firstSessionId && !get().agentSessionById[firstSessionId]) {
           set({ agentSessionLoadingKey: key });
-          fetchAgentSession(payload.sessions[0].id)
-            .then((sessionPayload) => { if (!disposed) set({ agentSession: sessionPayload }); })
+          fetchAgentSession(firstSessionId)
+            .then((sessionPayload) => {
+              if (disposed) return;
+              set((s) => {
+                const sessionId = sessionPayload.session?.id ?? firstSessionId;
+                const agentSessionById = cacheSession(s.agentSessionById, sessionPayload);
+                const runStateBySessionId = {
+                  ...s.runStateBySessionId,
+                  [sessionId]: mergeRunPayload(s.runStateBySessionId[sessionId], sessionId, sessionPayload.run),
+                };
+                const next = { ...s, agentSessionById, runStateBySessionId, activeAgentSessionId: sessionId };
+                return { agentSessionById, runStateBySessionId, activeAgentSessionId: sessionId, ...activeFields(next) };
+              });
+            })
             .catch((error) => { console.error(error); if (!disposed) set({ agentSession: null }); })
             .finally(() => { if (!disposed) set({ agentSessionLoadingKey: null }); });
         }
@@ -141,27 +323,86 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   runAgentAnalysis: async () => {
     const { agentSession, agentPrompt, agentProvider, agentModel, agentCandidateKeys } = get();
     let targetSessionId = agentSession?.session?.id ?? null;
-    set({ agentBusyKey: targetSessionId ?? 'new', pendingToolCalls: new Set() });
-    streamMessageIdsRef.clear();
+    const messageIds = new Map<string, number>();
     try {
       if (!targetSessionId) {
         const created = await createAgentSession({ provider: agentProvider, model: agentModel });
         targetSessionId = created.session?.id ?? null;
-        set({ agentSession: created, agentSessionHistory: created.history.sessions });
+        if (!targetSessionId) throw new Error('agent session create failed');
+        const createdSessionId = targetSessionId;
+        set((s) => {
+          const agentSessionById = cacheSession(s.agentSessionById, created);
+          const runStateBySessionId = mergeHistoryRuns(created.history.sessions, {
+            ...s.runStateBySessionId,
+            [createdSessionId]: mergeRunPayload(s.runStateBySessionId[createdSessionId], createdSessionId, created.run),
+          });
+          const next = {
+            ...s,
+            agentSessionById,
+            runStateBySessionId,
+            agentSessionHistory: created.history.sessions,
+            activeAgentSessionId: createdSessionId,
+          };
+          return {
+            agentSessionById,
+            runStateBySessionId,
+            agentSessionHistory: created.history.sessions,
+            activeAgentSessionId: createdSessionId,
+            ...activeFields(next),
+          };
+        });
       }
-      if (!targetSessionId) throw new Error('agent session create failed');
-      set({ agentBusyKey: targetSessionId });
+      const runSessionId = targetSessionId;
+      if (get().runStateBySessionId[runSessionId]?.status === 'running') return;
+      const prompt = agentPrompt;
+      set((s) => {
+        const runStateBySessionId = {
+          ...s.runStateBySessionId,
+          [runSessionId]: {
+            ...idleRun(runSessionId),
+            status: 'running' as const,
+            pendingToolCalls: new Set<string>(),
+          },
+        };
+        const draftBySessionId = { ...s.draftBySessionId, [runSessionId]: '' };
+        const next = { ...s, runStateBySessionId, draftBySessionId };
+        return { runStateBySessionId, draftBySessionId, ...activeFields(next) };
+      });
       await streamAgentMessage(
-        targetSessionId,
-        agentPrompt,
+        runSessionId,
+        prompt,
         { provider: agentProvider, model: agentModel, candidateInstrumentKeys: agentCandidateKeys },
-        (event) => {
+        (envelope) => {
+          const sessionId = envelope.sessionId || runSessionId;
+          const event = envelope.event;
           if (event.type === 'tool_execution_start') {
-            set((s) => { const next = new Set(s.pendingToolCalls); next.add(event.toolCall.id); return { pendingToolCalls: next }; });
+            set((s) => {
+              const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+              const pendingToolCalls = new Set(previous.pendingToolCalls);
+              pendingToolCalls.add(event.toolCall.id);
+              const runStateBySessionId = replaceRunState(
+                s.runStateBySessionId,
+                sessionId,
+                { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq, pendingToolCalls },
+              );
+              const next = { ...s, runStateBySessionId };
+              return { runStateBySessionId, ...activeFields(next) };
+            });
             return;
           }
           if (event.type === 'tool_execution_end') {
-            set((s) => { const next = new Set(s.pendingToolCalls); next.delete(event.toolCall.id); return { pendingToolCalls: next }; });
+            set((s) => {
+              const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+              const pendingToolCalls = new Set(previous.pendingToolCalls);
+              pendingToolCalls.delete(event.toolCall.id);
+              const runStateBySessionId = replaceRunState(
+                s.runStateBySessionId,
+                sessionId,
+                { ...previous, runId: envelope.runId, lastSeq: envelope.seq, pendingToolCalls },
+              );
+              const next = { ...s, runStateBySessionId };
+              return { runStateBySessionId, ...activeFields(next) };
+            });
             return;
           }
           if (event.type === 'message_start' || event.type === 'message_update' || event.type === 'message_end') {
@@ -169,105 +410,196 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             const clientId = raw.clientId;
             let fallbackId = typeof raw.id === 'number' ? raw.id : 0;
             if (!fallbackId) {
-              if (clientId && streamMessageIdsRef.has(clientId)) {
-                fallbackId = streamMessageIdsRef.get(clientId) ?? 0;
+              if (clientId && messageIds.has(clientId)) {
+                fallbackId = messageIds.get(clientId) ?? 0;
               } else {
-                fallbackId = -Date.now() - streamMessageIdsRef.size;
-                if (clientId) streamMessageIdsRef.set(clientId, fallbackId);
+                fallbackId = -Date.now() - messageIds.size;
+                if (clientId) messageIds.set(clientId, fallbackId);
               }
             }
             const createdAt = new Date().toISOString();
             set((s) => {
-              const session = s.agentSession ?? { session: null, messages: [] };
-              const message = streamMessageToAgentMessage(raw, {
-                id: fallbackId,
-                sessionId: session.session?.id ?? targetSessionId ?? '',
-                createdAt,
-              });
-              return { agentSession: { ...session, messages: upsertAgentMessage(session.messages, message) } };
+              const message = streamMessageToAgentMessage(raw, { id: fallbackId, sessionId, createdAt });
+              const agentSessionById = setSessionMessage(s, sessionId, message);
+              const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+              const runStateBySessionId = replaceRunState(
+                s.runStateBySessionId,
+                sessionId,
+                { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
+              );
+              const next = { ...s, agentSessionById, runStateBySessionId };
+              return { agentSessionById, runStateBySessionId, ...activeFields(next) };
             });
             return;
           }
           if (event.type === 'agent_end') {
             if (typeof event.totalTokens === 'number') {
-              set({ contextUsage: { promptTokens: event.promptTokens ?? 0, totalTokens: event.totalTokens } });
+              const totalTokens = event.totalTokens;
+              const promptTokens = event.promptTokens ?? 0;
+              set((s) => {
+                const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+                const runStateBySessionId = replaceRunState(
+                  s.runStateBySessionId,
+                  sessionId,
+                  {
+                    ...previous,
+                    runId: envelope.runId,
+                    lastSeq: envelope.seq,
+                    contextUsage: { promptTokens, totalTokens },
+                  },
+                );
+                const next = { ...s, runStateBySessionId };
+                return { runStateBySessionId, ...activeFields(next) };
+              });
             }
             return;
           }
           if (event.type === 'session_update') {
             useMarketStore.getState().setState(event.state);
-            set({
-              agentSession: event.session,
-              agentSessionHistory: event.history.sessions,
-              pendingToolCalls: new Set(),
+            set((s) => {
+              const agentSessionById = cacheSession(s.agentSessionById, event.session);
+              const runStateBySessionId = mergeHistoryRuns(event.history.sessions, {
+                ...s.runStateBySessionId,
+                [sessionId]: mergeRunPayload(s.runStateBySessionId[sessionId], sessionId, event.session.run),
+              });
+              const next = { ...s, agentSessionById, runStateBySessionId, agentSessionHistory: event.history.sessions };
+              return { agentSessionById, runStateBySessionId, agentSessionHistory: event.history.sessions, ...activeFields(next) };
             });
-            streamMessageIdsRef.clear();
             return;
           }
           if (event.type === 'error') {
             const createdAt = new Date().toISOString();
             set((s) => {
-              const session = s.agentSession ?? { session: null, messages: [] };
               const message: AgentMessage = {
                 id: -Date.now(),
-                sessionId: session.session?.id ?? targetSessionId ?? '',
+                sessionId,
                 role: 'assistant',
                 content: event.error,
                 createdAt,
                 metadata: null,
                 error: event.error,
               };
-              return { agentSession: { ...session, messages: upsertAgentMessage(session.messages, message) } };
+              const agentSessionById = setSessionMessage(s, sessionId, message);
+              const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+              const runStateBySessionId = replaceRunState(
+                s.runStateBySessionId,
+                sessionId,
+                { ...previous, status: 'error', error: event.error, runId: envelope.runId, lastSeq: envelope.seq },
+              );
+              const next = { ...s, agentSessionById, runStateBySessionId };
+              return { agentSessionById, runStateBySessionId, ...activeFields(next) };
             });
           }
         },
       );
-      set({ agentPrompt: '' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'agent analysis failed';
-      set((s) => {
-        const session = s.agentSession ?? { session: null, messages: [] };
-        return {
-          agentSession: {
-            ...session,
-            messages: upsertAgentMessage(session.messages, {
-              id: -Date.now(),
-              sessionId: session.session?.id ?? targetSessionId ?? '',
-              role: 'assistant',
-              content: message,
-              createdAt: new Date().toISOString(),
-              metadata: null,
-              error: message,
-            }),
-          },
-        };
-      });
+      if (targetSessionId) {
+        const errorSessionId = targetSessionId;
+        set((s) => {
+          const previous = s.runStateBySessionId[errorSessionId] ?? idleRun(errorSessionId);
+          const runStateBySessionId = replaceRunState(
+            s.runStateBySessionId,
+            errorSessionId,
+            { ...previous, status: 'error', error: message, pendingToolCalls: new Set<string>() },
+          );
+          const next = { ...s, runStateBySessionId };
+          return { runStateBySessionId, ...activeFields(next) };
+        });
+      }
+      console.error(error);
     } finally {
-      set({ pendingToolCalls: new Set(), agentBusyKey: null });
+      if (targetSessionId) {
+        const finishedSessionId = targetSessionId;
+        set((s) => {
+          const previous = s.runStateBySessionId[finishedSessionId] ?? idleRun(finishedSessionId);
+          const status = previous.status === 'error' ? 'error' : 'idle';
+          const runStateBySessionId = replaceRunState(
+            s.runStateBySessionId,
+            finishedSessionId,
+            { ...previous, status, pendingToolCalls: new Set<string>() },
+          );
+          const next = { ...s, runStateBySessionId };
+          return { runStateBySessionId, ...activeFields(next) };
+        });
+      }
     }
   },
 
   resetAgentConversation: async () => {
+    if (get().agentSessionActionKey) return;
     const { agentProvider, agentModel } = get();
-    set({ agentBusyKey: 'new', contextUsage: null });
+    const actionKey = 'new';
+    set({ agentSessionActionKey: actionKey });
     try {
       const payload = await createAgentSession({ provider: agentProvider, model: agentModel });
-      set({ agentSession: payload, agentSessionHistory: payload.history.sessions, agentPrompt: '' });
+      const sessionId = payload.session?.id ?? null;
+      set((s) => {
+        const agentSessionById = cacheSession(s.agentSessionById, payload);
+        const runStateBySessionId = sessionId
+          ? {
+              ...mergeHistoryRuns(payload.history.sessions, s.runStateBySessionId),
+              [sessionId]: mergeRunPayload(s.runStateBySessionId[sessionId], sessionId, payload.run),
+            }
+          : mergeHistoryRuns(payload.history.sessions, s.runStateBySessionId);
+        const draftBySessionId = sessionId ? { ...s.draftBySessionId, [sessionId]: '' } : s.draftBySessionId;
+        const next = {
+          ...s,
+          agentSessionById,
+          runStateBySessionId,
+          draftBySessionId,
+          agentSessionHistory: payload.history.sessions,
+          activeAgentSessionId: sessionId,
+        };
+        return {
+          agentSessionById,
+          runStateBySessionId,
+          draftBySessionId,
+          agentSessionHistory: payload.history.sessions,
+          activeAgentSessionId: sessionId,
+          ...activeFields(next),
+        };
+      });
     } catch (error) {
       console.error(error);
     } finally {
-      set({ agentBusyKey: null });
+      set((s) => ({ agentSessionActionKey: s.agentSessionActionKey === actionKey ? null : s.agentSessionActionKey }));
     }
   },
 
   resumeAgentConversation: async (sessionId) => {
     if (get().agentSessionActionKey) return;
+    if (get().activeAgentSessionId === sessionId) return;
+    if (get().agentSessionById[sessionId]) {
+      set((s) => {
+        const next = { ...s, activeAgentSessionId: sessionId };
+        return { activeAgentSessionId: sessionId, ...activeFields(next) };
+      });
+      return;
+    }
     const actionKey = `resume:${sessionId}`;
     set({ agentSessionActionKey: actionKey });
     try {
       const payload = await fetchAgentSession(sessionId);
-      const history = await fetchAgentSessionHistory();
-      set({ agentSession: payload, agentSessionHistory: history.sessions, agentPrompt: '' });
+      set((s) => {
+        const agentSessionById = cacheSession(s.agentSessionById, payload);
+        const runStateBySessionId = {
+          ...s.runStateBySessionId,
+          [sessionId]: mergeRunPayload(s.runStateBySessionId[sessionId], sessionId, payload.run),
+        };
+        const next = {
+          ...s,
+          agentSessionById,
+          runStateBySessionId,
+          activeAgentSessionId: sessionId,
+        };
+        return {
+          agentSessionById,
+          runStateBySessionId,
+          activeAgentSessionId: sessionId,
+          ...activeFields(next),
+        };
+      });
     } catch (error) {
       console.error(error);
     } finally {
@@ -277,6 +609,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   deleteAgentConversation: async (sessionId) => {
     if (get().agentSessionActionKey) return;
+    if (get().runStateBySessionId[sessionId]?.status === 'running') return;
     const confirmed = window.confirm('Delete this saved agent session?');
     if (!confirmed) return;
     const actionKey = `delete:${sessionId}`;
@@ -284,11 +617,33 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       const payload = await deleteAgentSessionById(sessionId);
       useMarketStore.getState().setState(payload.state);
-      set((s) => ({
-        agentSession: s.agentSession?.session?.id === sessionId ? { session: null, messages: [] } : s.agentSession,
-        agentSessionHistory: payload.history.sessions,
-        agentPrompt: '',
-      }));
+      set((s) => {
+        const agentSessionById = { ...s.agentSessionById };
+        delete agentSessionById[sessionId];
+        const runStateBySessionId = { ...mergeHistoryRuns(payload.history.sessions, s.runStateBySessionId) };
+        delete runStateBySessionId[sessionId];
+        const draftBySessionId = { ...s.draftBySessionId };
+        delete draftBySessionId[sessionId];
+        const activeAgentSessionId = s.activeAgentSessionId === sessionId
+          ? payload.history.sessions[0]?.id ?? null
+          : s.activeAgentSessionId;
+        const next = {
+          ...s,
+          agentSessionById,
+          runStateBySessionId,
+          draftBySessionId,
+          agentSessionHistory: payload.history.sessions,
+          activeAgentSessionId,
+        };
+        return {
+          agentSessionById,
+          runStateBySessionId,
+          draftBySessionId,
+          agentSessionHistory: payload.history.sessions,
+          activeAgentSessionId,
+          ...activeFields(next),
+        };
+      });
     } catch (error) {
       console.error(error);
     } finally {

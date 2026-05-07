@@ -87,6 +87,7 @@ from .helpers import (
     request_float,
     social_feed_config_from_payload,
 )
+from .agent_runs import AgentRunChannel, AgentSessionRunRegistry
 from .serializers import (
     DEFAULT_AGENT_USER_PROMPT,
     agent_session_config_kwargs,
@@ -207,6 +208,7 @@ class MarketRuntime:
         self.running = False
         self.agent_analyses: dict[str, dict[str, Any]] = {}
         self.agent_session_store = agent_session_store or AgentSessionStore()
+        self.agent_runs = AgentSessionRunRegistry()
         self._active_session_for_tools: str | None = None
         self.x_auth_store = XAuthStore()
         self.social_feed_service: SocialFeedService | None = None
@@ -249,6 +251,7 @@ class MarketRuntime:
 
     async def stop(self) -> None:
         self.running = False
+        await self.agent_runs.shutdown()
         if self.pump_task is not None:
             self.pump_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -674,7 +677,12 @@ class MarketRuntime:
             self.agent_session_store.active_session_payload,
             instrument.key,
         )
-        return payload or {"session": None, "messages": []}
+        if not payload:
+            return {"session": None, "messages": []}
+        session = payload.get("session")
+        if isinstance(session, dict):
+            payload["run"] = await self.agent_runs.payload_for_session(str(session.get("id") or ""))
+        return payload
 
     async def list_agent_sessions(self) -> dict[str, Any]:
         return await self._agent_session_history_payload()
@@ -722,6 +730,8 @@ class MarketRuntime:
         }
 
     async def delete_agent_session_by_id(self, session_id: str) -> dict[str, Any]:
+        if await self.agent_runs.is_running(session_id):
+            raise HTTPException(status_code=409, detail="cannot delete a running agent session")
         try:
             deleted = await asyncio.to_thread(
                 self.agent_session_store.delete_session_by_id,
@@ -779,6 +789,8 @@ class MarketRuntime:
 
     async def delete_agent_session(self, instrument_key: str, session_id: str) -> dict[str, Any]:
         instrument = self._instrument_by_key(instrument_key)
+        if await self.agent_runs.is_running(session_id):
+            raise HTTPException(status_code=409, detail="cannot delete a running agent session")
         try:
             next_session = await asyncio.to_thread(
                 self.agent_session_store.delete_session,
@@ -1091,55 +1103,111 @@ class MarketRuntime:
         identifier: str,
         payload: dict[str, Any],
     ) -> AsyncIterator[str]:
-        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        message = payload.get("message", payload.get("prompt"))
+        agent_cfg = self._effective_agent_config(payload.get("provider"), payload.get("model"))
+        session_runtime, legacy_key = await self._session_runtime_for_identifier(identifier, agent_cfg)
+        session_id = session_runtime.session.id
+        try:
+            channel = await self.agent_runs.start(session_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        after_seq = _request_int(payload.get("afterSeq", payload.get("after_seq")), default=0)
+        task = asyncio.create_task(
+            self._run_streaming_agent_session(
+                channel=channel,
+                session_runtime=session_runtime,
+                payload=payload,
+                message=message,
+                agent_cfg=agent_cfg,
+                legacy_key=legacy_key,
+            )
+        )
+        await self.agent_runs.attach_task(session_id, channel.run_id, task)
+        queue = await self.agent_runs.subscribe(session_id, channel.run_id, after_seq=after_seq)
+
+        async def event_stream() -> AsyncIterator[str]:
+            try:
+                while True:
+                    event = await queue.get()
+                    if event is None:
+                        break
+                    yield sse_event(event)
+            finally:
+                await self.agent_runs.unsubscribe(session_id, channel.run_id, queue)
+
+        return event_stream()
+
+    async def _run_streaming_agent_session(
+        self,
+        *,
+        channel: AgentRunChannel,
+        session_runtime: AgentSessionRuntime,
+        payload: dict[str, Any],
+        message: Any,
+        agent_cfg: AgentConfig,
+        legacy_key: str | None,
+    ) -> None:
+        session_id = channel.session_id
+        run_id = channel.run_id
 
         async def emit(event: dict[str, Any]) -> None:
-            await queue.put(event)
+            await self.agent_runs.publish(session_id, run_id, event)
 
-        async def worker() -> None:
-            try:
-                message = payload.get("message", payload.get("prompt"))
-                agent_cfg = self._effective_agent_config(payload.get("provider"), payload.get("model"))
-                session_runtime, legacy_key = await self._session_runtime_for_identifier(identifier, agent_cfg)
-                user_prompt = normalize_agent_prompt(str(message) if message is not None else None, DEFAULT_AGENT_USER_PROMPT)
-                user_message = await session_runtime.append_user_message(user_prompt)
-                await emit({"type": "message_end", "message": user_message})
-                history = await session_runtime.history_for_context(limit=8)
-                await self._run_agent_loop(
-                    session_runtime=session_runtime,
-                    user_prompt=user_prompt,
-                    history=history,
-                    agent_cfg=agent_cfg,
-                    candidate_instrument_keys=self._candidate_instrument_keys(payload, legacy_key=legacy_key),
-                    history_instrument_key=legacy_key,
-                    event_handler=emit,
-                )
+        error_message: str | None = None
+        try:
+            await emit({"type": "agent_start"})
+            user_prompt = normalize_agent_prompt(
+                str(message) if message is not None else None,
+                DEFAULT_AGENT_USER_PROMPT,
+            )
+            user_message = await session_runtime.append_user_message(user_prompt)
+            await emit({"type": "message_end", "message": user_message})
+            history = await session_runtime.history_for_context(limit=8)
+            await self._run_agent_loop(
+                session_runtime=session_runtime,
+                user_prompt=user_prompt,
+                history=history,
+                agent_cfg=agent_cfg,
+                candidate_instrument_keys=self._candidate_instrument_keys(payload, legacy_key=legacy_key),
+                history_instrument_key=legacy_key,
+                event_handler=emit,
+            )
+        except asyncio.CancelledError:
+            error_message = "Agent run interrupted."
+            with suppress(Exception):
+                await session_runtime.append_transcript_message({
+                    "role": "assistant",
+                    "content": error_message,
+                    "error": error_message,
+                })
+                await emit({"type": "error", "error": error_message})
+            raise
+        except HTTPException as exc:
+            error_message = str(exc.detail)
+            await session_runtime.append_transcript_message({
+                "role": "assistant",
+                "content": error_message,
+                "error": error_message,
+            })
+            await emit({"type": "error", "error": error_message})
+        except Exception as exc:
+            LOGGER.exception("agent stream failed")
+            error_message = str(exc) or exc.__class__.__name__
+            await session_runtime.append_transcript_message({
+                "role": "assistant",
+                "content": error_message,
+                "error": error_message,
+            })
+            await emit({"type": "error", "error": error_message})
+        finally:
+            with suppress(Exception):
                 await emit({
                     "type": "session_update",
-                    "session": await session_runtime.payload(),
+                    "session": await self._agent_session_payload(session_runtime.session.id),
                     "history": await self._agent_session_history_payload(legacy_key),
                     "state": self.snapshot(),
                 })
-            except HTTPException as exc:
-                await emit({"type": "error", "error": str(exc.detail)})
-            except Exception as exc:
-                LOGGER.exception("agent stream failed")
-                await emit({"type": "error", "error": str(exc) or exc.__class__.__name__})
-            finally:
-                await queue.put(None)
-
-        task = asyncio.create_task(worker())
-        try:
-            while True:
-                event = await queue.get()
-                if event is None:
-                    break
-                yield sse_event(event)
-        finally:
-            if not task.done():
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
+            await self.agent_runs.finish(session_id, run_id, error=error_message)
 
     # ------------------------------------------------------------------
     # Candle loading
@@ -1281,14 +1349,25 @@ class MarketRuntime:
 
     async def _agent_session_payload(self, session_id: str) -> dict[str, Any]:
         payload = await asyncio.to_thread(self.agent_session_store.session_payload, session_id)
-        return payload or {"session": None, "messages": []}
+        if not payload:
+            return {"session": None, "messages": []}
+        session = payload.get("session")
+        if isinstance(session, dict):
+            payload["run"] = await self.agent_runs.payload_for_session(str(session.get("id") or session_id))
+        return payload
 
     async def _agent_session_history_payload(self, instrument_key: str | None = None) -> dict[str, Any]:
         sessions = await asyncio.to_thread(
             self.agent_session_store.list_sessions,
             instrument_key,
         )
-        return {"sessions": [session.to_payload() for session in sessions]}
+        payloads = [session.to_payload() for session in sessions]
+        run_payloads = await self.agent_runs.payloads_for_sessions([
+            str(payload["id"]) for payload in payloads
+        ])
+        for payload in payloads:
+            payload["run"] = run_payloads.get(str(payload["id"]))
+        return {"sessions": payloads}
 
     async def _session_runtime_by_id(
         self,
@@ -1545,3 +1624,13 @@ class MarketRuntime:
             "context": context,
             "currentAnalysis": current_analysis,
         }
+
+
+def _request_int(value: Any, *, default: int = 0) -> int:
+    """Parse an optional integer request value."""
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default

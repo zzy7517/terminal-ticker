@@ -136,8 +136,9 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
         instrument_key: str,
         payload: dict[str, Any],
     ) -> StreamingResponse:
+        stream = await runtime.stream_agent_message(instrument_key, payload)
         return StreamingResponse(
-            runtime.stream_agent_message(instrument_key, payload),
+            stream,
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

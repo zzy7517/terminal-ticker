@@ -7,7 +7,6 @@ import {
   CircleDot,
   History,
   Loader2,
-  RefreshCw,
   Search,
   Sparkles,
   Zap,
@@ -115,7 +114,6 @@ export function AgentSessionPanel({
   const toggleAgentCandidate = useAgentStore((s) => s.toggleAgentCandidate);
   const clearAgentCandidates = useAgentStore((s) => s.clearAgentCandidates);
   const runAgentAnalysis = useAgentStore((s) => s.runAgentAnalysis);
-  const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
 
   const instruments = useMarketStore((s) => s.state?.instruments) ?? [];
 
@@ -187,7 +185,7 @@ export function AgentSessionPanel({
         <span className="panel-label with-icon">
           <Sparkles size={14} /> Agent Session
         </span>
-        <span className="agent-bias neutral">{busy ? 'running' : 'idle'}</span>
+        {busy && <span className="agent-bias neutral">running</span>}
         {contextPercent !== null && (
           <span className={`context-badge${contextPercent > 90 ? ' danger' : contextPercent > 70 ? ' warning' : ''}`}>
             <CircleDot size={10} /> {contextPercent}% context
@@ -196,15 +194,6 @@ export function AgentSessionPanel({
       </div>
       <div className="session-toolbar">
         <small>{sessionLoading ? 'Loading' : sessionTime}</small>
-        <button
-          aria-label="Start new agent session"
-          className="session-icon-action"
-          disabled={busy || sessionLoading}
-          onClick={() => void resetAgentConversation()}
-          type="button"
-        >
-          <RefreshCw size={14} />
-        </button>
       </div>
       <div className="session-pickers-row">
       <div className="session-model-picker" ref={pickerRef}>

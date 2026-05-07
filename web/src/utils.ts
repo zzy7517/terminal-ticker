@@ -1,6 +1,6 @@
 import type {
   AgentMessage,
-  AgentStreamEvent,
+  AgentStreamPayload,
   CandlePoint,
   Instrument,
   InstrumentSearchResult,
@@ -300,7 +300,7 @@ export function upsertAgentMessage(messages: AgentMessage[], message: AgentMessa
 }
 
 export function streamMessageToAgentMessage(
-  raw: Extract<AgentStreamEvent, { message: unknown }>['message'],
+  raw: Extract<AgentStreamPayload, { message: unknown }>['message'],
   fallback: { id: number; sessionId: string; createdAt: string },
 ): AgentMessage {
   return {

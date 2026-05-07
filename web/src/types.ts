@@ -80,9 +80,19 @@ export interface AgentSession {
   reasoningEffort: string | null;
 }
 
+export interface AgentSessionRun {
+  sessionId: string;
+  runId: string | null;
+  status: 'idle' | 'running' | 'error';
+  activeFlags: string[];
+  lastSeq: number;
+  error: string | null;
+}
+
 export interface AgentSessionSummary extends AgentSession {
   messageCount: number;
   preview: string;
+  run?: AgentSessionRun;
 }
 
 export interface AgentMessage {
@@ -98,6 +108,7 @@ export interface AgentMessage {
 export interface AgentSessionResponse {
   session: AgentSession | null;
   messages: AgentMessage[];
+  run?: AgentSessionRun;
 }
 
 export interface AgentSessionHistoryResponse {
@@ -110,7 +121,7 @@ export interface AgentSessionMutationResponse {
   state: MarketState;
 }
 
-export type AgentStreamEvent =
+export type AgentStreamPayload =
   | { type: 'agent_start' }
   | { type: 'turn_start'; iteration: number }
   | { type: 'turn_end'; iteration: number }
@@ -120,6 +131,13 @@ export type AgentStreamEvent =
   | { type: 'agent_end'; error: string | null; totalTokens?: number; promptTokens?: number }
   | { type: 'error'; error: string }
   | { type: 'session_update'; session: AgentSessionResponse; history: AgentSessionHistoryResponse; state: MarketState };
+
+export interface AgentStreamEvent {
+  sessionId: string;
+  runId: string;
+  seq: number;
+  event: AgentStreamPayload;
+}
 
 export interface ProviderProfileState {
   enabled: boolean;

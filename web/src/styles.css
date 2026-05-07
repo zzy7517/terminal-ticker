@@ -1132,6 +1132,23 @@ textarea:focus-visible {
   font-size: 10px;
 }
 
+.session-history-status {
+  align-items: center;
+  color: var(--text-muted);
+  display: inline-flex;
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  height: 18px;
+  justify-content: center;
+  width: 18px;
+}
+
+.session-history-status.error {
+  color: var(--negative);
+  font-weight: 700;
+}
+
 .session-history-delete {
   align-items: center;
   background: transparent;

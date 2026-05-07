@@ -4,6 +4,7 @@ import { useAgentStore } from '../../stores/agentStore';
 export function AgentSessionHistoryList() {
   const agentSession = useAgentStore((s) => s.agentSession);
   const history = useAgentStore((s) => s.agentSessionHistory);
+  const runStateBySessionId = useAgentStore((s) => s.runStateBySessionId);
   const busyActionKey = useAgentStore((s) => s.agentSessionActionKey);
   const loading = useAgentStore((s) => s.agentSessionHistoryLoadingKey) !== null;
   const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
@@ -51,6 +52,9 @@ export function AgentSessionHistoryList() {
         {!loading && visibleHistory.map((item) => {
           const isActive = item.id === activeSessionId;
           const deleteKey = `delete:${item.id}`;
+          const run = runStateBySessionId[item.id] ?? item.run;
+          const isRunning = run?.status === 'running';
+          const hasError = run?.status === 'error';
           const title = item.preview || item.title || item.id;
           return (
             <div className={`session-history-row ${isActive ? 'active' : ''}`} key={item.id}>
@@ -64,14 +68,17 @@ export function AgentSessionHistoryList() {
                 <span>{title}</span>
                 <small>
                   {item.model} · {relativeTime(item.updatedAt)}
+                  {isRunning ? ' · running' : hasError ? ' · error' : ''}
                 </small>
               </button>
+              {isRunning && <Loader2 className="session-history-status spin" size={13} />}
+              {hasError && !isRunning && <span className="session-history-status error">!</span>}
               <button
                 aria-label="Delete session"
                 className="session-history-delete"
-                disabled={Boolean(busyActionKey)}
+                disabled={Boolean(busyActionKey) || isRunning}
                 onClick={() => void deleteAgentConversation(item.id)}
-                title="Delete session"
+                title={isRunning ? 'Session is running' : 'Delete session'}
                 type="button"
               >
                 {busyActionKey === deleteKey ? <Loader2 className="spin" size={13} /> : <Trash2 size={13} />}
