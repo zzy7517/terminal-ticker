@@ -9,6 +9,8 @@
   JSON 上下文，且设置 ``store=False``，避免服务端持久化本次分析输入。
 - 模型发现：从 ``/models`` 拉取当前账号可见模型，再规范化为前端配置页使用
   的模型选项结构。
+- Web search：Codex provider 会暴露 Responses 原生 ``web_search`` hosted tool，
+  并过滤同名本地 function tool，避免模型误走 Exa/DDG 兼容层。
 - 错误边界：对外只暴露可读的 provider 错误信息，避免把 access token 等敏感
   内容写入运行状态或 UI。
 """
@@ -36,6 +38,7 @@ from ..provider import LLMProviderError, LLMProviderUnavailable
 
 CODEX_ENV_API_KEYS = ("MYTRADEBOT_CODEX_API_KEY", "CODEX_API_KEY")
 DEFAULT_CODEX_TIMEOUT_SECONDS = 45.0
+_CODEX_LOCAL_WEB_SEARCH_FUNCTION_NAMES = {"web_search"}
 
 
 class CodexProvider:
@@ -90,16 +93,9 @@ class CodexProvider:
         if system_msg:
             payload["instructions"] = system_msg["content"]
 
-        if tools:
-            payload["tools"] = [
-                {
-                    "type": "function",
-                    "name": t["function"]["name"],
-                    "description": t["function"].get("description", ""),
-                    "parameters": t["function"].get("parameters", {}),
-                }
-                for t in tools
-            ]
+        codex_tools = _codex_tools_payload(tools)
+        if codex_tools:
+            payload["tools"] = codex_tools
 
         headers = {
             "Authorization": f"Bearer {credentials['api_key']}",
@@ -224,6 +220,35 @@ def _codex_model_option(item: dict[str, Any]) -> dict[str, Any]:
         "supportedReasoningEfforts": reasoning_efforts,
         "contextWindow": item.get("context_window") if isinstance(item.get("context_window"), int) else None,
         "preferWebsockets": bool(item.get("prefer_websockets", False)),
+    }
+
+
+def _codex_tools_payload(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Convert loop function tools to Codex Responses tools and add hosted web search."""
+    codex_tools: list[dict[str, Any]] = []
+    for tool in tools or []:
+        function = tool.get("function") if isinstance(tool, dict) else None
+        if not isinstance(function, dict):
+            continue
+        name = str(function.get("name") or "").strip()
+        if not name or name in _CODEX_LOCAL_WEB_SEARCH_FUNCTION_NAMES:
+            continue
+        codex_tools.append({
+            "type": "function",
+            "name": name,
+            "description": function.get("description", ""),
+            "parameters": function.get("parameters", {}),
+        })
+
+    codex_tools.append(_codex_web_search_tool_spec())
+    return codex_tools
+
+
+def _codex_web_search_tool_spec() -> dict[str, Any]:
+    """Build the Codex hosted web_search tool spec using Codex's live default."""
+    return {
+        "type": "web_search",
+        "external_web_access": True,
     }
 
 
@@ -613,5 +638,3 @@ def _function_call_item_key(item: dict[str, Any], event: dict[str, Any]) -> str:
     if isinstance(output_index, int):
         return f"output:{output_index}"
     return ""
-
-
