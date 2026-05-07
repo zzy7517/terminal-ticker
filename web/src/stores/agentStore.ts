@@ -652,8 +652,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   deleteAgentConversation: async (sessionId) => {
     if (get().agentSessionActionKey) return;
     if (get().runStateBySessionId[sessionId]?.status === 'running') return;
-    const confirmed = window.confirm('Delete this saved agent session?');
-    if (!confirmed) return;
     const actionKey = `delete:${sessionId}`;
     set({ agentSessionActionKey: actionKey });
     try {

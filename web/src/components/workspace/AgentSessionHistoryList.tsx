@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { History, Loader2, SquarePen, Trash2 } from 'lucide-react';
 import { useAgentStore } from '../../stores/agentStore';
 
@@ -10,9 +11,16 @@ export function AgentSessionHistoryList() {
   const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
   const resumeAgentConversation = useAgentStore((s) => s.resumeAgentConversation);
   const deleteAgentConversation = useAgentStore((s) => s.deleteAgentConversation);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   const activeSessionId = agentSession?.session?.id ?? null;
   const visibleHistory = history;
+
+  useEffect(() => {
+    if (confirmingDeleteId && !visibleHistory.some((item) => item.id === confirmingDeleteId)) {
+      setConfirmingDeleteId(null);
+    }
+  }, [confirmingDeleteId, visibleHistory]);
 
   function relativeTime(dateStr: string): string {
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -35,7 +43,10 @@ export function AgentSessionHistoryList() {
         <button
           className="session-new-btn"
           disabled={Boolean(busyActionKey)}
-          onClick={() => void resetAgentConversation()}
+          onClick={() => {
+            setConfirmingDeleteId(null);
+            void resetAgentConversation();
+          }}
           title="New Chat"
           type="button"
         >
@@ -55,13 +66,28 @@ export function AgentSessionHistoryList() {
           const run = runStateBySessionId[item.id] ?? item.run;
           const isRunning = run?.status === 'running';
           const hasError = run?.status === 'error';
+          const isDeleteBusy = busyActionKey === deleteKey;
+          const isConfirmingDelete = confirmingDeleteId === item.id;
           const title = item.preview || item.title || item.id;
+          const deleteButtonTitle = isRunning
+            ? 'Session is running'
+            : isConfirmingDelete
+              ? 'Confirm delete session'
+              : 'Delete session';
+          const deleteButtonClass = [
+            'session-history-delete',
+            isConfirmingDelete ? 'confirming' : '',
+            isDeleteBusy ? 'deleting' : '',
+          ].filter(Boolean).join(' ');
           return (
             <div className={`session-history-row ${isActive ? 'active' : ''}`} key={item.id}>
               <button
                 className="session-history-main"
                 disabled={isActive || Boolean(busyActionKey)}
-                onClick={() => void resumeAgentConversation(item.id)}
+                onClick={() => {
+                  setConfirmingDeleteId(null);
+                  void resumeAgentConversation(item.id);
+                }}
                 title={isActive ? 'Active session' : 'Open session'}
                 type="button"
               >
@@ -74,14 +100,27 @@ export function AgentSessionHistoryList() {
               {isRunning && <Loader2 className="session-history-status spin" size={13} />}
               {hasError && !isRunning && <span className="session-history-status error">!</span>}
               <button
-                aria-label="Delete session"
-                className="session-history-delete"
+                aria-label={isConfirmingDelete ? 'Confirm delete session' : 'Delete session'}
+                className={deleteButtonClass}
                 disabled={Boolean(busyActionKey) || isRunning}
-                onClick={() => void deleteAgentConversation(item.id)}
-                title={isRunning ? 'Session is running' : 'Delete session'}
+                onClick={() => {
+                  if (!isConfirmingDelete) {
+                    setConfirmingDeleteId(item.id);
+                    return;
+                  }
+                  setConfirmingDeleteId(null);
+                  void deleteAgentConversation(item.id);
+                }}
+                title={deleteButtonTitle}
                 type="button"
               >
-                {busyActionKey === deleteKey ? <Loader2 className="spin" size={13} /> : <Trash2 size={13} />}
+                {isDeleteBusy ? (
+                  <Loader2 className="spin" size={13} />
+                ) : isConfirmingDelete ? (
+                  <span className="session-history-delete-label">Confirm</span>
+                ) : (
+                  <Trash2 size={13} />
+                )}
               </button>
             </div>
           );
