@@ -347,6 +347,29 @@ class WebTests(unittest.TestCase):
         self.assertFalse(payload[0]["exists"])
         self.assertTrue(payload[1]["exists"])
 
+    def test_hyperliquid_search_endpoint_accepts_pair_input(self) -> None:
+        """Verify Hyperliquid search accepts pair-style user input."""
+        instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with patch("mytradebot.api.runtime.search_hyperliquid_instruments", return_value=(instrument,)):
+            with TestClient(app) as client:
+                response = client.get(
+                    "/api/instruments/search",
+                    params={"source": "hyperliquid-testnet", "q": "BTCUSDT"},
+                )
+
+        payload = response.json()["results"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload[0]["source"], "hyperliquid-testnet")
+        self.assertEqual(payload[0]["key"], "hyperliquid-testnet:BTC")
+        self.assertTrue(payload[0]["exists"])
+
     def test_bitget_add_endpoint_persists_symbol(self) -> None:
         """Verify browser can add Bitget symbols to the watchlist."""
         with tempfile.TemporaryDirectory() as tmp_dir:
