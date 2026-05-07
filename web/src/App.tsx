@@ -1914,7 +1914,6 @@ function AgentSessionPanel({
         <span className="agent-bias neutral">{busy ? 'running' : 'idle'}</span>
       </div>
       <div className="session-toolbar">
-        <span>{session?.session?.model ?? selectedModel ?? '-'}</span>
         <small>{sessionLoading ? 'Loading' : sessionTime}</small>
         <button
           aria-label="Start new agent session"
@@ -1926,6 +1925,7 @@ function AgentSessionPanel({
           <RefreshCw size={14} />
         </button>
       </div>
+      <div className="session-pickers-row">
       <div className="session-model-picker" ref={pickerRef}>
         <button
           className="session-model-trigger"
@@ -2037,6 +2037,7 @@ function AgentSessionPanel({
             </div>
           </div>
         )}
+      </div>
       </div>
       <div className="session-transcript">
         {sessionLoading && (

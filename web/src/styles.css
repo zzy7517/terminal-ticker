@@ -920,11 +920,11 @@ textarea:focus-visible {
 .session-toolbar {
   align-items: center;
   color: var(--text-muted);
-  display: grid;
+  display: flex;
   font-family: var(--mono);
   font-size: 11px;
   gap: 8px;
-  grid-template-columns: minmax(0, 1fr) auto 28px;
+  justify-content: flex-end;
 }
 
 .session-toolbar span,
@@ -2141,6 +2141,14 @@ textarea:focus-visible {
   transform: translateX(18px);
 }
 
+/* ── Session pickers row ──────────────────────────────────────────── */
+.session-pickers-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* ── Session model picker (chat panel) ────────────────────────────── */
 .session-model-picker,
 .session-context-picker {
@@ -2182,7 +2190,7 @@ textarea:focus-visible {
   max-height: 360px;
   overflow: hidden;
   position: absolute;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
   z-index: 100;
   display: flex;
   flex-direction: column;
