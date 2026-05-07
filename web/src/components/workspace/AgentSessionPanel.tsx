@@ -117,7 +117,7 @@ export function AgentSessionPanel({
   const runAgentAnalysis = useAgentStore((s) => s.runAgentAnalysis);
   const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
 
-  const instruments = useMarketStore((s) => s.state?.instruments ?? []);
+  const instruments = useMarketStore((s) => s.state?.instruments) ?? [];
 
   const busy = agentBusyKey !== null;
   const sessionLoading = agentSessionLoadingKey !== null;

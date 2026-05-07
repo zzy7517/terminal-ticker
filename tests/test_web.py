@@ -814,11 +814,11 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("当前行情上下文", prompt)
         self.assertNotIn('"candles"', prompt)
         self.assertIn("alpaca:AAPL", prompt)
-        self.assertIn("get_market_context", prompt)
+        self.assertIn("get_candles", prompt)
         self.assertTrue(provider.tools)
         tool_names = {tool["function"]["name"] for tool in provider.tools}
-        self.assertIn("get_market_context", tool_names)
-        self.assertIn("get_multi_market_context", tool_names)
+        self.assertIn("get_candles", tool_names)
+        self.assertIn("get_quote", tool_names)
         user_messages = [message for message in provider.messages if message["role"] == "user"]
         self.assertEqual(len(user_messages), 1)
         self.assertEqual(user_messages[0]["content"], prompt)

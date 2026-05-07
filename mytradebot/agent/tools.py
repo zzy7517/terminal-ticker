@@ -292,48 +292,6 @@ def build_market_tools(
         handler=list_instruments,
     ))
 
-    async def get_market_context(
-        instrument_key: str,
-        max_candles: int = 40,
-    ) -> str:
-        """获取指定标的的完整行情上下文。"""
-        candidate_error = _candidate_error(instrument_key)
-        if candidate_error:
-            return _json_output({"error": candidate_error})
-        getter = getattr(context_provider, "get_market_context", None)
-        if not callable(getter):
-            return _json_output({"error": "market context provider does not support get_market_context"})
-        context = getter(instrument_key, max_candles=max_candles)
-        if not context:
-            return _json_output({"error": f"No market context available for {instrument_key}"})
-        return _json_output(context)
-
-    registry.register(ToolDefinition(
-        name="get_market_context",
-        description=(
-            "按标的读取完整行情上下文，包括报价、主周期 K 线和多周期 K 线。"
-            "凡是涉及实时价格、K 线、交易计划或标的对比，必须先调用本工具或 get_multi_market_context。"
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "instrument_key": {
-                    "type": "string",
-                    "description": "标的唯一标识，优先使用 list_instruments 返回的 key",
-                },
-                "max_candles": {
-                    "type": "integer",
-                    "description": "每个周期最多返回的 K 线数量，默认 40，范围 1-100",
-                    "default": 40,
-                    "minimum": 1,
-                    "maximum": 100,
-                },
-            },
-            "required": ["instrument_key"],
-        },
-        handler=get_market_context,
-    ))
-
     async def get_multi_market_context(
         instrument_keys: list[str],
         max_candles: int = 25,

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useShallow } from 'zustand/shallow';
 import type { MarketState } from '../types';
 import { connectStateSocket, fetchState, loadOlderCandles, saveInstrumentAnalysisInterval } from '../api';
 import { orderedGroups } from '../utils';
@@ -113,17 +114,17 @@ export const useMarketStore = create<MarketStoreState>((set, get) => ({
 }));
 
 export function useGroups() {
-  return useMarketStore((s) => orderedGroups(s.state));
+  return useMarketStore(useShallow((s) => orderedGroups(s.state)));
 }
 
 export function useSelectedInstrument() {
-  const state = useMarketStore((s) => s.state);
+  const instruments = useMarketStore((s) => s.state?.instruments);
   const selectedKey = useUiStore((s) => s.selectedKey);
-  return state?.instruments.find((i) => i.key === selectedKey);
+  return instruments?.find((i) => i.key === selectedKey);
 }
 
 export function useSelectedQuote() {
-  const state = useMarketStore((s) => s.state);
+  const quotes = useMarketStore((s) => s.state?.quotes);
   const selectedKey = useUiStore((s) => s.selectedKey);
-  return selectedKey ? state?.quotes[selectedKey] : undefined;
+  return selectedKey && quotes ? quotes[selectedKey] : undefined;
 }

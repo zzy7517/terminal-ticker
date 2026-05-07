@@ -34,7 +34,6 @@ def build_market_context(
         primary_interval=interval,
         max_candles=capped,
     )
-    candles = tuple(quote.candles[-capped:])
     return {
         "instrument": {
             "key": instrument.key,
@@ -62,7 +61,6 @@ def build_market_context(
             "primaryInterval": interval,
             "availableIntervals": [item["interval"] for item in timeframes],
         },
-        "candles": [short_candle(candle) for candle in candles],
         "timeframes": timeframes,
     }
 

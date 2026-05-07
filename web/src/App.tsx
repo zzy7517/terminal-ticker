@@ -43,27 +43,27 @@ export default function App() {
     return useAgentStore.getState().initSessions();
   }, []);
 
-  // Auto-select first group/key when state arrives.
-  const selectedKey = useUiStore((s) => s.selectedKey);
-  const activeGroup = useUiStore((s) => s.activeGroup);
+  // Auto-select first group/key when instruments change.
+  const instrumentsSig = state?.instruments.map((i) => i.key).join(',') ?? '';
   useEffect(() => {
     if (!state) return;
+    const ui = useUiStore.getState();
     const groups = orderedGroups(state);
-    if (!activeGroup || !state.groups[activeGroup]) {
-      useUiStore.getState().setActiveGroup(groups[0] ?? null);
+    if (!ui.activeGroup || !state.groups[ui.activeGroup]) {
+      ui.setActiveGroup(groups[0] ?? null);
     }
-    if (!selectedKey || !state.quotes[selectedKey]) {
+    if (!ui.selectedKey || !state.quotes[ui.selectedKey]) {
       const firstKey = groups.flatMap((group) => state.groups[group] ?? [])[0];
-      useUiStore.getState().setSelectedKey(firstKey ?? null);
+      ui.setSelectedKey(firstKey ?? null);
     }
-  }, [activeGroup, selectedKey, state]);
+  }, [instrumentsSig]);
 
   // Filter agent candidate keys when instruments change.
   useEffect(() => {
     if (!state) return;
     const validKeys = state.instruments.map((i) => i.key);
     useAgentStore.getState().filterCandidateKeys(validKeys);
-  }, [state]);
+  }, [instrumentsSig]);
 
   // Sync agent provider/model with profile changes.
   const profilesSig = state?.config.agent.providerProfiles
