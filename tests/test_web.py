@@ -959,7 +959,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.json()["models"][0]["slug"], "gpt-5.4-mini")
 
     def test_agent_config_endpoint_persists_settings(self) -> None:
-        """Verify browser can save agent provider and shared settings."""
+        """Verify browser can save agent provider and shared settings (in-memory)."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "watchlist.toml"
             config_path.write_text(
@@ -997,16 +997,14 @@ class WebTests(unittest.TestCase):
                     },
                 )
 
-            persisted = load_config(config_path)
-
         self.assertEqual(provider_response.status_code, 200)
         self.assertEqual(shared_response.status_code, 200)
-        self.assertFalse(shared_response.json()["state"]["config"]["agent"]["enabled"])
-        self.assertEqual(persisted.agent.model, "gpt-5.4")
-        self.assertEqual(persisted.agent.max_candles, 30)
-        self.assertEqual(
-            persisted.agent.provider_profiles["codex"].model, "gpt-5.4",
-        )
+        shared_state = shared_response.json()["state"]["config"]["agent"]
+        self.assertFalse(shared_state["enabled"])
+        self.assertEqual(shared_state["maxCandles"], 30)
+        provider_state = shared_state["providerProfiles"]["codex"]
+        self.assertTrue(provider_state["enabled"])
+        self.assertEqual(provider_state["model"], "gpt-5.4")
 
     def test_analysis_config_endpoint_persists_interval(self) -> None:
         """Verify browser can switch K-line intervals through the runtime."""
@@ -1033,11 +1031,8 @@ class WebTests(unittest.TestCase):
             with TestClient(app) as client:
                 response = client.post("/api/analysis/config", json={"interval": "15m"})
 
-            persisted = load_config(config_path)
-
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["state"]["config"]["analysis"]["interval"], "15m")
-        self.assertEqual(persisted.analysis.interval, "15m")
 
     def test_instrument_interval_endpoint_only_updates_selected_symbol(self) -> None:
         """Verify browser can switch the selected symbol's K-line interval."""

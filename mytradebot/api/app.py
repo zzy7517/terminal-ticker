@@ -430,6 +430,8 @@ class MarketRuntime:
         self.social_feed_service: SocialFeedService | None = None
         if config.social_feed.enabled:
             self.social_feed_service = self._create_social_feed_service(config.social_feed)
+        self._flush_handle: asyncio.TimerHandle | None = None
+        self._flush_delay: float = 2.0
         self.news_service: NewsService | None = None
         self.news_analyst = None  # type: ignore[var-annotated]  # NewsAnalyst | None, lazy import below
         if config.news.enabled:
@@ -794,29 +796,23 @@ class MarketRuntime:
         }
 
     async def update_agent_config(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """说明：持久化 Agent 配置并重新加载运行时。"""
-        source_path = self._require_source_path()
+        """说明：内存更新 Agent 共享配置，异步落盘。"""
+        self._require_source_path()
         try:
             next_config = _agent_config_from_payload(self.config.agent, payload)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        changed = await asyncio.to_thread(
-            update_agent_config_in_watchlist,
-            source_path,
-            next_config,
-        )
+        self.config = replace(self.config, agent=next_config)
         self.agent_analyses = {}
-        if changed:
-            await self.reload_from_source()
-        else:
-            await self.broadcast()
-        return {"changed": changed, "state": self.snapshot()}
+        self._schedule_flush()
+        await self.broadcast()
+        return {"changed": True, "state": self.snapshot()}
 
     async def update_provider_profile(
         self, provider_name: str, payload: dict[str, Any],
     ) -> dict[str, Any]:
-        """说明：更新单个 provider profile 并持久化。"""
-        source_path = self._require_source_path()
+        """说明：内存更新单个 provider profile，异步落盘。"""
+        self._require_source_path()
         if provider_name not in SUPPORTED_AGENT_PROVIDERS:
             raise HTTPException(status_code=400, detail=f"Unknown provider: {provider_name}")
         current = self.config.agent
@@ -840,69 +836,50 @@ class MarketRuntime:
             use_tools=current.use_tools,
             provider_profiles=profiles,
         )
-        changed = await asyncio.to_thread(
-            update_agent_config_in_watchlist, source_path, next_config,
-        )
+        self.config = replace(self.config, agent=next_config)
         self.agent_analyses = {}
-        if changed:
-            await self.reload_from_source()
-        else:
-            await self.broadcast()
-        return {"changed": changed, "state": self.snapshot()}
+        self._schedule_flush()
+        await self.broadcast()
+        return {"changed": True, "state": self.snapshot()}
 
     async def update_analysis_config(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """说明：持久化 K 线配置并重新加载运行时。"""
-        source_path = self._require_source_path()
+        """说明：内存更新 K 线配置，异步落盘。"""
+        self._require_source_path()
         try:
             next_config = _analysis_config_from_payload(self.config.analysis, payload)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        changed = await asyncio.to_thread(
-            update_analysis_config_in_watchlist,
-            source_path,
-            next_config,
-        )
+        self.config = replace(self.config, analysis=next_config)
         self.agent_analyses = {}
-        if changed:
-            await self.reload_from_source()
-        else:
-            await self.broadcast()
-        return {"changed": changed, "state": self.snapshot()}
+        self._schedule_flush()
+        await self.broadcast()
+        return {"changed": True, "state": self.snapshot()}
 
     async def update_news_config(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """说明：持久化 news 配置并按需启停 NewsService。"""
-        source_path = self._require_source_path()
+        """说明：内存更新 news 配置，异步落盘。"""
+        self._require_source_path()
         try:
             next_config = _news_config_from_payload(self.config.news, payload)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        changed = await asyncio.to_thread(
-            update_news_config_in_watchlist,
-            source_path,
-            next_config,
-        )
-        # 替换内存 config.news（保持其他字段）。
         self.config = replace(self.config, news=next_config)
         await self._apply_news_service_state(next_config)
+        self._schedule_flush()
         await self.broadcast()
-        return {"changed": changed, "state": self.snapshot()}
+        return {"changed": True, "state": self.snapshot()}
 
     async def update_social_feed_config(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """说明：持久化 social_feed 配置并按需启停 SocialFeedService。"""
-        source_path = self._require_source_path()
+        """说明：内存更新 social_feed 配置，异步落盘。"""
+        self._require_source_path()
         try:
             next_config = _social_feed_config_from_payload(self.config.social_feed, payload)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        changed = await asyncio.to_thread(
-            update_social_feed_config_in_watchlist,
-            source_path,
-            next_config,
-        )
         self.config = replace(self.config, social_feed=next_config)
         self._apply_social_feed_service_state(next_config)
+        self._schedule_flush()
         await self.broadcast()
-        return {"changed": changed, "state": self.snapshot()}
+        return {"changed": True, "state": self.snapshot()}
 
     def _apply_social_feed_service_state(self, next_config: SocialFeedConfig) -> None:
         """说明：根据新配置启停或重建 SocialFeedService。"""
@@ -1420,6 +1397,38 @@ class MarketRuntime:
             self.agent_analyses.pop(instrument.key, None)
         await self.broadcast()
         return {"added": added, "state": self.snapshot()}
+
+    def _schedule_flush(self) -> None:
+        """说明：debounce 式调度配置落盘，多次调用只触发最后一次。"""
+        if self._flush_handle is not None:
+            self._flush_handle.cancel()
+        loop = asyncio.get_event_loop()
+        self._flush_handle = loop.call_later(
+            self._flush_delay,
+            lambda: asyncio.ensure_future(self._flush_to_disk()),
+        )
+
+    async def _flush_to_disk(self) -> None:
+        """说明：将内存中的配置异步写入 watchlist 文件。"""
+        self._flush_handle = None
+        source_path = self.config.source_path
+        if source_path is None:
+            return
+        try:
+            await asyncio.to_thread(
+                update_agent_config_in_watchlist, source_path, self.config.agent,
+            )
+            await asyncio.to_thread(
+                update_analysis_config_in_watchlist, source_path, self.config.analysis,
+            )
+            await asyncio.to_thread(
+                update_news_config_in_watchlist, source_path, self.config.news,
+            )
+            await asyncio.to_thread(
+                update_social_feed_config_in_watchlist, source_path, self.config.social_feed,
+            )
+        except Exception:
+            LOGGER.warning("Config flush to disk failed", exc_info=True)
 
     async def reload_from_source(self, *, clear_candle_keys: set[str] | None = None) -> None:
         """说明：重新读取 watchlist 配置并重启 feed controller。"""
