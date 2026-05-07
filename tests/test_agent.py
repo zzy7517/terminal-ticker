@@ -147,8 +147,8 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(response.tool_calls[0].name, "get_quote")
         self.assertEqual(response.tool_calls[0].arguments, {"instrument_key": "alpaca:AAPL"})
 
-    def test_codex_history_keeps_function_calls_as_top_level_items(self) -> None:
-        """Verify replayed tool-call history uses Responses input item shape."""
+    def test_codex_history_replays_tool_calls_as_text_context(self) -> None:
+        """Verify replayed tool calls avoid rejected Responses function_call input items."""
         messages = [
             {"role": "system", "content": "system prompt"},
             {"role": "user", "content": "Check BTC."},
@@ -176,18 +176,16 @@ class AgentTests(unittest.TestCase):
         codex_input = _messages_to_codex_input(messages)
 
         self.assertEqual(codex_input[0]["role"], "user")
-        self.assertEqual(codex_input[1]["type"], "function_call")
-        self.assertNotIn("id", codex_input[1])
-        self.assertEqual(codex_input[1]["call_id"], "call_1")
-        self.assertEqual(codex_input[1]["name"], "get_candles")
-        self.assertEqual(codex_input[2]["type"], "function_call_output")
-        assistant_content_types = [
+        self.assertEqual(codex_input[1]["role"], "assistant")
+        self.assertIn("Tool call requested: get_candles", codex_input[1]["content"][0]["text"])
+        self.assertEqual(codex_input[2]["role"], "user")
+        self.assertIn("Tool result for call_1", codex_input[2]["content"][0]["text"])
+        content_types = [
             part["type"]
             for item in codex_input
-            if item.get("role") == "assistant"
             for part in item.get("content", [])
         ]
-        self.assertNotIn("function_call", assistant_content_types)
+        self.assertNotIn("function_call", content_types)
 
     def test_get_candles_clamps_requested_count(self) -> None:
         """Verify candle tool never returns the whole history for zero or negative counts."""

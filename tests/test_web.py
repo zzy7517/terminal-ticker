@@ -25,6 +25,7 @@ from mytradebot.market_data.hyperliquid import HyperliquidInstrument
 from mytradebot.domain.quotes import QuoteState
 from mytradebot.domain.price_action import Candle
 from mytradebot.api.app import (
+    MarketContextProvider,
     PROJECT_ROOT,
     WEB_DIST,
     MarketRuntime,
@@ -823,6 +824,36 @@ class WebTests(unittest.TestCase):
         user_messages = [message for message in provider.messages if message["role"] == "user"]
         self.assertEqual(len(user_messages), 1)
         self.assertEqual(user_messages[0]["content"], prompt)
+
+    def test_market_context_provider_accepts_legacy_bitget_key(self) -> None:
+        """Verify agent tools can resolve older bitget:* instrument keys."""
+        instrument = BitgetInstrument(
+            "BTCUSDT",
+            "USDT-FUTURES",
+            "BTCUSDT",
+            "BTC",
+            "USDT",
+            "perp",
+        )
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+        quote = app.state.runtime.controller.quotes[instrument.key]
+        quote.apply_payload({"price": 81672.3})
+        quote.apply_candles(
+            candles=(Candle(instrument.key, 1776846000000, 81000, 82000, 80500, 81672.3, 12345),),
+        )
+
+        context_provider = MarketContextProvider(app.state.runtime)
+
+        self.assertIs(context_provider.get_quote("bitget:BTCUSDT:USDT-FUTURES"), quote)
+        self.assertEqual(
+            len(context_provider.get_candles("bitget:BTCUSDT:USDT-FUTURES")),
+            1,
+        )
 
     def test_agent_loop_error_is_reported_without_json_parse_masking(self) -> None:
         """Verify provider errors are surfaced instead of being replaced by JSON parse errors."""

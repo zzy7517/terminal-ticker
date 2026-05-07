@@ -352,7 +352,7 @@ class MarketContextProvider:
         self._runtime = runtime
 
     def get_quote(self, instrument_key: str) -> QuoteState | None:
-        return self._runtime.controller.quotes.get(instrument_key)
+        return self._runtime.controller.quotes.get(self._resolve_instrument_key(instrument_key))
 
     def get_candles(
         self,
@@ -360,17 +360,29 @@ class MarketContextProvider:
         *,
         interval: str | None = None,
     ) -> tuple[Candle, ...]:
-        quote = self.get_quote(instrument_key)
+        resolved_key = self._resolve_instrument_key(instrument_key)
+        quote = self._runtime.controller.quotes.get(resolved_key)
         if quote is None:
             return tuple()
         if interval:
             return tuple(quote.multi_timeframe_candles.get(interval, tuple()))
-        instrument = self._runtime._instrument_by_key(instrument_key)
+        instrument = self._runtime._instrument_by_key(resolved_key)
         current_interval = instrument.analysis_interval or self._runtime.config.analysis.interval
         return tuple(quote.multi_timeframe_candles.get(current_interval, quote.candles))
 
     def list_instruments(self) -> tuple[MarketInstrument, ...]:
         return self._runtime.instruments
+
+    def _resolve_instrument_key(self, instrument_key: str) -> str:
+        """兼容模型可能传入的旧式 Bitget key，例如 bitget:BTCUSDT:USDT-FUTURES。"""
+        if instrument_key in self._runtime.controller.quotes:
+            return instrument_key
+        parts = [part.strip() for part in instrument_key.split(":") if part.strip()]
+        if len(parts) == 3 and parts[0].lower() == BITGET_SOURCE:
+            candidate = f"{parts[2].upper()}:{parts[1].upper()}"
+            if candidate in self._runtime.controller.quotes:
+                return candidate
+        return instrument_key
 
 
 class MarketRuntime:

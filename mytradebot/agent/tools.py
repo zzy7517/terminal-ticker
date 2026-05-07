@@ -202,7 +202,7 @@ def build_market_tools(context_provider: Any) -> ToolRegistry:
             "properties": {
                 "instrument_key": {
                     "type": "string",
-                    "description": "标的唯一标识，如 bitget:BTCUSDT:USDT-FUTURES 或 alpaca:AAPL",
+                    "description": "标的唯一标识，优先使用 list_instruments 返回的 key，如 USDT-FUTURES:BTCUSDT 或 alpaca:AAPL",
                 },
             },
             "required": ["instrument_key"],

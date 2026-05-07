@@ -571,23 +571,14 @@ def _messages_to_codex_input(messages: list[dict[str, Any]]) -> list[dict[str, A
             content_text = msg.get("content", "")
             tool_calls = msg.get("tool_calls")
             if tool_calls:
+                rendered = _render_tool_calls_for_replay(tool_calls)
                 if content_text:
+                    rendered = f"{content_text}\n\n{rendered}" if rendered else content_text
+                if rendered:
                     codex_input.append({
                         "role": "assistant",
-                        "content": [{"type": "output_text", "text": content_text}],
+                        "content": [{"type": "output_text", "text": rendered}],
                     })
-                for tc in tool_calls:
-                    func = tc.get("function", {})
-                    item = {
-                        "type": "function_call",
-                        "call_id": tc.get("id", ""),
-                        "name": func.get("name", ""),
-                        "arguments": func.get("arguments", "{}"),
-                    }
-                    item_id = tc.get("id")
-                    if isinstance(item_id, str) and item_id.startswith("fc"):
-                        item["id"] = item_id
-                    codex_input.append(item)
             else:
                 codex_input.append({
                     "role": "assistant",
@@ -595,11 +586,36 @@ def _messages_to_codex_input(messages: list[dict[str, Any]]) -> list[dict[str, A
                 })
         elif role == "tool":
             codex_input.append({
-                "type": "function_call_output",
-                "call_id": msg.get("tool_call_id", ""),
-                "output": msg.get("content", ""),
+                "role": "user",
+                "content": [{
+                    "type": "input_text",
+                    "text": (
+                        f"Tool result for {msg.get('tool_call_id', '')}:\n"
+                        f"{msg.get('content', '')}"
+                    ),
+                }],
             })
     return codex_input
+
+
+def _render_tool_calls_for_replay(tool_calls: Any) -> str:
+    """把历史工具调用转成普通文本，避免 Codex 拒绝 replay function_call item。"""
+    if not isinstance(tool_calls, list):
+        return ""
+    lines: list[str] = []
+    for raw_call in tool_calls:
+        if not isinstance(raw_call, dict):
+            continue
+        func = raw_call.get("function")
+        if not isinstance(func, dict):
+            continue
+        name = str(func.get("name") or "").strip()
+        arguments = func.get("arguments", "{}")
+        if not name:
+            continue
+        lines.append(f"Tool call requested: {name}")
+        lines.append(f"Arguments: {arguments}")
+    return "\n".join(lines)
 
 
 async def _collect_response_stream_full(response: httpx.Response) -> ChatResponse:
