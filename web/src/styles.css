@@ -1084,8 +1084,12 @@ textarea:focus-visible {
   transition: background 100ms;
 }
 
-.session-history-row:hover {
-  background: var(--accent-tint);
+.session-history-row:not(.active):hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+:root[data-theme="dark"] .session-history-row:not(.active):hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .session-history-row.active {

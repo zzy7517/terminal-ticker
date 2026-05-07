@@ -49,7 +49,7 @@ export function AgentSessionHistoryList() {
           </div>
         )}
         {!loading && visibleHistory.map((item) => {
-          const isActive = item.id === activeSessionId || item.active;
+          const isActive = item.id === activeSessionId;
           const deleteKey = `delete:${item.id}`;
           const title = item.preview || item.title || item.id;
           return (
