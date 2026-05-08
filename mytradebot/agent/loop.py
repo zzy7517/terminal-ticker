@@ -189,7 +189,7 @@ class AgentLoop:
                             "message": {
                                 "clientId": assistant_client_id,
                                 "role": "assistant",
-                                "content": "".join(streamed_parts),
+                                "content": "",
                                 "metadata": None,
                                 "error": None,
                             },

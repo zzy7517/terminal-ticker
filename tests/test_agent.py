@@ -10,8 +10,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from mytradebot.agent import (
+    AgentLoop,
     AgentSessionStore,
+    ChatResponse,
     ToolCall,
+    ToolRegistry,
     build_market_tools,
     _codex_request_headers,
     _read_codex_cli_credentials,
@@ -119,6 +122,31 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(response.tool_calls[0].id, "call_1")
         self.assertEqual(response.tool_calls[0].name, "get_quote")
         self.assertEqual(response.tool_calls[0].arguments, {"instrument_key": "alpaca:AAPL"})
+
+    def test_agent_loop_stream_updates_send_delta_only(self) -> None:
+        """Verify live message updates carry deltas while final messages carry full text."""
+        class StreamingProvider:
+            name = "codex"
+            model = "streaming"
+
+            async def chat(self, messages, tools=None, on_delta=None):
+                await on_delta("Hello")
+                await on_delta(" world\n")
+                return ChatResponse(content="Hello world\n")
+
+        events = []
+        loop = AgentLoop(provider=StreamingProvider(), tools=ToolRegistry())
+
+        async def run_loop():
+            await loop.run("Say hello", event_handler=lambda event: events.append(event))
+
+        asyncio.run(run_loop())
+
+        updates = [event for event in events if event["type"] == "message_update"]
+        self.assertEqual([event["delta"] for event in updates], ["Hello", " world\n"])
+        self.assertEqual([event["message"]["content"] for event in updates], ["", ""])
+        final_message = next(event for event in events if event["type"] == "message_end")["message"]
+        self.assertEqual(final_message["content"], "Hello world\n")
 
     def test_codex_tools_payload_replaces_local_web_search_with_hosted_tool(self) -> None:
         """Verify Codex uses the native hosted web_search tool instead of the local wrapper."""
