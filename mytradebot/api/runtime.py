@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import suppress
 from dataclasses import replace
@@ -47,6 +49,7 @@ from ..market_data.alpaca import search_assets as search_alpaca_assets
 from ..market_data.bitget import search_instruments as search_bitget_instruments
 from ..market_data.hyperliquid import search_instruments as search_hyperliquid_instruments
 from ..market_data.router import MarketInstrument, resolve_instruments
+from ..memory import MemoryPipeline, MemoryRuntimePolicy, parse_memory_citations
 from ..news import NewsService, NewsStore
 from ..news.providers.reuters import ReutersSitemapProvider
 from ..runtime.controller import TickerController
@@ -99,6 +102,17 @@ from .serializers import (
 
 LOGGER = logging.getLogger(__name__)
 OLDER_CANDLE_SOURCES = {ALPACA_SOURCE, BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
+MANUAL_MEMORY_TRIGGERS = (
+    "帮我记住",
+    "请记住",
+    "记住:",
+    "记住：",
+    "remember this",
+    "please remember",
+    "save this to memory",
+    "add this to memory",
+)
+MANUAL_MEMORY_NEGATIONS = ("不要记住", "别记住", "do not remember", "don't remember")
 
 
 class MarketContextProvider:
@@ -196,6 +210,12 @@ class MarketRuntime:
             self.social_feed_service = self._create_social_feed_service(config.social_feed)
         self._flush_handle: asyncio.TimerHandle | None = None
         self._flush_delay: float = 2.0
+        self.memory_policy = _memory_policy_from_config(config)
+        self.memory_pipeline: MemoryPipeline | None = None
+        if self.memory_policy.generate_memories:
+            self.memory_pipeline = self._create_memory_pipeline()
+        else:
+            self.memory_pipeline = None
         self.news_service: NewsService | None = None
         if config.news.enabled:
             news_store = NewsStore()
@@ -212,6 +232,36 @@ class MarketRuntime:
                 recent_limit=config.news.recent_limit,
             )
 
+    def _create_memory_pipeline(self) -> MemoryPipeline | None:
+        """说明：按当前运行策略创建写入流水线；失败时降级为不可用。"""
+        try:
+            return MemoryPipeline(
+                agent_session_store=self.agent_session_store,
+                trade_store=self.trade_store,
+                agent_config_provider=lambda: self.config.agent,
+                policy=self.memory_policy,
+            )
+        except OSError as exc:
+            # 记忆目录不可创建时降级为关闭，不影响主应用和测试环境。
+            LOGGER.warning("memory pipeline disabled: %s", exc)
+            return None
+
+    async def _apply_memory_config(self, config: AppConfig) -> None:
+        """说明：热加载配置时同步 memory 读写策略和后台流水线。"""
+        next_policy = _memory_policy_from_config(config)
+        if next_policy == self.memory_policy:
+            return
+        self.memory_policy = next_policy
+        if self.memory_pipeline is not None:
+            self.memory_pipeline.policy = next_policy
+        if not next_policy.generate_memories:
+            if self.memory_pipeline is not None:
+                await self.memory_pipeline.shutdown()
+            self.memory_pipeline = None
+            return
+        if self.memory_pipeline is None:
+            self.memory_pipeline = self._create_memory_pipeline()
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -223,6 +273,7 @@ class MarketRuntime:
         self.controller.start()
         self.pump_task = asyncio.create_task(self._pump())
         self.review_task = asyncio.create_task(self._run_review_loop())
+        self._kickoff_memory_pipeline_if_ready()
         if self.news_service is not None:
             await self.news_service.start()
 
@@ -241,6 +292,8 @@ class MarketRuntime:
             self.review_task = None
         if self.news_service is not None:
             await self.news_service.stop()
+        if self.memory_pipeline is not None:
+            await self.memory_pipeline.shutdown()
         self.controller.stop()
         for websocket in tuple(self.clients):
             with suppress(Exception):
@@ -250,6 +303,34 @@ class MarketRuntime:
     # ------------------------------------------------------------------
     # Snapshot & broadcast
     # ------------------------------------------------------------------
+
+    async def create_memory_note(self, payload: dict[str, Any] | None) -> dict[str, Any]:
+        """说明：把显式手动记忆请求写入 memory pipeline。"""
+        if not self.memory_policy.generate_memories:
+            raise HTTPException(status_code=409, detail="memory generation is disabled")
+        if self.memory_pipeline is None:
+            raise HTTPException(status_code=503, detail="memory pipeline is unavailable")
+        source = dict(payload or {})
+        raw_text = source.get("text", source.get("note", source.get("message")))
+        text = str(raw_text or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="text is required")
+        note_id = str(source.get("id") or source.get("noteId") or f"manual-{uuid.uuid4().hex[:12]}")
+        note_key = await self.memory_pipeline.enqueue_manual_note(
+            note_id=note_id,
+            payload={
+                "text": text,
+                "source": str(source.get("source") or "api"),
+                "createdAt": utc_now_iso(),
+                "metadata": {
+                    key: value
+                    for key, value in source.items()
+                    if key not in {"id", "noteId", "text", "note", "message", "source"}
+                },
+            },
+        )
+        self._kickoff_memory_pipeline_if_ready()
+        return {"ok": True, "noteId": note_key, "queued": True}
 
     def snapshot(self) -> dict[str, Any]:
         open_trades = [
@@ -999,6 +1080,7 @@ class MarketRuntime:
         )
         user_prompt = normalize_agent_prompt(prompt, DEFAULT_AGENT_USER_PROMPT)
         await session_runtime.append_user_message(user_prompt)
+        await self._capture_manual_memory_request(user_prompt, session_id=session_runtime.session.id)
         history = await session_runtime.history_for_context(limit=8)
         return await self._run_agent_loop(
             session_runtime=session_runtime,
@@ -1019,6 +1101,7 @@ class MarketRuntime:
         session_runtime = await self._session_runtime_by_id(session_id, agent_cfg)
         user_prompt = normalize_agent_prompt(str(message) if message is not None else None, DEFAULT_AGENT_USER_PROMPT)
         await session_runtime.append_user_message(user_prompt)
+        await self._capture_manual_memory_request(user_prompt, session_id=session_runtime.session.id)
         history = await session_runtime.history_for_context(limit=8)
         return await self._run_agent_loop(
             session_runtime=session_runtime,
@@ -1049,6 +1132,9 @@ class MarketRuntime:
                 snapshot_provider=lambda key: self._trading_snapshot_payload(key),
                 news_service=self.news_service,
                 social_feed_service=self.social_feed_service,
+                memory_policy=self.memory_pipeline.policy
+                if self.memory_pipeline is not None
+                else self.memory_policy,
                 runtime_services=session_runtime.runtime_services,
             ),
         )
@@ -1060,6 +1146,9 @@ class MarketRuntime:
             event_handler=event_handler,
         )
         payload = turn_result.to_payload()
+        self._record_memory_citations_from_messages(
+            [message.to_payload() for message in turn_result.loop_result.messages]
+        )
         await session_runtime.append_transcript_messages(
             [message.to_payload() for message in turn_result.loop_result.messages],
             context=turn_result.context if turn_result.context else None,
@@ -1151,6 +1240,7 @@ class MarketRuntime:
                 DEFAULT_AGENT_USER_PROMPT,
             )
             user_message = await session_runtime.append_user_message(user_prompt)
+            await self._capture_manual_memory_request(user_prompt, session_id=session_runtime.session.id)
             await emit({"type": "message_end", "message": user_message})
             history = await session_runtime.history_for_context(limit=8)
             await self._run_agent_loop(
@@ -1249,6 +1339,52 @@ class MarketRuntime:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _capture_manual_memory_request(self, user_prompt: str, *, session_id: str) -> None:
+        if (
+            self.memory_pipeline is None
+            or not self.memory_policy.generate_memories
+            or not _looks_like_manual_memory_request(user_prompt)
+        ):
+            return
+        digest = hashlib.sha1(user_prompt.encode("utf-8")).hexdigest()[:12]
+        note_id = f"agent-{session_id[:12]}-{digest}"
+        with suppress(Exception):
+            await self.memory_pipeline.enqueue_manual_note(
+                note_id=note_id,
+                payload={
+                    "text": user_prompt,
+                    "source": "agent_session",
+                    "sessionId": session_id,
+                    "createdAt": utc_now_iso(),
+                },
+            )
+            self._kickoff_memory_pipeline_if_ready()
+
+    def _kickoff_memory_pipeline_if_ready(self) -> None:
+        if (
+            self.memory_pipeline is None
+            or not self.memory_policy.generate_memories
+            or not self.config.agent.enabled
+        ):
+            return
+        self.memory_pipeline.kickoff_startup()
+
+    def _record_memory_citations_from_messages(self, messages: list[dict[str, Any]]) -> None:
+        if self.memory_pipeline is None or not self.memory_policy.generate_memories:
+            return
+        for message in messages:
+            if str(message.get("role") or "") != "assistant":
+                continue
+            citations = parse_memory_citations(str(message.get("content") or ""))
+            if citations is None:
+                continue
+            for entry in citations.entries:
+                with suppress(Exception):
+                    self.memory_pipeline.state_store.record_usage(
+                        file_path=entry.file_path,
+                        usage_kind="citation",
+                    )
 
     def _create_social_feed_service(self, config: SocialFeedConfig) -> SocialFeedService:
         from ..social_feed.providers import XInternalClient
@@ -1466,6 +1602,7 @@ class MarketRuntime:
         previous_quotes = self.controller.quotes
         self.controller.stop()
         self.config = config
+        await self._apply_memory_config(config)
         self.instruments = instruments
         self.controller = self.controller_factory(config=config, instruments=instruments)
         active_keys = {instrument.key for instrument in instruments}
@@ -1480,6 +1617,7 @@ class MarketRuntime:
         }
         if self.running:
             self.controller.start()
+            self._kickoff_memory_pipeline_if_ready()
         await self.broadcast()
 
     async def _pump(self) -> None:
@@ -1600,3 +1738,23 @@ def _request_int(value: Any, *, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _memory_policy_from_config(config: AppConfig) -> MemoryRuntimePolicy:
+    """说明：把用户配置转换成本轮 runtime 的 memory 读写策略。"""
+    memory = config.memory
+    if not memory.enabled:
+        return MemoryRuntimePolicy.disabled()
+    return MemoryRuntimePolicy(
+        generate_memories=memory.generate_memories,
+        use_memories=memory.use_memories,
+    )
+
+
+def _looks_like_manual_memory_request(text: str) -> bool:
+    compact = " ".join(text.strip().split()).lower()
+    if not compact:
+        return False
+    if any(term in compact for term in MANUAL_MEMORY_NEGATIONS):
+        return False
+    return any(term in compact for term in MANUAL_MEMORY_TRIGGERS)

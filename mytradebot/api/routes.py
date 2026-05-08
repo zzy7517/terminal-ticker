@@ -78,6 +78,12 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
     async def update_agent_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         return await runtime.update_agent_config(payload)
 
+    # -- Memory --
+
+    @app.post("/api/memory/notes")
+    async def create_memory_note_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+        return await runtime.create_memory_note(payload)
+
     # -- Agent sessions --
 
     @app.get("/api/agent/sessions")

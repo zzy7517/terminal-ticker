@@ -6,8 +6,12 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from ..config import AgentConfig
+from ..memory.policy import MemoryRuntimePolicy
+from ..memory.paths import memory_store_available
+from ..memory.read.prompts import build_memory_developer_instructions
+from ..memory.tools import build_memory_tools
 from ..trading import TradeStore
-from .loop import AgentEventHandler, AgentLLMProvider, LoopResult
+from .loop import DEFAULT_SYSTEM_PROMPT, AgentEventHandler, AgentLLMProvider, LoopResult
 from .runtime import AgentRuntime, AgentRuntimeServices, ToolPack
 from .tools import (
     build_market_tools,
@@ -27,6 +31,7 @@ class TradingAgentRuntimeServices:
     snapshot_provider: Callable[[str], dict[str, Any]]
     news_service: Any = None
     social_feed_service: Any = None
+    memory_policy: MemoryRuntimePolicy = field(default_factory=MemoryRuntimePolicy.normal)
     runtime_services: AgentRuntimeServices = field(default_factory=AgentRuntimeServices)
 
 
@@ -79,6 +84,7 @@ class TradingAgentRuntime:
             provider=self.provider,
             tool_packs=self._tool_packs(session_id, candidate_instrument_keys=candidate_instrument_keys),
             services=self.services.runtime_services,
+            system_prompt=self._build_system_prompt(),
         )
         loop_result = await runtime.run(
             user_message=self._build_prompt(
@@ -123,7 +129,20 @@ class TradingAgentRuntime:
             ToolPack("news", lambda: build_news_tools(services.news_service)),
             ToolPack("social-feed", lambda: build_social_feed_tools(services.social_feed_service)),
             ToolPack("web", build_web_tools),
+            ToolPack(
+                "memory",
+                build_memory_tools,
+                enabled=services.memory_policy.use_memories and memory_store_available(),
+            ),
         )
+
+    def _build_system_prompt(self) -> str | None:
+        if not self.services.memory_policy.use_memories:
+            return None
+        memory_instructions = build_memory_developer_instructions()
+        if not memory_instructions:
+            return None
+        return f"{DEFAULT_SYSTEM_PROMPT}\n\n{memory_instructions}"
 
     def _build_prompt(
         self,
