@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type {
   AgentMessage,
   AgentModelOption,
+  AgentStreamEvent,
   AgentSessionResponse,
   AgentSessionRun,
   AgentSessionSummary,
@@ -184,6 +185,133 @@ function replaceRunState(
   return { ...map, [sessionId]: run };
 }
 
+const STREAM_COMMIT_TICK_MS = 8;
+const STREAM_CATCH_UP_QUEUE_DEPTH = 8;
+const STREAM_CATCH_UP_OLDEST_AGE_MS = 120;
+
+type StreamingRawMessage = Partial<AgentMessage> & {
+  clientId?: string;
+  role: AgentMessage['role'];
+  content?: string;
+};
+
+interface QueuedStreamChunk {
+  text: string;
+  enqueuedAt: number;
+}
+
+class StreamingMessageController {
+  readonly id: number;
+  readonly sessionId: string;
+  readonly createdAt: string;
+  readonly clientId: string;
+  role: AgentMessage['role'];
+  metadata: AgentMessage['metadata'];
+  error: string | null;
+  runId: string;
+  lastSeq: number;
+  private source = '';
+  private committedIndex = 0;
+  private visibleContent = '';
+  private queuedChunks: QueuedStreamChunk[] = [];
+
+  constructor(
+    raw: StreamingRawMessage,
+    fallback: { id: number; sessionId: string; createdAt: string },
+    envelope: Pick<AgentStreamEvent, 'runId' | 'seq'>,
+  ) {
+    this.id = typeof raw.id === 'number' ? raw.id : fallback.id;
+    this.sessionId = typeof raw.sessionId === 'string' ? raw.sessionId : fallback.sessionId;
+    this.createdAt = typeof raw.createdAt === 'string' ? raw.createdAt : fallback.createdAt;
+    this.clientId = raw.clientId ?? String(this.id);
+    this.role = raw.role;
+    this.metadata = raw.metadata ?? null;
+    this.error = raw.error ?? null;
+    this.runId = envelope.runId;
+    this.lastSeq = envelope.seq;
+  }
+
+  update(raw: StreamingRawMessage, envelope: Pick<AgentStreamEvent, 'runId' | 'seq'>) {
+    this.role = raw.role;
+    this.metadata = raw.metadata ?? this.metadata;
+    this.error = raw.error ?? this.error;
+    this.runId = envelope.runId;
+    this.lastSeq = envelope.seq;
+  }
+
+  pushDelta(delta: string | undefined, rawContent: string | undefined): boolean {
+    let incoming = delta ?? '';
+    if (!incoming && rawContent && rawContent.startsWith(this.source)) {
+      incoming = rawContent.slice(this.source.length);
+    }
+    if (!incoming) return false;
+
+    this.source += incoming;
+    if (!incoming.includes('\n')) return false;
+
+    const commitEnd = this.source.lastIndexOf('\n') + 1;
+    if (commitEnd <= this.committedIndex) return false;
+
+    this.enqueueSource(this.source.slice(this.committedIndex, commitEnd));
+    this.committedIndex = commitEnd;
+    return this.queuedChunks.length > 0;
+  }
+
+  drain(now: number, force = false): AgentMessage | null {
+    if (this.queuedChunks.length === 0) return null;
+    const oldestAge = now - this.queuedChunks[0].enqueuedAt;
+    const catchUp = force
+      || this.queuedChunks.length >= STREAM_CATCH_UP_QUEUE_DEPTH
+      || oldestAge >= STREAM_CATCH_UP_OLDEST_AGE_MS;
+    const count = catchUp ? this.queuedChunks.length : 1;
+    const drained = this.queuedChunks.splice(0, count).map((chunk) => chunk.text).join('');
+    if (!drained) return null;
+    this.visibleContent += drained;
+    return this.toMessage();
+  }
+
+  finalize(raw: StreamingRawMessage, envelope: Pick<AgentStreamEvent, 'runId' | 'seq'>): AgentMessage {
+    this.update(raw, envelope);
+    const finalContent = typeof raw.content === 'string' && (raw.content || !this.source)
+      ? raw.content
+      : this.source;
+    this.source = finalContent;
+    this.visibleContent = finalContent;
+    this.committedIndex = finalContent.length;
+    this.queuedChunks = [];
+    return this.toMessage();
+  }
+
+  hasQueuedChunks() {
+    return this.queuedChunks.length > 0;
+  }
+
+  toMessage(): AgentMessage {
+    return {
+      id: this.id,
+      sessionId: this.sessionId,
+      role: this.role,
+      content: this.visibleContent,
+      createdAt: this.createdAt,
+      metadata: this.metadata,
+      error: this.error,
+    };
+  }
+
+  private enqueueSource(source: string) {
+    const now = Date.now();
+    let start = 0;
+    for (let i = 0; i < source.length; i += 1) {
+      if (source[i] !== '\n') continue;
+      this.queuedChunks.push({ text: source.slice(start, i + 1), enqueuedAt: now });
+      start = i + 1;
+    }
+    if (start < source.length) {
+      this.queuedChunks.push({ text: source.slice(start), enqueuedAt: now });
+    }
+  }
+}
+
 export const useAgentStore = create<AgentState>((set, get) => ({
   agentSession: null,
   agentSessionHistory: [],
@@ -345,6 +473,65 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const { agentSession, agentPrompt, agentProvider, agentModel, agentCandidateKeys } = get();
     let targetSessionId = agentSession?.session?.id ?? null;
     const messageIds = new Map<string, number>();
+    const streamControllers = new Map<string, StreamingMessageController>();
+    let streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearStreamFlushTimer = () => {
+      if (streamFlushTimer !== null) {
+        clearTimeout(streamFlushTimer);
+        streamFlushTimer = null;
+      }
+    };
+
+    const resolveFallbackId = (raw: StreamingRawMessage) => {
+      const clientId = raw.clientId;
+      let fallbackId = typeof raw.id === 'number' ? raw.id : 0;
+      if (!fallbackId) {
+        if (clientId && messageIds.has(clientId)) {
+          fallbackId = messageIds.get(clientId) ?? 0;
+        } else {
+          fallbackId = -Date.now() - messageIds.size;
+          if (clientId) messageIds.set(clientId, fallbackId);
+        }
+      }
+      return fallbackId;
+    };
+
+    const flushStreamQueues = (force = false) => {
+      clearStreamFlushTimer();
+      const now = Date.now();
+      const drained = Array.from(streamControllers.values())
+        .map((controller) => ({ controller, message: controller.drain(now, force) }))
+        .filter((item): item is { controller: StreamingMessageController; message: AgentMessage } => item.message !== null);
+
+      if (drained.length > 0) {
+        set((s) => {
+          let agentSessionById = s.agentSessionById;
+          let runStateBySessionId = s.runStateBySessionId;
+          for (const { controller, message } of drained) {
+            agentSessionById = setSessionMessage({ ...s, agentSessionById }, controller.sessionId, message);
+            const previous = runStateBySessionId[controller.sessionId] ?? idleRun(controller.sessionId);
+            runStateBySessionId = replaceRunState(
+              runStateBySessionId,
+              controller.sessionId,
+              { ...previous, status: 'running', runId: controller.runId, lastSeq: controller.lastSeq },
+            );
+          }
+          const next = { ...s, agentSessionById, runStateBySessionId };
+          return { agentSessionById, runStateBySessionId, ...activeFields(next) };
+        });
+      }
+
+      if (Array.from(streamControllers.values()).some((controller) => controller.hasQueuedChunks())) {
+        streamFlushTimer = setTimeout(() => flushStreamQueues(), STREAM_COMMIT_TICK_MS);
+      }
+    };
+
+    const scheduleStreamFlush = () => {
+      if (streamFlushTimer !== null) return;
+      streamFlushTimer = setTimeout(() => flushStreamQueues(), STREAM_COMMIT_TICK_MS);
+    };
+
     try {
       if (!targetSessionId) {
         const created = await createAgentSession({ provider: agentProvider, model: agentModel });
@@ -440,16 +627,62 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           if (event.type === 'message_start' || event.type === 'message_update' || event.type === 'message_end') {
             const raw = event.message;
             const clientId = raw.clientId;
-            let fallbackId = typeof raw.id === 'number' ? raw.id : 0;
-            if (!fallbackId) {
-              if (clientId && messageIds.has(clientId)) {
-                fallbackId = messageIds.get(clientId) ?? 0;
-              } else {
-                fallbackId = -Date.now() - messageIds.size;
-                if (clientId) messageIds.set(clientId, fallbackId);
-              }
-            }
+            const fallbackId = resolveFallbackId(raw);
             const createdAt = new Date().toISOString();
+            if (raw.role === 'assistant' && clientId) {
+              let controller = streamControllers.get(clientId);
+              if (!controller) {
+                controller = new StreamingMessageController(
+                  raw,
+                  { id: fallbackId, sessionId, createdAt },
+                  { runId: envelope.runId, seq: envelope.seq },
+                );
+                streamControllers.set(clientId, controller);
+              } else {
+                controller.update(raw, { runId: envelope.runId, seq: envelope.seq });
+              }
+
+              if (event.type === 'message_update') {
+                if (controller.pushDelta(event.delta, raw.content)) {
+                  scheduleStreamFlush();
+                }
+                return;
+              }
+
+              if (event.type === 'message_end') {
+                const message = controller.finalize(raw, { runId: envelope.runId, seq: envelope.seq });
+                streamControllers.delete(clientId);
+                set((s) => {
+                  const agentSessionById = setSessionMessage(s, sessionId, message);
+                  const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+                  const runStateBySessionId = replaceRunState(
+                    s.runStateBySessionId,
+                    sessionId,
+                    { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
+                  );
+                  const next = { ...s, agentSessionById, runStateBySessionId };
+                  return { agentSessionById, runStateBySessionId, ...activeFields(next) };
+                });
+                if (!Array.from(streamControllers.values()).some((item) => item.hasQueuedChunks())) {
+                  clearStreamFlushTimer();
+                }
+                return;
+              }
+
+              set((s) => {
+                const message = controller.toMessage();
+                const agentSessionById = setSessionMessage(s, sessionId, message);
+                const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+                const runStateBySessionId = replaceRunState(
+                  s.runStateBySessionId,
+                  sessionId,
+                  { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
+                );
+                const next = { ...s, agentSessionById, runStateBySessionId };
+                return { agentSessionById, runStateBySessionId, ...activeFields(next) };
+              });
+              return;
+            }
             set((s) => {
               const message = streamMessageToAgentMessage(raw, { id: fallbackId, sessionId, createdAt });
               const agentSessionById = setSessionMessage(s, sessionId, message);
@@ -551,6 +784,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
       console.error(error);
     } finally {
+      clearStreamFlushTimer();
+      streamControllers.clear();
       if (targetSessionId) {
         const finishedSessionId = targetSessionId;
         set((s) => {
