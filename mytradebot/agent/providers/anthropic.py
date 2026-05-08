@@ -447,6 +447,7 @@ def _merge_anthropic_usage(target: dict[str, int], raw_usage: dict[str, Any]) ->
 
 
 def _anthropic_model_option(slug: str, *, context_window: int | None = None) -> dict[str, Any]:
+    resolved_context_window = context_window if context_window is not None else _infer_anthropic_context_window(slug)
     return {
         "slug": slug,
         "displayName": slug,
@@ -455,9 +456,18 @@ def _anthropic_model_option(slug: str, *, context_window: int | None = None) -> 
         "supportedInApi": True,
         "defaultReasoningEffort": "",
         "supportedReasoningEfforts": [],
-        "contextWindow": context_window,
+        "contextWindow": resolved_context_window,
         "preferWebsockets": False,
     }
+
+
+def _infer_anthropic_context_window(slug: str) -> int | None:
+    normalized = slug.lower()
+    if "claude-opus-4-6" in normalized or "claude-sonnet-4-6" in normalized:
+        return 1_000_000
+    if "claude" in normalized:
+        return 200_000
+    return None
 
 
 async def _fetch_anthropic_models(base_url: str) -> list[dict[str, Any]]:
@@ -478,7 +488,7 @@ async def _fetch_anthropic_models(base_url: str) -> list[dict[str, Any]]:
         if not slug:
             continue
         ctx = item.get("max_input_tokens")
-        context_window = ctx if isinstance(ctx, int) else None
+        context_window = ctx if isinstance(ctx, int) else _infer_anthropic_context_window(str(slug))
         display_name = item.get("display_name") or slug
         models.append({
             "slug": slug,

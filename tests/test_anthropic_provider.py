@@ -5,6 +5,7 @@ from unittest.mock import patch
 from mytradebot.agent.providers.anthropic import (
     DEFAULT_ANTHROPIC_BASE_URL,
     _anthropic_headers,
+    _anthropic_model_option,
     _messages_endpoint,
     _messages_to_anthropic,
     _parse_anthropic_response,
@@ -99,6 +100,14 @@ class AnthropicProviderTests(unittest.TestCase):
         self.assertEqual(response.tool_calls[0].arguments["instrument_key"], "alpaca:AAPL")
         self.assertEqual(response.usage["prompt_tokens"], 10)
         self.assertEqual(response.usage["completion_tokens"], 5)
+
+    def test_static_model_option_infers_context_window(self) -> None:
+        """Verify fallback model metadata still exposes a usable context window."""
+        opus = _anthropic_model_option("global.anthropic.claude-opus-4-6-v1")
+        sonnet = _anthropic_model_option("global.anthropic.claude-sonnet-4-5-v1")
+
+        self.assertEqual(opus["contextWindow"], 1_000_000)
+        self.assertEqual(sonnet["contextWindow"], 200_000)
 
 
 if __name__ == "__main__":

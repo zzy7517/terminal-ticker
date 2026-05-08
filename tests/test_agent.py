@@ -147,6 +147,86 @@ class AgentTests(unittest.TestCase):
         self.assertEqual([event["message"]["content"] for event in updates], ["", ""])
         final_message = next(event for event in events if event["type"] == "message_end")["message"]
         self.assertEqual(final_message["content"], "Hello world\n")
+        final_event = next(event for event in events if event["type"] == "agent_end")
+        self.assertNotIn("totalTokens", final_event)
+        self.assertNotIn("promptTokens", final_event)
+
+    def test_agent_loop_stores_usage_metadata_on_assistant_message(self) -> None:
+        """Verify completed turns persist usage so history reload can show context usage."""
+        class UsageProvider:
+            name = "codex"
+            model = "usage"
+
+            async def chat(self, messages, tools=None):
+                return ChatResponse(
+                    content="Done.",
+                    usage={"prompt_tokens": 1200, "completion_tokens": 80},
+                )
+
+        events = []
+        loop = AgentLoop(provider=UsageProvider(), tools=ToolRegistry())
+        result = asyncio.run(loop.run("Check usage", event_handler=lambda event: events.append(event)))
+
+        self.assertEqual(result.prompt_tokens, 1200)
+        self.assertEqual(result.total_tokens, 1280)
+        usage = result.messages[-1].metadata["usage"]
+        self.assertEqual(usage["promptTokens"], 1200)
+        self.assertEqual(usage["completionTokens"], 80)
+        self.assertEqual(usage["totalTokens"], 1280)
+        self.assertEqual(usage["contextPromptTokens"], 1200)
+        self.assertEqual(usage["runTotalTokens"], 1280)
+        final_event = next(event for event in events if event["type"] == "agent_end")
+        self.assertEqual(final_event["promptTokens"], 1200)
+        self.assertEqual(final_event["totalTokens"], 1280)
+
+    def test_session_store_context_usage_requires_persisted_usage(self) -> None:
+        """Verify session context usage comes only from persisted provider usage."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "agent.sqlite3"
+            store = AgentSessionStore(path)
+            no_usage = store.create_session(
+                title="No usage",
+                provider="codex",
+                model="gpt-test",
+                api_mode="codex_responses",
+                reasoning_effort="medium",
+            )
+            store.append_message(session_id=no_usage.id, role="user", content="Hello")
+            store.append_message(session_id=no_usage.id, role="assistant", content="No usage metadata.")
+
+            usage_session = store.create_session(
+                title="Has usage",
+                provider="codex",
+                model="gpt-test",
+                api_mode="codex_responses",
+                reasoning_effort="medium",
+            )
+            usage = {
+                "promptTokens": 1200,
+                "completionTokens": 80,
+                "totalTokens": 1280,
+                "contextPromptTokens": 2400,
+                "runTotalTokens": 2560,
+            }
+            store.append_message(session_id=usage_session.id, role="user", content="Check usage")
+            store.append_message(
+                session_id=usage_session.id,
+                role="assistant",
+                content="Done.",
+                metadata={"usage": usage},
+            )
+
+            self.assertIsNone(store.session_payload(no_usage.id)["contextUsage"])
+            payload = store.session_payload(usage_session.id)
+            history_rows = store.list_all_sessions()
+
+        expected_usage = {
+            "promptTokens": 2400,
+            "totalTokens": 2560,
+        }
+        self.assertEqual(payload["contextUsage"], expected_usage)
+        row_by_id = {row.session.id: row for row in history_rows}
+        self.assertEqual(row_by_id[usage_session.id].context_usage, expected_usage)
 
     def test_codex_tools_payload_replaces_local_web_search_with_hosted_tool(self) -> None:
         """Verify Codex uses the native hosted web_search tool instead of the local wrapper."""
@@ -400,6 +480,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(payload["session"]["reasoningEffort"], "medium")
         self.assertEqual([message["role"] for message in payload["messages"]], ["user", "assistant", "toolResult"])
         self.assertEqual(payload["messages"][1]["metadata"]["toolCalls"][0]["name"], "get_candles")
+        self.assertIsNone(payload["contextUsage"])
         self.assertEqual(history[-1]["role"], "tool")
         self.assertEqual(history[-1]["tool_call_id"], "call_1")
         self.assertEqual(refreshed_session.id, session.id)
@@ -410,6 +491,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(len(history_rows), 2)
         self.assertEqual(history_rows[1].preview, "How does this K-line window look?")
         self.assertEqual(history_rows[1].message_count, 3)
+        self.assertIsNone(history_rows[1].context_usage)
         self.assertEqual(resumed.id, session.id)
         self.assertEqual(active_after_delete.id, next_session.id)
         self.assertIsNone(deleted_payload)

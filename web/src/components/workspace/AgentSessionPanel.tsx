@@ -200,11 +200,19 @@ export function AgentSessionPanel({
     .map((key) => instruments.find((instrument) => instrument.key === key)?.label ?? key)
     .join(', ');
 
-  const cachedModel = (modelCache[agentProvider] ?? []).find((m) => m.slug === agentModel);
+  const contextProvider = agentSession?.session?.provider ?? agentProvider;
+  const contextModel = agentSession?.session?.model ?? agentModel;
+  const cachedModel = (modelCache[contextProvider] ?? []).find((m) => m.slug === contextModel);
   const contextWindow = cachedModel?.contextWindow ?? null;
-  const contextPercent = contextUsage && contextWindow && contextWindow > 0
-    ? Math.round((contextUsage.promptTokens / contextWindow) * 100)
+  const rawContextPercent = contextUsage && contextWindow && contextWindow > 0
+    ? (contextUsage.promptTokens / contextWindow) * 100
     : null;
+  const contextPercentLabel = rawContextPercent === null
+    ? null
+    : rawContextPercent > 0 && rawContextPercent < 1
+      ? '<1'
+      : String(Math.round(rawContextPercent));
+  const contextPercentLevel = rawContextPercent ?? 0;
 
   return (
     <div className="agent-card agent-readout agent-session-card">
@@ -213,9 +221,9 @@ export function AgentSessionPanel({
           <Sparkles size={14} /> Agent Session
         </span>
         {busy && <span className="agent-bias neutral">running</span>}
-        {contextPercent !== null && (
-          <span className={`context-badge${contextPercent > 90 ? ' danger' : contextPercent > 70 ? ' warning' : ''}`}>
-            <CircleDot size={10} /> {contextPercent}% context
+        {contextPercentLabel !== null && (
+          <span className={`context-badge${contextPercentLevel > 90 ? ' danger' : contextPercentLevel > 70 ? ' warning' : ''}`}>
+            <CircleDot size={10} /> {contextPercentLabel}% context
           </span>
         )}
       </div>

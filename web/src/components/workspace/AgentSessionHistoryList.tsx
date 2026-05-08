@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { History, Loader2, SquarePen, Trash2 } from 'lucide-react';
+import type { AgentContextUsage } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
 
 export function AgentSessionHistoryList() {
   const agentSession = useAgentStore((s) => s.agentSession);
   const history = useAgentStore((s) => s.agentSessionHistory);
   const runStateBySessionId = useAgentStore((s) => s.runStateBySessionId);
+  const modelCache = useAgentStore((s) => s.modelCache);
   const busyActionKey = useAgentStore((s) => s.agentSessionActionKey);
   const loading = useAgentStore((s) => s.agentSessionHistoryLoadingKey) !== null;
   const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
@@ -32,6 +34,18 @@ export function AgentSessionHistoryList() {
     const days = Math.floor(hrs / 24);
     if (days < 30) return `${days}d ago`;
     return new Date(dateStr).toLocaleDateString();
+  }
+
+  function contextPercentLabel(
+    usage: AgentContextUsage | null | undefined,
+    provider: string,
+    model: string,
+  ): string | null {
+    const contextWindow = (modelCache[provider] ?? []).find((item) => item.slug === model)?.contextWindow ?? null;
+    if (!usage || !contextWindow || contextWindow <= 0) return null;
+    const rawPercent = (usage.promptTokens / contextWindow) * 100;
+    const value = rawPercent > 0 && rawPercent < 1 ? '<1' : String(Math.round(rawPercent));
+    return `${value}% ctx`;
   }
 
   return (
@@ -69,6 +83,8 @@ export function AgentSessionHistoryList() {
           const isDeleteBusy = busyActionKey === deleteKey;
           const isConfirmingDelete = confirmingDeleteId === item.id;
           const title = item.preview || item.title || item.id;
+          const contextUsage = runStateBySessionId[item.id]?.contextUsage ?? item.contextUsage;
+          const contextLabel = contextPercentLabel(contextUsage, item.provider, item.model);
           const deleteButtonTitle = isRunning
             ? 'Session is running'
             : isConfirmingDelete
@@ -94,6 +110,7 @@ export function AgentSessionHistoryList() {
                 <span>{title}</span>
                 <small>
                   {item.model} · {relativeTime(item.updatedAt)}
+                  {contextLabel ? ` · ${contextLabel}` : ''}
                   {isRunning ? ' · running' : hasError ? ' · error' : ''}
                 </small>
               </button>

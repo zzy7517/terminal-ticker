@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type {
+  AgentContextUsage,
   AgentMessage,
   AgentModelOption,
   AgentStreamEvent,
@@ -19,7 +20,7 @@ import { AGENT_PROVIDER_OPTIONS } from '../constants';
 import { streamMessageToAgentMessage, upsertAgentMessage } from '../utils';
 import { useMarketStore } from './marketStore';
 
-type ContextUsage = { promptTokens: number; totalTokens: number } | null;
+type ContextUsage = AgentContextUsage | null;
 
 interface SessionRunProjection extends AgentSessionRun {
   pendingToolCalls: Set<string>;
@@ -113,7 +114,7 @@ function mergeHistoryRuns(
 }
 
 function sessionFromSummary(summary: AgentSessionSummary): AgentSessionResponse {
-  return { session: summary, messages: [], run: summary.run };
+  return { session: summary, messages: [], contextUsage: summary.contextUsage ?? null, run: summary.run };
 }
 
 function visibleSession(state: ActiveMirrorSource): AgentSessionResponse | null {
@@ -131,11 +132,12 @@ function activeFields(state: ActiveMirrorSource): Pick<
 > {
   const activeId = state.activeAgentSessionId;
   const run = activeId ? state.runStateBySessionId[activeId] : undefined;
+  const session = visibleSession(state);
   return {
-    agentSession: visibleSession(state),
+    agentSession: session,
     agentPrompt: activeId ? state.draftBySessionId[activeId] ?? '' : '',
     pendingToolCalls: new Set(run?.pendingToolCalls ?? []),
-    contextUsage: run?.contextUsage ?? null,
+    contextUsage: run?.contextUsage ?? session?.contextUsage ?? null,
     agentBusyKey: activeId && run?.status === 'running' ? activeId : null,
   };
 }

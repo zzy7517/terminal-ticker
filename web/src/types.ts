@@ -89,9 +89,15 @@ export interface AgentSessionRun {
   error: string | null;
 }
 
+export interface AgentContextUsage {
+  promptTokens: number;
+  totalTokens: number;
+}
+
 export interface AgentSessionSummary extends AgentSession {
   messageCount: number;
   preview: string;
+  contextUsage?: AgentContextUsage | null;
   run?: AgentSessionRun;
 }
 
@@ -108,6 +114,7 @@ export interface AgentMessage {
 export interface AgentSessionResponse {
   session: AgentSession | null;
   messages: AgentMessage[];
+  contextUsage?: AgentContextUsage | null;
   run?: AgentSessionRun;
 }
 

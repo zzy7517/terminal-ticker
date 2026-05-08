@@ -73,6 +73,7 @@ class AgentSessionSummary:
     session: AgentSession
     message_count: int
     preview: str
+    context_usage: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
         """说明：转换成前端历史列表载荷。"""
@@ -80,6 +81,7 @@ class AgentSessionSummary:
             **self.session.to_payload(),
             "messageCount": self.message_count,
             "preview": self.preview,
+            "contextUsage": self.context_usage,
         }
 
 
@@ -438,6 +440,7 @@ class AgentSessionStore(BaseStore):
         return {
             "session": session.to_payload(),
             "messages": [message.to_payload() for message in messages],
+            "contextUsage": _context_usage_from_messages(messages),
         }
 
     def session_payloads(self, session_ids: tuple[str, ...] | list[str]) -> tuple[dict[str, Any], ...]:
@@ -465,15 +468,15 @@ class AgentSessionStore(BaseStore):
             str(row["id"]): _session_from_row(row)
             for row in session_rows
         }
-        messages_by_id: dict[str, list[dict[str, Any]]] = {session_id: [] for session_id in unique_ids}
+        messages_by_id: dict[str, list[AgentMessage]] = {session_id: [] for session_id in unique_ids}
         for row in message_rows:
-            messages_by_id.setdefault(str(row["session_id"]), []).append(
-                _message_from_row(row).to_payload()
-            )
+            message = _message_from_row(row)
+            messages_by_id.setdefault(message.session_id, []).append(message)
         payloads_by_id = {
             session_id: {
                 "session": session.to_payload(),
-                "messages": messages_by_id.get(session_id, []),
+                "messages": [message.to_payload() for message in messages_by_id.get(session_id, [])],
+                "contextUsage": _context_usage_from_messages(tuple(messages_by_id.get(session_id, []))),
             }
             for session_id, session in sessions_by_id.items()
         }
@@ -502,13 +505,16 @@ class AgentSessionStore(BaseStore):
                     _LIST_SESSIONS_SQL.replace("{where}", "WHERE s.instrument_key = ?"),
                     (_stored_instrument_key(instrument_key), clean_limit),
                 ).fetchall()
+        sessions = tuple(_session_from_row(row) for row in rows)
+        usage_by_session = self._context_usage_for_sessions(tuple(session.id for session in sessions))
         return tuple(
             AgentSessionSummary(
-                session=_session_from_row(row),
+                session=session,
                 message_count=int(row["message_count"]),
                 preview=str(row["preview"] or "").strip(),
+                context_usage=usage_by_session.get(session.id),
             )
-            for row in rows
+            for session, row in zip(sessions, rows)
         )
 
     def list_all_sessions(self, *, limit: int = 100) -> tuple[AgentSessionSummary, ...]:
@@ -654,6 +660,30 @@ class AgentSessionStore(BaseStore):
             history.append(item)
         return tuple(history)
 
+    def _context_usage_for_sessions(self, session_ids: tuple[str, ...]) -> dict[str, dict[str, Any] | None]:
+        clean_ids = tuple(dict.fromkeys(session_id for session_id in session_ids if session_id))
+        if not clean_ids:
+            return {}
+        placeholders = ",".join("?" for _ in clean_ids)
+        with self._get_conn() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM agent_messages
+                WHERE session_id IN ({placeholders})
+                ORDER BY session_id, created_at, id
+                """,
+                clean_ids,
+            ).fetchall()
+        messages_by_session: dict[str, list[AgentMessage]] = {session_id: [] for session_id in clean_ids}
+        for row in rows:
+            message = _message_from_row(row)
+            messages_by_session.setdefault(message.session_id, []).append(message)
+        return {
+            session_id: _context_usage_from_messages(tuple(messages))
+            for session_id, messages in messages_by_session.items()
+        }
+
 
 def _session_from_row(row: sqlite3.Row) -> AgentSession:
     """说明：把 SQLite row 转成 AgentSession。"""
@@ -669,6 +699,40 @@ def _session_from_row(row: sqlite3.Row) -> AgentSession:
         api_mode=_optional_str(row["api_mode"]),
         reasoning_effort=_optional_str(row["reasoning_effort"]),
     )
+
+
+def _context_usage_from_messages(messages: tuple[AgentMessage, ...]) -> dict[str, Any] | None:
+    if not messages:
+        return None
+    for message in reversed(messages):
+        if message.role != "assistant":
+            continue
+        usage = (message.metadata or {}).get("usage")
+        if not isinstance(usage, dict):
+            continue
+        prompt_tokens = _int_field(
+            usage.get("contextPromptTokens"),
+            usage.get("cumulativePromptTokens"),
+            usage.get("promptTokens"),
+        )
+        total_tokens = _int_field(
+            usage.get("runTotalTokens"),
+            usage.get("cumulativeTotalTokens"),
+            usage.get("totalTokens"),
+        )
+        if prompt_tokens is not None and total_tokens is not None:
+            return {
+                "promptTokens": prompt_tokens,
+                "totalTokens": total_tokens,
+            }
+    return None
+
+
+def _int_field(*values: Any) -> int | None:
+    for value in values:
+        if isinstance(value, int):
+            return value
+    return None
 
 
 def _message_from_row(row: sqlite3.Row) -> AgentMessage:

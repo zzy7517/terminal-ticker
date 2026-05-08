@@ -152,6 +152,7 @@ class AgentLoop:
         transcript_messages: list[TranscriptMessage] = []
         total_tokens = 0
         prompt_tokens = 0
+        usage_supported = False
         iteration = 0
         await _emit(event_handler, {"type": "agent_start"})
 
@@ -208,10 +209,15 @@ class AgentLoop:
                 logger.error("agent loop provider error: %s", exc)
                 error_text = str(exc) or exc.__class__.__name__
                 await _emit(event_handler, {"type": "error", "error": error_text})
-                await _emit(event_handler, {
-                    "type": "agent_end", "error": error_text,
-                    "totalTokens": total_tokens, "promptTokens": prompt_tokens,
-                })
+                await _emit(
+                    event_handler,
+                    _agent_end_event(
+                        error_text,
+                        total_tokens=total_tokens,
+                        prompt_tokens=prompt_tokens,
+                        usage_supported=usage_supported,
+                    ),
+                )
                 return LoopResult(
                     content="",
                     steps=steps,
@@ -223,15 +229,28 @@ class AgentLoop:
                     error=error_text,
                 )
 
-            total_tokens += sum(response.usage.values())
+            if response.usage:
+                usage_supported = True
+            response_tokens = sum(response.usage.values())
+            total_tokens += response_tokens
             prompt_tokens = response.usage.get("prompt_tokens", prompt_tokens)
             content = response.content or "".join(streamed_parts)
             tool_call_payloads = _tool_call_metadata(response.tool_calls)
-            assistant_metadata = {"toolCalls": tool_call_payloads} if tool_call_payloads else None
+            assistant_metadata: dict[str, Any] = {}
+            if tool_call_payloads:
+                assistant_metadata["toolCalls"] = tool_call_payloads
+            usage_metadata = _usage_metadata(
+                response.usage,
+                response_tokens=response_tokens,
+                run_total_tokens=total_tokens,
+                context_prompt_tokens=prompt_tokens,
+            )
+            if usage_metadata is not None:
+                assistant_metadata["usage"] = usage_metadata
             assistant_message = TranscriptMessage(
                 role="assistant",
                 content=content,
-                metadata=assistant_metadata,
+                metadata=assistant_metadata or None,
             )
             transcript_messages.append(assistant_message)
             await _emit(
@@ -249,10 +268,15 @@ class AgentLoop:
                 if not content.strip():
                     error_text = "Agent returned no output text."
                     await _emit(event_handler, {"type": "error", "error": error_text})
-                    await _emit(event_handler, {
-                        "type": "agent_end", "error": error_text,
-                        "totalTokens": total_tokens, "promptTokens": prompt_tokens,
-                    })
+                    await _emit(
+                        event_handler,
+                        _agent_end_event(
+                            error_text,
+                            total_tokens=total_tokens,
+                            prompt_tokens=prompt_tokens,
+                            usage_supported=usage_supported,
+                        ),
+                    )
                     return LoopResult(
                         content="",
                         steps=steps,
@@ -264,10 +288,15 @@ class AgentLoop:
                         error=error_text,
                     )
                 await _emit(event_handler, {"type": "turn_end", "iteration": iteration})
-                await _emit(event_handler, {
-                    "type": "agent_end", "error": None,
-                    "totalTokens": total_tokens, "promptTokens": prompt_tokens,
-                })
+                await _emit(
+                    event_handler,
+                    _agent_end_event(
+                        None,
+                        total_tokens=total_tokens,
+                        prompt_tokens=prompt_tokens,
+                        usage_supported=usage_supported,
+                    ),
+                )
                 return LoopResult(
                     content=content,
                     steps=steps,
@@ -340,10 +369,15 @@ class AgentLoop:
 
         error_text = f"Reached max iterations ({self.max_iterations})"
         await _emit(event_handler, {"type": "error", "error": error_text})
-        await _emit(event_handler, {
-            "type": "agent_end", "error": error_text,
-            "totalTokens": total_tokens, "promptTokens": prompt_tokens,
-        })
+        await _emit(
+            event_handler,
+            _agent_end_event(
+                error_text,
+                total_tokens=total_tokens,
+                prompt_tokens=prompt_tokens,
+                usage_supported=usage_supported,
+            ),
+        )
         return LoopResult(
             content="Agent reached maximum iteration limit.",
             steps=steps,
@@ -420,6 +454,43 @@ def _openai_tool_call_payloads(tool_calls: list[ToolCall]) -> list[dict[str, Any
         }
         for tc in tool_calls
     ]
+
+
+def _usage_metadata(
+    usage: dict[str, int],
+    *,
+    response_tokens: int,
+    run_total_tokens: int,
+    context_prompt_tokens: int,
+) -> dict[str, int] | None:
+    if not usage:
+        return None
+    payload: dict[str, int] = {
+        "totalTokens": response_tokens,
+        "runTotalTokens": run_total_tokens,
+        "contextPromptTokens": context_prompt_tokens,
+    }
+    prompt = usage.get("prompt_tokens")
+    if isinstance(prompt, int):
+        payload["promptTokens"] = prompt
+    completion = usage.get("completion_tokens")
+    if isinstance(completion, int):
+        payload["completionTokens"] = completion
+    return payload
+
+
+def _agent_end_event(
+    error: str | None,
+    *,
+    total_tokens: int,
+    prompt_tokens: int,
+    usage_supported: bool,
+) -> dict[str, Any]:
+    event: dict[str, Any] = {"type": "agent_end", "error": error}
+    if usage_supported:
+        event["totalTokens"] = total_tokens
+        event["promptTokens"] = prompt_tokens
+    return event
 
 
 def _tool_result_payload(result: ToolResult) -> dict[str, Any]:
