@@ -195,6 +195,28 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(anthropic_config.agent.provider, "anthropic")
         self.assertEqual(anthropic_config.agent.api_mode, "anthropic_messages")
 
+    def test_parse_config_supports_memory_defaults_and_overrides(self) -> None:
+        """Verify parse config supports local memory settings."""
+        default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})
+        self.assertFalse(default_config.memory.enabled)
+        self.assertTrue(default_config.memory.use_memories)
+        self.assertTrue(default_config.memory.generate_memories)
+
+        config = parse_config(
+            {
+                "symbols": ["SPOT:BTCUSDT"],
+                "memory": {
+                    "enabled": True,
+                    "use_memories": False,
+                    "generate_memories": True,
+                },
+            }
+        )
+
+        self.assertTrue(config.memory.enabled)
+        self.assertFalse(config.memory.use_memories)
+        self.assertTrue(config.memory.generate_memories)
+
     def test_parse_config_news_defaults_when_absent(self) -> None:
         """Verify NewsConfig defaults when the [news] section is absent."""
         config = parse_config({"symbols": [{"symbol": "BTCUSDT", "inst_type": "USDT-FUTURES"}]})

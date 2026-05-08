@@ -457,6 +457,7 @@ class TradeStore(BaseStore):
         self,
         *,
         instrument_key: str | None = None,
+        trade_id: int | None = None,
         limit: int = 20,
     ) -> tuple[dict[str, Any], ...]:
         """说明：读取 lesson 列表，按创建时间倒序。"""
@@ -465,6 +466,9 @@ class TradeStore(BaseStore):
         if instrument_key is not None:
             clauses.append("instrument_key = ?")
             params.append(instrument_key)
+        if trade_id is not None:
+            clauses.append("trade_id = ?")
+            params.append(int(trade_id))
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(int(limit))
         with self._get_conn() as connection:

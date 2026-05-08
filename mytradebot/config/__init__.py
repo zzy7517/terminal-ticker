@@ -147,6 +147,14 @@ class AgentConfig:
 
 
 @dataclass(frozen=True)
+class MemoryConfig:
+    """说明：封装本地持久记忆的读写开关。"""
+    enabled: bool = False
+    use_memories: bool = True
+    generate_memories: bool = True
+
+
+@dataclass(frozen=True)
 class NewsConfig:
     """说明：封装新闻抓取的开关、源地址和轮询参数。"""
     enabled: bool = False
@@ -209,6 +217,7 @@ class AppConfig:
     analysis: AnalysisConfig = AnalysisConfig()
     cache: CacheConfig = CacheConfig()
     agent: AgentConfig = AgentConfig()
+    memory: MemoryConfig = MemoryConfig()
     news: NewsConfig = NewsConfig()
     social_feed: SocialFeedConfig = SocialFeedConfig()
 
@@ -416,6 +425,23 @@ def parse_agent_config(raw_agent: dict[str, Any] | None) -> AgentConfig:
         max_candles=_coerce_min_int(raw_agent.get("max_candles"), "agent.max_candles", 40, 10),
         reasoning_effort=primary_effort,
         provider_profiles=profiles,
+    )
+
+
+def parse_memory_config(raw_memory: dict[str, Any] | None) -> MemoryConfig:
+    """说明：把原始 memory 配置解析为 MemoryConfig。"""
+    if raw_memory is None:
+        raw_memory = {}
+    if not isinstance(raw_memory, dict):
+        raise ValueError("memory must be a table")
+    return MemoryConfig(
+        enabled=_normalize_bool(raw_memory.get("enabled"), "memory.enabled", False),
+        use_memories=_normalize_bool(raw_memory.get("use_memories"), "memory.use_memories", True),
+        generate_memories=_normalize_bool(
+            raw_memory.get("generate_memories"),
+            "memory.generate_memories",
+            True,
+        ),
     )
 
 
@@ -692,6 +718,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
     cache = parse_cache_config(data.get("cache", {}))
 
     agent = parse_agent_config(data.get("agent", {}))
+    memory = parse_memory_config(data.get("memory", {}))
     news = parse_news_config(data.get("news", {}))
     social_feed = parse_social_feed_config(data.get("social_feed", {}))
 
@@ -701,6 +728,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         analysis=analysis,
         cache=cache,
         agent=agent,
+        memory=memory,
         news=news,
         social_feed=social_feed,
         source_path=source_path,
@@ -727,6 +755,7 @@ def build_runtime_config(
         analysis=AnalysisConfig(),
         cache=CacheConfig(),
         agent=AgentConfig(),
+        memory=MemoryConfig(),
         news=NewsConfig(),
         social_feed=SocialFeedConfig(),
         source_path=None,
@@ -744,6 +773,7 @@ def build_runtime_config(
         analysis=base.analysis,
         cache=base.cache,
         agent=base.agent,
+        memory=base.memory,
         news=base.news,
         social_feed=base.social_feed,
         source_path=base.source_path,

@@ -1,6 +1,7 @@
 """Test web state serialization and local API routes."""
 import asyncio
 import json
+import os
 import tempfile
 import textwrap
 import unittest
@@ -12,8 +13,10 @@ from fastapi.testclient import TestClient
 
 from mytradebot.agent import AgentSessionStore, ChatResponse
 from mytradebot.config import (
+    AgentConfig,
     AppConfig,
     DisplayConfig,
+    MemoryConfig,
     NewsConfig,
     load_config,
 )
@@ -30,6 +33,7 @@ from mytradebot.api.app import (
 )
 from mytradebot.api.runtime import MarketContextProvider, MarketRuntime
 from mytradebot.api.serializers import serialize_market_state
+from mytradebot.memory import MemoryStateStore, SOURCE_MANUAL_NOTE
 from mytradebot.trading import BitgetDemoOrderResult
 from mytradebot.trading.store import TradeStore
 
@@ -77,6 +81,47 @@ class DummyController:
 
 class WebTests(unittest.TestCase):
     """Group tests for the web app."""
+
+    def test_runtime_start_skips_memory_generation_when_agent_disabled(self) -> None:
+        """Verify disabled agent config does not turn memory startup into failed jobs."""
+
+        class FakeMemoryPipeline:
+            def __init__(self) -> None:
+                self.kickoff_count = 0
+                self.policy = type("Policy", (), {"generate_memories": True})()
+
+            def kickoff_startup(self) -> None:
+                self.kickoff_count += 1
+
+            async def shutdown(self) -> None:
+                return None
+
+        async def scenario() -> None:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                tmp_path = Path(tmp_dir)
+                with patch.dict(os.environ, {"MYTRADEBOT_MEMORY_HOME": str(tmp_path / "memories")}, clear=False):
+                    runtime = MarketRuntime(
+                        config=AppConfig(
+                            instruments=tuple(),
+                            display=DisplayConfig(),
+                            agent=AgentConfig(enabled=False),
+                            memory=MemoryConfig(enabled=True),
+                        ),
+                        instruments=tuple(),
+                        controller_factory=DummyController,
+                        agent_session_store=AgentSessionStore(tmp_path / "agent.sqlite3"),
+                        trade_store=TradeStore(tmp_path / "trades.sqlite3"),
+                    )
+                fake_pipeline = FakeMemoryPipeline()
+                runtime.memory_pipeline = fake_pipeline  # type: ignore[assignment]
+
+                await runtime.start()
+                try:
+                    self.assertEqual(fake_pipeline.kickoff_count, 0)
+                finally:
+                    await runtime.stop()
+
+        asyncio.run(scenario())
 
     def test_web_dist_points_to_vite_output_directory(self) -> None:
         """Verify the backend serves the Vite build output after package refactors."""
@@ -609,6 +654,44 @@ class WebTests(unittest.TestCase):
         self.assertEqual(history_response.status_code, 200)
         self.assertEqual(history_payload["sessions"][0]["messageCount"], 2)
         self.assertEqual(history_payload["sessions"][0]["preview"], "What changed since the prior candle?")
+
+    def test_memory_note_endpoint_queues_manual_note(self) -> None:
+        """Verify the REST path creates a manual memory source."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "memories"
+            with patch.dict(os.environ, {"MYTRADEBOT_MEMORY_HOME": str(root)}, clear=False):
+                app = create_app(
+                    config=AppConfig(
+                        instruments=tuple(),
+                        display=DisplayConfig(),
+                        agent=AgentConfig(enabled=False),
+                        memory=MemoryConfig(enabled=True),
+                    ),
+                    instruments=tuple(),
+                    controller_factory=DummyController,
+                    auto_start=False,
+                )
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/memory/notes",
+                        json={"id": "note-1", "text": "记住：只把已发生的交易写成事实。"},
+                    )
+
+            payload = response.json()
+            note_path = root / "extensions" / "ad_hoc" / "notes" / "note-1.json"
+            stored_note = json.loads(note_path.read_text())
+            state_store = MemoryStateStore(root / "state.sqlite3")
+            with state_store._get_conn() as conn:
+                row = conn.execute(
+                    "SELECT id FROM memory_sources WHERE source_type = ? AND source_ref = ?",
+                    (SOURCE_MANUAL_NOTE, "note-1"),
+                ).fetchone()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["queued"])
+        self.assertEqual(payload["noteId"], "note-1")
+        self.assertEqual(stored_note["text"], "记住：只把已发生的交易写成事实。")
+        self.assertIsNotNone(row)
 
     def test_agent_session_history_can_resume_and_delete(self) -> None:
         """Verify history endpoints can restore and delete persisted chart sessions."""
