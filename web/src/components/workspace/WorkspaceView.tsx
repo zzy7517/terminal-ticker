@@ -60,7 +60,7 @@ export function WorkspaceView() {
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
   const collapsedKeys = state?.instruments.map((instrument) => instrument.key) ?? [];
 
-  const [activeTab, setActiveTab] = useState<'chart' | 'agent' | 'news' | 'social' | 'positions'>('chart');
+  const [activeTab, setActiveTab] = useState<'chart' | 'agent' | 'news' | 'social' | 'positions'>('agent');
 
   return (
     <main className="app-shell">
