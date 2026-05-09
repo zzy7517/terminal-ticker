@@ -1,24 +1,24 @@
-/* ── Light theme (default) ─────────────────────────────────────────── */
+/* ── Light theme — "Parchment Desk": warm-paper canvas, ember accent (mirrors dark) ── */
 :root {
   color-scheme: light;
-  --canvas: #f5f6f8;
+  --canvas: #faf7f2;
   --canvas-2: #ffffff;
-  --panel: rgba(255, 255, 255, 0.96);
-  --panel-raised: rgba(255, 255, 255, 0.98);
-  --line-soft: rgba(0, 0, 0, 0.06);
-  --line-strong: rgba(0, 0, 0, 0.12);
-  --text-primary: #1a1d21;
-  --text-secondary: rgba(26, 29, 33, 0.64);
-  --text-muted: rgba(26, 29, 33, 0.40);
-  --up: #00b076;
-  --down: #ff4466;
-  --accent: #1a1d21;
+  --panel: #ffffff;
+  --panel-raised: #ffffff;
+  --line-soft: rgba(60, 45, 25, 0.08);
+  --line-strong: rgba(60, 45, 25, 0.16);
+  --text-primary: #1c1916;
+  --text-secondary: rgba(28, 25, 22, 0.62);
+  --text-muted: rgba(28, 25, 22, 0.40);
+  --up: #0a9968;
+  --down: #e63957;
+  --accent: #c8791a;
   --accent-contrast: #ffffff;
-  --accent-tint: rgba(0, 0, 0, 0.04);
-  --accent-tint-strong: rgba(0, 0, 0, 0.08);
-  --accent-ring: rgba(0, 0, 0, 0.16);
-  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --accent-tint: rgba(200, 121, 26, 0.08);
+  --accent-tint-strong: rgba(200, 121, 26, 0.16);
+  --accent-ring: rgba(200, 121, 26, 0.36);
+  --shadow-soft: 0 1px 2px rgba(60, 45, 25, 0.06);
+  --shadow-md: 0 6px 20px rgba(60, 45, 25, 0.08), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
@@ -40,33 +40,33 @@
   --ctl-weight-strong: 700;
   --ctl-disabled-opacity: 0.45;
   --ctl-transition: background 140ms ease, color 140ms ease, border-color 140ms ease, opacity 140ms ease;
-  --danger-tint: rgba(255, 68, 102, 0.10);
-  --danger-tint-strong: rgba(255, 68, 102, 0.16);
+  --danger-tint: rgba(230, 57, 87, 0.10);
+  --danger-tint-strong: rgba(230, 57, 87, 0.18);
 }
 
-/* ── Dark theme ───────────────────────────────────────────────────── */
+/* ── Dark theme — "Ember Floor": cool-ink canvas, warm graphite panels, amber accent ── */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --canvas: #0e0f11;
-  --canvas-2: #16171b;
-  --panel: #1a1b20;
-  --panel-raised: #222328;
-  --line-soft: rgba(255, 255, 255, 0.07);
-  --line-strong: rgba(255, 255, 255, 0.12);
-  --text-primary: #e4e6ea;
-  --text-secondary: rgba(228, 230, 234, 0.64);
-  --text-muted: rgba(228, 230, 234, 0.36);
-  --up: #00b076;
-  --down: #ff4466;
-  --accent: #e4e6ea;
-  --accent-contrast: #0e0f11;
-  --accent-tint: rgba(255, 255, 255, 0.06);
-  --accent-tint-strong: rgba(255, 255, 255, 0.12);
-  --accent-ring: rgba(255, 255, 255, 0.22);
-  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --danger-tint: rgba(255, 68, 102, 0.14);
-  --danger-tint-strong: rgba(255, 68, 102, 0.22);
+  --canvas: #0b0d12;
+  --canvas-2: #11141b;
+  --panel: #161922;
+  --panel-raised: #1f2330;
+  --line-soft: rgba(180, 196, 220, 0.07);
+  --line-strong: rgba(180, 196, 220, 0.14);
+  --text-primary: #ecebe6;
+  --text-secondary: rgba(236, 235, 230, 0.66);
+  --text-muted: rgba(236, 235, 230, 0.38);
+  --up: #22c993;
+  --down: #ff5c7a;
+  --accent: #f5a524;
+  --accent-contrast: #14110a;
+  --accent-tint: rgba(245, 165, 36, 0.10);
+  --accent-tint-strong: rgba(245, 165, 36, 0.22);
+  --accent-ring: rgba(245, 165, 36, 0.42);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.55);
+  --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  --danger-tint: rgba(255, 92, 122, 0.14);
+  --danger-tint-strong: rgba(255, 92, 122, 0.24);
 }
 
 :root[data-theme="dark"] body {
