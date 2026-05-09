@@ -2855,26 +2855,32 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
+/* Button-form of .switch-slider — visuals must match exactly */
 .settings-toggle {
   background: var(--line-soft);
   border: 0;
   border-radius: 999px;
   cursor: pointer;
-  height: 24px;
+  height: 26px;
   position: relative;
-  transition: background 160ms;
-  width: 44px;
+  transition: background 120ms;
+  width: 48px;
 }
 
 .settings-toggle > span {
-  background: var(--canvas-2);
-  border-radius: 50%;
-  height: 18px;
-  left: 3px;
+  background: #fff;
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  height: 22px;
+  left: 2px;
   position: absolute;
-  top: 3px;
-  transition: transform 160ms;
-  width: 18px;
+  top: 2px;
+  transition: transform 120ms;
+  width: 22px;
+}
+
+:root[data-theme="dark"] .settings-toggle > span {
+  background: var(--text-primary);
 }
 
 .settings-toggle.on {
@@ -2882,12 +2888,12 @@ textarea:focus-visible {
 }
 
 .settings-toggle.on > span {
-  transform: translateX(20px);
+  transform: translateX(22px);
 }
 
 .settings-toggle:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: var(--ctl-disabled-opacity);
 }
 
 .settings-readonly-grid {
