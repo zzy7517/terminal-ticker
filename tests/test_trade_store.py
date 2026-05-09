@@ -36,7 +36,7 @@ class TradeStoreTests(unittest.TestCase):
     def test_rejects_non_positive_size(self) -> None:
         with self.assertRaises(ValueError):
             self.store.create_trade(
-                instrument_key="alpaca:AAPL",
+                instrument_key="USDT-FUTURES:BTCUSDT",
                 direction=TradeDirection.LONG,
                 size=0.0,
                 intent_price=None,
@@ -45,7 +45,7 @@ class TradeStoreTests(unittest.TestCase):
 
     def test_planned_to_open_via_entry_fill(self) -> None:
         trade = self.store.create_trade(
-            instrument_key="alpaca:AAPL",
+            instrument_key="USDT-FUTURES:BTCUSDT",
             direction=TradeDirection.LONG,
             size=10.0,
             intent_price=180.0,
@@ -107,7 +107,7 @@ class TradeStoreTests(unittest.TestCase):
 
     def test_cancel_planned_only(self) -> None:
         trade = self.store.create_trade(
-            instrument_key="alpaca:AAPL",
+            instrument_key="USDT-FUTURES:BTCUSDT",
             direction=TradeDirection.LONG,
             size=1.0,
             intent_price=180.0,
@@ -117,7 +117,7 @@ class TradeStoreTests(unittest.TestCase):
         self.assertEqual(cancelled.status, TradeStatus.CANCELLED)
 
         trade2 = self.store.create_trade(
-            instrument_key="alpaca:AAPL",
+            instrument_key="USDT-FUTURES:BTCUSDT",
             direction=TradeDirection.LONG,
             size=1.0,
             intent_price=None,
@@ -129,7 +129,7 @@ class TradeStoreTests(unittest.TestCase):
 
     def test_adjust_levels(self) -> None:
         trade = self.store.create_trade(
-            instrument_key="alpaca:SPY",
+            instrument_key="USDT-FUTURES:ETHUSDT",
             direction=TradeDirection.LONG,
             size=1.0,
             intent_price=500.0,
@@ -144,7 +144,7 @@ class TradeStoreTests(unittest.TestCase):
 
     def test_snapshot_roundtrip(self) -> None:
         snap = self.store.save_snapshot(
-            instrument_key="alpaca:AAPL",
+            instrument_key="USDT-FUTURES:BTCUSDT",
             payload={"timeframes": {"5m": [1, 2, 3]}, "bias": "bullish"},
         )
         loaded = self.store.get_snapshot(snap.id)
@@ -154,24 +154,24 @@ class TradeStoreTests(unittest.TestCase):
 
     def test_list_filters_by_instrument_and_status(self) -> None:
         a = self.store.create_trade(
-            instrument_key="alpaca:AAPL",
+            instrument_key="USDT-FUTURES:BTCUSDT",
             direction=TradeDirection.LONG,
             size=1.0, intent_price=180.0, stop_price=175.0,
         )
         b = self.store.create_trade(
-            instrument_key="alpaca:MSFT",
+            instrument_key="USDT-FUTURES:MSFTUSDT",
             direction=TradeDirection.SHORT,
             size=1.0, intent_price=400.0, stop_price=405.0,
             status=TradeStatus.OPEN,
         )
         open_only = self.store.list_trades(statuses=[TradeStatus.OPEN])
         self.assertEqual({t.id for t in open_only}, {b.id})
-        aapl_only = self.store.list_trades(instrument_key="alpaca:AAPL")
+        aapl_only = self.store.list_trades(instrument_key="USDT-FUTURES:BTCUSDT")
         self.assertEqual({t.id for t in aapl_only}, {a.id})
 
     def test_fills_cascade_on_trade_delete(self) -> None:
         trade = self.store.create_trade(
-            instrument_key="alpaca:AAPL",
+            instrument_key="USDT-FUTURES:BTCUSDT",
             direction=TradeDirection.LONG,
             size=1.0, intent_price=180.0, stop_price=175.0,
         )

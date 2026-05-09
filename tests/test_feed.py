@@ -10,8 +10,8 @@ from unittest.mock import patch
 from mytradebot.market_data.candle_cache import CandleCache
 from mytradebot.config import AnalysisConfig, AppConfig, DisplayConfig
 from mytradebot.runtime.feed import FeedWorker, THUMBNAIL_CANDLE_LIMIT, THUMBNAIL_INTERVAL
-from mytradebot.market_data.alpaca import AlpacaInstrument
 from mytradebot.market_data.bitget import BitgetInstrument
+from mytradebot.market_data.hyperliquid import HyperliquidInstrument
 from mytradebot.domain.price_action import Candle
 
 
@@ -32,12 +32,12 @@ class FeedWorkerTests(unittest.TestCase):
         self.assertEqual(event.kind, "quote")
         self.assertEqual(event.payload["price"], 78000)
 
-    def test_alpaca_polling_enqueues_quote_events(self) -> None:
-        """Verify Alpaca polling enqueues quote events."""
+    def test_hyperliquid_polling_enqueues_quote_events(self) -> None:
+        """Verify Hyperliquid polling enqueues quote events."""
         async def run_test() -> None:
             """Exercise run test behavior."""
             event_queue = queue.Queue()
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = HyperliquidInstrument("BTC", "BTC", "BTC")
             worker = FeedWorker(
                 config=AppConfig(
                     instruments=tuple(),
@@ -48,26 +48,31 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch(
-                "mytradebot.runtime.feed.fetch_alpaca_snapshot_payloads",
-                return_value={"alpaca:AAPL": {"id": "alpaca:AAPL", "price": 201.5}},
+                "mytradebot.runtime.feed.fetch_hyperliquid_snapshot_payloads",
+                return_value={
+                    "hyperliquid-testnet:BTC": {
+                        "id": "hyperliquid-testnet:BTC",
+                        "price": 101000,
+                    },
+                },
             ):
-                task = asyncio.create_task(worker._run_alpaca())
+                task = asyncio.create_task(worker._run_hyperliquid())
                 await asyncio.sleep(0.05)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
             event = event_queue.get_nowait()
             self.assertEqual(event.kind, "quote")
-            self.assertEqual(event.payload["price"], 201.5)
+            self.assertEqual(event.payload["price"], 101000)
 
         asyncio.run(run_test())
 
-    def test_alpaca_polling_enqueues_targeted_error_events(self) -> None:
-        """Verify Alpaca polling failures identify the affected instruments."""
+    def test_hyperliquid_polling_enqueues_targeted_error_events(self) -> None:
+        """Verify Hyperliquid polling failures identify affected instruments."""
         async def run_test() -> None:
             """Exercise run test behavior."""
             event_queue = queue.Queue()
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = HyperliquidInstrument("BTC", "BTC", "BTC")
             worker = FeedWorker(
                 config=AppConfig(
                     instruments=tuple(),
@@ -78,18 +83,18 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch(
-                "mytradebot.runtime.feed.fetch_alpaca_snapshot_payloads",
-                side_effect=RuntimeError("missing credentials"),
+                "mytradebot.runtime.feed.fetch_hyperliquid_snapshot_payloads",
+                side_effect=RuntimeError("poll failed"),
             ):
-                task = asyncio.create_task(worker._run_alpaca())
+                task = asyncio.create_task(worker._run_hyperliquid())
                 await asyncio.sleep(0.05)
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
             event = event_queue.get_nowait()
             self.assertEqual(event.kind, "error")
-            self.assertEqual(event.payload["message"], "missing credentials")
-            self.assertEqual(event.payload["ids"], ["alpaca:AAPL"])
+            self.assertEqual(event.payload["message"], "poll failed")
+            self.assertEqual(event.payload["ids"], ["hyperliquid-testnet:BTC"])
 
         asyncio.run(run_test())
 
@@ -125,12 +130,19 @@ class FeedWorkerTests(unittest.TestCase):
 
         asyncio.run(run_test())
 
-    def test_alpaca_instruments_are_polled_for_candles(self) -> None:
-        """Verify Alpaca instruments enter the candle pipeline."""
+    def test_bitget_instruments_are_polled_for_candles(self) -> None:
+        """Verify Bitget instruments enter the candle pipeline."""
         async def run_test() -> None:
             """Exercise run test behavior."""
             event_queue = queue.Queue()
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = BitgetInstrument(
+                "BTCUSDT",
+                "USDT-FUTURES",
+                "BTC",
+                "BTC",
+                "USDT",
+                "perp",
+            )
             base_open_ms = int(
                 (datetime.now(timezone.utc) - timedelta(minutes=11)).timestamp() * 1000
             )
@@ -160,7 +172,7 @@ class FeedWorkerTests(unittest.TestCase):
 
             event = event_queue.get_nowait()
             self.assertEqual(event.kind, "candles")
-            self.assertEqual(event.payload["id"], "alpaca:AAPL")
+            self.assertEqual(event.payload["id"], "USDT-FUTURES:BTCUSDT")
             self.assertEqual(event.payload["candles"], candles)
 
         asyncio.run(run_test())
@@ -170,8 +182,23 @@ class FeedWorkerTests(unittest.TestCase):
         async def run_test() -> None:
             """Exercise run test behavior."""
             event_queue = queue.Queue()
-            aapl = AlpacaInstrument("AAPL", "AAPL", analysis_interval="15m")
-            spy = AlpacaInstrument("SPY", "SPY")
+            btc = BitgetInstrument(
+                "BTCUSDT",
+                "USDT-FUTURES",
+                "BTC",
+                "BTC",
+                "USDT",
+                "perp",
+                analysis_interval="15m",
+            )
+            eth = BitgetInstrument(
+                "ETHUSDT",
+                "USDT-FUTURES",
+                "ETH",
+                "ETH",
+                "USDT",
+                "perp",
+            )
             base_open_ms = int(
                 (datetime.now(timezone.utc) - timedelta(minutes=11)).timestamp() * 1000
             )
@@ -198,7 +225,7 @@ class FeedWorkerTests(unittest.TestCase):
                     display=DisplayConfig(),
                     analysis=AnalysisConfig(interval="5m"),
                 ),
-                instruments=(aapl, spy),
+                instruments=(btc, eth),
                 event_queue=event_queue,
             )
 
@@ -208,8 +235,8 @@ class FeedWorkerTests(unittest.TestCase):
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
 
-            self.assertIn(("alpaca:AAPL", "15m"), calls)
-            self.assertIn(("alpaca:SPY", "5m"), calls)
+            self.assertIn(("USDT-FUTURES:BTCUSDT", "15m"), calls)
+            self.assertIn(("USDT-FUTURES:ETHUSDT", "5m"), calls)
 
         asyncio.run(run_test())
 
@@ -218,7 +245,15 @@ class FeedWorkerTests(unittest.TestCase):
         async def run_test() -> None:
             """Exercise run test behavior."""
             event_queue = queue.Queue()
-            instrument = AlpacaInstrument("AAPL", "AAPL", analysis_interval="15m")
+            instrument = BitgetInstrument(
+                "BTCUSDT",
+                "USDT-FUTURES",
+                "BTC",
+                "BTC",
+                "USDT",
+                "perp",
+                analysis_interval="15m",
+            )
             base_open_ms = int(
                 (datetime.now(timezone.utc) - timedelta(minutes=11)).timestamp() * 1000
             )

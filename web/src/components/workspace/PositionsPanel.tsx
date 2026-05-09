@@ -6,7 +6,6 @@ import { cancelExchangeOrder, listLessons, triggerTradeReview } from '../../api'
 const EXCHANGE_LABELS: Record<string, string> = {
   'hyperliquid-testnet': 'Hyperliquid Testnet',
   'bitget-demo': 'Bitget Demo',
-  'alpaca-paper': 'Alpaca Paper',
 };
 
 export function PositionsPanel() {

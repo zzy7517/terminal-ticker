@@ -101,15 +101,15 @@ class TradeReviewTests(unittest.TestCase):
         self.assertEqual(self.store.list_lessons(), ())
 
     def test_list_lessons_filters_by_instrument(self) -> None:
-        self._make_closed_trade(instrument_key="alpaca:AAPL")
+        self._make_closed_trade(instrument_key="USDT-FUTURES:BTCUSDT")
         self._make_closed_trade(instrument_key="bitget:ETHUSDT:USDT-FUTURES")
         self.store.save_lesson(
-            trade_id=None, instrument_key="alpaca:AAPL", text="L1",
+            trade_id=None, instrument_key="USDT-FUTURES:BTCUSDT", text="L1",
         )
         self.store.save_lesson(
             trade_id=None, instrument_key="bitget:ETHUSDT:USDT-FUTURES", text="L2",
         )
-        aapl = self.store.list_lessons(instrument_key="alpaca:AAPL")
+        aapl = self.store.list_lessons(instrument_key="USDT-FUTURES:BTCUSDT")
         self.assertEqual(len(aapl), 1)
         self.assertEqual(aapl[0]["text"], "L1")
 

@@ -28,19 +28,11 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
     async def get_state() -> dict[str, Any]:
         return runtime.snapshot()
 
-    @app.get("/api/securities/search")
-    async def search_securities_endpoint(q: str) -> dict[str, Any]:
-        return {"results": await runtime.search_alpaca(q)}
-
     @app.get("/api/instruments/search")
     async def search_instruments_endpoint(source: str, q: str) -> dict[str, Any]:
         return {"results": await runtime.search_instruments(source, q)}
 
     # -- Watchlist --
-
-    @app.post("/api/watchlist/alpaca")
-    async def add_alpaca_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
-        return await runtime.add_alpaca(payload)
 
     @app.post("/api/watchlist/bitget")
     async def add_bitget_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
@@ -49,10 +41,6 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
     @app.post("/api/watchlist/hyperliquid-testnet")
     async def add_hyperliquid_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         return await runtime.add_hyperliquid(payload)
-
-    @app.delete("/api/watchlist/alpaca/{symbol}")
-    async def remove_alpaca_endpoint(symbol: str) -> dict[str, Any]:
-        return await runtime.remove_alpaca(symbol)
 
     @app.delete("/api/watchlist/instruments/{instrument_key}")
     async def remove_instrument_endpoint(instrument_key: str) -> dict[str, Any]:

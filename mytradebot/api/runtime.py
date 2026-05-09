@@ -28,7 +28,6 @@ from ..agent import (
 from ..agent.tools.market_context import build_market_context
 from ..config import (
     AgentConfig,
-    ALPACA_SOURCE,
     AppConfig,
     BITGET_SOURCE,
     HYPERLIQUID_TESTNET_SOURCE,
@@ -45,7 +44,6 @@ from ..config.agent_models import (
 )
 from ..domain.price_action import Candle, merge_candles
 from ..domain.quotes import QuoteState
-from ..market_data.alpaca import search_assets as search_alpaca_assets
 from ..market_data.bitget import search_instruments as search_bitget_instruments
 from ..market_data.hyperliquid import search_instruments as search_hyperliquid_instruments
 from ..market_data.router import MarketInstrument, resolve_instruments
@@ -69,10 +67,8 @@ from ..trading.hyperliquid import (
 from ..trading.models import FillKind, TradeDirection
 from ..trading.review import review_pending
 from ..config.watchlist_store import (
-    append_alpaca_symbol_to_watchlist,
     append_bitget_symbol_to_watchlist,
     append_hyperliquid_symbol_to_watchlist,
-    remove_alpaca_symbol_from_watchlist,
     remove_symbol_from_watchlist,
     update_agent_config_in_watchlist,
     update_analysis_config_in_watchlist,
@@ -101,7 +97,7 @@ from .serializers import (
 )
 
 LOGGER = logging.getLogger(__name__)
-OLDER_CANDLE_SOURCES = {ALPACA_SOURCE, BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
+OLDER_CANDLE_SOURCES = {BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
 MANUAL_MEMORY_TRIGGERS = (
     "帮我记住",
     "请记住",
@@ -403,28 +399,6 @@ class MarketRuntime:
     # Search
     # ------------------------------------------------------------------
 
-    async def search_alpaca(self, query: str) -> list[dict[str, Any]]:
-        text = query.strip()
-        if not text:
-            return []
-        active = {instrument.key for instrument in self.instruments}
-        results = await asyncio.to_thread(search_alpaca_assets, text)
-        return [
-            {
-                "source": ALPACA_SOURCE,
-                "symbol": item.symbol,
-                "label": item.default_label,
-                "instType": None,
-                "key": f"{ALPACA_SOURCE}:{item.symbol}",
-                "nameCn": "",
-                "nameHk": "",
-                "nameEn": item.name,
-                "displayText": item.display_text(),
-                "exists": f"{ALPACA_SOURCE}:{item.symbol}" in active,
-            }
-            for item in results
-        ]
-
     async def search_bitget(self, query: str) -> list[dict[str, Any]]:
         text = query.strip()
         if not text:
@@ -471,8 +445,6 @@ class MarketRuntime:
 
     async def search_instruments(self, source: str, query: str) -> list[dict[str, Any]]:
         normalized_source = source.strip().lower()
-        if normalized_source == ALPACA_SOURCE:
-            return await self.search_alpaca(query)
         if normalized_source == BITGET_SOURCE:
             return await self.search_bitget(query)
         if normalized_source == HYPERLIQUID_TESTNET_SOURCE:
@@ -482,25 +454,6 @@ class MarketRuntime:
     # ------------------------------------------------------------------
     # Watchlist management
     # ------------------------------------------------------------------
-
-    async def add_alpaca(self, payload: dict[str, Any]) -> dict[str, Any]:
-        source_path = self._require_source_path()
-        symbol = str(payload.get("symbol") or "")
-        label = str(payload.get("label") or "").strip() or None
-        try:
-            changed = await asyncio.to_thread(
-                append_alpaca_symbol_to_watchlist,
-                source_path,
-                symbol=symbol,
-                label=label,
-                group="stocks",
-                show_collapsed=True,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if changed:
-            await self.reload_from_source()
-        return {"changed": changed, "state": self.snapshot()}
 
     async def add_bitget(self, payload: dict[str, Any]) -> dict[str, Any]:
         source_path = self._require_source_path()
@@ -538,17 +491,6 @@ class MarketRuntime:
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if changed:
-            await self.reload_from_source()
-        return {"changed": changed, "state": self.snapshot()}
-
-    async def remove_alpaca(self, symbol: str) -> dict[str, Any]:
-        source_path = self._require_source_path()
-        changed = await asyncio.to_thread(
-            remove_alpaca_symbol_from_watchlist,
-            source_path,
-            symbol=symbol,
-        )
         if changed:
             await self.reload_from_source()
         return {"changed": changed, "state": self.snapshot()}

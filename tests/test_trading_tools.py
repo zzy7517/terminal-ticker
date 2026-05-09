@@ -129,27 +129,27 @@ class TradingToolsTests(unittest.TestCase):
 
     def test_list_open_trades_excludes_closed(self) -> None:
         self.store.create_trade(
-            instrument_key="alpaca:AAPL",
+            instrument_key="USDT-FUTURES:BTCUSDT",
             direction=__import__("mytradebot.trading", fromlist=["TradeDirection"]).TradeDirection.LONG,
             size=1.0,
             intent_price=100.0,
             stop_price=95.0,
         )
         t = self.store.create_trade(
-            instrument_key="alpaca:AAPL",
+            instrument_key="USDT-FUTURES:BTCUSDT",
             direction=__import__("mytradebot.trading", fromlist=["TradeDirection"]).TradeDirection.LONG,
             size=1.0, intent_price=None, stop_price=None,
             status=TradeStatus.OPEN,
         )
         self.store.mark_closed(t.id, realized_pnl=1.0)
-        listed = self._exec("list_open_trades", {"instrument_key": "alpaca:AAPL"})
+        listed = self._exec("list_open_trades", {"instrument_key": "USDT-FUTURES:BTCUSDT"})
         self.assertEqual(len(listed), 1)
         self.assertEqual(listed[0]["status"], "planned")
 
     def test_trade_history_returns_closed_and_cancelled(self) -> None:
         from mytradebot.trading import TradeDirection
         t = self.store.create_trade(
-            instrument_key="alpaca:AAPL",
+            instrument_key="USDT-FUTURES:BTCUSDT",
             direction=TradeDirection.LONG, size=1.0,
             intent_price=None, stop_price=None,
             status=TradeStatus.OPEN,

@@ -4,7 +4,6 @@ import type { Instrument, InstrumentSearchResult } from '../../types';
 import type { SearchSource } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
 import {
-  addAlpacaSymbol,
   addBitgetSymbol,
   addHyperliquidTestnetSymbol,
   removeWatchlistInstrument,
@@ -34,8 +33,7 @@ export function WatchlistSettingsPanel() {
 
   async function addWatchlistResult(result: InstrumentSearchResult) {
     if (result.source === 'bitget') return addBitgetSymbol(result);
-    if (result.source === 'hyperliquid-testnet') return addHyperliquidTestnetSymbol(result);
-    return addAlpacaSymbol(result);
+    return addHyperliquidTestnetSymbol(result);
   }
 
   async function addResult(result: InstrumentSearchResult) {
@@ -182,7 +180,7 @@ export function WatchlistSettingsPanel() {
             <textarea
               value={bulkText}
               onChange={(event) => setBulkText(event.target.value)}
-              placeholder={'BTCUSDT\nSPOT:ETHUSDT\nAAPL.US\nhyperliquid:BTC'}
+              placeholder={'BTCUSDT\nSPOT:ETHUSDT\nAAPLUSDT\nhyperliquid:BTC'}
               spellCheck={false}
             />
             {entries.length > 0 && (
@@ -227,16 +225,6 @@ export function WatchlistSettingsPanel() {
                 Bitget
               </button>
               <button
-                className={searchSource === 'alpaca' ? 'active' : ''}
-                type="button"
-                onClick={() => {
-                  setSearchSource('alpaca');
-                  setResults([]);
-                }}
-              >
-                Alpaca
-              </button>
-              <button
                 className={searchSource === 'hyperliquid-testnet' ? 'active' : ''}
                 type="button"
                 onClick={() => {
@@ -257,10 +245,8 @@ export function WatchlistSettingsPanel() {
                 }}
                 placeholder={
                   searchSource === 'bitget'
-                    ? 'BTC / BTCUSDT'
-                    : searchSource === 'hyperliquid-testnet'
-                      ? 'BTC / ETH'
-                      : 'AAPL / Apple'
+                    ? 'BTC / BTCUSDT / AAPLUSDT'
+                    : 'BTC / ETH'
                 }
               />
               <button className="inline-search-button" type="button" onClick={runSearch}>

@@ -20,9 +20,8 @@ from .agent_models import (
 )
 
 BITGET_SOURCE = "bitget"
-ALPACA_SOURCE = "alpaca"
 HYPERLIQUID_TESTNET_SOURCE = "hyperliquid-testnet"
-SUPPORTED_SOURCES = {BITGET_SOURCE, ALPACA_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
+SUPPORTED_SOURCES = {BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
 SUPPORTED_INST_TYPES = {"SPOT", "USDT-FUTURES"}
 
 # Reuters 现役新闻 sitemap。老的 /sitemap_news.xml 已下线（401/404）。
@@ -251,8 +250,6 @@ def _default_group(source: str) -> str:
     """说明：根据数据源选择默认 UI 分组。"""
     if source in {BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}:
         return "crypto"
-    if source == ALPACA_SOURCE:
-        return "stocks"
     return DEFAULT_GROUP
 
 
@@ -586,8 +583,6 @@ def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> Ins
             symbol = maybe_symbol
 
     normalized_symbol = symbol.strip().upper()
-    if source == ALPACA_SOURCE and normalized_symbol.endswith(".US"):
-        normalized_symbol = normalized_symbol[:-3]
     if not normalized_symbol:
         raise ValueError("symbol entries cannot be blank")
     return InstrumentConfig(

@@ -1,14 +1,14 @@
 # mytradebot
 
-mytradebot 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Alpaca、Hyperliquid 测试网行情、React 图表、LLM Agent、Reuters 新闻和本地 SQLite 交易记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
+mytradebot 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 测试网行情、React 图表、LLM Agent、Reuters 新闻和本地 SQLite 交易记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
 
 它不是生产级交易终端，也不会连接真实盘账户自动交易。显式配置测试网/模拟盘凭证后，可以向 Hyperliquid testnet 或 Bitget Demo Trading 提交测试订单，并把外部订单号写回本地 SQLite。
 
 ## 现在它能做什么
 
-- **行情监控**：订阅 Bitget spot / USDT futures，拉取 Alpaca 美股/ETF 和 Hyperliquid 测试网快照、K 线与 extended stats。
+- **行情监控**：订阅 Bitget spot / USDT futures，拉取 Hyperliquid 测试网快照、K 线与 extended stats。
 - **多周期图表**：前端展示 watchlist、实时价格、K 线、成交量、均线、VWAP、布林带、RSI、MACD、ATR，并支持图表画线。
-- **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Alpaca 标的，也可以直接编辑 `watchlist.toml`。
+- **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Hyperliquid 测试网标的，也可以直接编辑 `watchlist.toml`。
 - **Agent 分析**：支持 Codex Responses provider 和 Anthropic Messages provider。Agent 可以读取行情、K 线、新闻和本地交易记录，并返回结构化交易观察。
 - **会话持久化**：每个标的都有独立 Agent session，历史记录保存在本地 SQLite，可以 resume、reset 或删除。
 - **测试网 / 模拟盘交易**：Agent 或 API 可以向 Hyperliquid testnet 或 Bitget 模拟盘提交测试订单，并把结果同步记录到本地交易表。
@@ -18,7 +18,7 @@ mytradebot 是一个本地优先的行情监控和交易研究工作台。它把
 ## 架构
 
 ```text
-Bitget / Alpaca / Hyperliquid / Reuters
+Bitget / Hyperliquid / Reuters
         |
         v
 FastAPI backend  <---->  SQLite stores
@@ -34,7 +34,7 @@ React + Vite frontend
 
 - `mytradebot/api/app.py`：HTTP API、WebSocket、后台 worker 生命周期。
 - `mytradebot/runtime/feed.py`：watchlist 行情循环、多周期 K 线、缓存与 provider 路由。
-- `mytradebot/market_data/`：Bitget、Alpaca、Hyperliquid、catalog 和 candle provider。
+- `mytradebot/market_data/`：Bitget、Hyperliquid、catalog 和 candle provider。
 - `mytradebot/agent/`：LLM provider、agent loop、工具和 session 存储。
 - `mytradebot/trading/`：交易数据模型、SQLite store、Hyperliquid testnet / Bitget Demo Trading 客户端和 review controller。
 - `mytradebot/news/`：Reuters 新闻抓取、存储和 API 数据源。
@@ -85,8 +85,8 @@ python -m mytradebot --config watchlist.toml --host 127.0.0.1 --port 8765
 symbols = [
   { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC Perp", group = "crypto", analysis_interval = "15m", show_collapsed = true },
   { symbol = "ETHUSDT", source = "bitget", inst_type = "SPOT", label = "ETH Spot", group = "crypto" },
-  { symbol = "SPY", source = "alpaca", label = "SPY", group = "stocks", analysis_interval = "1H" },
-  { symbol = "AAPL", source = "alpaca", label = "AAPL", group = "stocks" },
+  { symbol = "SPYUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SPY", group = "stocks", analysis_interval = "1H" },
+  { symbol = "AAPLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "AAPL", group = "stocks" },
   "USDT-FUTURES:SOLUSDT"
 ]
 
@@ -128,7 +128,6 @@ recent_limit = 50
 
 - 字符串：`"BTCUSDT"` 或 `"USDT-FUTURES:BTCUSDT"`，默认按 Bitget 解析。
 - inline table：可以显式配置 `source`、`inst_type`、`label`、`group`、`analysis_interval`、`show_collapsed`。
-- Alpaca 标的需要写成 inline table，并显式设置 `source = "alpaca"`。
 
 常用 `analysis_interval`：
 
@@ -144,22 +143,6 @@ Bitget：
 - spot 标的使用 `inst_type = "SPOT"`
 - U 本位合约使用 `inst_type = "USDT-FUTURES"`
 - catalog 和历史 K 线走 REST，实时报价走 public WebSocket。
-
-Alpaca：
-
-- `source = "alpaca"`
-- 适合美股和 ETF。
-- API key 只从环境变量读取，不写入 `watchlist.toml`。
-
-```bash
-export APCA_API_KEY_ID="..."
-export APCA_API_SECRET_KEY="..."
-export APCA_API_BASE_URL="https://paper-api.alpaca.markets"
-export ALPACA_DATA_FEED="iex"
-export ALPACA_EXTENDED_STATS_FEED="delayed_sip"
-```
-
-Alpaca Basic 常见限制是 IEX/default feed 和 delayed SIP 数据，UI 中的 extended stats 会按当前可用 feed 返回。
 
 ## Agent Provider
 
@@ -323,7 +306,7 @@ Content-Type: application/json
 
 - `GET /api/state`：当前 watchlist、报价、K 线、provider 状态。
 - `GET /api/instruments/search`：搜索可添加标的。
-- `POST /api/watchlist/bitget` / `POST /api/watchlist/alpaca`：添加标的。
+- `POST /api/watchlist/bitget`：添加 Bitget 标的。
 - `GET /api/agent/models`：当前 provider 可用模型。
 - `GET /api/agent/config` / `PUT /api/agent/config`：读取和更新 Agent 配置。
 - `POST /api/agent/analyze/{instrument_key}`：对某个标的发起 Agent 分析。
@@ -354,5 +337,4 @@ npm run build
 - 不连接真实盘账户下单；只支持 Hyperliquid testnet 和 Bitget Demo Trading。
 - 本地不会用 1m K 线模拟成交；未成交或挂单状态需要以后接入交易所状态同步/撤单能力。
 - Agent 和 news analyst 适合做研究辅助，不应该直接当作交易信号执行。
-- Alpaca 数据能力取决于账号权限和 feed 配置。
 - 新闻来源目前以 Reuters sitemap provider 为主。

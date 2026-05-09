@@ -21,7 +21,6 @@ from mytradebot.config import (
     load_config,
 )
 from mytradebot.runtime.controller import DrainResult
-from mytradebot.market_data.alpaca import AlpacaAsset, AlpacaInstrument
 from mytradebot.market_data.bitget import BitgetInstrument
 from mytradebot.market_data.hyperliquid import HyperliquidInstrument
 from mytradebot.domain.quotes import QuoteState
@@ -79,6 +78,16 @@ class DummyController:
         return self.older_candles
 
 
+def _bitget_btc() -> BitgetInstrument:
+    """Return a stable Bitget fixture instrument used across API tests."""
+    return BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
+
+
+def _bitget_eth() -> BitgetInstrument:
+    """Return a second Bitget fixture instrument for multi-symbol tests."""
+    return BitgetInstrument("ETHUSDT", "USDT-FUTURES", "ETH", "ETH", "USDT", "perp")
+
+
 class WebTests(unittest.TestCase):
     """Group tests for the web app."""
 
@@ -132,7 +141,7 @@ class WebTests(unittest.TestCase):
         """Verify local web responses do not reuse stale frontend bundles."""
         if not (WEB_DIST / "index.html").is_file():
             self.skipTest("web dist is not built in this checkout")
-        instrument = AlpacaInstrument("AAPL", "AAPL")
+        instrument = _bitget_btc()
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
             instruments=(instrument,),
@@ -159,12 +168,12 @@ class WebTests(unittest.TestCase):
 
     def test_serialize_market_state_includes_quotes_and_candles(self) -> None:
         """Verify browser state contains quote labels and chart data."""
-        instrument = AlpacaInstrument("AAPL", "AAPL")
+        instrument = _bitget_btc()
         config = AppConfig(instruments=tuple(), display=DisplayConfig())
         quote = QuoteState.placeholder("AAPL")
         quote.apply_payload({"short_name": "AAPL", "price": 201.25, "change_percent": 0.72})
-        candle = Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345)
-        thumbnail_candle = Candle("alpaca:AAPL", 1776849600000, 201, 203, 200, 202.25, 14000)
+        candle = Candle("USDT-FUTURES:BTCUSDT", 1776846000000, 200, 202, 199, 201.25, 12345)
+        thumbnail_candle = Candle("USDT-FUTURES:BTCUSDT", 1776849600000, 201, 203, 200, 202.25, 14000)
         quote.apply_candles(
             candles=(candle,),
             thumbnail_candles=(thumbnail_candle,),
@@ -177,8 +186,8 @@ class WebTests(unittest.TestCase):
             stream_status="live",
         )
 
-        self.assertEqual(payload["instruments"][0]["key"], "alpaca:AAPL")
-        self.assertIsNone(payload["instruments"][0]["instType"])
+        self.assertEqual(payload["instruments"][0]["key"], "USDT-FUTURES:BTCUSDT")
+        self.assertEqual(payload["instruments"][0]["instType"], "USDT-FUTURES")
         self.assertEqual(payload["quotes"][instrument.key]["priceLabel"], "201.25")
         self.assertNotIn("priceAction", payload["quotes"][instrument.key])
         self.assertEqual(payload["quotes"][instrument.key]["multiTimeframeIntervals"], [])
@@ -191,7 +200,7 @@ class WebTests(unittest.TestCase):
 
     def test_state_endpoint_uses_runtime_snapshot(self) -> None:
         """Verify the local API exposes runtime state."""
-        instrument = AlpacaInstrument("AAPL", "AAPL")
+        instrument = _bitget_btc()
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
             instruments=(instrument,),
@@ -203,7 +212,7 @@ class WebTests(unittest.TestCase):
             response = client.get("/api/state")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["instruments"][0]["key"], "alpaca:AAPL")
+        self.assertEqual(response.json()["instruments"][0]["key"], "USDT-FUTURES:BTCUSDT")
 
     def test_bitget_demo_trade_endpoint_records_order(self) -> None:
         """Verify Bitget demo order API writes the external order id locally."""
@@ -289,7 +298,7 @@ class WebTests(unittest.TestCase):
 
     def test_load_older_candles_endpoint_merges_history(self) -> None:
         """Verify browser can request earlier candles for the selected chart."""
-        instrument = AlpacaInstrument("AAPL", "AAPL")
+        instrument = _bitget_btc()
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
             instruments=(instrument,),
@@ -297,23 +306,23 @@ class WebTests(unittest.TestCase):
             auto_start=False,
         )
         runtime = app.state.runtime
-        existing = Candle("alpaca:AAPL", 1777406400000, 200, 202, 199, 201.25, 12345)
-        older = Candle("alpaca:AAPL", 1777406100000, 199, 201, 198.5, 200.0, 12000)
+        existing = Candle("USDT-FUTURES:BTCUSDT", 1777406400000, 200, 202, 199, 201.25, 12345)
+        older = Candle("USDT-FUTURES:BTCUSDT", 1777406100000, 199, 201, 198.5, 200.0, 12000)
         runtime.controller.quotes[instrument.key].apply_candles(candles=(existing,))
         runtime.controller.older_candles = (older,)
 
         with TestClient(app) as client:
-            response = client.post("/api/instruments/alpaca%3AAAPL/candles/older")
+            response = client.post("/api/instruments/USDT-FUTURES%3ABTCUSDT/candles/older")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["added"], 1)
         self.assertEqual(
             runtime.controller.older_requests,
-            [("alpaca:AAPL", "5m", 1777406400000, 200)],
+            [("USDT-FUTURES:BTCUSDT", "5m", 1777406400000, 200)],
         )
         self.assertEqual(
-            [item["time"] for item in payload["state"]["quotes"]["alpaca:AAPL"]["candles"]],
+            [item["time"] for item in payload["state"]["quotes"]["USDT-FUTURES:BTCUSDT"]["candles"]],
             [1777406100, 1777406400],
         )
 
@@ -339,27 +348,6 @@ class WebTests(unittest.TestCase):
             response = client.post("/api/instruments/paper%3ATEST/candles/older")
 
         self.assertEqual(response.status_code, 400)
-
-    def test_search_endpoint_marks_existing_symbols(self) -> None:
-        """Verify default securities search uses Alpaca and marks active symbols."""
-        instrument = AlpacaInstrument("AAPL", "AAPL")
-        app = create_app(
-            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
-            instruments=(instrument,),
-            controller_factory=DummyController,
-            auto_start=False,
-        )
-
-        with patch(
-            "mytradebot.api.runtime.search_alpaca_assets",
-            return_value=(AlpacaAsset("AAPL", name="Apple Inc.", exchange="NASDAQ"),),
-        ):
-            with TestClient(app) as client:
-                response = client.get("/api/securities/search", params={"q": "apple"})
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["results"][0]["exists"])
-        self.assertEqual(response.json()["results"][0]["source"], "alpaca")
 
     def test_bitget_search_endpoint_marks_existing_symbols(self) -> None:
         """Verify Bitget search reports source, inst_type, and active state."""
@@ -423,22 +411,22 @@ class WebTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
+                      { symbol = "ETHUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "ETH" },
                     ]
                     """
                 ).strip()
             )
             config = load_config(config_path)
-            alpaca = AlpacaInstrument("AAPL", "AAPL")
-            bitget = BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
+            eth = _bitget_eth()
+            bitget = _bitget_btc()
             app = create_app(
                 config=config,
-                instruments=(alpaca,),
+                instruments=(eth,),
                 controller_factory=DummyController,
                 auto_start=False,
             )
 
-            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(alpaca, bitget)):
+            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(eth, bitget)):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/watchlist/bitget",
@@ -491,8 +479,8 @@ class WebTests(unittest.TestCase):
         self.assertIn("limitPrice is required", response.json()["detail"])
         opened.assert_not_called()
 
-    def test_alpaca_add_endpoint_persists_symbol(self) -> None:
-        """Verify browser can add Alpaca symbols to the watchlist."""
+    def test_hyperliquid_add_endpoint_persists_symbol(self) -> None:
+        """Verify browser can add Hyperliquid testnet symbols to the watchlist."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "watchlist.toml"
             config_path.write_text(
@@ -505,8 +493,8 @@ class WebTests(unittest.TestCase):
                 ).strip()
             )
             config = load_config(config_path)
-            bitget = BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
-            alpaca = AlpacaInstrument("AAPL", "AAPL")
+            bitget = _bitget_btc()
+            hyperliquid = HyperliquidInstrument("ETH", "ETH Perp", "ETH")
             app = create_app(
                 config=config,
                 instruments=(bitget,),
@@ -514,18 +502,18 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(bitget, alpaca)):
+            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(bitget, hyperliquid)):
                 with TestClient(app) as client:
                     response = client.post(
-                        "/api/watchlist/alpaca",
-                        json={"symbol": "AAPL.US", "label": "AAPL"},
+                        "/api/watchlist/hyperliquid-testnet",
+                        json={"symbol": "ETH", "label": "ETH"},
                     )
             persisted = load_config(config_path)
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["changed"])
-        self.assertEqual(persisted.instruments[1].symbol, "AAPL")
-        self.assertEqual(persisted.instruments[1].source, "alpaca")
+        self.assertEqual(persisted.instruments[1].symbol, "ETH")
+        self.assertEqual(persisted.instruments[1].source, "hyperliquid-testnet")
 
     def test_remove_instrument_endpoint_persists_bitget_symbol(self) -> None:
         """Verify browser can remove any active watchlist instrument by key."""
@@ -535,23 +523,23 @@ class WebTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
+                      { symbol = "ETHUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "ETH" },
                       { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC" },
                     ]
                     """
                 ).strip()
             )
             config = load_config(config_path)
-            alpaca = AlpacaInstrument("AAPL", "AAPL")
-            bitget = BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
+            eth = _bitget_eth()
+            bitget = _bitget_btc()
             app = create_app(
                 config=config,
-                instruments=(alpaca, bitget),
+                instruments=(eth, bitget),
                 controller_factory=DummyController,
                 auto_start=False,
             )
 
-            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(alpaca,)):
+            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(eth,)):
                 with TestClient(app) as client:
                     response = client.delete("/api/watchlist/instruments/USDT-FUTURES%3ABTCUSDT")
             persisted_text = config_path.read_text()
@@ -559,7 +547,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["changed"])
         self.assertNotIn("BTCUSDT", persisted_text)
-        self.assertIn("AAPL", persisted_text)
+        self.assertIn("ETHUSDT", persisted_text)
 
     def test_remove_instrument_endpoint_rejects_last_symbol(self) -> None:
         """Verify browser cannot remove the final active watchlist instrument."""
@@ -605,7 +593,7 @@ class WebTests(unittest.TestCase):
                 return ChatResponse(content="AAPL is trending.")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = _bitget_btc()
             store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
             app = create_app(
                 config=AppConfig(instruments=tuple(), display=DisplayConfig()),
@@ -617,18 +605,18 @@ class WebTests(unittest.TestCase):
             quote = app.state.runtime.controller.quotes[instrument.key]
             quote.apply_payload({"price": 201.25})
             quote.apply_candles(
-                candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
+                candles=(Candle("USDT-FUTURES:BTCUSDT", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
             provider = FakeProvider()
 
             with patch("mytradebot.api.runtime.create_llm_provider", return_value=provider):
                 with TestClient(app) as client:
                     response = client.post(
-                        "/api/agent/sessions/alpaca:AAPL/messages",
+                        "/api/agent/sessions/USDT-FUTURES:BTCUSDT/messages",
                         json={"message": "What changed since the prior candle?"},
                     )
-                    persisted_response = client.get("/api/agent/sessions/alpaca:AAPL")
-                    history_response = client.get("/api/agent/sessions/alpaca:AAPL/history")
+                    persisted_response = client.get("/api/agent/sessions/USDT-FUTURES:BTCUSDT")
+                    history_response = client.get("/api/agent/sessions/USDT-FUTURES:BTCUSDT/history")
 
         payload = response.json()
         persisted_payload = persisted_response.json()
@@ -696,7 +684,7 @@ class WebTests(unittest.TestCase):
     def test_agent_session_history_can_resume_and_delete(self) -> None:
         """Verify history endpoints can restore and delete persisted chart sessions."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = _bitget_btc()
             store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
             first = store.create_session(
                 instrument_key=instrument.key,
@@ -735,13 +723,13 @@ class WebTests(unittest.TestCase):
 
             with TestClient(app) as client:
                 resume_response = client.post(
-                    f"/api/agent/sessions/alpaca:AAPL/history/{first.id}/resume",
+                    f"/api/agent/sessions/USDT-FUTURES:BTCUSDT/history/{first.id}/resume",
                 )
                 delete_response = client.delete(
-                    f"/api/agent/sessions/alpaca:AAPL/history/{first.id}",
+                    f"/api/agent/sessions/USDT-FUTURES:BTCUSDT/history/{first.id}",
                 )
                 missing_response = client.delete(
-                    f"/api/agent/sessions/alpaca:AAPL/history/{first.id}",
+                    f"/api/agent/sessions/USDT-FUTURES:BTCUSDT/history/{first.id}",
                 )
 
         resume_payload = resume_response.json()
@@ -758,7 +746,7 @@ class WebTests(unittest.TestCase):
     def test_agent_session_history_delete_last_clears_state(self) -> None:
         """Verify deleting the only session for an instrument clears agentAnalyses and history."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = _bitget_btc()
             store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
             only_session = store.create_session(
                 instrument_key=instrument.key,
@@ -786,9 +774,9 @@ class WebTests(unittest.TestCase):
 
             with TestClient(app) as client:
                 # Resume first so delete exercises active-session cleanup.
-                client.post(f"/api/agent/sessions/alpaca:AAPL/history/{only_session.id}/resume")
+                client.post(f"/api/agent/sessions/USDT-FUTURES:BTCUSDT/history/{only_session.id}/resume")
                 delete_response = client.delete(
-                    f"/api/agent/sessions/alpaca:AAPL/history/{only_session.id}",
+                    f"/api/agent/sessions/USDT-FUTURES:BTCUSDT/history/{only_session.id}",
                 )
 
         delete_payload = delete_response.json()
@@ -963,7 +951,7 @@ class WebTests(unittest.TestCase):
                 )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = _bitget_btc()
             store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
             app = create_app(
                 config=AppConfig(instruments=tuple(), display=DisplayConfig()),
@@ -975,14 +963,14 @@ class WebTests(unittest.TestCase):
             quote = app.state.runtime.controller.quotes[instrument.key]
             quote.apply_payload({"price": 201.25})
             quote.apply_candles(
-                candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
+                candles=(Candle("USDT-FUTURES:BTCUSDT", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
             provider = FakeLoopProvider()
 
             with patch("mytradebot.api.runtime.create_llm_provider", return_value=provider):
                 with TestClient(app) as client:
                     response = client.post(
-                        "/api/agent/sessions/alpaca:AAPL/messages",
+                        "/api/agent/sessions/USDT-FUTURES:BTCUSDT/messages",
                         json={"message": "Analyze this."},
                     )
 
@@ -992,7 +980,7 @@ class WebTests(unittest.TestCase):
         self.assertTrue(payload["result"]["available"])
         self.assertNotIn("当前行情上下文", prompt)
         self.assertNotIn('"candles"', prompt)
-        self.assertIn("alpaca:AAPL", prompt)
+        self.assertIn("USDT-FUTURES:BTCUSDT", prompt)
         self.assertIn("get_candles", prompt)
         self.assertTrue(provider.tools)
         tool_names = {tool["function"]["name"] for tool in provider.tools}
@@ -1042,7 +1030,7 @@ class WebTests(unittest.TestCase):
                 raise RuntimeError("provider exploded")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = _bitget_btc()
             store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
             app = create_app(
                 config=AppConfig(instruments=tuple(), display=DisplayConfig()),
@@ -1054,13 +1042,13 @@ class WebTests(unittest.TestCase):
             quote = app.state.runtime.controller.quotes[instrument.key]
             quote.apply_payload({"price": 201.25})
             quote.apply_candles(
-                candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
+                candles=(Candle("USDT-FUTURES:BTCUSDT", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
 
             with patch("mytradebot.api.runtime.create_llm_provider", return_value=FailingLoopProvider()):
                 with TestClient(app) as client:
                     response = client.post(
-                        "/api/agent/sessions/alpaca:AAPL/messages",
+                        "/api/agent/sessions/USDT-FUTURES:BTCUSDT/messages",
                         json={"message": "Analyze this."},
                     )
 
@@ -1081,7 +1069,7 @@ class WebTests(unittest.TestCase):
                 return ChatResponse(content="")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = _bitget_btc()
             store = AgentSessionStore(Path(tmp_dir) / "agent.sqlite3")
             app = create_app(
                 config=AppConfig(instruments=tuple(), display=DisplayConfig()),
@@ -1093,13 +1081,13 @@ class WebTests(unittest.TestCase):
             quote = app.state.runtime.controller.quotes[instrument.key]
             quote.apply_payload({"price": 201.25})
             quote.apply_candles(
-                candles=(Candle("alpaca:AAPL", 1776846000000, 200, 202, 199, 201.25, 12345),),
+                candles=(Candle("USDT-FUTURES:BTCUSDT", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
 
             with patch("mytradebot.api.runtime.create_llm_provider", return_value=EmptyLoopProvider()):
                 with TestClient(app) as client:
                     response = client.post(
-                        "/api/agent/sessions/alpaca:AAPL/messages",
+                        "/api/agent/sessions/USDT-FUTURES:BTCUSDT/messages",
                         json={"message": "Analyze this."},
                     )
 
@@ -1111,7 +1099,7 @@ class WebTests(unittest.TestCase):
 
     def test_agent_models_endpoint_returns_provider_models(self) -> None:
         """Verify model discovery endpoint forwards provider model metadata."""
-        instrument = AlpacaInstrument("AAPL", "AAPL")
+        instrument = _bitget_btc()
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
             instruments=(instrument,),
@@ -1143,13 +1131,13 @@ class WebTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
+                      { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC" },
                     ]
                     """
                 ).strip()
             )
             config = load_config(config_path)
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = _bitget_btc()
             app = create_app(
                 config=config,
                 instruments=(instrument,),
@@ -1191,13 +1179,13 @@ class WebTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
+                      { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC" },
                     ]
                     """
                 ).strip()
             )
             config = load_config(config_path)
-            instrument = AlpacaInstrument("AAPL", "AAPL")
+            instrument = _bitget_btc()
             app = create_app(
                 config=config,
                 instruments=(instrument,),
@@ -1219,16 +1207,16 @@ class WebTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "AAPL", source = "alpaca", label = "AAPL" },
-                      { symbol = "SPY", source = "alpaca", label = "SPY" },
+                      { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC" },
+                      { symbol = "ETHUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "ETH" },
                     ]
                     """
                 ).strip()
             )
             config = load_config(config_path)
             instruments = (
-                AlpacaInstrument("AAPL", "AAPL"),
-                AlpacaInstrument("SPY", "SPY"),
+                _bitget_btc(),
+                _bitget_eth(),
             )
             app = create_app(
                 config=config,
@@ -1239,7 +1227,7 @@ class WebTests(unittest.TestCase):
 
             with TestClient(app) as client:
                 response = client.post(
-                    "/api/instruments/alpaca%3AAAPL/analysis-interval",
+                    "/api/instruments/USDT-FUTURES%3ABTCUSDT/analysis-interval",
                     json={"interval": "15m"},
                 )
 
@@ -1248,14 +1236,14 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         state = response.json()["state"]
         intervals = {item["key"]: item["analysisInterval"] for item in state["instruments"]}
-        self.assertEqual(intervals["alpaca:AAPL"], "15m")
-        self.assertEqual(intervals["alpaca:SPY"], "5m")
+        self.assertEqual(intervals["USDT-FUTURES:BTCUSDT"], "15m")
+        self.assertEqual(intervals["USDT-FUTURES:ETHUSDT"], "5m")
         self.assertEqual(persisted.instruments[0].analysis_interval, "15m")
         self.assertIsNone(persisted.instruments[1].analysis_interval)
 
     def test_news_endpoint_returns_empty_when_disabled(self) -> None:
         """Verify /api/news and snapshot behave when news module is disabled."""
-        instrument = AlpacaInstrument("AAPL", "AAPL")
+        instrument = _bitget_btc()
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
             instruments=(instrument,),
@@ -1281,7 +1269,7 @@ class WebTests(unittest.TestCase):
         from mytradebot.news import NewsItem, NewsStore
         from mytradebot.news.providers.reuters import FetchResult
 
-        instrument = AlpacaInstrument("AAPL", "AAPL")
+        instrument = _bitget_btc()
         app = create_app(
             config=AppConfig(
                 instruments=tuple(),

@@ -21,7 +21,6 @@ import {
   type ThemeName,
 } from './constants';
 import {
-  addAlpacaSymbol,
   addBitgetSymbol,
   addHyperliquidTestnetSymbol,
 } from './api';
@@ -80,7 +79,7 @@ export function navigateToRoute(route: AppRoute) {
 
 export function orderedGroups(state: MarketState | null) {
   if (!state) return [];
-  const preferred = ['alpaca', 'bitget', 'hyperliquid-testnet'];
+  const preferred = ['bitget', 'hyperliquid-testnet'];
   const present = Object.keys(state.groups);
   return [
     ...preferred.filter((group) => present.includes(group)),
@@ -97,12 +96,10 @@ export function changeClass(quote: Quote | undefined) {
 
 export function sourceLabel(instrument: Instrument | undefined) {
   if (!instrument) return '-';
-  if (instrument.source === 'alpaca') return 'Alpaca';
   return instrument.source.toUpperCase();
 }
 
 export function sourceName(source: string) {
-  if (source === 'alpaca') return 'Alpaca';
   if (source === 'hyperliquid-testnet') return 'Hyperliquid Testnet';
   return source.toUpperCase();
 }
@@ -119,7 +116,7 @@ export function watchlistSectionLabel(source: string) {
 }
 
 export function watchlistSections(instruments: Instrument[]) {
-  const preferred = ['alpaca', 'bitget', 'hyperliquid-testnet'];
+  const preferred = ['bitget', 'hyperliquid-testnet'];
   const sources = [
     ...preferred.filter((source) => instruments.some((instrument) => instrument.source === source)),
     ...Array.from(new Set(instruments.map((instrument) => instrument.source)))
@@ -157,7 +154,7 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
   const explicitLabel = labelParts.join(' ').trim();
   let sourceHint: SourceHint | null = null;
   let body = token.trim();
-  const sourceMatch = body.match(/^(bitget|alpaca|hyperliquid-testnet|hyperliquid)[:/](.+)$/i);
+  const sourceMatch = body.match(/^(bitget|hyperliquid-testnet|hyperliquid)[:/](.+)$/i);
   if (sourceMatch) {
     const hint = sourceMatch[1].toLowerCase();
     sourceHint = (hint === 'hyperliquid' ? 'hyperliquid-testnet' : hint) as SourceHint;
@@ -177,16 +174,6 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
         raw: trimmed, source, symbol, label: explicitLabel || upperBody, instType,
         key: `hyperliquid-testnet:${symbol}`, valid: false, exists: false,
         error: 'Hyperliquid coin cannot be blank.',
-      };
-    }
-  } else if (sourceHint === 'alpaca' || (!sourceHint && upperBody.endsWith('.US'))) {
-    source = 'alpaca';
-    symbol = upperBody.endsWith('.US') ? upperBody.slice(0, -3) : upperBody;
-    if (!symbol) {
-      return {
-        raw: trimmed, source, symbol, label: explicitLabel || upperBody, instType,
-        key: `alpaca:${symbol}`, valid: false, exists: false,
-        error: 'Alpaca symbol cannot be blank.',
       };
     }
   } else {
@@ -209,14 +196,11 @@ function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'i
   }
 
   let label = explicitLabel || defaultBitgetLabel(symbol);
-  if (!explicitLabel && source === 'alpaca') label = symbol;
   if (!explicitLabel && source === 'hyperliquid-testnet') label = `${symbol} Perp`;
   const key =
-    source === 'alpaca'
-      ? `alpaca:${symbol}`
-      : source === 'hyperliquid-testnet'
-        ? `hyperliquid-testnet:${symbol}`
-        : `${instType}:${symbol}`;
+    source === 'hyperliquid-testnet'
+      ? `hyperliquid-testnet:${symbol}`
+      : `${instType}:${symbol}`;
   return { raw: trimmed, source, symbol, label, instType, key, valid: true, exists: activeKeys.has(key), error: null };
 }
 
@@ -245,17 +229,14 @@ export function resultFromBulkEntry(entry: BulkEntry): InstrumentSearchResult {
     displayText:
       entry.source === 'bitget'
         ? `${entry.instType} · ${entry.symbol}`
-        : entry.source === 'hyperliquid-testnet'
-          ? `Testnet perp · ${entry.symbol}/USDC`
-          : entry.symbol,
+        : `Testnet perp · ${entry.symbol}/USDC`,
     exists: entry.exists,
   };
 }
 
 export function addInstrumentBySource(result: InstrumentSearchResult) {
   if (result.source === 'bitget') return addBitgetSymbol(result);
-  if (result.source === 'hyperliquid-testnet') return addHyperliquidTestnetSymbol(result);
-  return addAlpacaSymbol(result);
+  return addHyperliquidTestnetSymbol(result);
 }
 
 export function formatLevelPrice(price: number | null) {

@@ -91,7 +91,7 @@ export const useMarketStore = create<MarketStoreState>((set, get) => ({
       !selectedKey || !selectedInstrument || !historyKey ||
       olderBusyRef.current === historyKey ||
       exhaustedHistoryKeys.has(historyKey) ||
-      !['alpaca', 'bitget', 'hyperliquid-testnet'].includes(selectedInstrument.source)
+      !['bitget', 'hyperliquid-testnet'].includes(selectedInstrument.source)
     ) return;
 
     olderBusyRef.current = historyKey;

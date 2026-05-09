@@ -1,4 +1,4 @@
-"""交易工具：Hyperliquid 测试网 / Bitget 模拟盘 / Alpaca 纸盘下单 + 交易历史查询。"""
+"""交易工具：Hyperliquid 测试网 / Bitget 模拟盘下单 + 交易历史查询。"""
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -13,9 +13,8 @@ from ...trading import (
     open_testnet_position as open_hyperliquid_testnet_position,
 )
 from ...trading import bitget as bitget_trading
-from ...trading import alpaca as alpaca_trading
 from ...trading.exchange_models import OrderResult
-from ...config import BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE
+from ...config import HYPERLIQUID_TESTNET_SOURCE
 from .registry import ToolDefinition, ToolRegistry, _json_output
 
 
@@ -294,83 +293,6 @@ def build_trading_tools(
             "required": ["instrument_key", "direction", "size", "reasoning"],
         },
         handler=open_bitget_demo_trade,
-    ))
-
-    async def open_alpaca_paper_trade(
-        instrument_key: str,
-        direction: str,
-        size: float,
-        reasoning: str,
-        order_type: str = "market",
-        limit_price: float | None = None,
-        time_in_force: str = "day",
-    ) -> str:
-        """在 Alpaca paper trading 提交订单。"""
-        if not instrument_key.startswith("alpaca:"):
-            return _json_output({"error": "open_alpaca_paper_trade only supports alpaca:* instruments"})
-        try:
-            direction_enum = TradeDirection(direction.lower())
-        except ValueError:
-            return _json_output({"error": f"invalid direction: {direction}"})
-        symbol = instrument_key.split(":", 1)[1]
-        side = "buy" if direction_enum is TradeDirection.LONG else "sell"
-        result = alpaca_trading.place_order(
-            symbol=symbol,
-            side=side,
-            order_type=(order_type or "market").lower(),
-            qty=float(size),
-            limit_price=None if limit_price is None else float(limit_price),
-            time_in_force=time_in_force,
-        )
-        if not result.ok:
-            return _json_output({"error": result.error})
-        try:
-            payload = _record_exchange_trade(
-                instrument_key, direction_enum, size, reasoning, result, "alpaca-paper",
-            )
-            return _json_output(payload)
-        except ValueError as exc:
-            return _json_output({"error": str(exc), "order": result.raw})
-
-    registry.register(ToolDefinition(
-        name="open_alpaca_paper_trade",
-        description=(
-            "在 Alpaca paper trading 提交订单，并把结果写入本地交易记录。"
-            "只支持 alpaca:* 标的（美股/ETF）。需要环境变量 "
-            "APCA_API_KEY_ID, APCA_API_SECRET_KEY。"
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "instrument_key": {
-                    "type": "string",
-                    "description": "标的唯一标识，如 alpaca:AAPL",
-                },
-                "direction": {"type": "string", "enum": ["long", "short"]},
-                "size": {"type": "number", "description": "股数，必须 > 0"},
-                "reasoning": {
-                    "type": "string",
-                    "description": "开仓理由，会写入本地 trade 记录",
-                },
-                "order_type": {
-                    "type": "string",
-                    "enum": ["market", "limit"],
-                    "default": "market",
-                },
-                "limit_price": {
-                    "type": ["number", "null"],
-                    "description": "limit 单必填；market 单可留空",
-                },
-                "time_in_force": {
-                    "type": "string",
-                    "enum": ["day", "gtc", "ioc", "fok"],
-                    "default": "day",
-                    "description": "订单有效期",
-                },
-            },
-            "required": ["instrument_key", "direction", "size", "reasoning"],
-        },
-        handler=open_alpaca_paper_trade,
     ))
 
     async def list_open_trades(instrument_key: str | None = None) -> str:

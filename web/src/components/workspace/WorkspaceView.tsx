@@ -52,7 +52,7 @@ export function WorkspaceView() {
   const canLoadOlder =
     Boolean(
       selectedInstrument &&
-        ['alpaca', 'bitget', 'hyperliquid-testnet'].includes(selectedInstrument.source),
+        ['bitget', 'hyperliquid-testnet'].includes(selectedInstrument.source),
     ) &&
     Boolean(historyKey && !exhaustedHistoryKeys.has(historyKey));
   const nextThemeName: ThemeName = nextTheme(theme);

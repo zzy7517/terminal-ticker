@@ -9,11 +9,6 @@ from dataclasses import dataclass
 import logging
 from typing import Any
 
-from ..market_data.alpaca import (
-    AlpacaInstrument,
-    fetch_candles as fetch_alpaca_candles,
-    fetch_snapshot_payloads as fetch_alpaca_snapshot_payloads,
-)
 from ..market_data.bitget import (
     BitgetInstrument,
     BitgetPublicWebSocket,
@@ -74,7 +69,7 @@ class FeedEvent:
 
 
 class FeedWorker(threading.Thread):
-    """说明：在线程中运行 Bitget 流、股票轮询和 K 线分析。"""
+    """说明：在线程中运行行情流、轮询和 K 线分析。"""
     def __init__(
         self,
         *,
@@ -89,9 +84,6 @@ class FeedWorker(threading.Thread):
         self.instruments = instruments
         self.bitget_instruments = tuple(
             instrument for instrument in instruments if isinstance(instrument, BitgetInstrument)
-        )
-        self.alpaca_instruments = tuple(
-            instrument for instrument in instruments if isinstance(instrument, AlpacaInstrument)
         )
         self.hyperliquid_instruments = tuple(
             instrument for instrument in instruments if isinstance(instrument, HyperliquidInstrument)
@@ -136,16 +128,14 @@ class FeedWorker(threading.Thread):
             asyncio.create_task(self.socket.close())
 
     async def _run(self) -> None:
-        # Bitget streams and stock polling run independently but share one event queue.
+        # Bitget streams and REST polling run independently but share one event queue.
         """说明：启动 provider 任务并在退出时发送 stopped 状态。"""
         if self.bitget_instruments:
             self.tasks.append(asyncio.create_task(self._run_bitget()))
         if self.config.analysis.enabled and (
-            self.bitget_instruments or self.alpaca_instruments or self.hyperliquid_instruments
+            self.bitget_instruments or self.hyperliquid_instruments
         ):
             self.tasks.append(asyncio.create_task(self._run_candles()))
-        if self.alpaca_instruments:
-            self.tasks.append(asyncio.create_task(self._run_alpaca()))
         if self.hyperliquid_instruments:
             self.tasks.append(asyncio.create_task(self._run_hyperliquid()))
 
@@ -185,37 +175,6 @@ class FeedWorker(threading.Thread):
                 self.socket = None
                 self.listen_task = None
 
-    async def _run_alpaca(self) -> None:
-        """说明：按配置周期轮询 Alpaca 股票快照。"""
-        while not self.stop_event.is_set():
-            try:
-                payloads = await asyncio.to_thread(
-                    fetch_alpaca_snapshot_payloads,
-                    self.alpaca_instruments,
-                )
-                for payload in payloads.values():
-                    self.event_queue.put(FeedEvent("quote", payload))
-                if payloads:
-                    self.event_queue.put(FeedEvent("status", "polling"))
-            except asyncio.CancelledError:
-                break
-            except Exception as exc:
-                detail = str(exc) or exc.__class__.__name__
-                self.event_queue.put(
-                    FeedEvent(
-                        "error",
-                        {
-                            "message": detail,
-                            "ids": [instrument.key for instrument in self.alpaca_instruments],
-                        },
-                    )
-                )
-
-            try:
-                await asyncio.sleep(self.config.display.stock_poll_interval_seconds)
-            except asyncio.CancelledError:
-                break
-
     async def _run_hyperliquid(self) -> None:
         """说明：按配置周期轮询 Hyperliquid 测试网快照。"""
         while not self.stop_event.is_set():
@@ -251,7 +210,7 @@ class FeedWorker(threading.Thread):
         """说明：轮询 provider K 线并发送图表数据。"""
         while not self.stop_event.is_set():
             for instrument in (
-                self.bitget_instruments + self.alpaca_instruments + self.hyperliquid_instruments
+                self.bitget_instruments + self.hyperliquid_instruments
             ):
                 if self.stop_event.is_set():
                     break
@@ -389,14 +348,6 @@ class FeedWorker(threading.Thread):
         """说明：绕过缓存直接从 provider 拉取近期 K 线。"""
         if isinstance(instrument, BitgetInstrument):
             return fetch_bitget_candles(
-                instrument,
-                interval=interval,
-                limit=limit,
-                after_open_time_ms=after_open_time_ms,
-                before_open_time_ms=before_open_time_ms,
-            )
-        if isinstance(instrument, AlpacaInstrument):
-            return fetch_alpaca_candles(
                 instrument,
                 interval=interval,
                 limit=limit,

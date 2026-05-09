@@ -15,7 +15,6 @@ import type {
   MarketState,
   NewsConfigUpdate,
   NewsItem,
-  SecuritySearchResult,
   SocialAuthStatus,
   SocialFeedItem,
   SocialFeedConfigUpdate,
@@ -66,17 +65,6 @@ export async function fetchState(): Promise<MarketState> {
   return response.json();
 }
 
-// Searches the legacy securities endpoint retained for compatibility.
-export async function searchSecurities(query: string): Promise<SecuritySearchResult[]> {
-  const params = new URLSearchParams({ q: query });
-  const response = await fetch(`/api/securities/search?${params}`);
-  if (!response.ok) {
-    throw new Error(`search failed: ${response.status}`);
-  }
-  const payload = await response.json();
-  return payload.results;
-}
-
 // Searches addable instruments for a specific market-data source.
 export async function searchInstruments(source: string, query: string): Promise<InstrumentSearchResult[]> {
   const params = new URLSearchParams({ source, q: query });
@@ -86,20 +74,6 @@ export async function searchInstruments(source: string, query: string): Promise<
   }
   const payload = await response.json();
   return payload.results;
-}
-
-// Persists an Alpaca symbol to the watchlist and returns the reloaded state.
-export async function addAlpacaSymbol(result: InstrumentSearchResult): Promise<MarketState> {
-  const response = await fetch('/api/watchlist/alpaca', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ symbol: result.symbol, label: result.label }),
-  });
-  if (!response.ok) {
-    throw new Error(`add failed: ${response.status}`);
-  }
-  const payload = await response.json();
-  return payload.state;
 }
 
 // Persists a Bitget instrument to the watchlist and returns the reloaded state.
@@ -132,18 +106,6 @@ export async function addHyperliquidTestnetSymbol(result: InstrumentSearchResult
   });
   if (!response.ok) {
     throw await responseError(response, 'add failed');
-  }
-  const payload = await response.json();
-  return payload.state;
-}
-
-// Removes an Alpaca symbol through the source-specific compatibility route.
-export async function removeAlpacaSymbol(symbol: string): Promise<MarketState> {
-  const response = await fetch(`/api/watchlist/alpaca/${encodeURIComponent(symbol)}`, {
-    method: 'DELETE',
-  });
-  if (!response.ok) {
-    throw new Error(`remove failed: ${response.status}`);
   }
   const payload = await response.json();
   return payload.state;

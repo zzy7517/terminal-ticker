@@ -86,7 +86,7 @@ class AnthropicProviderTests(unittest.TestCase):
                         "type": "tool_use",
                         "id": "toolu_2",
                         "name": "get_candles",
-                        "input": {"instrument_key": "alpaca:AAPL"},
+                        "input": {"instrument_key": "USDT-FUTURES:BTCUSDT"},
                     },
                 ],
                 "stop_reason": "tool_use",
@@ -97,7 +97,7 @@ class AnthropicProviderTests(unittest.TestCase):
         self.assertEqual(response.content, "Need data.")
         self.assertEqual(response.finish_reason, "tool_use")
         self.assertEqual(response.tool_calls[0].id, "toolu_2")
-        self.assertEqual(response.tool_calls[0].arguments["instrument_key"], "alpaca:AAPL")
+        self.assertEqual(response.tool_calls[0].arguments["instrument_key"], "USDT-FUTURES:BTCUSDT")
         self.assertEqual(response.usage["prompt_tokens"], 10)
         self.assertEqual(response.usage["completion_tokens"], 5)
 

@@ -93,13 +93,13 @@ class AgentTests(unittest.TestCase):
                         "type": "response.function_call_arguments.delta",
                         "item_id": "fc_1",
                         "output_index": 0,
-                        "delta": "\"alpaca:AAPL\"}",
+                        "delta": "\"USDT-FUTURES:BTCUSDT\"}",
                     },
                     {
                         "type": "response.function_call_arguments.done",
                         "item_id": "fc_1",
                         "output_index": 0,
-                        "arguments": "{\"instrument_key\":\"alpaca:AAPL\"}",
+                        "arguments": "{\"instrument_key\":\"USDT-FUTURES:BTCUSDT\"}",
                     },
                     {
                         "type": "response.output_item.done",
@@ -109,7 +109,7 @@ class AgentTests(unittest.TestCase):
                             "id": "fc_1",
                             "call_id": "call_1",
                             "name": "get_quote",
-                            "arguments": "{\"instrument_key\":\"alpaca:AAPL\"}",
+                            "arguments": "{\"instrument_key\":\"USDT-FUTURES:BTCUSDT\"}",
                         },
                     },
                 ]
@@ -121,7 +121,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(len(response.tool_calls), 1)
         self.assertEqual(response.tool_calls[0].id, "call_1")
         self.assertEqual(response.tool_calls[0].name, "get_quote")
-        self.assertEqual(response.tool_calls[0].arguments, {"instrument_key": "alpaca:AAPL"})
+        self.assertEqual(response.tool_calls[0].arguments, {"instrument_key": "USDT-FUTURES:BTCUSDT"})
 
     def test_agent_loop_stream_updates_send_delta_only(self) -> None:
         """Verify live message updates carry deltas while final messages carry full text."""
@@ -382,8 +382,8 @@ class AgentTests(unittest.TestCase):
         )
         quote = SimpleNamespace(candles=candles)
         context_provider = SimpleNamespace(
-            get_quote=lambda instrument_key: quote if instrument_key == "alpaca:AAPL" else None,
-            get_candles=lambda instrument_key, interval=None: candles if instrument_key == "alpaca:AAPL" else tuple(),
+            get_quote=lambda instrument_key: quote if instrument_key == "USDT-FUTURES:BTCUSDT" else None,
+            get_candles=lambda instrument_key, interval=None: candles if instrument_key == "USDT-FUTURES:BTCUSDT" else tuple(),
             list_instruments=lambda: tuple(),
         )
         tools = build_market_tools(context_provider)
@@ -391,12 +391,12 @@ class AgentTests(unittest.TestCase):
         zero_result = asyncio.run(tools.execute(ToolCall(
             id="call_1",
             name="get_candles",
-            arguments={"instrument_key": "alpaca:AAPL", "count": 0},
+            arguments={"instrument_key": "USDT-FUTURES:BTCUSDT", "count": 0},
         )))
         large_result = asyncio.run(tools.execute(ToolCall(
             id="call_2",
             name="get_candles",
-            arguments={"instrument_key": "alpaca:AAPL", "count": 100},
+            arguments={"instrument_key": "USDT-FUTURES:BTCUSDT", "count": 100},
         )))
 
         self.assertFalse(zero_result.error)
@@ -412,7 +412,7 @@ class AgentTests(unittest.TestCase):
             path = Path(tmp_dir) / "agent.sqlite3"
             store = AgentSessionStore(path)
             session = store.get_or_create_active_session(
-                instrument_key="alpaca:AAPL",
+                instrument_key="USDT-FUTURES:BTCUSDT",
                 title="AAPL · AAPL",
                 provider="codex",
                 model="gpt-test",
@@ -444,10 +444,10 @@ class AgentTests(unittest.TestCase):
             )
 
             reopened = AgentSessionStore(path)
-            payload = reopened.active_session_payload("alpaca:AAPL")
+            payload = reopened.active_session_payload("USDT-FUTURES:BTCUSDT")
             history = reopened.history_for_context(session.id, limit=4)
             refreshed_session = reopened.get_or_create_active_session(
-                instrument_key="alpaca:AAPL",
+                instrument_key="USDT-FUTURES:BTCUSDT",
                 title="AAPL · AAPL",
                 provider="codex",
                 model="gpt-next",
@@ -455,7 +455,7 @@ class AgentTests(unittest.TestCase):
                 reasoning_effort="high",
             )
             next_session = reopened.create_session(
-                instrument_key="alpaca:AAPL",
+                instrument_key="USDT-FUTURES:BTCUSDT",
                 title="AAPL · AAPL",
                 provider="codex",
                 model="gpt-test",
@@ -463,13 +463,13 @@ class AgentTests(unittest.TestCase):
                 reasoning_effort="medium",
             )
             previous_payload = reopened.session_payload(session.id)
-            history_rows = reopened.list_sessions("alpaca:AAPL")
+            history_rows = reopened.list_sessions("USDT-FUTURES:BTCUSDT")
             resumed = reopened.activate_session(
-                instrument_key="alpaca:AAPL",
+                instrument_key="USDT-FUTURES:BTCUSDT",
                 session_id=session.id,
             )
             active_after_delete = reopened.delete_session(
-                instrument_key="alpaca:AAPL",
+                instrument_key="USDT-FUTURES:BTCUSDT",
                 session_id=session.id,
             )
             deleted_payload = reopened.session_payload(session.id)
@@ -486,7 +486,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(refreshed_session.id, session.id)
         self.assertEqual(refreshed_session.model, "gpt-next")
         self.assertEqual(refreshed_session.reasoning_effort, "high")
-        self.assertEqual(next_session.instrument_key, "alpaca:AAPL")
+        self.assertEqual(next_session.instrument_key, "USDT-FUTURES:BTCUSDT")
         self.assertFalse(previous_payload["session"]["active"])
         self.assertEqual(len(history_rows), 2)
         self.assertEqual(history_rows[1].preview, "How does this K-line window look?")

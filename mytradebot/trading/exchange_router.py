@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from . import alpaca as alpaca_trading
 from . import bitget as bitget_trading
 from . import hyperliquid as hl_trading
 from .exchange_models import ExchangeOrder, ExchangePosition, OrderResult
@@ -14,7 +13,6 @@ _log = logging.getLogger(__name__)
 
 EXCHANGE_HYPERLIQUID = "hyperliquid-testnet"
 EXCHANGE_BITGET = "bitget-demo"
-EXCHANGE_ALPACA = "alpaca-paper"
 
 
 class ExchangeRouter:
@@ -28,7 +26,6 @@ class ExchangeRouter:
         for fetcher, label in [
             (hl_trading.get_positions, "hyperliquid"),
             (bitget_trading.get_positions, "bitget"),
-            (alpaca_trading.get_positions, "alpaca"),
         ]:
             try:
                 positions.extend(fetcher())
@@ -41,7 +38,6 @@ class ExchangeRouter:
         for fetcher, label in [
             (hl_trading.get_open_orders, "hyperliquid"),
             (bitget_trading.get_open_orders, "bitget"),
-            (alpaca_trading.get_open_orders, "alpaca"),
         ]:
             try:
                 orders.extend(fetcher())
@@ -55,8 +51,6 @@ class ExchangeRouter:
             return self._place_hyperliquid(instrument_key, **kwargs)
         if exchange == EXCHANGE_BITGET:
             return self._place_bitget(instrument_key, **kwargs)
-        if exchange == EXCHANGE_ALPACA:
-            return self._place_alpaca(instrument_key, **kwargs)
         return OrderResult(exchange="unknown", error=f"No trading support for {instrument_key}")
 
     def cancel_order(self, *, exchange: str, order_id: str, symbol: str = "", **kwargs: Any) -> bool:
@@ -69,8 +63,6 @@ class ExchangeRouter:
                 symbol=symbol,
                 product_type=kwargs.get("product_type", "USDT-FUTURES"),
             )
-        if exchange == EXCHANGE_ALPACA:
-            return alpaca_trading.cancel_order(order_id=order_id)
         return False
 
     @staticmethod
@@ -79,8 +71,6 @@ class ExchangeRouter:
             return EXCHANGE_HYPERLIQUID
         if instrument_key.startswith("USDT-FUTURES:") or instrument_key.startswith("SPOT:"):
             return EXCHANGE_BITGET
-        if instrument_key.startswith("alpaca:"):
-            return EXCHANGE_ALPACA
         return "unknown"
 
     @staticmethod
@@ -127,19 +117,4 @@ class ExchangeRouter:
             order_type=kwargs.get("order_type", "market"),
             size=float(kwargs.get("size", 0)),
             price=float(kwargs["limit_price"]) if kwargs.get("limit_price") is not None else None,
-        )
-
-    @staticmethod
-    def _place_alpaca(instrument_key: str, **kwargs: Any) -> OrderResult:
-        symbol = instrument_key.split(":", 1)[1] if ":" in instrument_key else instrument_key
-        direction = kwargs.get("direction", "long")
-        side = "buy" if direction == "long" else "sell"
-        return alpaca_trading.place_order(
-            symbol=symbol,
-            side=side,
-            order_type=kwargs.get("order_type", "market"),
-            qty=float(kwargs["size"]) if kwargs.get("size") is not None else None,
-            notional=float(kwargs["notional"]) if kwargs.get("notional") is not None else None,
-            limit_price=float(kwargs["limit_price"]) if kwargs.get("limit_price") is not None else None,
-            time_in_force=kwargs.get("time_in_force", "day"),
         )
