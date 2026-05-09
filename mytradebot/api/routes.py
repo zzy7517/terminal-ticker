@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import StreamingResponse
 
 from ..trading import TradeStatus
@@ -441,5 +441,5 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
     # -- WebSocket --
 
     @app.websocket("/ws")
-    async def websocket_endpoint(websocket: Any) -> None:
+    async def websocket_endpoint(websocket: WebSocket) -> None:
         await runtime.connect(websocket)

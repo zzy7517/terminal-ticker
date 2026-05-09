@@ -173,6 +173,23 @@ class WebTests(unittest.TestCase):
                 "no-store, max-age=0, must-revalidate",
             )
 
+    def test_websocket_endpoint_accepts_live_state_connection(self) -> None:
+        """Verify the browser state socket receives the initial snapshot."""
+        instrument = _bitget_btc()
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with TestClient(app) as client:
+            with client.websocket_connect("/ws") as websocket:
+                payload = websocket.receive_json()
+
+        self.assertEqual(payload["type"], "state")
+        self.assertIn(instrument.key, payload["quotes"])
+
     def test_serialize_market_state_includes_quotes_and_candles(self) -> None:
         """Verify browser state contains quote labels and chart data."""
         instrument = _bitget_btc()
