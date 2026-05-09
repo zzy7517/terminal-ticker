@@ -12,7 +12,6 @@ from ..domain.price_action import Candle
 
 HYPERLIQUID_TESTNET_API_BASE = "https://api.hyperliquid-testnet.xyz"
 QUOTE_ASSET = "USDC"
-_SEARCH_QUOTE_SUFFIXES = ("USDT", "USDC")
 
 _INTERVAL_SECONDS = {
     "1m": 60,
@@ -129,54 +128,6 @@ def load_instrument_catalog() -> dict[str, HyperliquidInstrument]:
             max_leverage=_as_int(item.get("maxLeverage")),
         )
     return catalog
-
-
-def _search_score(instrument: HyperliquidInstrument, query: str) -> tuple[int, str]:
-    """说明：按精确度给 Hyperliquid 搜索结果排序。"""
-    symbol = instrument.symbol.upper()
-    query_upper = query.upper()
-    if query_upper == symbol:
-        return (0, symbol)
-    if symbol.startswith(query_upper):
-        return (1, symbol)
-    if query_upper in symbol:
-        return (2, symbol)
-    return (3, symbol)
-
-
-def _normalize_search_query(query: str) -> str:
-    """说明：把常见交易对输入转换成 Hyperliquid coin 名。"""
-    normalized = query.strip().upper()
-    if not normalized:
-        return normalized
-
-    for separator in (":", "/", "-", "_"):
-        if separator not in normalized:
-            continue
-        base_asset, quote_asset = normalized.rsplit(separator, 1)
-        if base_asset and quote_asset in _SEARCH_QUOTE_SUFFIXES:
-            return base_asset
-
-    for suffix in _SEARCH_QUOTE_SUFFIXES:
-        if normalized.endswith(suffix) and len(normalized) > len(suffix):
-            return normalized[: -len(suffix)]
-
-    return normalized
-
-
-def search_instruments(query: str, *, limit: int = 20) -> tuple[HyperliquidInstrument, ...]:
-    """说明：按 coin 名称搜索 Hyperliquid 测试网永续合约。"""
-    normalized = _normalize_search_query(query)
-    if not normalized:
-        return tuple()
-    catalog = load_instrument_catalog()
-    matches = [
-        instrument
-        for instrument in catalog.values()
-        if normalized in instrument.symbol.upper() or normalized in instrument.base_asset.upper()
-    ]
-    matches.sort(key=lambda instrument: _search_score(instrument, normalized))
-    return tuple(matches[:limit])
 
 
 def resolve_instruments(

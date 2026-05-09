@@ -231,8 +231,10 @@ def build_trading_tools(
         limit_price: float | None = None,
     ) -> str:
         """在 Bitget 模拟盘提交开仓订单。"""
-        if not (instrument_key.startswith("USDT-FUTURES:") or instrument_key.startswith("SPOT:")):
-            return _json_output({"error": "open_bitget_demo_trade only supports USDT-FUTURES:* or SPOT:* instruments"})
+        if not instrument_key.startswith(("USDT-FUTURES:", "USDC-FUTURES:", "COIN-FUTURES:")):
+            return _json_output({
+                "error": "open_bitget_demo_trade only supports Bitget futures instruments"
+            })
         try:
             direction_enum = TradeDirection(direction.lower())
         except ValueError:
@@ -264,7 +266,7 @@ def build_trading_tools(
         name="open_bitget_demo_trade",
         description=(
             "在 Bitget 模拟盘提交开仓订单，并把结果写入本地交易记录。"
-            "只支持 USDT-FUTURES:* 或 SPOT:* 标的。需要环境变量 "
+            "只支持 USDT-FUTURES:*、USDC-FUTURES:* 或 COIN-FUTURES:* 标的。需要环境变量 "
             "BITGET_API_KEY, BITGET_API_SECRET, BITGET_API_PASSPHRASE。"
         ),
         parameters={
@@ -272,7 +274,7 @@ def build_trading_tools(
             "properties": {
                 "instrument_key": {
                     "type": "string",
-                    "description": "标的唯一标识，如 USDT-FUTURES:BTCUSDT 或 SPOT:ETHUSDT",
+                    "description": "标的唯一标识，如 USDT-FUTURES:BTCUSDT 或 USDC-FUTURES:BTCPERP",
                 },
                 "direction": {"type": "string", "enum": ["long", "short"]},
                 "size": {"type": "number", "description": "订单数量，必须 > 0"},

@@ -28,9 +28,9 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
     async def get_state() -> dict[str, Any]:
         return runtime.snapshot()
 
-    @app.get("/api/instruments/search")
-    async def search_instruments_endpoint(source: str, q: str) -> dict[str, Any]:
-        return {"results": await runtime.search_instruments(source, q)}
+    @app.get("/api/instruments/catalog")
+    async def instrument_catalog_endpoint() -> dict[str, Any]:
+        return runtime.instrument_catalog_payload()
 
     # -- Watchlist --
 

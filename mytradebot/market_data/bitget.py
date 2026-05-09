@@ -16,8 +16,10 @@ from ..domain.price_action import Candle
 
 BITGET_API_BASE = "https://api.bitget.com"
 BITGET_WS_PUBLIC = "wss://ws.bitget.com/v2/ws/public"
-SPOT = "SPOT"
 USDT_FUTURES = "USDT-FUTURES"
+USDC_FUTURES = "USDC-FUTURES"
+COIN_FUTURES = "COIN-FUTURES"
+FUTURES_PRODUCT_TYPES = (USDT_FUTURES, USDC_FUTURES, COIN_FUTURES)
 
 
 @dataclass(frozen=True)
@@ -63,75 +65,29 @@ def _expect_success(payload: dict[str, Any], context: str) -> list[Any]:
 
 
 def load_instrument_catalog() -> dict[tuple[str, str], BitgetInstrument]:
-    """说明：加载 Bitget 现货和 USDT 合约标的目录。"""
+    """说明：加载 Bitget futures 标的目录。"""
     catalog: dict[tuple[str, str], BitgetInstrument] = {}
 
-    spot_payload = _fetch_json("/api/v2/spot/public/symbols")
-    for item in _expect_success(spot_payload, "Bitget spot symbols"):
-        symbol = str(item.get("symbol") or "").upper()
-        if not symbol:
-            continue
-        catalog[(SPOT, symbol)] = BitgetInstrument(
-            symbol=symbol,
-            inst_type=SPOT,
-            label=symbol,
-            base_asset=str(item.get("baseCoin") or symbol),
-            quote_asset=str(item.get("quoteCoin") or "USDT"),
-            market_kind="spot",
+    for product_type in FUTURES_PRODUCT_TYPES:
+        futures_payload = _fetch_json(
+            "/api/v2/mix/market/contracts",
+            {"productType": product_type},
         )
-
-    futures_payload = _fetch_json(
-        "/api/v2/mix/market/contracts",
-        {"productType": USDT_FUTURES},
-    )
-    for item in _expect_success(futures_payload, "Bitget futures contracts"):
-        symbol = str(item.get("symbol") or "").upper()
-        if not symbol:
-            continue
-        market_kind = "perp" if item.get("symbolType") == "perpetual" else "futures"
-        catalog[(USDT_FUTURES, symbol)] = BitgetInstrument(
-            symbol=symbol,
-            inst_type=USDT_FUTURES,
-            label=symbol,
-            base_asset=str(item.get("baseCoin") or symbol),
-            quote_asset=str(item.get("quoteCoin") or "USDT"),
-            market_kind=market_kind,
-        )
+        for item in _expect_success(futures_payload, f"Bitget {product_type} contracts"):
+            symbol = str(item.get("symbol") or "").upper()
+            if not symbol:
+                continue
+            market_kind = "perp" if item.get("symbolType") == "perpetual" else "futures"
+            catalog[(product_type, symbol)] = BitgetInstrument(
+                symbol=symbol,
+                inst_type=product_type,
+                label=symbol,
+                base_asset=str(item.get("baseCoin") or symbol),
+                quote_asset=str(item.get("quoteCoin") or product_type.split("-", 1)[0]),
+                market_kind=market_kind,
+            )
 
     return catalog
-
-
-def _search_score(instrument: BitgetInstrument, query: str) -> tuple[int, str, str]:
-    """说明：按精确度和市场类型给 Bitget 搜索结果排序。"""
-    symbol = instrument.symbol.upper()
-    base_asset = instrument.base_asset.upper()
-    query_upper = query.upper()
-    if query_upper in {symbol, base_asset}:
-        return (0, symbol, instrument.inst_type)
-    if symbol.startswith(query_upper) or base_asset.startswith(query_upper):
-        return (1, symbol, instrument.inst_type)
-    if query_upper in symbol:
-        return (2, symbol, instrument.inst_type)
-    return (3, symbol, instrument.inst_type)
-
-
-def search_instruments(query: str, *, limit: int = 20) -> tuple[BitgetInstrument, ...]:
-    """说明：按 symbol/base asset 搜索 Bitget 现货和 USDT 合约标的。"""
-    normalized = query.strip().upper()
-    if not normalized:
-        return tuple()
-    catalog = load_instrument_catalog()
-    matches = [
-        instrument
-        for instrument in catalog.values()
-        if (
-            normalized in instrument.symbol.upper()
-            or normalized in instrument.base_asset.upper()
-            or normalized in instrument.quote_asset.upper()
-        )
-    ]
-    matches.sort(key=lambda instrument: _search_score(instrument, normalized))
-    return tuple(matches[:limit])
 
 
 def resolve_instruments(configured: tuple[InstrumentConfig, ...]) -> tuple[BitgetInstrument, ...]:
@@ -228,20 +184,6 @@ def _normalize_candle_row(symbol_key: str, row: list[Any]) -> Candle:
 
 def _api_granularity(inst_type: str, interval: str) -> str:
     """说明：把应用 K 线周期映射为 Bitget API 粒度。"""
-    if inst_type == SPOT:
-        minute_aliases = {
-            "1m": "1min",
-            "3m": "3min",
-            "5m": "5min",
-            "15m": "15min",
-            "30m": "30min",
-        }
-        day_aliases = {"1D": "1day", "3D": "3day"}
-        larger_aliases = {"1W": "1week", "1M": "1M"}
-        return minute_aliases.get(
-            interval,
-            day_aliases.get(interval, larger_aliases.get(interval, interval.lower())),
-        )
     return interval
 
 
@@ -256,51 +198,27 @@ def fetch_candles(
     """说明：拉取指定 provider 标的的近期 K 线。"""
     if after_open_time_ms is not None and before_open_time_ms is not None:
         raise ValueError("after_open_time_ms and before_open_time_ms cannot both be set")
-    if instrument.inst_type == SPOT:
-        params = {
-            "symbol": instrument.symbol,
-            "granularity": _api_granularity(instrument.inst_type, interval),
-            "endTime": str(
-                before_open_time_ms - 1
-                if before_open_time_ms is not None
-                else int(time.time() * 1000)
-            ),
-            "limit": str(min(limit, 200 if before_open_time_ms is not None else 1000)),
-        }
-        if after_open_time_ms is not None:
-            params["startTime"] = str(after_open_time_ms + 1)
-        path = (
-            "/api/v2/spot/market/history-candles"
-            if before_open_time_ms is not None
-            else "/api/v2/spot/market/candles"
-        )
-        payload = _fetch_json(
-            path,
-            params,
-        )
-        context = "Bitget spot candles"
-    else:
-        params = {
-            "symbol": instrument.symbol,
-            "productType": instrument.inst_type,
-            "granularity": _api_granularity(instrument.inst_type, interval),
-            "limit": str(min(limit, 200 if before_open_time_ms is not None else 1000)),
-        }
-        if after_open_time_ms is not None:
-            params["startTime"] = str(after_open_time_ms + 1)
-            params["endTime"] = str(int(time.time() * 1000))
-        if before_open_time_ms is not None:
-            params["endTime"] = str(before_open_time_ms - 1)
-        path = (
-            "/api/v2/mix/market/history-candles"
-            if before_open_time_ms is not None
-            else "/api/v2/mix/market/candles"
-        )
-        payload = _fetch_json(
-            path,
-            params,
-        )
-        context = "Bitget futures candles"
+    params = {
+        "symbol": instrument.symbol,
+        "productType": instrument.inst_type,
+        "granularity": _api_granularity(instrument.inst_type, interval),
+        "limit": str(min(limit, 200 if before_open_time_ms is not None else 1000)),
+    }
+    if after_open_time_ms is not None:
+        params["startTime"] = str(after_open_time_ms + 1)
+        params["endTime"] = str(int(time.time() * 1000))
+    if before_open_time_ms is not None:
+        params["endTime"] = str(before_open_time_ms - 1)
+    path = (
+        "/api/v2/mix/market/history-candles"
+        if before_open_time_ms is not None
+        else "/api/v2/mix/market/candles"
+    )
+    payload = _fetch_json(
+        path,
+        params,
+    )
+    context = "Bitget futures candles"
 
     rows = _expect_success(payload, context)
     candles = [
@@ -356,33 +274,21 @@ def fetch_snapshot_payloads(
 ) -> dict[str, dict[str, Any]]:
     """说明：为配置的 Bitget 标的拉取一次 REST 快照。"""
     payloads: dict[str, dict[str, Any]] = {}
-    spot_symbols = {item.symbol for item in instruments if item.inst_type == SPOT}
-    futures_symbols = {item.symbol for item in instruments if item.inst_type == USDT_FUTURES}
-
-    spot_tickers_by_symbol: dict[str, dict[str, Any]] = {}
-    if spot_symbols:
-        spot_payload = _fetch_json("/api/v2/spot/market/tickers")
-        for item in _expect_success(spot_payload, "Bitget spot tickers"):
-            symbol = str(item.get("symbol") or "").upper()
-            if symbol in spot_symbols:
-                spot_tickers_by_symbol[symbol] = item
-
-    futures_tickers_by_symbol: dict[str, dict[str, Any]] = {}
-    if futures_symbols:
+    futures_tickers_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    product_types = sorted({item.inst_type for item in instruments})
+    for product_type in product_types:
+        futures_symbols = {item.symbol for item in instruments if item.inst_type == product_type}
         futures_payload = _fetch_json(
             "/api/v2/mix/market/tickers",
-            {"productType": USDT_FUTURES},
+            {"productType": product_type},
         )
         for item in _expect_success(futures_payload, "Bitget futures tickers"):
             symbol = str(item.get("symbol") or "").upper()
             if symbol in futures_symbols:
-                futures_tickers_by_symbol[symbol] = item
+                futures_tickers_by_key[(product_type, symbol)] = item
 
     for instrument in instruments:
-        if instrument.inst_type == SPOT:
-            item = spot_tickers_by_symbol.get(instrument.symbol)
-        else:
-            item = futures_tickers_by_symbol.get(instrument.symbol)
+        item = futures_tickers_by_key.get((instrument.inst_type, instrument.symbol))
         if item is not None:
             payloads[instrument.key] = _normalize_ticker_payload(item, instrument)
 

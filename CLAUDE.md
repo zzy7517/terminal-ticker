@@ -99,7 +99,7 @@ Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionS
 
 ### Market-data model
 
-`instrument_key` (e.g. `USDT-FUTURES:BTCUSDT`, `SPOT:ETHUSDT`, `hyperliquid-testnet:BTC`) is the canonical identifier used everywhere: queue events, WebSocket payloads, session storage, agent tool arguments. When adding a new data source, define a new `MarketInstrument` variant and extend `router.resolve_instruments` — keep the string format stable because session history and cached candles key on it.
+`instrument_key` (e.g. `USDT-FUTURES:BTCUSDT`, `USDC-FUTURES:BTCPERP`, `hyperliquid-testnet:BTC`) is the canonical identifier used everywhere: queue events, WebSocket payloads, session storage, agent tool arguments. When adding a new data source, define a new `MarketInstrument` variant and extend `router.resolve_instruments` — keep the string format stable because session history and cached candles key on it.
 
 `[analysis]` config (interval, lookback, poll interval) controls the OHLCV fetch loop in `feed.py`. `agent.max_candles` controls how many of those bars get shipped to the LLM. These are independent — the feed can cache more than the agent sees.
 

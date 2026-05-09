@@ -10,6 +10,7 @@ import type {
   AnalysisConfigUpdate,
   ExchangeOrder,
   ExchangePosition,
+  InstrumentCatalogResponse,
   InstrumentSearchResult,
   Lesson,
   MarketState,
@@ -65,15 +66,13 @@ export async function fetchState(): Promise<MarketState> {
   return response.json();
 }
 
-// Searches addable instruments for a specific market-data source.
-export async function searchInstruments(source: string, query: string): Promise<InstrumentSearchResult[]> {
-  const params = new URLSearchParams({ source, q: query });
-  const response = await fetch(`/api/instruments/search?${params}`);
+// Loads the pre-warmed provider instrument catalog for local UI search.
+export async function fetchInstrumentCatalog(): Promise<InstrumentCatalogResponse> {
+  const response = await fetch('/api/instruments/catalog');
   if (!response.ok) {
-    throw await responseError(response, 'search failed');
+    throw await responseError(response, 'catalog failed');
   }
-  const payload = await response.json();
-  return payload.results;
+  return response.json();
 }
 
 // Persists a Bitget instrument to the watchlist and returns the reloaded state.

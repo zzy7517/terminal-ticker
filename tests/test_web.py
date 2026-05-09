@@ -124,11 +124,18 @@ class WebTests(unittest.TestCase):
                 fake_pipeline = FakeMemoryPipeline()
                 runtime.memory_pipeline = fake_pipeline  # type: ignore[assignment]
 
-                await runtime.start()
-                try:
-                    self.assertEqual(fake_pipeline.kickoff_count, 0)
-                finally:
-                    await runtime.stop()
+                with patch(
+                    "mytradebot.api.runtime.load_bitget_instrument_catalog",
+                    return_value={},
+                ), patch(
+                    "mytradebot.api.runtime.load_hyperliquid_instrument_catalog",
+                    return_value={},
+                ):
+                    await runtime.start()
+                    try:
+                        self.assertEqual(fake_pipeline.kickoff_count, 0)
+                    finally:
+                        await runtime.stop()
 
         asyncio.run(scenario())
 
@@ -349,8 +356,8 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    def test_bitget_search_endpoint_marks_existing_symbols(self) -> None:
-        """Verify Bitget search reports source, inst_type, and active state."""
+    def test_catalog_endpoint_returns_preloaded_symbols(self) -> None:
+        """Verify preloaded instrument catalog reports source, inst_type, and active state."""
         instrument = BitgetInstrument(
             "BTCUSDT",
             "USDT-FUTURES",
@@ -365,43 +372,47 @@ class WebTests(unittest.TestCase):
             controller_factory=DummyController,
             auto_start=False,
         )
-        spot = BitgetInstrument("BTCUSDT", "SPOT", "BTCUSDT", "BTC", "USDT", "spot")
+        runtime = app.state.runtime
+        usdc = BitgetInstrument("BTCPERP", "USDC-FUTURES", "BTCPERP", "BTC", "USDC", "perp")
+        hyperliquid = HyperliquidInstrument("ETH", "ETH Perp", "ETH")
+        runtime.instrument_catalog = (usdc, instrument, hyperliquid)
+        runtime.instrument_catalog_loaded_at = "2026-05-09T00:00:00+00:00"
 
-        with patch("mytradebot.api.runtime.search_bitget_instruments", return_value=(spot, instrument)):
-            with TestClient(app) as client:
-                response = client.get(
-                    "/api/instruments/search",
-                    params={"source": "bitget", "q": "btc"},
-                )
+        with TestClient(app) as client:
+            response = client.get("/api/instruments/catalog")
 
-        payload = response.json()["results"]
+        payload = response.json()["items"]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(payload[0]["instType"], "SPOT")
+        self.assertEqual(payload[0]["instType"], "USDC-FUTURES")
         self.assertFalse(payload[0]["exists"])
         self.assertTrue(payload[1]["exists"])
+        self.assertEqual(payload[2]["source"], "hyperliquid-testnet")
 
-    def test_hyperliquid_search_endpoint_accepts_pair_input(self) -> None:
-        """Verify Hyperliquid search accepts pair-style user input."""
-        instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
+    def test_runtime_start_preloads_instrument_catalog(self) -> None:
+        """Verify app startup warms the provider catalogs before serving the UI."""
+        bitget = BitgetInstrument("BTCUSDT", "USDT-FUTURES", "BTC", "BTC", "USDT", "perp")
+        hyperliquid = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
-            instruments=(instrument,),
+            instruments=(bitget,),
             controller_factory=DummyController,
-            auto_start=False,
+            auto_start=True,
         )
 
-        with patch("mytradebot.api.runtime.search_hyperliquid_instruments", return_value=(instrument,)):
+        with patch(
+            "mytradebot.api.runtime.load_bitget_instrument_catalog",
+            return_value={("USDT-FUTURES", "BTCUSDT"): bitget},
+        ), patch(
+            "mytradebot.api.runtime.load_hyperliquid_instrument_catalog",
+            return_value={"BTC": hyperliquid},
+        ):
             with TestClient(app) as client:
-                response = client.get(
-                    "/api/instruments/search",
-                    params={"source": "hyperliquid-testnet", "q": "BTCUSDT"},
-                )
+                response = client.get("/api/instruments/catalog")
 
-        payload = response.json()["results"]
+        payload = response.json()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(payload[0]["source"], "hyperliquid-testnet")
-        self.assertEqual(payload[0]["key"], "hyperliquid-testnet:BTC")
-        self.assertTrue(payload[0]["exists"])
+        self.assertEqual(payload["errors"], {})
+        self.assertEqual([item["key"] for item in payload["items"]], ["USDT-FUTURES:BTCUSDT", "hyperliquid-testnet:BTC"])
 
     def test_bitget_add_endpoint_persists_symbol(self) -> None:
         """Verify browser can add Bitget symbols to the watchlist."""

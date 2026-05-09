@@ -22,7 +22,7 @@ from .agent_models import (
 BITGET_SOURCE = "bitget"
 HYPERLIQUID_TESTNET_SOURCE = "hyperliquid-testnet"
 SUPPORTED_SOURCES = {BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
-SUPPORTED_INST_TYPES = {"SPOT", "USDT-FUTURES"}
+SUPPORTED_INST_TYPES = {"USDT-FUTURES", "USDC-FUTURES", "COIN-FUTURES"}
 
 # Reuters 现役新闻 sitemap。老的 /sitemap_news.xml 已下线（401/404）。
 # 这里和 mytradebot.news.providers.reuters.DEFAULT_SITEMAP_URL 必须一致。

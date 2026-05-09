@@ -3,13 +3,12 @@ import unittest
 from unittest.mock import patch
 
 from mytradebot.market_data.bitget import (
-    SPOT,
     BitgetInstrument,
     _api_granularity,
     _normalize_candle_row,
     _normalize_ticker_payload,
     fetch_candles,
-    search_instruments,
+    load_instrument_catalog,
 )
 
 
@@ -70,8 +69,6 @@ class BitgetTests(unittest.TestCase):
 
     def test_api_granularity_maps_non_default_intervals(self) -> None:
         """Verify Bitget candle intervals map beyond the 5m default."""
-        self.assertEqual(_api_granularity(SPOT, "15m"), "15min")
-        self.assertEqual(_api_granularity(SPOT, "4H"), "4h")
         self.assertEqual(_api_granularity("USDT-FUTURES", "15m"), "15m")
         self.assertEqual(_api_granularity("USDT-FUTURES", "4H"), "4H")
 
@@ -140,60 +137,31 @@ class BitgetTests(unittest.TestCase):
         self.assertEqual(params["limit"], "2")
         self.assertEqual([candle.open_time_ms for candle in candles], [1695835200000, 1695835500000])
 
-    def test_fetch_spot_recent_uses_1000_limit_endpoint(self) -> None:
-        """Verify initial Bitget spot fetches can request the full chart window."""
-        instrument = BitgetInstrument(
-            symbol="BTCUSDT",
-            inst_type=SPOT,
-            label="BTC",
-            base_asset="BTC",
-            quote_asset="USDT",
-            market_kind="spot",
+    def test_load_catalog_fetches_futures_product_types(self) -> None:
+        """Verify Bitget catalog is futures-only across supported product types."""
+        def fake_fetch(_path, params=None):
+            product_type = params["productType"]
+            return {
+                "code": "00000",
+                "data": [
+                    {
+                        "symbol": f"BTC{product_type[:4]}",
+                        "baseCoin": "BTC",
+                        "quoteCoin": product_type.split("-", 1)[0],
+                        "symbolType": "perpetual",
+                    }
+                ],
+            }
+
+        with patch("mytradebot.market_data.bitget._fetch_json", side_effect=fake_fetch) as fetch_json:
+            catalog = load_instrument_catalog()
+
+        product_types = [call.args[1]["productType"] for call in fetch_json.call_args_list]
+        self.assertEqual(product_types, ["USDT-FUTURES", "USDC-FUTURES", "COIN-FUTURES"])
+        self.assertEqual(
+            sorted(key[0] for key in catalog),
+            ["COIN-FUTURES", "USDC-FUTURES", "USDT-FUTURES"],
         )
-
-        with patch(
-            "mytradebot.market_data.bitget._fetch_json",
-            return_value={"code": "00000", "data": []},
-        ) as fetch_json:
-            fetch_candles(instrument, interval="5m", limit=1000)
-
-        self.assertEqual(fetch_json.call_args.args[0], "/api/v2/spot/market/candles")
-        self.assertEqual(fetch_json.call_args.args[1]["limit"], "1000")
-
-    def test_search_instruments_filters_catalog(self) -> None:
-        """Verify Bitget search returns matching spot and futures instruments."""
-        catalog = {
-            ("SPOT", "BTCUSDT"): BitgetInstrument(
-                "BTCUSDT",
-                "SPOT",
-                "BTCUSDT",
-                "BTC",
-                "USDT",
-                "spot",
-            ),
-            ("USDT-FUTURES", "BTCUSDT"): BitgetInstrument(
-                "BTCUSDT",
-                "USDT-FUTURES",
-                "BTCUSDT",
-                "BTC",
-                "USDT",
-                "perp",
-            ),
-            ("USDT-FUTURES", "ETHUSDT"): BitgetInstrument(
-                "ETHUSDT",
-                "USDT-FUTURES",
-                "ETHUSDT",
-                "ETH",
-                "USDT",
-                "perp",
-            ),
-        }
-
-        with patch("mytradebot.market_data.bitget.load_instrument_catalog", return_value=catalog):
-            results = search_instruments("btc")
-
-        self.assertEqual([item.key for item in results], ["SPOT:BTCUSDT", "USDT-FUTURES:BTCUSDT"])
-
 
 if __name__ == "__main__":
     unittest.main()

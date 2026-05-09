@@ -59,7 +59,7 @@ class WatchlistStoreTests(unittest.TestCase):
                 textwrap.dedent(
                     """
                     symbols = [
-                      { symbol = "BTCUSDT", source = "bitget", inst_type = "SPOT", label = "BTC Spot" },
+                      { symbol = "BTCPERP", source = "bitget", inst_type = "USDC-FUTURES", label = "BTC USDC" },
                       { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC Perp" },
                     ]
                     """
@@ -76,7 +76,7 @@ class WatchlistStoreTests(unittest.TestCase):
 
         self.assertTrue(removed)
         self.assertEqual(len(config.instruments), 1)
-        self.assertEqual(config.instruments[0].inst_type, "SPOT")
+        self.assertEqual(config.instruments[0].inst_type, "USDC-FUTURES")
 
     def test_remove_symbol_from_watchlist_rejects_last_symbol(self) -> None:
         """Verify generic remove keeps at least one watchlist symbol."""

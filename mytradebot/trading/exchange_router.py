@@ -13,6 +13,7 @@ _log = logging.getLogger(__name__)
 
 EXCHANGE_HYPERLIQUID = "hyperliquid-testnet"
 EXCHANGE_BITGET = "bitget-demo"
+BITGET_FUTURES_PREFIXES = ("USDT-FUTURES:", "USDC-FUTURES:", "COIN-FUTURES:")
 
 
 class ExchangeRouter:
@@ -69,7 +70,7 @@ class ExchangeRouter:
     def _exchange_for_key(instrument_key: str) -> str:
         if instrument_key.startswith("hyperliquid-testnet:"):
             return EXCHANGE_HYPERLIQUID
-        if instrument_key.startswith("USDT-FUTURES:") or instrument_key.startswith("SPOT:"):
+        if instrument_key.startswith(BITGET_FUTURES_PREFIXES):
             return EXCHANGE_BITGET
         return "unknown"
 

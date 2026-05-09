@@ -63,6 +63,32 @@ def instrument_payload(instrument: MarketInstrument, *, default_interval: str) -
     }
 
 
+def instrument_catalog_item_payload(
+    instrument: MarketInstrument,
+    *,
+    active_keys: set[str],
+) -> dict[str, Any]:
+    base_asset = getattr(instrument, "base_asset", instrument.symbol)
+    quote_asset = getattr(instrument, "quote_asset", "")
+    inst_type = getattr(instrument, "inst_type", None)
+    if instrument.source == "bitget":
+        display_text = f"{inst_type} · {base_asset}/{quote_asset}"
+    else:
+        display_text = f"Testnet perp · {base_asset}/{quote_asset}"
+    return {
+        "source": instrument.source,
+        "symbol": instrument.symbol,
+        "label": instrument.label,
+        "instType": inst_type,
+        "key": instrument.key,
+        "nameCn": "",
+        "nameHk": "",
+        "nameEn": "",
+        "displayText": display_text,
+        "exists": instrument.key in active_keys,
+    }
+
+
 def candle_payload(candle: Candle) -> dict[str, Any]:
     return {
         "time": candle.open_time_ms // 1000,

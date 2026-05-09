@@ -16,8 +16,6 @@ import {
   THEME_STORAGE_KEY,
   WATCHLIST_HASH,
   type AppRoute,
-  type SearchSource,
-  type SourceHint,
   type ThemeName,
 } from './constants';
 import {
@@ -128,110 +126,6 @@ export function watchlistSections(instruments: Instrument[]) {
     label: watchlistSectionLabel(source),
     instruments: instruments.filter((instrument) => instrument.source === source),
   }));
-}
-
-export type BulkEntry = {
-  raw: string;
-  source: SearchSource;
-  symbol: string;
-  label: string;
-  instType: string | null;
-  key: string;
-  valid: boolean;
-  exists: boolean;
-  inputDuplicate: boolean;
-  error: string | null;
-};
-
-function defaultBitgetLabel(symbol: string) {
-  return symbol.endsWith('USDT') ? symbol.slice(0, -4) || symbol : symbol;
-}
-
-function parseBulkLine(raw: string, activeKeys: Set<string>): Omit<BulkEntry, 'inputDuplicate'> | null {
-  const trimmed = raw.trim();
-  if (!trimmed || trimmed.startsWith('#')) return null;
-  const [token = '', ...labelParts] = trimmed.split(/\s+/);
-  const explicitLabel = labelParts.join(' ').trim();
-  let sourceHint: SourceHint | null = null;
-  let body = token.trim();
-  const sourceMatch = body.match(/^(bitget|hyperliquid-testnet|hyperliquid)[:/](.+)$/i);
-  if (sourceMatch) {
-    const hint = sourceMatch[1].toLowerCase();
-    sourceHint = (hint === 'hyperliquid' ? 'hyperliquid-testnet' : hint) as SourceHint;
-    body = sourceMatch[2];
-  }
-
-  const upperBody = body.toUpperCase();
-  let source: SearchSource;
-  let symbol: string;
-  let instType: string | null = null;
-
-  if (sourceHint === 'hyperliquid-testnet') {
-    source = 'hyperliquid-testnet';
-    symbol = upperBody;
-    if (!symbol) {
-      return {
-        raw: trimmed, source, symbol, label: explicitLabel || upperBody, instType,
-        key: `hyperliquid-testnet:${symbol}`, valid: false, exists: false,
-        error: 'Hyperliquid coin cannot be blank.',
-      };
-    }
-  } else {
-    source = 'bitget';
-    const parts = upperBody.split(':');
-    if (parts.length === 2) {
-      instType = parts[0];
-      symbol = parts[1];
-    } else {
-      instType = 'USDT-FUTURES';
-      symbol = upperBody;
-    }
-    if (!['SPOT', 'USDT-FUTURES'].includes(instType) || !symbol) {
-      return {
-        raw: trimmed, source, symbol, label: explicitLabel || defaultBitgetLabel(symbol), instType,
-        key: `${instType}:${symbol}`, valid: false, exists: false,
-        error: 'Unsupported Bitget market.',
-      };
-    }
-  }
-
-  let label = explicitLabel || defaultBitgetLabel(symbol);
-  if (!explicitLabel && source === 'hyperliquid-testnet') label = `${symbol} Perp`;
-  const key =
-    source === 'hyperliquid-testnet'
-      ? `hyperliquid-testnet:${symbol}`
-      : `${instType}:${symbol}`;
-  return { raw: trimmed, source, symbol, label, instType, key, valid: true, exists: activeKeys.has(key), error: null };
-}
-
-export function parseBulkEntries(text: string, state: MarketState | null): BulkEntry[] {
-  const activeKeys = new Set((state?.instruments ?? []).map((instrument) => instrument.key));
-  const seen = new Set<string>();
-  const entries: BulkEntry[] = [];
-  for (const raw of text.split(/[\n,]+/)) {
-    const parsed = parseBulkLine(raw, activeKeys);
-    if (!parsed) continue;
-    const inputDuplicate = parsed.valid && seen.has(parsed.key);
-    if (parsed.valid) seen.add(parsed.key);
-    entries.push({ ...parsed, inputDuplicate });
-  }
-  return entries;
-}
-
-export function resultFromBulkEntry(entry: BulkEntry): InstrumentSearchResult {
-  return {
-    source: entry.source,
-    symbol: entry.symbol,
-    label: entry.label,
-    instType: entry.instType,
-    key: entry.key,
-    nameCn: '', nameHk: '', nameEn: '',
-    displayText:
-      entry.source === 'bitget'
-        ? `${entry.instType} · ${entry.symbol}`
-        : `Testnet perp · ${entry.symbol}/USDC`,
-    exists: entry.exists,
-  };
 }
 
 export function addInstrumentBySource(result: InstrumentSearchResult) {

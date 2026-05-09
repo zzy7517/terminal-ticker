@@ -6,7 +6,7 @@ mytradebot 是一个本地优先的行情监控和交易研究工作台。它把
 
 ## 现在它能做什么
 
-- **行情监控**：订阅 Bitget spot / USDT futures，拉取 Hyperliquid 测试网快照、K 线与 extended stats。
+- **行情监控**：订阅 Bitget futures，拉取 Hyperliquid 测试网快照、K 线与 extended stats。
 - **多周期图表**：前端展示 watchlist、实时价格、K 线、成交量、均线、VWAP、布林带、RSI、MACD、ATR，并支持图表画线。
 - **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Hyperliquid 测试网标的，也可以直接编辑 `watchlist.toml`。
 - **Agent 分析**：支持 Codex Responses provider 和 Anthropic Messages provider。Agent 可以读取行情、K 线、新闻和本地交易记录，并返回结构化交易观察。
@@ -84,7 +84,7 @@ python -m mytradebot --config watchlist.toml --host 127.0.0.1 --port 8765
 ```toml
 symbols = [
   { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC Perp", group = "crypto", analysis_interval = "15m", show_collapsed = true },
-  { symbol = "ETHUSDT", source = "bitget", inst_type = "SPOT", label = "ETH Spot", group = "crypto" },
+  { symbol = "BTCPERP", source = "bitget", inst_type = "USDC-FUTURES", label = "BTC USDC Perp", group = "crypto" },
   { symbol = "SPYUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SPY", group = "stocks", analysis_interval = "1H" },
   { symbol = "AAPLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "AAPL", group = "stocks" },
   "USDT-FUTURES:SOLUSDT"
@@ -140,8 +140,9 @@ recent_limit = 50
 Bitget：
 
 - `source = "bitget"`
-- spot 标的使用 `inst_type = "SPOT"`
 - U 本位合约使用 `inst_type = "USDT-FUTURES"`
+- USDC 本位合约使用 `inst_type = "USDC-FUTURES"`
+- 币本位合约使用 `inst_type = "COIN-FUTURES"`
 - catalog 和历史 K 线走 REST，实时报价走 public WebSocket。
 
 ## Agent Provider
@@ -269,7 +270,7 @@ Content-Type: application/json
 }
 ```
 
-`instrument_key` 使用当前 watchlist 里的 Bitget key，例如 `USDT-FUTURES:BTCUSDT` 或 `SPOT:ETHUSDT`。
+`instrument_key` 使用当前 watchlist 里的 Bitget key，例如 `USDT-FUTURES:BTCUSDT` 或 `USDC-FUTURES:BTCPERP`。
 
 ## 新闻
 
@@ -305,7 +306,7 @@ Content-Type: application/json
 常用接口：
 
 - `GET /api/state`：当前 watchlist、报价、K 线、provider 状态。
-- `GET /api/instruments/search`：搜索可添加标的。
+- `GET /api/instruments/catalog`：读取启动时预加载的可添加标的目录，前端基于它做本地搜索。
 - `POST /api/watchlist/bitget`：添加 Bitget 标的。
 - `GET /api/agent/models`：当前 provider 可用模型。
 - `GET /api/agent/config` / `PUT /api/agent/config`：读取和更新 Agent 配置。

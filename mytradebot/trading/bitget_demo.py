@@ -15,10 +15,11 @@ from urllib.request import Request, urlopen
 
 BITGET_API_BASE = "https://api.bitget.com"
 BITGET_DEMO_FILL_SOURCE = "bitget-demo"
-BITGET_SPOT = "SPOT"
 BITGET_USDT_FUTURES = "USDT-FUTURES"
+BITGET_USDC_FUTURES = "USDC-FUTURES"
+BITGET_COIN_FUTURES = "COIN-FUTURES"
+BITGET_FUTURES_TYPES = {BITGET_USDT_FUTURES, BITGET_USDC_FUTURES, BITGET_COIN_FUTURES}
 
-_SPOT_ORDER_PATH = "/api/v2/spot/trade/place-order"
 _FUTURES_ORDER_PATH = "/api/v2/mix/order/place-order"
 _ORDER_TYPES = {"market", "limit"}
 _FORCE_TYPES = {"gtc", "ioc", "fok", "post_only"}
@@ -180,9 +181,10 @@ def _client_oid() -> str:
 def _normalize_inst_type(inst_type: str) -> str:
     """说明：规范化并限制当前支持的 Bitget 产品类型。"""
     normalized = inst_type.strip().upper()
-    if normalized not in {BITGET_SPOT, BITGET_USDT_FUTURES}:
+    if normalized not in BITGET_FUTURES_TYPES:
+        supported = ", ".join(sorted(BITGET_FUTURES_TYPES))
         raise BitgetDemoTradingError(
-            f"unsupported Bitget demo inst_type: {inst_type}; expected SPOT or USDT-FUTURES"
+            f"unsupported Bitget demo inst_type: {inst_type}; expected one of: {supported}"
         )
     return normalized
 
@@ -224,7 +226,7 @@ def open_demo_position(
     force: str = "gtc",
     client_oid: str | None = None,
 ) -> BitgetDemoOrderResult:
-    """说明：在 Bitget 模拟盘提交 spot 或 USDT futures 订单。"""
+    """说明：在 Bitget 模拟盘提交 futures 订单。"""
     normalized_symbol = symbol.strip().upper()
     if not normalized_symbol:
         raise BitgetDemoTradingError("symbol is required")
@@ -240,33 +242,20 @@ def open_demo_position(
     if len(oid) > 32:
         raise BitgetDemoTradingError("client_oid must be 32 characters or fewer")
 
-    if normalized_inst_type == BITGET_SPOT:
-        path = _SPOT_ORDER_PATH
-        body: dict[str, Any] = {
-            "symbol": normalized_symbol,
-            "side": side,
-            "orderType": normalized_order_type,
-            "size": str(float(size)),
-            "clientOid": oid,
-        }
-        if normalized_order_type == "limit":
-            body["force"] = _normalize_force(force)
-            body["price"] = str(float(limit_price))
-    else:
-        path = _FUTURES_ORDER_PATH
-        body = {
-            "symbol": normalized_symbol,
-            "productType": normalized_inst_type,
-            "marginMode": _normalize_margin_mode(margin_mode),
-            "marginCoin": margin_coin.strip().upper() or "USDT",
-            "size": str(float(size)),
-            "side": side,
-            "tradeSide": "open",
-            "orderType": normalized_order_type,
-            "clientOid": oid,
-        }
-        if normalized_order_type == "limit":
-            body["force"] = _normalize_force(force)
-            body["price"] = str(float(limit_price))
+    path = _FUTURES_ORDER_PATH
+    body = {
+        "symbol": normalized_symbol,
+        "productType": normalized_inst_type,
+        "marginMode": _normalize_margin_mode(margin_mode),
+        "marginCoin": margin_coin.strip().upper() or "USDT",
+        "size": str(float(size)),
+        "side": side,
+        "tradeSide": "open",
+        "orderType": normalized_order_type,
+        "clientOid": oid,
+    }
+    if normalized_order_type == "limit":
+        body["force"] = _normalize_force(force)
+        body["price"] = str(float(limit_price))
 
     return _expect_success(_signed_post(path, body))

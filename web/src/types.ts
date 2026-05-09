@@ -421,6 +421,13 @@ export interface InstrumentSearchResult {
 }
 
 export type SecuritySearchResult = InstrumentSearchResult;
+export type InstrumentCatalogItem = InstrumentSearchResult;
+
+export interface InstrumentCatalogResponse {
+  loadedAt: string | null;
+  errors: Record<string, string>;
+  items: InstrumentCatalogItem[];
+}
 
 export interface ExchangePosition {
   exchange: string;

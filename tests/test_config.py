@@ -28,8 +28,8 @@ class ConfigTests(unittest.TestCase):
         config = parse_config(
             {
                 "symbols": [
-                    "SPOT:btcusdt",
-                    " SPOT:BTCUSDT ",
+                    "USDT-FUTURES:btcusdt",
+                    " USDT-FUTURES:BTCUSDT ",
                     {"symbol": "muusdt", "inst_type": "usdt-futures", "label": "MU"},
                 ],
                 "display": {"refresh_interval_ms": 500},
@@ -38,7 +38,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             self._instrument_rows(config),
             (
-                ("BTCUSDT", "bitget", "SPOT", None, "crypto"),
+                ("BTCUSDT", "bitget", "USDT-FUTURES", None, "crypto"),
                 ("MUUSDT", "bitget", "USDT-FUTURES", "MU", "crypto"),
             ),
         )
@@ -48,15 +48,20 @@ class ConfigTests(unittest.TestCase):
         """Verify build runtime parses cli prefix syntax."""
         config = build_runtime_config(
             None,
-            cli_symbols=["SPOT:BTCUSDT", "USDT-FUTURES:SPXUSDT"],
+            cli_symbols=["USDC-FUTURES:BTCPERP", "USDT-FUTURES:SPXUSDT"],
         )
         self.assertEqual(
             self._instrument_rows(config),
             (
-                ("BTCUSDT", "bitget", "SPOT", None, "crypto"),
+                ("BTCPERP", "bitget", "USDC-FUTURES", None, "crypto"),
                 ("SPXUSDT", "bitget", "USDT-FUTURES", None, "crypto"),
             ),
         )
+
+    def test_parse_config_rejects_bitget_spot(self) -> None:
+        """Verify Bitget spot symbols are no longer accepted."""
+        with self.assertRaisesRegex(ValueError, "inst_type must be one of"):
+            parse_config({"symbols": ["SPOT:BTCUSDT"]})
 
     def test_parse_config_rejects_removed_sources(self) -> None:
         """Verify removed market-data sources are rejected at config load time."""
@@ -74,14 +79,14 @@ class ConfigTests(unittest.TestCase):
 
     def test_parse_config_supports_analysis_defaults_and_overrides(self) -> None:
         """Verify parse config supports analysis defaults and overrides."""
-        default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})
+        default_config = parse_config({"symbols": ["USDT-FUTURES:BTCUSDT"]})
         self.assertTrue(default_config.analysis.enabled)
         self.assertEqual(default_config.analysis.interval, "5m")
         self.assertEqual(default_config.analysis.lookback, 40)
 
         config = parse_config(
             {
-                "symbols": ["SPOT:BTCUSDT"],
+                "symbols": ["USDT-FUTURES:BTCUSDT"],
                 "analysis": {
                     "enabled": False,
                     "interval": "15m",
@@ -100,14 +105,14 @@ class ConfigTests(unittest.TestCase):
 
     def test_parse_config_supports_cache_defaults_and_overrides(self) -> None:
         """Verify parse config supports local candle cache settings."""
-        default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})
+        default_config = parse_config({"symbols": ["USDT-FUTURES:BTCUSDT"]})
         self.assertTrue(default_config.cache.enabled)
         self.assertEqual(default_config.cache.candle_retention_seconds, 86_400)
         self.assertIsNone(default_config.cache.path)
 
         config = parse_config(
             {
-                "symbols": ["SPOT:BTCUSDT"],
+                "symbols": ["USDT-FUTURES:BTCUSDT"],
                 "cache": {
                     "enabled": False,
                     "path": "~/tmp/mytradebot-cache.sqlite3",
@@ -136,7 +141,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_parse_config_supports_agent_defaults_and_overrides(self) -> None:
         """Verify parse config supports LLM agent settings."""
-        default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})
+        default_config = parse_config({"symbols": ["USDT-FUTURES:BTCUSDT"]})
         self.assertTrue(default_config.agent.enabled)
         self.assertEqual(default_config.agent.provider, "codex")
         self.assertEqual(default_config.agent.api_mode, "codex_responses")
@@ -144,7 +149,7 @@ class ConfigTests(unittest.TestCase):
 
         config = parse_config(
             {
-                "symbols": ["SPOT:BTCUSDT"],
+                "symbols": ["USDT-FUTURES:BTCUSDT"],
                 "agent": {
                     "enabled": False,
                     "provider": "codex",
@@ -165,7 +170,7 @@ class ConfigTests(unittest.TestCase):
 
         anthropic_config = parse_config(
             {
-                "symbols": ["SPOT:BTCUSDT"],
+                "symbols": ["USDT-FUTURES:BTCUSDT"],
                 "agent": {
                     "provider": "anthropic",
                     "api_mode": "anthropic_messages",
@@ -179,14 +184,14 @@ class ConfigTests(unittest.TestCase):
 
     def test_parse_config_supports_memory_defaults_and_overrides(self) -> None:
         """Verify parse config supports local memory settings."""
-        default_config = parse_config({"symbols": ["SPOT:BTCUSDT"]})
+        default_config = parse_config({"symbols": ["USDT-FUTURES:BTCUSDT"]})
         self.assertFalse(default_config.memory.enabled)
         self.assertTrue(default_config.memory.use_memories)
         self.assertTrue(default_config.memory.generate_memories)
 
         config = parse_config(
             {
-                "symbols": ["SPOT:BTCUSDT"],
+                "symbols": ["USDT-FUTURES:BTCUSDT"],
                 "memory": {
                     "enabled": True,
                     "use_memories": False,
@@ -241,7 +246,7 @@ class ConfigTests(unittest.TestCase):
                     """
                     symbols = [
                       { symbol = "MSFTUSDT", inst_type = "USDT-FUTURES", label = "MSFT" },
-                      { symbol = "BTCUSDT", inst_type = "SPOT", label = "BTC" },
+                      { symbol = "BTCUSD", inst_type = "COIN-FUTURES", label = "BTC" },
                     ]
 
                     [display]
@@ -255,7 +260,7 @@ class ConfigTests(unittest.TestCase):
             self._instrument_rows(config),
             (
                 ("MSFTUSDT", "bitget", "USDT-FUTURES", "MSFT", "crypto"),
-                ("BTCUSDT", "bitget", "SPOT", "BTC", "crypto"),
+                ("BTCUSD", "bitget", "COIN-FUTURES", "BTC", "crypto"),
             ),
         )
         self.assertEqual(config.display.stale_after_seconds, 15)

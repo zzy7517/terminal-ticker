@@ -44,8 +44,11 @@ from ..config.agent_models import (
 )
 from ..domain.price_action import Candle, merge_candles
 from ..domain.quotes import QuoteState
-from ..market_data.bitget import search_instruments as search_bitget_instruments
-from ..market_data.hyperliquid import search_instruments as search_hyperliquid_instruments
+from ..market_data.bitget import (
+    FUTURES_PRODUCT_TYPES,
+    load_instrument_catalog as load_bitget_instrument_catalog,
+)
+from ..market_data.hyperliquid import load_instrument_catalog as load_hyperliquid_instrument_catalog
 from ..market_data.router import MarketInstrument, resolve_instruments
 from ..memory import MemoryPipeline, MemoryRuntimePolicy, parse_memory_citations
 from ..news import NewsService, NewsStore
@@ -91,12 +94,16 @@ from .serializers import (
     DEFAULT_AGENT_USER_PROMPT,
     agent_session_config_kwargs,
     agent_session_title,
+    instrument_catalog_item_payload,
     serialize_market_state,
     sse_event,
     utc_now_iso,
 )
 
 LOGGER = logging.getLogger(__name__)
+BITGET_CATALOG_PRODUCT_ORDER = {
+    product_type: index for index, product_type in enumerate(FUTURES_PRODUCT_TYPES)
+}
 OLDER_CANDLE_SOURCES = {BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
 MANUAL_MEMORY_TRIGGERS = (
     "帮我记住",
@@ -197,6 +204,9 @@ class MarketRuntime:
         self.review_task: asyncio.Task[None] | None = None
         self.running = False
         self.agent_analyses: dict[str, dict[str, Any]] = {}
+        self.instrument_catalog: tuple[MarketInstrument, ...] = tuple()
+        self.instrument_catalog_loaded_at: str | None = None
+        self.instrument_catalog_errors: dict[str, str] = {}
         self.agent_session_store = agent_session_store or AgentSessionStore()
         self.agent_runs = AgentSessionRunRegistry()
         self._active_session_for_tools: str | None = None
@@ -266,6 +276,7 @@ class MarketRuntime:
         if self.running:
             return
         self.running = True
+        await self.refresh_instrument_catalog()
         self.controller.start()
         self.pump_task = asyncio.create_task(self._pump())
         self.review_task = asyncio.create_task(self._run_review_loop())
@@ -396,60 +407,55 @@ class MarketRuntime:
             LOGGER.info("websocket disconnected: client=%s clients=%d", client_host, len(self.clients))
 
     # ------------------------------------------------------------------
-    # Search
+    # Instrument catalog
     # ------------------------------------------------------------------
 
-    async def search_bitget(self, query: str) -> list[dict[str, Any]]:
-        text = query.strip()
-        if not text:
-            return []
-        active = {instrument.key for instrument in self.instruments}
-        results = await asyncio.to_thread(search_bitget_instruments, text)
-        return [
-            {
-                "source": BITGET_SOURCE,
-                "symbol": item.symbol,
-                "label": item.label,
-                "instType": item.inst_type,
-                "key": item.key,
-                "nameCn": "",
-                "nameHk": "",
-                "nameEn": "",
-                "displayText": f"{item.inst_type} · {item.base_asset}/{item.quote_asset}",
-                "exists": item.key in active,
-            }
-            for item in results
-        ]
+    async def refresh_instrument_catalog(self) -> None:
+        """说明：启动时预加载可添加标的目录，前端只做本地搜索。"""
+        catalog: list[MarketInstrument] = []
+        errors: dict[str, str] = {}
 
-    async def search_hyperliquid(self, query: str) -> list[dict[str, Any]]:
-        text = query.strip()
-        if not text:
-            return []
-        active = {instrument.key for instrument in self.instruments}
-        results = await asyncio.to_thread(search_hyperliquid_instruments, text)
-        return [
-            {
-                "source": HYPERLIQUID_TESTNET_SOURCE,
-                "symbol": item.symbol,
-                "label": item.label,
-                "instType": None,
-                "key": item.key,
-                "nameCn": "",
-                "nameHk": "",
-                "nameEn": "",
-                "displayText": f"Testnet perp · {item.base_asset}/{item.quote_asset}",
-                "exists": item.key in active,
-            }
-            for item in results
-        ]
+        try:
+            bitget_catalog = await asyncio.to_thread(load_bitget_instrument_catalog)
+            catalog.extend(
+                sorted(
+                    bitget_catalog.values(),
+                    key=lambda item: (
+                        BITGET_CATALOG_PRODUCT_ORDER.get(item.inst_type, 99),
+                        item.symbol,
+                    ),
+                )
+            )
+        except Exception as exc:
+            LOGGER.warning("Bitget catalog preload failed", exc_info=True)
+            errors[BITGET_SOURCE] = str(exc)
 
-    async def search_instruments(self, source: str, query: str) -> list[dict[str, Any]]:
-        normalized_source = source.strip().lower()
-        if normalized_source == BITGET_SOURCE:
-            return await self.search_bitget(query)
-        if normalized_source == HYPERLIQUID_TESTNET_SOURCE:
-            return await self.search_hyperliquid(query)
-        raise HTTPException(status_code=400, detail="Unsupported search source.")
+        try:
+            hyperliquid_catalog = await asyncio.to_thread(load_hyperliquid_instrument_catalog)
+            catalog.extend(
+                sorted(
+                    hyperliquid_catalog.values(),
+                    key=lambda item: item.symbol.upper(),
+                )
+            )
+        except Exception as exc:
+            LOGGER.warning("Hyperliquid catalog preload failed", exc_info=True)
+            errors[HYPERLIQUID_TESTNET_SOURCE] = str(exc)
+
+        self.instrument_catalog = tuple(catalog)
+        self.instrument_catalog_loaded_at = utc_now_iso()
+        self.instrument_catalog_errors = errors
+
+    def instrument_catalog_payload(self) -> dict[str, Any]:
+        active_keys = {instrument.key for instrument in self.instruments}
+        return {
+            "loadedAt": self.instrument_catalog_loaded_at,
+            "errors": self.instrument_catalog_errors,
+            "items": [
+                instrument_catalog_item_payload(item, active_keys=active_keys)
+                for item in self.instrument_catalog
+            ],
+        }
 
     # ------------------------------------------------------------------
     # Watchlist management

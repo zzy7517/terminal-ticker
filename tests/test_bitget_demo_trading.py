@@ -137,18 +137,8 @@ class BitgetDemoTradingTests(unittest.TestCase):
         })
         self.assertEqual(result.external_order_id, "o-1")
 
-    def test_spot_market_order_payload_omits_limit_fields(self) -> None:
-        captured = {}
-
-        def fake_signed_post(path, body):
-            captured["path"] = path
-            captured["body"] = body
-            return {"code": "00000", "data": {"orderId": "o-2", "clientOid": body["clientOid"]}}
-
-        with patch("mytradebot.trading.bitget_demo._client_oid", return_value="cid-2"), patch(
-            "mytradebot.trading.bitget_demo._signed_post",
-            side_effect=fake_signed_post,
-        ):
+    def test_spot_market_order_is_rejected(self) -> None:
+        with self.assertRaisesRegex(BitgetDemoTradingError, "expected one of"):
             open_demo_position(
                 symbol="ethusdt",
                 inst_type="SPOT",
@@ -156,15 +146,6 @@ class BitgetDemoTradingTests(unittest.TestCase):
                 size=1,
                 order_type="market",
             )
-
-        self.assertEqual(captured["path"], "/api/v2/spot/trade/place-order")
-        self.assertEqual(captured["body"], {
-            "symbol": "ETHUSDT",
-            "side": "sell",
-            "orderType": "market",
-            "size": "1.0",
-            "clientOid": "cid-2",
-        })
 
     def test_limit_order_requires_price(self) -> None:
         with self.assertRaisesRegex(BitgetDemoTradingError, "limit order requires"):

@@ -1,43 +1,85 @@
 import { useMemo, useState } from 'react';
 import { Loader2, Plus, Search, Trash2 } from 'lucide-react';
-import type { Instrument, InstrumentSearchResult } from '../../types';
+import type { Instrument, InstrumentCatalogItem, InstrumentSearchResult } from '../../types';
 import type { SearchSource } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
+import { removeWatchlistInstrument } from '../../api';
 import {
-  addBitgetSymbol,
-  addHyperliquidTestnetSymbol,
-  removeWatchlistInstrument,
-  searchInstruments,
-} from '../../api';
-import {
+  addInstrumentBySource,
   instrumentVenue,
-  parseBulkEntries,
-  resultFromBulkEntry,
   sourceName,
   watchlistSections,
 } from '../../utils';
 
+const SEARCH_LIMIT = 80;
+
+function sourceTitle(source: SearchSource) {
+  return source === 'bitget' ? 'Bitget Futures' : 'Hyperliquid Testnet';
+}
+
+function catalogMatches(item: InstrumentCatalogItem, query: string) {
+  if (!query) return true;
+  const haystack = [
+    item.symbol,
+    item.label,
+    item.instType ?? '',
+    item.key,
+    item.nameCn,
+    item.nameHk,
+    item.nameEn,
+    item.displayText,
+  ].join(' ').toLowerCase();
+  return haystack.includes(query);
+}
+
+function catalogScore(item: InstrumentCatalogItem, query: string) {
+  if (!query) return 0;
+  const symbol = item.symbol.toLowerCase();
+  const label = item.label.toLowerCase();
+  const key = item.key.toLowerCase();
+  if (symbol === query || label === query) return 0;
+  if (symbol.startsWith(query) || label.startsWith(query)) return 1;
+  if (key.startsWith(query)) return 2;
+  return 3;
+}
+
 export function WatchlistSettingsPanel() {
   const state = useMarketStore((s) => s.state);
+  const catalog = useMarketStore((s) => s.instrumentCatalog);
+  const catalogLoadedAt = useMarketStore((s) => s.catalogLoadedAt);
+  const catalogErrors = useMarketStore((s) => s.catalogErrors);
+  const catalogStatus = useMarketStore((s) => s.catalogStatus);
   const [searchSource, setSearchSource] = useState<SearchSource>('bitget');
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<InstrumentSearchResult[]>([]);
-  const [status, setStatus] = useState('Watchlist changes are saved to the local TOML file.');
+  const [status, setStatus] = useState('Catalog is loaded at startup. Search runs locally in the browser.');
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [bulkText, setBulkText] = useState('');
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const entries = useMemo(() => parseBulkEntries(bulkText, state), [bulkText, state]);
-  const addableEntries = entries.filter((entry) => entry.valid && !entry.exists && !entry.inputDuplicate);
   const editable = Boolean(state?.config.sourcePath);
   const sections = useMemo(() => watchlistSections(state?.instruments ?? []), [state?.instruments]);
-
-  async function addWatchlistResult(result: InstrumentSearchResult) {
-    if (result.source === 'bitget') return addBitgetSymbol(result);
-    return addHyperliquidTestnetSymbol(result);
-  }
+  const activeKeys = useMemo(
+    () => new Set((state?.instruments ?? []).map((instrument) => instrument.key)),
+    [state?.instruments],
+  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const sourceCatalog = useMemo(
+    () => catalog.filter((item) => item.source === searchSource),
+    [catalog, searchSource],
+  );
+  const visibleCatalog = useMemo(
+    () =>
+      sourceCatalog
+        .filter((item) => catalogMatches(item, normalizedQuery))
+        .sort((a, b) => {
+          const score = catalogScore(a, normalizedQuery) - catalogScore(b, normalizedQuery);
+          return score || a.symbol.localeCompare(b.symbol);
+        })
+        .slice(0, SEARCH_LIMIT)
+        .map((item) => ({ ...item, exists: activeKeys.has(item.key) })),
+    [activeKeys, normalizedQuery, sourceCatalog],
+  );
+  const catalogErrorItems = Object.entries(catalogErrors);
 
   async function addResult(result: InstrumentSearchResult) {
-    if (result.exists || busyKey) return;
+    if (!editable || result.exists || busyKey) return;
     if (result.source === 'bitget' && !result.instType) {
       setStatus('Bitget result is missing instType.');
       return;
@@ -45,11 +87,8 @@ export function WatchlistSettingsPanel() {
     setBusyKey(result.key);
     setStatus(`Adding ${result.symbol}...`);
     try {
-      const nextState = await addWatchlistResult(result);
+      const nextState = await addInstrumentBySource(result);
       useMarketStore.getState().setState(nextState);
-      setResults((items) =>
-        items.map((item) => (item.key === result.key ? { ...item, exists: true } : item)),
-      );
       setStatus(`Added ${result.symbol}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Add failed.');
@@ -69,48 +108,11 @@ export function WatchlistSettingsPanel() {
     try {
       const nextState = await removeWatchlistInstrument(instrument.key);
       useMarketStore.getState().setState(nextState);
-      setResults((items) =>
-        items.map((item) => (item.key === instrument.key ? { ...item, exists: false } : item)),
-      );
       setStatus(`Removed ${instrument.symbol}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Remove failed.');
     } finally {
       setBusyKey(null);
-    }
-  }
-
-  async function runSearch() {
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    setStatus('Searching...');
-    try {
-      const next = await searchInstruments(searchSource, trimmed);
-      setResults(next);
-      setStatus(next.length ? `${next.length} matches.` : 'No matches.');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Search failed.');
-    }
-  }
-
-  async function addBulkEntries() {
-    if (!editable || bulkBusy || addableEntries.length === 0) return;
-    setBulkBusy(true);
-    setStatus(`Adding ${addableEntries.length} symbols...`);
-    try {
-      let added = 0;
-      for (const entry of addableEntries) {
-        const result = resultFromBulkEntry(entry);
-        const nextState = await addWatchlistResult(result);
-        added += 1;
-        useMarketStore.getState().setState(nextState);
-      }
-      setStatus(`Added ${added} symbols.`);
-      setBulkText('');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Batch add failed.');
-    } finally {
-      setBulkBusy(false);
     }
   }
 
@@ -130,12 +132,93 @@ export function WatchlistSettingsPanel() {
         </div>
       </header>
 
-      <div className="watchlist-settings-layout">
-        <section className="watchlist-current">
-          <div className="provider-section-head">
-            <strong>Active Symbols</strong>
-            {!editable && <span className="provider-inline-badge">Readonly</span>}
+      <div className="provider-layout watchlist-provider-layout">
+        <section className="provider-catalog watchlist-catalog">
+          <div className="provider-toolbar">
+            <div className="settings-search">
+              <Search size={17} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={
+                  searchSource === 'bitget'
+                    ? 'Search futures, e.g. BTCUSDT'
+                    : 'Search coins, e.g. BTC'
+                }
+              />
+            </div>
           </div>
+
+          <div className="source-toggle watchlist-source-toggle">
+            <button
+              className={searchSource === 'bitget' ? 'active' : ''}
+              type="button"
+              onClick={() => setSearchSource('bitget')}
+            >
+              Bitget Futures
+            </button>
+            <button
+              className={searchSource === 'hyperliquid-testnet' ? 'active' : ''}
+              type="button"
+              onClick={() => setSearchSource('hyperliquid-testnet')}
+            >
+              Hyperliquid
+            </button>
+          </div>
+
+          <div className="models-showing watchlist-catalog-meta">
+            {catalogStatus === 'loading'
+              ? 'Loading catalog...'
+              : `${visibleCatalog.length} shown of ${sourceCatalog.length} ${sourceTitle(searchSource)} symbols`}
+            {catalogLoadedAt && <span>Loaded {new Date(catalogLoadedAt).toLocaleTimeString()}</span>}
+          </div>
+
+          {catalogErrorItems.length > 0 && (
+            <div className="watchlist-catalog-errors">
+              {catalogErrorItems.map(([source, message]) => (
+                <div key={source}>
+                  <strong>{sourceName(source)}</strong>
+                  <span>{message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="provider-list watchlist-catalog-list">
+            {visibleCatalog.map((result) => (
+              <button
+                className={`provider-item watchlist-catalog-item ${result.exists ? 'selected' : ''}`}
+                disabled={!editable || result.exists || busyKey === result.key}
+                key={result.key}
+                onClick={() => addResult(result)}
+                type="button"
+              >
+                <div className="provider-item-copy">
+                  <strong>{result.symbol}</strong>
+                  <small>{result.displayText}</small>
+                </div>
+                <span className={result.exists ? 'remove-action' : 'add-action'}>
+                  {busyKey === result.key ? <Loader2 className="spin" size={14} /> : <Plus size={14} />}
+                  {result.exists ? 'Active' : 'Add'}
+                </span>
+              </button>
+            ))}
+            {visibleCatalog.length === 0 && (
+              <div className="provider-empty">No symbols match this search.</div>
+            )}
+          </div>
+        </section>
+
+        <section className="provider-detail watchlist-detail">
+          <div className="provider-hero">
+            <div className="provider-hero-title">
+              <h3>Active Symbols</h3>
+              <span className="provider-state-badge active">{state.instruments.length} active</span>
+              {!editable && <span className="provider-inline-badge">Readonly</span>}
+            </div>
+            <p>Search the preloaded provider catalog on the left, then add futures/perp symbols to the local watchlist.</p>
+          </div>
+
           <div className="watchlist-table">
             {sections.map((section) => (
               <div className="watchlist-source-section" key={section.source}>
@@ -169,115 +252,10 @@ export function WatchlistSettingsPanel() {
               </div>
             ))}
           </div>
-        </section>
 
-        <section className="watchlist-editor">
-          <div className="bulk-import-panel">
-            <div className="provider-section-head">
-              <strong>Batch Add</strong>
-              <span className="provider-inline-badge">{addableEntries.length} ready</span>
-            </div>
-            <textarea
-              value={bulkText}
-              onChange={(event) => setBulkText(event.target.value)}
-              placeholder={'BTCUSDT\nSPOT:ETHUSDT\nAAPLUSDT\nhyperliquid:BTC'}
-              spellCheck={false}
-            />
-            {entries.length > 0 && (
-              <div className="bulk-preview">
-                {entries.slice(0, 8).map((entry) => (
-                  <div className={`bulk-preview-row ${entry.valid && !entry.exists ? 'ready' : ''}`} key={`${entry.raw}-${entry.key}`}>
-                    <span>{entry.raw}</span>
-                    <small>
-                      {entry.error
-                        || (entry.inputDuplicate ? 'duplicate input' : entry.exists ? 'already active' : `${sourceName(entry.source)} · ${entry.key}`)}
-                    </small>
-                  </div>
-                ))}
-                {entries.length > 8 && <div className="bulk-preview-more">+{entries.length - 8} more</div>}
-              </div>
-            )}
-            <button
-              className="shell-button primary"
-              disabled={!editable || bulkBusy || addableEntries.length === 0}
-              onClick={addBulkEntries}
-              type="button"
-            >
-              {bulkBusy ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
-              Add batch
-            </button>
-          </div>
-
-          <div className="single-add-panel">
-            <div className="provider-section-head">
-              <strong>Search Add</strong>
-              <span className="provider-inline-badge">{sourceName(searchSource)}</span>
-            </div>
-            <div className="source-toggle">
-              <button
-                className={searchSource === 'bitget' ? 'active' : ''}
-                type="button"
-                onClick={() => {
-                  setSearchSource('bitget');
-                  setResults([]);
-                }}
-              >
-                Bitget
-              </button>
-              <button
-                className={searchSource === 'hyperliquid-testnet' ? 'active' : ''}
-                type="button"
-                onClick={() => {
-                  setSearchSource('hyperliquid-testnet');
-                  setResults([]);
-                }}
-              >
-                Hyperliquid Testnet
-              </button>
-            </div>
-            <div className="settings-search">
-              <Search size={17} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') runSearch();
-                }}
-                placeholder={
-                  searchSource === 'bitget'
-                    ? 'BTC / BTCUSDT / AAPLUSDT'
-                    : 'BTC / ETH'
-                }
-              />
-              <button className="inline-search-button" type="button" onClick={runSearch}>
-                Search
-              </button>
-            </div>
-            <div className="search-results settings-results">
-              {results.map((result) => (
-                <button
-                  className="search-result"
-                  key={result.key}
-                  onClick={() => addResult(result)}
-                  type="button"
-                  disabled={!editable || result.exists || busyKey === result.key}
-                >
-                  <span>
-                    <strong>{result.symbol}</strong>
-                    <small>{result.nameCn || result.nameEn || result.nameHk || result.displayText}</small>
-                  </span>
-                  <span className={result.exists ? 'remove-action' : 'add-action'}>
-                    {busyKey === result.key ? <Loader2 className="spin" size={14} /> : <Plus size={14} />}
-                    {result.exists ? 'Active' : 'Add'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <div className="provider-status-bar">{status}</div>
         </section>
       </div>
-
-      <div className="provider-status-bar">{status}</div>
     </>
   );
 }
