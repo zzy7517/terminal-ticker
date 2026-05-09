@@ -155,7 +155,7 @@ export function PositionsPanel() {
                     <td style={{ textAlign: 'center' }}>
                       <button
                         type="button"
-                        style={{ fontSize: 11, padding: '2px 8px' }}
+                        className="shell-button danger sm"
                         disabled={cancelling === o.orderId}
                         onClick={() => void handleCancel(o.exchange, o.orderId, o.symbol)}
                       >

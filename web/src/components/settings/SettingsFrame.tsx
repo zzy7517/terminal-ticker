@@ -8,6 +8,7 @@ import {
   Settings,
 } from 'lucide-react';
 import type { SettingsSection } from '../../constants';
+import './SettingsFrame.css';
 import { useMarketStore } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
 

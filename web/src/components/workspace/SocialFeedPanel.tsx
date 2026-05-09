@@ -93,7 +93,7 @@ export function SocialFeedPanel() {
             </span>
           )}
           <button
-            className="news-refresh-btn"
+            className="shell-button sm"
             onClick={() => void refreshFeed()}
             disabled={refreshing || loading}
             type="button"

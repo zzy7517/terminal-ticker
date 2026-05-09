@@ -5,6 +5,7 @@ import type { SearchSource } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
 import { removeWatchlistInstrument } from '../../api';
 import { addInstrumentBySource, sourceName } from '../../utils';
+import './WatchlistSettingsPanel.css';
 
 const SOURCE_LABEL: Record<SearchSource, string> = {
   bitget: 'Bitget Futures',
@@ -189,7 +190,7 @@ export function WatchlistSettingsPanel() {
   }
 
   if (!state) {
-    return <div className="settings-loading">Loading watchlist…</div>;
+    return <div className="empty-state lg">Loading watchlist…</div>;
   }
 
   return (
@@ -200,8 +201,8 @@ export function WatchlistSettingsPanel() {
           <h2>Watchlist</h2>
         </div>
         <div className="settings-stage-actions">
-          <span className="models-count">{instruments.length} active</span>
-          {!editable && <span className="provider-inline-badge">Readonly</span>}
+          <span className="badge mono">{instruments.length} active</span>
+          {!editable && <span className="badge">Readonly</span>}
         </div>
       </header>
 
@@ -209,12 +210,12 @@ export function WatchlistSettingsPanel() {
         <div className="wl-active" aria-label="Active symbols">
           <div className="wl-active-head">
             <span className="wl-active-eyebrow">In your watchlist</span>
-            <span className="wl-active-count">
+            <span className="badge accent mono">
               <Sparkles size={12} aria-hidden /> {instruments.length}
             </span>
           </div>
           {instruments.length === 0 ? (
-            <p className="wl-active-empty">
+            <p className="empty-state sm">
               No symbols yet. Add some from the catalog below to start streaming quotes.
             </p>
           ) : (
@@ -356,7 +357,7 @@ export function WatchlistSettingsPanel() {
 
           <div className="wl-catalog-scroller" ref={scrollerRef}>
             {groups.length === 0 ? (
-              <div className="wl-catalog-empty">
+              <div className="empty-state lg">
                 {catalogStatus === 'loading'
                   ? 'Loading…'
                   : normalizedQuery

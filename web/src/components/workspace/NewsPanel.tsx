@@ -76,7 +76,7 @@ export function NewsPanel({
       <div className="news-panel__head">
         <span className="news-panel__title">Reuters</span>
         <button
-          className="news-refresh-btn"
+          className="shell-button sm"
           onClick={handleRefresh}
           disabled={loading}
           type="button"
@@ -90,7 +90,7 @@ export function NewsPanel({
       )}
       <div className="news-panel__list">
         {displayItems.length === 0 && (
-          <div className="news-panel__empty">暂无新闻，点击"立即刷新"拉取。</div>
+          <div className="empty-state sm">暂无新闻，点击"立即刷新"拉取。</div>
         )}
         {displayItems.map((item) => (
           <a

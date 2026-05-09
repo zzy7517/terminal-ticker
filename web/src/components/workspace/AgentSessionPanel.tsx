@@ -35,8 +35,8 @@ function AgentToolCalls({
             <div className="tool-step-summary">
               <Zap size={12} />
               <span className="tool-name">call {call.name}</span>
-              {isPending && <span className="tool-pending-badge">running</span>}
-              {result?.metadata?.error && <span className="tool-error-badge">error</span>}
+              {isPending && <span className="badge sm accent">running</span>}
+              {result?.metadata?.error && <span className="badge sm danger">error</span>}
             </div>
             <div className="tool-step-detail">
               {Object.keys(call.arguments ?? {}).length > 0 && (
@@ -222,7 +222,7 @@ export function AgentSessionPanel({
         </span>
         {busy && <span className="agent-bias neutral">running</span>}
         {contextPercentLabel !== null && (
-          <span className={`context-badge${contextPercentLevel > 90 ? ' danger' : contextPercentLevel > 70 ? ' warning' : ''}`}>
+          <span className={`badge mono${contextPercentLevel > 90 ? ' danger' : contextPercentLevel > 70 ? ' warning' : ''}`}>
             <CircleDot size={10} /> {contextPercentLabel}% context
           </span>
         )}
@@ -296,7 +296,7 @@ export function AgentSessionPanel({
                   !kw || m.toLowerCase().includes(kw) || opt.label.toLowerCase().includes(kw),
                 ).length === 0;
               }) && (
-                <div className="session-model-empty">无匹配模型</div>
+                <div className="empty-state sm">无匹配模型</div>
               )}
             </div>
           </div>
@@ -355,7 +355,7 @@ export function AgentSessionPanel({
         }}
       >
         {sessionLoading && (
-          <div className="session-empty">
+          <div className="empty-state row">
             <Loader2 className="spin" size={16} />
             <span>Loading session</span>
           </div>
@@ -369,7 +369,7 @@ export function AgentSessionPanel({
           />
         ))}
         {!sessionLoading && messages.length === 0 && (
-          <div className="session-empty">
+          <div className="empty-state row">
             <History size={16} />
             <span>No turns in this agent session.</span>
           </div>
@@ -389,7 +389,12 @@ export function AgentSessionPanel({
           rows={3}
           value={agentPrompt}
         />
-        <button className="agent-action" type="button" onClick={() => void runAgentAnalysis()} disabled={!canSend}>
+        <button
+          className="shell-button primary lg full-width"
+          type="button"
+          onClick={() => void runAgentAnalysis()}
+          disabled={!canSend}
+        >
           {busy ? <Loader2 className="spin" size={16} /> : <Bot size={16} />}
           {busy ? 'Analyzing' : 'Ask Agent'}
         </button>

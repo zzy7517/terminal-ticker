@@ -55,7 +55,7 @@ export function AgentSessionHistoryList() {
           <History size={13} /> Chats
         </span>
         <button
-          className="session-new-btn"
+          className="shell-button icon sm"
           disabled={Boolean(busyActionKey)}
           onClick={() => {
             setConfirmingDeleteId(null);
@@ -69,7 +69,7 @@ export function AgentSessionHistoryList() {
       </div>
       <div className="session-history-list">
         {loading && (
-          <div className="session-history-empty">
+          <div className="empty-state sm row">
             <Loader2 className="spin" size={14} />
             <span>Loading saved sessions</span>
           </div>
@@ -143,7 +143,7 @@ export function AgentSessionHistoryList() {
           );
         })}
         {!loading && visibleHistory.length === 0 && (
-          <div className="session-history-empty">
+          <div className="empty-state sm row">
             <History size={14} />
             <span>No saved sessions yet.</span>
           </div>

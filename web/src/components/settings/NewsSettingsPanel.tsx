@@ -34,7 +34,7 @@ export function NewsSettingsPanel() {
   }
 
   if (!config || !draft) {
-    return <div className="settings-loading">Loading settings...</div>;
+    return <div className="empty-state lg">Loading settings...</div>;
   }
 
   const newsStatus = state?.newsStatus;
@@ -50,7 +50,7 @@ export function NewsSettingsPanel() {
           <h2>News</h2>
         </div>
         <div className="settings-stage-actions">
-          <span className="provider-inline-badge">{config.enabled ? 'Active' : 'Disabled'}</span>
+          <span className={`badge${config.enabled ? ' success' : ''}`}>{config.enabled ? 'Active' : 'Disabled'}</span>
         </div>
       </header>
 
@@ -58,7 +58,7 @@ export function NewsSettingsPanel() {
         <section className="provider-catalog">
           <div className="provider-section-head">
             <strong>Sources</strong>
-            <span className="provider-inline-badge">1 active</span>
+            <span className="badge">1 active</span>
           </div>
           <div className="provider-list">
             <button className="provider-item selected" type="button" disabled>
@@ -69,7 +69,7 @@ export function NewsSettingsPanel() {
                 <strong>Reuters</strong>
                 <small>Sitemap poller — news.reuters.com</small>
               </div>
-              <span className={`provider-inline-badge ${config.enabled ? 'positive' : ''}`}>
+              <span className={`badge${config.enabled ? ' success' : ''}`}>
                 {config.enabled ? 'On' : 'Off'}
               </span>
             </button>

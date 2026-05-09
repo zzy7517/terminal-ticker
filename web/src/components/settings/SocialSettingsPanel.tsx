@@ -171,7 +171,7 @@ export function SocialSettingsPanel() {
   }
 
   if (!config) {
-    return <div className="settings-loading">Loading settings...</div>;
+    return <div className="empty-state lg">Loading settings...</div>;
   }
 
   const hasUsableAuth = Boolean(authStatus?.hasSavedAuth || authStatus?.envAvailable);
@@ -205,10 +205,10 @@ export function SocialSettingsPanel() {
           <h2>Social</h2>
         </div>
         <div className="settings-stage-actions">
-          <span className={`provider-inline-badge ${config.enabled ? 'positive' : ''}`}>
+          <span className={`badge${config.enabled ? ' success' : ''}`}>
             {config.enabled ? 'Reader On' : 'Reader Off'}
           </span>
-          <span className={`provider-inline-badge ${hasUsableAuth ? 'positive' : ''}`}>
+          <span className={`badge${hasUsableAuth ? ' success' : ''}`}>
             {hasUsableAuth ? 'Auth Ready' : 'Auth Missing'}
           </span>
         </div>
@@ -218,7 +218,7 @@ export function SocialSettingsPanel() {
         <section className="provider-detail social-vault-card">
           <div className="provider-section-head">
             <strong>X Auth Vault</strong>
-            <span className="provider-inline-badge">local only</span>
+            <span className="badge">local only</span>
           </div>
           <p className="settings-hint" style={{ marginTop: 0 }}>
             Paste the two x.com cookies here once. They are stored on this machine and never echoed back
@@ -245,6 +245,7 @@ export function SocialSettingsPanel() {
             <label>
               <span className="panel-label">auth_token</span>
               <input
+                className="input"
                 value={authToken}
                 onChange={(event) => setAuthToken(event.target.value)}
                 placeholder="Paste auth_token value"
@@ -256,6 +257,7 @@ export function SocialSettingsPanel() {
             <label>
               <span className="panel-label">ct0</span>
               <input
+                className="input"
                 value={ct0}
                 onChange={(event) => setCt0(event.target.value)}
                 placeholder="Paste ct0 value"
@@ -290,11 +292,12 @@ export function SocialSettingsPanel() {
           <div className="social-test-panel">
             <div className="provider-section-head">
               <strong>Quick Tests</strong>
-              <span className="provider-inline-badge">manual</span>
+              <span className="badge">manual</span>
             </div>
             <label className="social-test-count">
               <span className="panel-label">Refresh count</span>
               <input
+                className="input mono"
                 value={refreshCountInput}
                 onChange={(event) => setRefreshCountInput(event.target.value)}
                 type="number"
@@ -364,6 +367,7 @@ export function SocialSettingsPanel() {
             <label>
               <span className="panel-label">Recent limit</span>
               <input
+                className="input mono"
                 value={recentLimitInput}
                 onChange={(event) => setRecentLimitInput(event.target.value)}
                 type="number"
@@ -376,6 +380,7 @@ export function SocialSettingsPanel() {
             <label>
               <span className="panel-label">Retention</span>
               <input
+                className="input mono"
                 value={retentionDaysInput}
                 onChange={(event) => setRetentionDaysInput(event.target.value)}
                 type="number"
@@ -388,6 +393,7 @@ export function SocialSettingsPanel() {
             <label>
               <span className="panel-label">Max cached items</span>
               <input
+                className="input mono"
                 value={maxItemsInput}
                 onChange={(event) => setMaxItemsInput(event.target.value)}
                 type="number"

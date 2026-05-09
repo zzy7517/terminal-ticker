@@ -131,7 +131,7 @@ export function ProviderSettingsPanel() {
               );
             })}
             {filteredProviders.length === 0 && (
-              <div className="provider-empty">No providers match this search.</div>
+              <div className="empty-state lg">No providers match this search.</div>
             )}
           </div>
         </section>
@@ -141,7 +141,7 @@ export function ProviderSettingsPanel() {
           <div className="provider-hero">
             <div className="provider-hero-title">
               <h3>{option.label}</h3>
-              {enabled && <span className="provider-state-badge active">Active</span>}
+              {enabled && <span className="badge success">Active</span>}
               <label className="switch-row provider-hero-toggle" onClick={(e) => e.stopPropagation()}>
                 <input type="checkbox" checked={enabled} onChange={toggleEnabled} />
                 <span className="switch-slider" />
@@ -235,10 +235,10 @@ export function ProviderSettingsPanel() {
                     );
                   })}
                   {models.length > 0 && visibleModels.length === 0 && (
-                    <div className="provider-empty">No models match this search.</div>
+                    <div className="empty-state">No models match this search.</div>
                   )}
                   {models.length === 0 && !loading && (
-                    <div className="provider-empty">点击 Fetch 拉取模型列表。</div>
+                    <div className="empty-state">点击 Fetch 拉取模型列表。</div>
                   )}
                 </div>
               </div>
@@ -247,7 +247,7 @@ export function ProviderSettingsPanel() {
           })()}
 
           {!enabled && (
-            <div className="provider-empty provider-disabled-hint">
+            <div className="empty-state lg provider-disabled-hint">
               启用此 provider 后可以选择模型并在对话中使用。
             </div>
           )}

@@ -50,6 +50,7 @@ export function AgentContextSettingsPanel() {
           <label>
             <span>Max Candles</span>
             <input
+              className="input mono"
               min={10}
               step={5}
               type="number"
