@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ExchangeOrder, ExchangePosition, Lesson } from '../../types';
 import { useMarketStore } from '../../stores/marketStore';
-import { cancelExchangeOrder, listLessons, triggerTradeReview } from '../../api';
+import { cancelExchangeOrder, listLessons } from '../../api';
 
 const EXCHANGE_LABELS: Record<string, string> = {
   'hyperliquid-testnet': 'Hyperliquid Testnet',
@@ -12,7 +12,6 @@ export function PositionsPanel() {
   const state = useMarketStore((s) => s.state);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(false);
-  const [busyReview, setBusyReview] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,19 +34,6 @@ export function PositionsPanel() {
   useEffect(() => {
     void refreshLessons();
   }, [refreshLessons]);
-
-  const runReview = async () => {
-    setBusyReview(true);
-    setError(null);
-    try {
-      await triggerTradeReview(5);
-      await refreshLessons();
-    } catch (exc) {
-      setError(exc instanceof Error ? exc.message : 'review failed');
-    } finally {
-      setBusyReview(false);
-    }
-  };
 
   const handleCancel = async (exchange: string, orderId: string, symbol: string) => {
     setCancelling(orderId);
@@ -83,11 +69,6 @@ export function PositionsPanel() {
             </span>
           </div>
           <div><strong>Lessons</strong> {lessons.length}</div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={runReview} disabled={busyReview}>
-            {busyReview ? '复盘中…' : '触发复盘'}
-          </button>
         </div>
       </div>
 
@@ -192,7 +173,7 @@ export function PositionsPanel() {
       <section>
         <h3 style={{ margin: '4px 0' }}>Recent Lessons</h3>
         {loading && <div style={{ opacity: 0.6 }}>加载中…</div>}
-        {!loading && lessons.length === 0 && <div style={{ opacity: 0.6 }}>尚未生成 lesson。完成一笔交易并触发复盘后会出现。</div>}
+        {!loading && lessons.length === 0 && <div style={{ opacity: 0.6 }}>尚未生成 lesson。交易关闭后由 memory 系统自动生成。</div>}
         <ul style={{ margin: 0, paddingLeft: 18 }}>
           {lessons.slice(0, 20).map((l) => (
             <li key={l.id}>

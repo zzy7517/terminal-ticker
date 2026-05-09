@@ -188,6 +188,49 @@ def get_open_orders() -> list[ExchangeOrder]:
     return orders
 
 
+def get_user_fills(
+    *,
+    coin: str | None = None,
+    start_time_ms: int | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    if not hyperliquid_credentials_available():
+        return []
+    try:
+        info = _load_info()
+        address = _get_user_address()
+        start = start_time_ms or 0
+        raw_fills = info.user_fills_by_time(address, start)
+    except Exception:
+        _log.warning("Failed to fetch Hyperliquid user fills", exc_info=True)
+        return []
+    results: list[dict[str, Any]] = []
+    for item in raw_fills:
+        fill_coin = item.get("coin", "")
+        if coin and fill_coin != coin:
+            continue
+        px = _to_float(item.get("px"))
+        sz = _to_float(item.get("sz"))
+        fee = _to_float(item.get("fee"))
+        closed_pnl = _to_float(item.get("closedPnl"))
+        results.append({
+            "oid": item.get("oid"),
+            "coin": fill_coin,
+            "instrumentKey": f"hyperliquid-testnet:{fill_coin}",
+            "side": item.get("side"),
+            "price": float(px) if px is not None else 0.0,
+            "size": float(sz) if sz is not None else 0.0,
+            "fee": float(fee) if fee is not None else 0.0,
+            "closedPnl": float(closed_pnl) if closed_pnl is not None else 0.0,
+            "filledAtMs": int(item.get("time", 0)),
+            "dir": item.get("dir"),
+            "exchange": HYPERLIQUID_FILL_SOURCE,
+        })
+        if len(results) >= limit:
+            break
+    return results
+
+
 def cancel_order(*, order_id: str, coin: str) -> bool:
     """说明：撤销 Hyperliquid 测试网挂单。"""
     exchange = _load_exchange()

@@ -80,6 +80,34 @@ class ExchangeOrder:
 
 
 @dataclass(frozen=True)
+class TradeSyncResult:
+    """说明：本地 trade 与交易所真实状态的一次同步结果。"""
+
+    exchange: str
+    status: str
+    closed: bool = False
+    reason: str = ""
+    position: ExchangePosition | None = None
+    active_orders: tuple[ExchangeOrder, ...] = tuple()
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "exchange": self.exchange,
+            "status": self.status,
+            "closed": self.closed,
+            "reason": self.reason,
+            "position": self.position.to_payload() if self.position is not None else None,
+            "activeOrders": [order.to_payload() for order in self.active_orders],
+            "error": self.error,
+        }
+
+
+@dataclass(frozen=True)
 class OrderResult:
     """说明：下单结果。"""
 

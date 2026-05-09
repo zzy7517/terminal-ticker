@@ -18,6 +18,7 @@ from .state import (
     DEFAULT_PRUNE_BATCH_SIZE,
     MemoryStateStore,
     SOURCE_MANUAL_NOTE,
+    SOURCE_TRADE_EVENT,
 )
 from .write import (
     MemoryFileStorage,
@@ -132,6 +133,16 @@ class MemoryPipeline:
             updated_at=updated_at,
         )
         return note_key
+
+    def enqueue_trade_event(self, *, trade_id: int, updated_at: int | None = None) -> None:
+        """说明：把已关闭交易显式加入 memory Phase 1 队列。"""
+        if not self.policy.generate_memories:
+            return
+        self.state_store.enqueue_source(
+            source_type=SOURCE_TRADE_EVENT,
+            source_ref=str(int(trade_id)),
+            updated_at=updated_at,
+        )
 
     async def run_once(self) -> None:
         """说明：执行一次启动扫描 + Phase 1 + Phase 2。"""

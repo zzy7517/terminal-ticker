@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import suppress
@@ -15,15 +16,21 @@ from typing import Any
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 
 from ..agent import (
+    AgentRuntime,
     AgentRuntimeServices,
     AgentSessionRuntime,
     AgentSessionStore,
     LLMProviderError,
     LLMProviderUnavailable,
+    ToolPack,
     TradingAgentRuntime,
     TradingAgentRuntimeServices,
+    build_market_tools,
+    build_trade_review_tools,
+    build_web_tools,
     create_llm_provider,
     list_available_agent_models,
+    merge_registries,
 )
 from ..agent.tools.market_context import build_market_context
 from ..config import (
@@ -56,7 +63,7 @@ from ..news.providers.reuters import ReutersSitemapProvider
 from ..runtime.controller import TickerController
 from ..runtime.feed import CHART_CANDLE_LIMIT, OLDER_CANDLE_LIMIT
 from ..social_feed import SocialFeedService, SocialFeedStore, XAuthStore
-from ..trading import TradeStatus, TradeStore, ExchangeRouter
+from ..trading import Trade, TradeStatus, TradeStore, ExchangeRouter
 from ..trading.bitget_demo import (
     BITGET_DEMO_FILL_SOURCE,
     BitgetDemoTradingError,
@@ -68,7 +75,6 @@ from ..trading.hyperliquid import (
     open_testnet_position as open_hyperliquid_testnet_position,
 )
 from ..trading.models import FillKind, TradeDirection
-from ..trading.review import review_pending
 from ..config.watchlist_store import (
     append_bitget_symbol_to_watchlist,
     append_hyperliquid_symbol_to_watchlist,
@@ -116,6 +122,48 @@ MANUAL_MEMORY_TRIGGERS = (
     "add this to memory",
 )
 MANUAL_MEMORY_NEGATIONS = ("不要记住", "别记住", "do not remember", "don't remember")
+TRADE_LIFECYCLE_INTERVAL_SECONDS = 5 * 60
+TRADE_LIFECYCLE_BATCH_SIZE = 5
+_INTERVAL_MINUTES = {
+    "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+    "1H": 60, "4H": 240, "6H": 360, "12H": 720,
+    "1D": 1440, "3D": 4320, "1W": 10080, "1M": 43200,
+}
+_DAILY_THRESHOLD_MINUTES = 1440
+_TRADE_LIFECYCLE_SYSTEM_PROMPT = """你是一名经验丰富的交易员，正在后台检查和复盘你之前开的仓位。
+你有丰富的 price action、Smart Money Concepts 和衍生品交易经验。
+
+你的工作分两步：
+
+**第一步：检查交易是否已结束**
+调用 check_trade_status 查询交易所真实持仓和挂单。
+- 如果返回 closed=true，说明交易所已无该方向持仓，交易已结束。继续第二步。
+- 如果返回 closed=false，说明仓位还在。直接输出 {"closed": false} 结束，不要做任何复盘。
+
+**第二步：复盘已结束的交易**
+1. 调用 get_exchange_fills 从交易所拉取该笔交易的真实成交记录，确定真实出场价格和盈亏。绝对不要猜测出场价。
+2. 调用 get_trade_review_context 读取完整上下文：开仓时的 thesis/snapshot、成交明细、同标的历史教训。
+3. 用 get_candles 查多个时间周期的 K 线（至少看 15m、1H、4H），开仓到平仓这段时间必须包含在 K 线范围内。
+4. 如果 webSearchAllowed=true，说明这是日线或更高周期的交易，用 web_search 搜索相关的宏观新闻和事件背景。
+
+站在交易员的视角思考：
+- 入场点位选得好不好？当时的市场结构支不支持这个方向？
+- 止损止盈设得合不合理？有没有被假突破扫出去？
+- 仓位管理有没有问题？
+- 如果亏了，下次遇到类似结构该怎么改进？
+
+最终只输出严格 JSON object：
+{
+  "closed": true,
+  "exit_price": number|null,
+  "close_reason": "stop_hit"|"target_hit"|"liquidated"|"manual_close"|"unknown",
+  "lesson": string,
+  "category": "entry"|"exit"|"risk"|"patience"|"bias",
+  "tags": string[]
+}
+
+lesson 用两到四句话，区分已观察到的事实和你的复盘假设，不要把单笔交易泛化成确定性规律。
+你不能开新仓，也不能调用任何交易执行工具。"""
 
 
 class MarketContextProvider:
@@ -201,7 +249,7 @@ class MarketRuntime:
         )
         self.clients: set[WebSocket] = set()
         self.pump_task: asyncio.Task[None] | None = None
-        self.review_task: asyncio.Task[None] | None = None
+        self.trade_lifecycle_task: asyncio.Task[None] | None = None
         self.running = False
         self.agent_analyses: dict[str, dict[str, Any]] = {}
         self.instrument_catalog: tuple[MarketInstrument, ...] = tuple()
@@ -279,7 +327,7 @@ class MarketRuntime:
         await self.refresh_instrument_catalog()
         self.controller.start()
         self.pump_task = asyncio.create_task(self._pump())
-        self.review_task = asyncio.create_task(self._run_review_loop())
+        self.trade_lifecycle_task = asyncio.create_task(self._run_trade_lifecycle_loop())
         self._kickoff_memory_pipeline_if_ready()
         if self.news_service is not None:
             await self.news_service.start()
@@ -292,11 +340,11 @@ class MarketRuntime:
             with suppress(asyncio.CancelledError):
                 await self.pump_task
             self.pump_task = None
-        if self.review_task is not None:
-            self.review_task.cancel()
+        if self.trade_lifecycle_task is not None:
+            self.trade_lifecycle_task.cancel()
             with suppress(asyncio.CancelledError):
-                await self.review_task
-            self.review_task = None
+                await self.trade_lifecycle_task
+            self.trade_lifecycle_task = None
         if self.news_service is not None:
             await self.news_service.stop()
         if self.memory_pipeline is not None:
@@ -1087,13 +1135,18 @@ class MarketRuntime:
                 runtime_services=session_runtime.runtime_services,
             ),
         )
-        turn_result = await runtime.run_turn(
-            session_id=session_runtime.session.id,
-            user_prompt=user_prompt,
-            history=history,
-            candidate_instrument_keys=candidate_instrument_keys,
-            event_handler=event_handler,
-        )
+        previous_tool_session = self._active_session_for_tools
+        self._active_session_for_tools = session_runtime.session.id
+        try:
+            turn_result = await runtime.run_turn(
+                session_id=session_runtime.session.id,
+                user_prompt=user_prompt,
+                history=history,
+                candidate_instrument_keys=candidate_instrument_keys,
+                event_handler=event_handler,
+            )
+        finally:
+            self._active_session_for_tools = previous_tool_session
         payload = turn_result.to_payload()
         self._record_memory_citations_from_messages(
             [message.to_payload() for message in turn_result.loop_result.messages]
@@ -1569,6 +1622,187 @@ class MarketRuntime:
             self._kickoff_memory_pipeline_if_ready()
         await self.broadcast()
 
+    async def _run_trade_lifecycle_loop(self) -> None:
+        while self.running:
+            try:
+                await asyncio.sleep(TRADE_LIFECYCLE_INTERVAL_SECONDS)
+            except asyncio.CancelledError:
+                break
+            try:
+                changed = await self._run_trade_lifecycle_once(limit=TRADE_LIFECYCLE_BATCH_SIZE)
+            except Exception:
+                LOGGER.warning("trade lifecycle pass failed", exc_info=True)
+                continue
+            if changed:
+                await self.broadcast()
+
+    async def _run_trade_lifecycle_once(self, *, limit: int = TRADE_LIFECYCLE_BATCH_SIZE) -> bool:
+        if not self.config.agent.enabled:
+            LOGGER.debug("trade lifecycle: skipped — agent is disabled")
+            return False
+        open_trades = await asyncio.to_thread(
+            self.trade_store.list_trades,
+            statuses=[TradeStatus.OPEN],
+            limit=max(1, int(limit)),
+        )
+        if not open_trades:
+            LOGGER.debug("trade lifecycle: no open trades, skipping")
+            return False
+        LOGGER.info("trade lifecycle: scanning %d open trade(s)", len(open_trades))
+        changed = False
+        for trade in open_trades:
+            result = await self._run_lifecycle_agent_for_trade(trade)
+            if result:
+                changed = True
+        return changed
+
+    async def _run_lifecycle_agent_for_trade(self, trade: Trade) -> bool:
+        t0 = _monotonic()
+        trade_label = f"trade#{trade.id} {trade.instrument_key} {trade.direction.value}"
+        LOGGER.info("trade lifecycle: checking %s", trade_label)
+        try:
+            provider = create_llm_provider(self.config.agent)
+        except (LLMProviderUnavailable, LLMProviderError):
+            LOGGER.warning("trade lifecycle: skipped %s — agent provider unavailable", trade_label)
+            return False
+        snapshot_payload = self._snapshot_payload_for_trade(trade)
+        can_use_web = self._trade_review_can_use_web(trade.instrument_key)
+        runtime = AgentRuntime(
+            provider=provider,
+            tool_packs=self._lifecycle_tool_packs(trade, snapshot_payload, can_use_web),
+            system_prompt=_TRADE_LIFECYCLE_SYSTEM_PROMPT,
+            max_iterations=8,
+        )
+        prompt = json.dumps({
+            "trade_id": trade.id,
+            "instrument_key": trade.instrument_key,
+            "direction": trade.direction.value,
+            "status": trade.status.value,
+            "webSearchAllowed": can_use_web,
+        }, ensure_ascii=False, separators=(",", ":"))
+        result = await runtime.run(user_message=prompt)
+        elapsed_ms = int((_monotonic() - t0) * 1000)
+        if result.error:
+            LOGGER.warning(
+                "trade lifecycle: %s failed in %dms (%d iterations, %d tokens) — %s",
+                trade_label, elapsed_ms, result.iterations, result.total_tokens, result.error,
+            )
+            return False
+        parsed = _parse_review_agent_output(result.content)
+        if not parsed.get("closed"):
+            LOGGER.info(
+                "trade lifecycle: %s still open — %dms, %d iterations, %d tokens",
+                trade_label, elapsed_ms, result.iterations, result.total_tokens,
+            )
+            return False
+        refreshed = self.trade_store.get_trade(trade.id)
+        if refreshed is None:
+            LOGGER.warning("trade lifecycle: %s disappeared from store after agent run", trade_label)
+            return False
+        if refreshed.status is not TradeStatus.CLOSED:
+            self._close_trade_from_agent(refreshed, parsed)
+        refreshed = self.trade_store.get_trade(trade.id)
+        if refreshed is None:
+            LOGGER.warning("trade lifecycle: %s disappeared from store after close", trade_label)
+            return False
+        lesson = str(parsed.get("lesson") or "").strip()
+        if lesson and not self.trade_store.list_lessons(trade_id=trade.id, limit=1):
+            tags = parsed.get("tags")
+            self.trade_store.save_lesson(
+                trade_id=trade.id,
+                instrument_key=trade.instrument_key,
+                text=lesson,
+                category=str(parsed.get("category") or ""),
+                tags=[str(tag) for tag in tags] if isinstance(tags, list) else [],
+            )
+        self._enqueue_trade_memory_event(refreshed)
+        close_reason = parsed.get("close_reason", "unknown")
+        lesson_preview = (lesson[:80] + "...") if len(lesson) > 80 else lesson
+        LOGGER.info(
+            "trade lifecycle: %s CLOSED reason=%s pnl=%.4f — %dms, %d iterations, %d tokens — lesson: %s",
+            trade_label, close_reason,
+            refreshed.realized_pnl, elapsed_ms, result.iterations, result.total_tokens,
+            lesson_preview or "(none)",
+        )
+        return True
+
+    def _lifecycle_tool_packs(
+        self,
+        trade: Trade,
+        snapshot_payload: dict[str, Any] | None,
+        can_use_web: bool,
+    ) -> tuple[ToolPack, ...]:
+        return (
+            ToolPack(
+                "trade-review",
+                lambda: build_trade_review_tools(
+                    store=self.trade_store,
+                    trade_id=trade.id,
+                    snapshot_payload=snapshot_payload,
+                    exchange_router=self.exchange_router,
+                ),
+            ),
+            ToolPack(
+                "market",
+                lambda: build_market_tools(
+                    MarketContextProvider(self),
+                    candidate_instrument_keys=(trade.instrument_key,),
+                ),
+            ),
+            ToolPack("web", build_web_tools, enabled=can_use_web),
+        )
+
+    def _snapshot_payload_for_trade(self, trade: Trade) -> dict[str, Any] | None:
+        if trade.snapshot_id is None:
+            return None
+        snapshot = self.trade_store.get_snapshot(trade.snapshot_id)
+        return snapshot.payload if snapshot is not None else None
+
+    def _close_trade_from_agent(self, trade: Trade, agent_output: dict[str, Any]) -> None:
+        if any(fill.kind in (FillKind.EXIT, FillKind.STOP, FillKind.TARGET) for fill in trade.fills):
+            LOGGER.info("trade lifecycle: trade#%d already has exit fill, marking closed with existing pnl", trade.id)
+            self.trade_store.mark_closed(trade.id, realized_pnl=trade.realized_pnl)
+            return
+        raw_exit_price = agent_output.get("exit_price")
+        if raw_exit_price is None or float(raw_exit_price) <= 0:
+            LOGGER.warning(
+                "trade lifecycle: closing trade#%d without exit fill — agent did not provide a valid exit_price",
+                trade.id,
+            )
+            self.trade_store.mark_closed(trade.id, realized_pnl=0.0)
+            return
+        exit_price = float(raw_exit_price)
+        quantity = _closed_quantity(trade)
+        close_reason = str(agent_output.get("close_reason") or "unknown")
+        fill_kind = _fill_kind_from_close_reason(close_reason)
+        self.trade_store.record_fill(
+            trade_id=trade.id,
+            kind=fill_kind,
+            price=exit_price,
+            quantity=float(quantity),
+            trigger_reason=close_reason,
+            fill_source=trade.fill_source,
+            external_order_id=trade.external_order_id,
+        )
+        entry_price = trade.average_entry_price or trade.intent_price or 0.0
+        realized_pnl = trade.direction.sign * (exit_price - float(entry_price)) * float(quantity)
+        self.trade_store.mark_closed(trade.id, realized_pnl=realized_pnl)
+
+    def _enqueue_trade_memory_event(self, trade: Trade) -> None:
+        if self.memory_pipeline is None:
+            LOGGER.debug("trade lifecycle: skipped memory enqueue for trade#%d — pipeline unavailable", trade.id)
+            return
+        self.memory_pipeline.enqueue_trade_event(trade_id=trade.id, updated_at=trade.updated_at_ms)
+        self._kickoff_memory_pipeline_if_ready()
+
+    def _trade_review_can_use_web(self, instrument_key: str) -> bool:
+        try:
+            instrument = self._instrument_by_key(instrument_key)
+        except HTTPException:
+            return False
+        interval = instrument.analysis_interval or self.config.analysis.interval
+        return _INTERVAL_MINUTES.get(interval, 0) >= _DAILY_THRESHOLD_MINUTES
+
     async def _pump(self) -> None:
         refresh_seconds = max(0.25, self.config.display.refresh_interval_ms / 1000)
         while self.running:
@@ -1578,72 +1812,6 @@ class MarketRuntime:
             await asyncio.sleep(refresh_seconds)
             if not result.dirty:
                 await self.broadcast()
-
-    async def _run_review_loop(self) -> None:
-        review_interval_seconds = 15 * 60
-        while self.running:
-            try:
-                await asyncio.sleep(review_interval_seconds)
-            except asyncio.CancelledError:
-                break
-            if not self.config.agent.enabled:
-                continue
-            pending = self.trade_store.trade_ids_without_review(limit=1)
-            if not pending:
-                continue
-            try:
-                provider = create_llm_provider(self.config.agent)
-            except (LLMProviderUnavailable, LLMProviderError):
-                continue
-            except Exception:
-                continue
-
-            async def _reviewer(payload: dict[str, Any]) -> dict[str, Any]:
-                return await self._llm_generate_lesson(provider, payload)
-
-            try:
-                await review_pending(
-                    store=self.trade_store,
-                    llm=_reviewer,
-                    limit=3,
-                )
-            except Exception:
-                continue
-            await self.broadcast()
-
-    async def _llm_generate_lesson(
-        self,
-        provider: Any,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        prompt_text = (
-            "请基于下列 JSON 中的交易与当时快照做简短复盘，"
-            "输出严格 JSON，字段: lesson (string), category (string), tags (array of string)。\n\n"
-            f"{json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}"
-        )
-        response = await provider.chat(
-            messages=[
-                {"role": "system", "content": "你是 price action 交易复盘助手，只输出 JSON。"},
-                {"role": "user", "content": prompt_text},
-            ],
-            tools=None,
-        )
-        content = response.content or ""
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError:
-            text = content.strip()
-            if text.startswith("```"):
-                text = text.strip("`")
-                if "\n" in text:
-                    text = text.split("\n", 1)[1]
-            try:
-                parsed = json.loads(text)
-            except json.JSONDecodeError:
-                return {"lesson": content.strip(), "category": "general", "tags": []}
-        if not isinstance(parsed, dict):
-            return {"lesson": str(parsed), "category": "general", "tags": []}
-        return parsed
 
     def _trading_snapshot_payload(self, instrument_key: str) -> dict[str, Any]:
         instrument = None
@@ -1676,6 +1844,23 @@ class MarketRuntime:
             },
             "context": context,
             "currentAnalysis": current_analysis,
+            "openingThesis": self._opening_thesis_payload(),
+        }
+
+    def _opening_thesis_payload(self) -> dict[str, Any] | None:
+        session_id = self._active_session_for_tools
+        if not session_id:
+            return None
+        try:
+            messages = self.agent_session_store.list_messages(session_id, limit=8)
+        except Exception:
+            return {"sessionId": session_id}
+        last_user = next((m.content for m in reversed(messages) if m.role == "user"), "")
+        last_assistant = next((m.content for m in reversed(messages) if m.role == "assistant"), "")
+        return {
+            "sessionId": session_id,
+            "lastUserMessage": last_user,
+            "lastAssistantMessage": last_assistant,
         }
 
 
@@ -1687,6 +1872,50 @@ def _request_int(value: Any, *, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+_monotonic = time.monotonic
+
+
+def _closed_quantity(trade: Trade) -> float:
+    entry_quantity = sum(fill.quantity for fill in trade.fills if fill.kind is FillKind.ENTRY)
+    exit_quantity = sum(
+        fill.quantity
+        for fill in trade.fills
+        if fill.kind in (FillKind.EXIT, FillKind.STOP, FillKind.TARGET)
+    )
+    remaining = entry_quantity - exit_quantity
+    return remaining if remaining > 0 else trade.size
+
+
+_CLOSE_REASON_TO_FILL_KIND = {
+    "stop_hit": FillKind.STOP,
+    "target_hit": FillKind.TARGET,
+    "liquidated": FillKind.EXIT,
+    "manual_close": FillKind.EXIT,
+}
+
+
+def _fill_kind_from_close_reason(close_reason: str) -> FillKind:
+    return _CLOSE_REASON_TO_FILL_KIND.get(close_reason, FillKind.EXIT)
+
+
+def _parse_review_agent_output(content: str) -> dict[str, Any]:
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+        if "\n" in text:
+            first_line, rest = text.split("\n", 1)
+            text = rest if first_line.strip().lower() in {"json", "javascript"} else text
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        LOGGER.warning("trade lifecycle: agent output is not valid JSON, treating as raw lesson — %.120s", text)
+        return {"lesson": content.strip(), "category": "general", "tags": []}
+    if not isinstance(parsed, dict):
+        LOGGER.warning("trade lifecycle: agent output is not a JSON object — %s", type(parsed).__name__)
+        return {"lesson": str(parsed), "category": "general", "tags": []}
+    return parsed
 
 
 def _memory_policy_from_config(config: AppConfig) -> MemoryRuntimePolicy:

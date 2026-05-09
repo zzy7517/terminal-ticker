@@ -7,11 +7,6 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from ..agent import (
-    LLMProviderError,
-    LLMProviderUnavailable,
-    create_llm_provider,
-)
 from ..trading import TradeStatus
 from ..trading.models import FillKind, TradeDirection
 from .helpers import (
@@ -252,40 +247,6 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
             limit=max(1, min(int(limit), 500)),
         )
         return {"lessons": list(lessons)}
-
-    @app.post("/api/trades/review")
-    async def trigger_trade_review_endpoint(
-        payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        limit = int((payload or {}).get("limit", 3))
-        if not runtime.config.agent.enabled:
-            raise HTTPException(status_code=409, detail="agent disabled in config")
-        try:
-            provider = create_llm_provider(runtime.config.agent)
-        except (LLMProviderUnavailable, LLMProviderError) as exc:
-            raise HTTPException(status_code=503, detail=str(exc))
-
-        async def _reviewer(review_payload: dict[str, Any]) -> dict[str, Any]:
-            return await runtime._llm_generate_lesson(provider, review_payload)
-
-        from ..trading.review import review_pending
-        results = await review_pending(
-            store=runtime.trade_store,
-            llm=_reviewer,
-            limit=max(1, min(limit, 20)),
-        )
-        await runtime.broadcast()
-        return {
-            "results": [
-                {
-                    "tradeId": r.trade_id,
-                    "lessonId": r.lesson_id,
-                    "success": r.success,
-                    "error": r.error,
-                }
-                for r in results
-            ],
-        }
 
     # -- Exchange --
 

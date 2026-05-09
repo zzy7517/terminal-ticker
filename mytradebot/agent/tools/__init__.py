@@ -12,7 +12,7 @@ from .registry import (
     merge_registries,
 )
 from .market import build_market_tools
-from .trading import build_trading_tools
+from .trading import build_trade_review_tools, build_trading_tools
 from .news import build_news_tools
 from .social import build_social_feed_tools
 from .web import build_web_tools
@@ -29,6 +29,7 @@ __all__ = [
     "merge_registries",
     "build_market_tools",
     "build_trading_tools",
+    "build_trade_review_tools",
     "build_news_tools",
     "build_social_feed_tools",
     "build_web_tools",

@@ -608,3 +608,88 @@ def build_trading_tools(
     ))
 
     return registry
+
+
+def build_trade_review_tools(
+    *,
+    store: TradeStore,
+    trade_id: int,
+    snapshot_payload: dict[str, Any] | None = None,
+    exchange_router: Any = None,
+) -> ToolRegistry:
+    """构建 lifecycle agent 工具：交易状态同步 + 只读复盘上下文。"""
+    registry = ToolRegistry()
+
+    async def get_trade_review_context() -> str:
+        trade = store.get_trade(int(trade_id))
+        if trade is None:
+            return _json_output({"error": f"trade not found: {trade_id}"})
+        lessons = store.list_lessons(instrument_key=trade.instrument_key, limit=10)
+        return _json_output({
+            "trade": trade.to_payload(include_fills=True),
+            "snapshotAtOpen": snapshot_payload,
+            "recentLessonsForInstrument": list(lessons),
+        })
+
+    registry.register(ToolDefinition(
+        name="get_trade_review_context",
+        description=(
+            "读取当前待复盘交易的完整上下文，包括本地 trade/fills、开仓快照、"
+            "以及同标的最近 lessons。只读工具，不会修改任何交易。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {},
+        },
+        handler=get_trade_review_context,
+    ))
+
+    async def check_trade_status() -> str:
+        if exchange_router is None:
+            return _json_output({"error": "exchange router is not available"})
+        trade = store.get_trade(int(trade_id))
+        if trade is None:
+            return _json_output({"error": f"trade not found: {trade_id}"})
+        sync_result = exchange_router.sync_trade_status(trade)
+        return _json_output(sync_result.to_payload())
+
+    registry.register(ToolDefinition(
+        name="check_trade_status",
+        description=(
+            "查询交易所实时持仓和挂单，判断当前本地 OPEN 交易是否已经在交易所侧结束"
+            "（止盈、止损、爆仓或手动平仓）。返回同步结果，包含 closed 布尔值、"
+            "匹配的交易所持仓和活跃订单。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {},
+        },
+        handler=check_trade_status,
+    ))
+
+    async def get_exchange_fills(limit: int = 50) -> str:
+        if exchange_router is None:
+            return _json_output({"error": "exchange router is not available"})
+        trade = store.get_trade(int(trade_id))
+        if trade is None:
+            return _json_output({"error": f"trade not found: {trade_id}"})
+        fills = exchange_router.get_trade_fills_from_exchange(trade, limit=max(1, min(int(limit), 100)))
+        return _json_output({"fills": fills, "count": len(fills)})
+
+    registry.register(ToolDefinition(
+        name="get_exchange_fills",
+        description=(
+            "从交易所拉取该笔交易相关的真实历史成交记录。"
+            "返回每笔成交的 price、size、fee、closedPnl（如有）和 filledAtMs。"
+            "用于确定真实出场价格和盈亏，不要靠猜。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100},
+            },
+        },
+        handler=get_exchange_fills,
+    ))
+
+    return registry

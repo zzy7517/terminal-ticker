@@ -408,25 +408,6 @@ export async function listLessons(instrumentKey?: string, limit?: number): Promi
   return payload.lessons;
 }
 
-// Triggers a manual review pass for recently-closed trades without a lesson yet.
-export async function triggerTradeReview(limit = 3): Promise<Array<{
-  tradeId: number;
-  lessonId: number | null;
-  success: boolean;
-  error: string | null;
-}>> {
-  const response = await fetch('/api/trades/review', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ limit }),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'trade review failed');
-  }
-  const payload = await response.json();
-  return payload.results;
-}
-
 export async function cancelExchangeOrder(
   exchange: string,
   orderId: string,

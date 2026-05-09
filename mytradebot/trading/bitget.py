@@ -312,6 +312,50 @@ def close_position(
     )
 
 
+def get_order_fills(
+    *,
+    symbol: str,
+    product_type: str = "USDT-FUTURES",
+    order_id: str | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    if not bitget_credentials_available():
+        return []
+    params: dict[str, str] = {
+        "symbol": symbol,
+        "productType": product_type,
+        "limit": str(max(1, min(int(limit), 100))),
+    }
+    if order_id:
+        params["orderId"] = str(order_id)
+    try:
+        resp = _request("GET", "/api/v2/mix/order/fills", params=params)
+    except Exception:
+        _log.warning("Failed to fetch Bitget order fills for %s", symbol, exc_info=True)
+        return []
+    if resp.get("code") != "00000":
+        _log.warning("Bitget order fills error: %s", resp.get("msg"))
+        return []
+    fill_list = resp.get("data", {}).get("fillList", [])
+    if not isinstance(fill_list, list):
+        return []
+    results: list[dict[str, Any]] = []
+    for item in fill_list[:limit]:
+        results.append({
+            "tradeId": item.get("tradeId"),
+            "orderId": item.get("orderId"),
+            "symbol": item.get("symbol", symbol),
+            "side": item.get("side"),
+            "price": _to_float(item.get("price")),
+            "size": _to_float(item.get("baseVolume") or item.get("size")),
+            "fee": _to_float(item.get("fee")),
+            "profit": _to_float(item.get("profit")),
+            "filledAtMs": int(item.get("cTime", 0)),
+            "exchange": BITGET_DEMO_FILL_SOURCE,
+        })
+    return results
+
+
 def cancel_order(*, order_id: str, symbol: str, product_type: str = "USDT-FUTURES") -> bool:
     try:
         resp = _request("POST", "/api/v2/mix/order/cancel-order", body={

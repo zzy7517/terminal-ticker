@@ -6,7 +6,8 @@ from typing import Any
 
 from . import bitget as bitget_trading
 from . import hyperliquid as hl_trading
-from .exchange_models import ExchangeOrder, ExchangePosition, OrderResult
+from .exchange_models import ExchangeOrder, ExchangePosition, OrderResult, TradeSyncResult
+from .models import FillKind, Trade, TradeStatus
 from .store import TradeStore
 
 _log = logging.getLogger(__name__)
@@ -14,6 +15,10 @@ _log = logging.getLogger(__name__)
 EXCHANGE_HYPERLIQUID = "hyperliquid-testnet"
 EXCHANGE_BITGET = "bitget-demo"
 BITGET_FUTURES_PREFIXES = ("USDT-FUTURES:", "USDC-FUTURES:", "COIN-FUTURES:")
+
+
+def _has_entry_fill(trade: Trade) -> bool:
+    return any(fill.kind is FillKind.ENTRY and fill.quantity > 0 for fill in trade.fills)
 
 
 class ExchangeRouter:
@@ -57,6 +62,113 @@ class ExchangeRouter:
         if instrument_key is None:
             return orders
         return [order for order in orders if order.instrument_key == instrument_key]
+
+    def get_trade_fills_from_exchange(
+        self,
+        trade: Trade,
+        *,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        exchange = self._exchange_for_key(trade.instrument_key)
+        if exchange == EXCHANGE_HYPERLIQUID:
+            coin = trade.instrument_key.split(":", 1)[1] if ":" in trade.instrument_key else ""
+            start_ms = trade.opened_at_ms or trade.created_at_ms
+            return hl_trading.get_user_fills(coin=coin, start_time_ms=start_ms, limit=limit)
+        if exchange == EXCHANGE_BITGET:
+            product_type, symbol = self._split_bitget_key(trade.instrument_key)
+            return bitget_trading.get_order_fills(
+                symbol=symbol,
+                product_type=product_type,
+                order_id=trade.external_order_id,
+                limit=limit,
+            )
+        return []
+
+    def sync_trade_status(self, trade: Trade) -> TradeSyncResult:
+        """说明：用交易所实时持仓/挂单判断本地 OPEN trade 是否已经结束。"""
+        exchange = self._exchange_for_key(trade.instrument_key)
+        if trade.status is not TradeStatus.OPEN:
+            return TradeSyncResult(
+                exchange=exchange,
+                status=trade.status.value,
+                reason="local trade is not open",
+            )
+        if exchange == EXCHANGE_HYPERLIQUID and not hl_trading.hyperliquid_credentials_available():
+            return TradeSyncResult(
+                exchange=exchange,
+                status="unknown",
+                error="hyperliquid credentials are not configured",
+            )
+        if exchange == EXCHANGE_BITGET and not bitget_trading.bitget_credentials_available():
+            return TradeSyncResult(
+                exchange=exchange,
+                status="unknown",
+                error="bitget credentials are not configured",
+            )
+        if exchange == "unknown":
+            return TradeSyncResult(
+                exchange=exchange,
+                status="unknown",
+                error=f"unsupported exchange for {trade.instrument_key}",
+            )
+
+        try:
+            positions = self.get_positions(trade.instrument_key)
+            orders = self.get_orders(trade.instrument_key)
+        except Exception as exc:
+            return TradeSyncResult(
+                exchange=exchange,
+                status="unknown",
+                error=str(exc) or exc.__class__.__name__,
+            )
+
+        matching_position = next(
+            (
+                position
+                for position in positions
+                if position.side == trade.direction.value and position.size > 0
+            ),
+            None,
+        )
+        active_orders = tuple(
+            order
+            for order in orders
+            if order.reduce_only is not True
+            and (
+                not trade.external_order_id
+                or order.order_id == trade.external_order_id
+                or order.instrument_key == trade.instrument_key
+            )
+        )
+        if matching_position is not None:
+            return TradeSyncResult(
+                exchange=exchange,
+                status="open",
+                position=matching_position,
+                active_orders=active_orders,
+                reason="matching exchange position is still open",
+            )
+        if active_orders and not _has_entry_fill(trade):
+            return TradeSyncResult(
+                exchange=exchange,
+                status="open",
+                active_orders=active_orders,
+                reason="opening order is still active",
+            )
+        if not _has_entry_fill(trade):
+            return TradeSyncResult(
+                exchange=exchange,
+                status="unknown",
+                active_orders=active_orders,
+                error="local trade has no entry fill; cannot infer closure safely",
+            )
+        return TradeSyncResult(
+            exchange=exchange,
+            status="closed",
+            closed=True,
+            active_orders=active_orders,
+            reason="no matching exchange position remains",
+        )
 
     def place_order(self, *, instrument_key: str, **kwargs: Any) -> OrderResult:
         exchange = self._exchange_for_key(instrument_key)
