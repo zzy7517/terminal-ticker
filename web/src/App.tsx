@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useMarketStore } from './stores/marketStore';
 import { useAgentStore } from './stores/agentStore';
 import { useUiStore } from './stores/uiStore';
-import { AGENT_PROVIDER_OPTIONS, THEME_STORAGE_KEY } from './constants';
+import { THEME_STORAGE_KEY } from './constants';
 import { orderedGroups, readRouteFromHash } from './utils';
 import { WorkspaceView } from './components/workspace';
 import {

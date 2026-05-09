@@ -24,9 +24,6 @@ function catalogMatches(item: InstrumentCatalogItem, query: string) {
     item.label,
     item.instType ?? '',
     item.key,
-    item.nameCn,
-    item.nameHk,
-    item.nameEn,
     item.displayText,
   ].join(' ').toLowerCase();
   return haystack.includes(query);

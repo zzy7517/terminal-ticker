@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Newspaper, Plus } from 'lucide-react';
+import { Newspaper, Plus } from 'lucide-react';
 import type { NewsConfigUpdate } from '../../types';
 import { useMarketStore } from '../../stores/marketStore';
 import { saveNewsConfig } from '../../api';

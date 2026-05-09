@@ -29,24 +29,6 @@ def agent_session_config_kwargs(config: Any) -> dict[str, Any]:
     }
 
 
-def agent_response_payload(
-    *,
-    provider: str,
-    model: str,
-    content: str,
-    error: str | None = None,
-) -> dict[str, Any]:
-    return {
-        "available": error is None,
-        "provider": provider,
-        "model": model,
-        "updatedAt": utc_now_iso(),
-        "content": content,
-        "error": error,
-        "loopResult": None,
-    }
-
-
 def sse_event(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
@@ -81,9 +63,6 @@ def instrument_catalog_item_payload(
         "label": instrument.label,
         "instType": inst_type,
         "key": instrument.key,
-        "nameCn": "",
-        "nameHk": "",
-        "nameEn": "",
         "displayText": display_text,
         "exists": instrument.key in active_keys,
     }

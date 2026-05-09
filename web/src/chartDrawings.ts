@@ -444,7 +444,6 @@ class DrawingPaneRenderer implements IPrimitivePaneRenderer {
   }
 
   draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]) {
-    const { chart, series } = this;
     const colors = DRAWING_COLORS[this._snapshot.theme];
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       context.save();

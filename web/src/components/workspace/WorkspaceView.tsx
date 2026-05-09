@@ -9,9 +9,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { useMarketStore, useGroups, useSelectedInstrument, useSelectedQuote } from '../../stores/marketStore';
-import { useAgentStore } from '../../stores/agentStore';
 import { useUiStore } from '../../stores/uiStore';
-import { AGENT_PROVIDER_OPTIONS, GROUP_LABELS, THEME_LABELS } from '../../constants';
+import { GROUP_LABELS, THEME_LABELS } from '../../constants';
 import type { ThemeName } from '../../constants';
 import { changeClass, candleRangeLabel, closeDeltaPercent, formatSignedNumber, nextTheme } from '../../utils';
 import { ConnectionBadge } from './ConnectionBadge';

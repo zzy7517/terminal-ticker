@@ -7,9 +7,6 @@ import type {
   AgentSessionHistoryResponse,
   AgentSessionMutationResponse,
   AgentSessionResponse,
-  AnalysisConfigUpdate,
-  ExchangeOrder,
-  ExchangePosition,
   InstrumentCatalogResponse,
   InstrumentSearchResult,
   Lesson,
@@ -19,30 +16,7 @@ import type {
   SocialAuthStatus,
   SocialFeedItem,
   SocialFeedConfigUpdate,
-  Trade,
-  TradeDetailResponse,
 } from './types';
-
-export interface HyperliquidTestnetOrderRequest {
-  direction: 'long' | 'short';
-  size: number;
-  reasoning?: string;
-  orderType?: 'market' | 'limit';
-  limitPrice?: number | null;
-  slippage?: number;
-}
-
-export interface BitgetDemoOrderRequest {
-  direction: 'long' | 'short';
-  size: number;
-  reasoning?: string;
-  orderType?: 'market' | 'limit';
-  limitPrice?: number | null;
-  marginMode?: 'crossed' | 'isolated';
-  marginCoin?: string;
-  force?: 'gtc' | 'ioc' | 'fok' | 'post_only';
-  clientOid?: string;
-}
 
 // Builds a user-facing error while preserving FastAPI's structured detail when available.
 async function responseError(response: Response, prefix: string): Promise<Error> {
@@ -157,41 +131,6 @@ export async function fetchAgentSession(key: string): Promise<AgentSessionRespon
   return response.json();
 }
 
-// Lists saved sessions. Passing a key uses the legacy per-instrument history route.
-export async function fetchAgentSessionHistory(key?: string): Promise<AgentSessionHistoryResponse> {
-  const response = await fetch(
-    key ? `/api/agent/sessions/${encodeURIComponent(key)}/history` : '/api/agent/sessions',
-  );
-  if (!response.ok) {
-    throw await responseError(response, 'agent session history fetch failed');
-  }
-  return response.json();
-}
-
-// Restores a saved chart-agent session as the active session for one instrument.
-export async function resumeAgentSession(key: string, sessionId: string): Promise<AgentSessionMutationResponse> {
-  const response = await fetch(
-    `/api/agent/sessions/${encodeURIComponent(key)}/history/${encodeURIComponent(sessionId)}/resume`,
-    { method: 'POST' },
-  );
-  if (!response.ok) {
-    throw await responseError(response, 'agent session resume failed');
-  }
-  return response.json();
-}
-
-// Deletes a saved chart-agent session and returns the next active session state.
-export async function deleteAgentSession(key: string, sessionId: string): Promise<AgentSessionMutationResponse> {
-  const response = await fetch(
-    `/api/agent/sessions/${encodeURIComponent(key)}/history/${encodeURIComponent(sessionId)}`,
-    { method: 'DELETE' },
-  );
-  if (!response.ok) {
-    throw await responseError(response, 'agent session delete failed');
-  }
-  return response.json();
-}
-
 // Deletes a decoupled session by id.
 export async function deleteAgentSessionById(sessionId: string): Promise<AgentSessionMutationResponse> {
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}`, {
@@ -286,28 +225,6 @@ export async function streamAgentMessage(
   if (data) onEvent(parseEvent(data));
 }
 
-// Starts a clean active chart-agent session without deleting historical sessions.
-export async function resetAgentSession(
-  key: string,
-): Promise<AgentSessionResponse & { history: AgentSessionHistoryResponse }> {
-  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/reset`, {
-    method: 'POST',
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'agent session reset failed');
-  }
-  return response.json();
-}
-
-// Fetches the currently configured provider's visible model catalog.
-export async function fetchAgentModels(): Promise<AgentModelsResponse> {
-  const response = await fetch('/api/agent/models');
-  if (!response.ok) {
-    throw await responseError(response, 'model refresh failed');
-  }
-  return response.json();
-}
-
 // Fetches model catalog for a specific provider.
 export async function fetchProviderModels(provider: string): Promise<AgentModelsResponse> {
   const response = await fetch(`/api/agent/providers/${encodeURIComponent(provider)}/models`);
@@ -343,20 +260,6 @@ export async function saveAgentConfig(config: AgentConfigUpdate): Promise<Market
   });
   if (!response.ok) {
     throw await responseError(response, 'agent config save failed');
-  }
-  const payload = await response.json();
-  return payload.state;
-}
-
-// Saves global local-analysis settings and returns the updated runtime state.
-export async function saveAnalysisConfig(config: AnalysisConfigUpdate): Promise<MarketState> {
-  const response = await fetch('/api/analysis/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'analysis config save failed');
   }
   const payload = await response.json();
   return payload.state;
@@ -491,34 +394,6 @@ export function connectStateSocket(onState: (state: MarketState) => void, onStat
   return socket;
 }
 
-// Lists trades with optional filters.
-export async function listTrades(params: {
-  instrumentKey?: string;
-  status?: string;
-  limit?: number;
-} = {}): Promise<Trade[]> {
-  const search = new URLSearchParams();
-  if (params.instrumentKey) search.set('instrument_key', params.instrumentKey);
-  if (params.status) search.set('status', params.status);
-  if (params.limit != null) search.set('limit', String(params.limit));
-  const query = search.toString();
-  const response = await fetch(`/api/trades${query ? `?${query}` : ''}`);
-  if (!response.ok) {
-    throw await responseError(response, 'list trades failed');
-  }
-  const payload = await response.json();
-  return payload.trades;
-}
-
-// Fetches a single trade including the frozen snapshot and related lessons.
-export async function getTradeDetail(tradeId: number): Promise<TradeDetailResponse> {
-  const response = await fetch(`/api/trades/${tradeId}`);
-  if (!response.ok) {
-    throw await responseError(response, 'trade detail failed');
-  }
-  return response.json();
-}
-
 // Lists lessons generated from post-trade reviews.
 export async function listLessons(instrumentKey?: string, limit?: number): Promise<Lesson[]> {
   const search = new URLSearchParams();
@@ -552,66 +427,6 @@ export async function triggerTradeReview(limit = 3): Promise<Array<{
   return payload.results;
 }
 
-// Places a real Hyperliquid testnet order and records it in the local trade store.
-export async function openHyperliquidTestnetTrade(
-  instrumentKey: string,
-  request: HyperliquidTestnetOrderRequest,
-): Promise<{
-  ok: boolean;
-  testnet: boolean;
-  trade: Trade;
-  fill: unknown;
-  order: unknown;
-  state: MarketState;
-}> {
-  const response = await fetch(`/api/hyperliquid-testnet/trades/${encodeURIComponent(instrumentKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'Hyperliquid testnet order failed');
-  }
-  return response.json();
-}
-
-export async function fetchExchangePositions(): Promise<ExchangePosition[]> {
-  const response = await fetch('/api/exchange/positions');
-  if (!response.ok) {
-    throw await responseError(response, 'exchange positions fetch failed');
-  }
-  const payload = await response.json();
-  return payload.positions as ExchangePosition[];
-}
-
-export async function fetchExchangeOrders(): Promise<ExchangeOrder[]> {
-  const response = await fetch('/api/exchange/orders');
-  if (!response.ok) {
-    throw await responseError(response, 'exchange orders fetch failed');
-  }
-  const payload = await response.json();
-  return payload.orders as ExchangeOrder[];
-}
-
-export async function placeExchangeOrder(params: {
-  instrumentKey: string;
-  direction: string;
-  size: number;
-  order_type?: string;
-  limit_price?: number;
-  reasoning?: string;
-}): Promise<{ exchange: string; orderId: string | null; localTradeId: number }> {
-  const response = await fetch('/api/exchange/orders', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'exchange order failed');
-  }
-  return response.json();
-}
-
 export async function cancelExchangeOrder(
   exchange: string,
   orderId: string,
@@ -625,17 +440,6 @@ export async function cancelExchangeOrder(
   if (!response.ok) {
     throw await responseError(response, 'cancel order failed');
   }
-}
-
-// Fetches the latest cached news items from the local store.
-export async function fetchNews(limit = 50): Promise<NewsItem[]> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  const response = await fetch(`/api/news?${params}`);
-  if (!response.ok) {
-    throw await responseError(response, 'news fetch failed');
-  }
-  const payload = await response.json();
-  return payload.news as NewsItem[];
 }
 
 export interface NewsRefreshResponse {

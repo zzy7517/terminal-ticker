@@ -413,14 +413,10 @@ export interface InstrumentSearchResult {
   label: string;
   instType: string | null;
   key: string;
-  nameCn: string;
-  nameHk: string;
-  nameEn: string;
   displayText: string;
   exists: boolean;
 }
 
-export type SecuritySearchResult = InstrumentSearchResult;
 export type InstrumentCatalogItem = InstrumentSearchResult;
 
 export interface InstrumentCatalogResponse {
