@@ -32,7 +32,7 @@ except ImportError:  # pragma: no cover
     _CurlAsyncSession = None
     _CurlRequestException = Exception
 
-from .tools import ToolDefinition, ToolRegistry
+from .registry import ToolDefinition, ToolRegistry
 
 LOGGER = logging.getLogger(__name__)
 
@@ -105,6 +105,7 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 
 
 def _literal_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """尝试把主机名解析为 IP 地址对象。"""
     normalized = host.strip("[]")
     try:
         return ipaddress.ip_address(normalized)
@@ -113,6 +114,7 @@ def _literal_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | No
 
 
 def _resolve_host_ips(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """DNS 解析主机名返回 IP 列表。"""
     infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
     out: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
     for family, *_rest, sockaddr in infos:
@@ -127,6 +129,7 @@ def _resolve_host_ips(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6A
 
 
 def _decode_limited_body(response: Any, body: bytes) -> str:
+    """按响应编码解码截断后的 body bytes。"""
     encoding = getattr(response, "encoding", None) or "utf-8"
     try:
         return body.decode(str(encoding), errors="replace")
@@ -135,6 +138,7 @@ def _decode_limited_body(response: Any, body: bytes) -> str:
 
 
 async def _read_limited_body(response: Any, byte_limit: int) -> tuple[str, bool]:
+    """流式读取响应 body 并截断到字节上限。"""
     chunks: list[bytes] = []
     total = 0
     truncated = False
@@ -154,6 +158,7 @@ async def _read_limited_body(response: Any, byte_limit: int) -> tuple[str, bool]
 
 
 async def _fetch_target_validation_error(url: str) -> str | None:
+    """校验 URL 是否允许 fetch（禁止内网/本机）。"""
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         return f"unsupported scheme: {parsed.scheme!r}"
@@ -393,6 +398,7 @@ async def _http_get(url: str, timeout: float) -> tuple[int, str, str, bool]:
 
 
 async def _search_duckduckgo(query: str, limit: int, timeout_seconds: float) -> dict[str, Any]:
+    """执行 DuckDuckGo 搜索并返回结构化结果。"""
     try:
         status, body = await _http_post_ddg(query, timeout_seconds)
     except _CurlRequestException as exc:
@@ -422,6 +428,7 @@ async def _search_duckduckgo(query: str, limit: int, timeout_seconds: float) -> 
 
 
 async def _search_exa_mcp(query: str, limit: int, timeout_seconds: float) -> dict[str, Any]:
+    """执行 Exa MCP 搜索并返回结构化结果。"""
     try:
         status, body = await _http_post_exa_mcp(query, limit, timeout_seconds)
     except _CurlRequestException as exc:
@@ -455,6 +462,7 @@ async def _search_exa_mcp(query: str, limit: int, timeout_seconds: float) -> dic
 
 
 def _search_failure_reason(result: dict[str, Any]) -> str:
+    """从搜索结果提取失败原因字符串。"""
     error = result.get("error")
     if isinstance(error, str) and error:
         return error
@@ -465,6 +473,7 @@ def _search_failure_reason(result: dict[str, Any]) -> str:
 
 
 def _search_has_results(result: dict[str, Any]) -> bool:
+    """判断搜索结果是否包含有效条目。"""
     return "error" not in result and int(result.get("count") or 0) > 0
 
 

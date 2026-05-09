@@ -25,7 +25,7 @@ from ..agent import (
     create_llm_provider,
     list_available_agent_models,
 )
-from ..agent.market_context import build_market_context
+from ..agent.tools.market_context import build_market_context
 from ..config import (
     AgentConfig,
     ALPACA_SOURCE,

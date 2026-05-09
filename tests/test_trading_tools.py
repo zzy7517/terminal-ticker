@@ -55,7 +55,7 @@ class TradingToolsTests(unittest.TestCase):
             filled_size=0.25,
         )
         with patch(
-            "mytradebot.agent.tools.open_hyperliquid_testnet_position",
+            "mytradebot.agent.tools.trading.open_hyperliquid_testnet_position",
             return_value=fake_result,
         ) as opened:
             data = self._exec(
@@ -161,7 +161,7 @@ class TradingToolsTests(unittest.TestCase):
 
     def test_open_bitget_demo_trade_records_external_order(self) -> None:
         with patch(
-            "mytradebot.agent.tools.bitget_trading.place_order",
+            "mytradebot.agent.tools.trading.bitget_trading.place_order",
             return_value=OrderResult(
                 exchange="bitget-demo",
                 order_id="bg-1",

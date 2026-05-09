@@ -39,6 +39,7 @@ class AnthropicProvider:
     name = ANTHROPIC_PROVIDER
 
     def __init__(self, config: AgentConfig, profile: AgentModelProfile | None = None) -> None:
+        """初始化 Anthropic provider，解析配置并设置 API 基础地址。"""
         self.config = config
         self.profile = profile or resolve_agent_model(config)
         if self.profile.api_mode != ANTHROPIC_MESSAGES_API_MODE:
@@ -93,6 +94,7 @@ class AnthropicProvider:
 
 
 def _first_env(names: tuple[str, ...]) -> str:
+    """按优先级返回第一个非空的环境变量值。"""
     for name in names:
         value = os.getenv(name, "").strip()
         if value:
@@ -101,6 +103,7 @@ def _first_env(names: tuple[str, ...]) -> str:
 
 
 def _resolve_anthropic_api_key() -> str:
+    """从环境变量中获取 Anthropic API 密钥，未找到则抛出异常。"""
     api_key = _first_env(ANTHROPIC_ENV_API_KEYS)
     if api_key:
         return api_key
@@ -110,6 +113,7 @@ def _resolve_anthropic_api_key() -> str:
 
 
 def _resolve_max_tokens() -> int:
+    """解析环境变量中的 max_tokens 配置，默认返回 1200。"""
     raw_value = _first_env(ANTHROPIC_ENV_MAX_TOKENS)
     if not raw_value:
         return 1200
@@ -120,6 +124,7 @@ def _resolve_max_tokens() -> int:
 
 
 def _models_endpoint(base_url: str) -> str:
+    """拼接 Anthropic Models API 的完整 URL。"""
     base = base_url.rstrip("/")
     if base.endswith("/v1"):
         return f"{base}/models"
@@ -127,6 +132,7 @@ def _models_endpoint(base_url: str) -> str:
 
 
 def _messages_endpoint(base_url: str) -> str:
+    """拼接 Anthropic Messages API 的完整 URL。"""
     base = base_url.rstrip("/")
     if base.endswith("/messages"):
         return base
@@ -136,6 +142,7 @@ def _messages_endpoint(base_url: str) -> str:
 
 
 def _anthropic_headers(api_key: str, url: str) -> dict[str, str]:
+    """构建 Anthropic API 请求头，包含认证和版本信息。"""
     headers = {
         "x-api-key": api_key,
         "Content-Type": "application/json",
@@ -149,6 +156,7 @@ def _anthropic_headers(api_key: str, url: str) -> dict[str, str]:
 
 
 def _messages_to_anthropic(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    """将通用消息列表转换为 Anthropic API 所需的 system 文本和消息格式。"""
     system_parts: list[str] = []
     output: list[dict[str, Any]] = []
     for msg in messages:
@@ -174,6 +182,7 @@ def _messages_to_anthropic(messages: list[dict[str, Any]]) -> tuple[str, list[di
 
 
 def _convert_user_or_assistant_message(msg: dict[str, Any]) -> dict[str, Any] | None:
+    """将单条 user 或 assistant 消息转换为 Anthropic 格式。"""
     role = msg.get("role")
     if role not in ("user", "assistant"):
         return None
@@ -194,6 +203,7 @@ def _convert_user_or_assistant_message(msg: dict[str, Any]) -> dict[str, Any] | 
 
 
 def _tool_call_to_anthropic_block(raw_call: Any) -> dict[str, Any] | None:
+    """将 OpenAI 格式的 tool_call 转换为 Anthropic tool_use 内容块。"""
     if not isinstance(raw_call, dict):
         return None
     raw_function = raw_call.get("function")
@@ -223,6 +233,7 @@ def _tool_call_to_anthropic_block(raw_call: Any) -> dict[str, Any] | None:
 
 
 def _append_tool_result(output: list[dict[str, Any]], block: dict[str, Any]) -> None:
+    """将 tool_result 块追加到最近的 user 消息中，或新建一条 user 消息。"""
     if output:
         last = output[-1]
         content = last.get("content")
@@ -233,6 +244,7 @@ def _append_tool_result(output: list[dict[str, Any]], block: dict[str, Any]) -> 
 
 
 def _content_to_text(content: Any) -> str:
+    """将各种类型的消息内容统一提取为纯文本字符串。"""
     if content is None:
         return ""
     if isinstance(content, str):
@@ -251,6 +263,7 @@ def _content_to_text(content: Any) -> str:
 
 
 def _anthropic_tool_schemas(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """将 OpenAI 格式的工具定义列表转换为 Anthropic 工具 schema 格式。"""
     schemas: list[dict[str, Any]] = []
     for tool in tools:
         if not isinstance(tool, dict) or tool.get("type") != "function":
@@ -371,6 +384,7 @@ async def _collect_anthropic_stream_response(
 
 
 def _parse_anthropic_response(data: dict[str, Any]) -> ChatResponse:
+    """将 Anthropic 非流式响应 JSON 解析为 ChatResponse。"""
     text_parts: list[str] = []
     tool_calls: list[ToolCall] = []
     content = data.get("content")
@@ -412,6 +426,7 @@ def _parse_anthropic_response(data: dict[str, Any]) -> ChatResponse:
 
 
 def _anthropic_error_message(status_code: int, body: str) -> str:
+    """从 HTTP 错误响应中提取可读的错误信息。"""
     detail = ""
     try:
         payload = json.loads(body)
@@ -428,6 +443,7 @@ def _anthropic_error_message(status_code: int, body: str) -> str:
 
 
 def _anthropic_stream_error_message(event: dict[str, Any]) -> str:
+    """从流式 SSE 错误事件中提取错误信息。"""
     error = event.get("error")
     if isinstance(error, dict):
         return str(error.get("message") or error)
@@ -437,6 +453,7 @@ def _anthropic_stream_error_message(event: dict[str, Any]) -> str:
 
 
 def _merge_anthropic_usage(target: dict[str, int], raw_usage: dict[str, Any]) -> None:
+    """将 Anthropic 用量数据合并到目标字典中。"""
     for source_key, target_key in (
         ("input_tokens", "prompt_tokens"),
         ("output_tokens", "completion_tokens"),
@@ -447,6 +464,7 @@ def _merge_anthropic_usage(target: dict[str, int], raw_usage: dict[str, Any]) ->
 
 
 def _anthropic_model_option(slug: str, *, context_window: int | None = None) -> dict[str, Any]:
+    """根据模型 slug 构建前端所需的模型选项字典。"""
     resolved_context_window = context_window if context_window is not None else _infer_anthropic_context_window(slug)
     return {
         "slug": slug,
@@ -462,6 +480,7 @@ def _anthropic_model_option(slug: str, *, context_window: int | None = None) -> 
 
 
 def _infer_anthropic_context_window(slug: str) -> int | None:
+    """根据模型名称推断上下文窗口大小。"""
     normalized = slug.lower()
     if "claude-opus-4-6" in normalized or "claude-sonnet-4-6" in normalized:
         return 1_000_000
@@ -507,6 +526,7 @@ async def _fetch_anthropic_models(base_url: str) -> list[dict[str, Any]]:
 
 
 def _unique_nonempty(values: list[str]) -> list[str]:
+    """去重并过滤空字符串，保持原始顺序。"""
     seen: set[str] = set()
     result: list[str] = []
     for value in values:

@@ -20,7 +20,9 @@ DEFAULT_SYSTEM_PROMPT = """你是一个本地运行的 trading research agent。
 基于工具返回的真实数据回答用户问题；不要承诺收益，也不要把分析表述成确定性金融建议。
 直接输出自然语言或你认为合适的结构，除非用户明确要求 JSON。"""
 
+# 模型流式输出时，每产生一段文字碎片就调用一次的回调（支持同步/异步）
 StreamDeltaHandler = Callable[[str], Awaitable[None] | None]
+# agent 生命周期事件回调，负责把运行状态（开始/吐字/工具调用/结束等）推送给外部（支持同步/异步）
 AgentEventHandler = Callable[[dict[str, Any]], Awaitable[None] | None]
 
 
@@ -58,6 +60,7 @@ class LoopStep:
     timestamp: float = 0.0
 
     def to_payload(self) -> dict[str, Any]:
+        """序列化为前端可消费的 JSON 字典。"""
         payload: dict[str, Any] = {
             "stepType": self.step_type,
             "timestamp": self.timestamp,
@@ -88,6 +91,7 @@ class TranscriptMessage:
     error: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
+        """序列化为前端可消费的 JSON 字典。"""
         return {
             "role": self.role,
             "content": self.content,
@@ -110,6 +114,7 @@ class LoopResult:
     error: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
+        """序列化为前端可消费的 JSON 字典。"""
         return {
             "content": self.content,
             "steps": [step.to_payload() for step in self.steps],
@@ -411,10 +416,12 @@ class AgentLoop:
 
 
 def _serialize_arguments(arguments: dict[str, Any]) -> str:
+    """将工具调用参数序列化为紧凑 JSON 字符串。"""
     return _json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
 
 
 def _accepts_on_delta(chat: Any) -> bool:
+    """检查 provider.chat 方法签名中是否接受 on_delta 参数。"""
     try:
         signature = inspect.signature(chat)
     except (TypeError, ValueError):
@@ -423,6 +430,7 @@ def _accepts_on_delta(chat: Any) -> bool:
 
 
 async def _emit(handler: AgentEventHandler | None, event: dict[str, Any]) -> None:
+    """调用事件回调，自动兼容同步和异步 handler。"""
     if handler is None:
         return
     result = handler(event)
@@ -431,6 +439,7 @@ async def _emit(handler: AgentEventHandler | None, event: dict[str, Any]) -> Non
 
 
 def _tool_call_payload(call: ToolCall) -> dict[str, Any]:
+    """将单个 ToolCall 转换为前端事件用的字典。"""
     return {
         "id": call.id,
         "name": call.name,
@@ -439,10 +448,12 @@ def _tool_call_payload(call: ToolCall) -> dict[str, Any]:
 
 
 def _tool_call_metadata(tool_calls: list[ToolCall]) -> list[dict[str, Any]]:
+    """批量将 ToolCall 列表转换为 metadata 字典列表。"""
     return [_tool_call_payload(call) for call in tool_calls]
 
 
 def _openai_tool_call_payloads(tool_calls: list[ToolCall]) -> list[dict[str, Any]]:
+    """将 ToolCall 列表转换为 OpenAI function calling 格式，用于拼入 messages。"""
     return [
         {
             "id": tc.id,
@@ -463,6 +474,7 @@ def _usage_metadata(
     run_total_tokens: int,
     context_prompt_tokens: int,
 ) -> dict[str, int] | None:
+    """将 LLM 返回的 token 用量组装为前端展示用的 metadata 字典。"""
     if not usage:
         return None
     payload: dict[str, int] = {
@@ -486,6 +498,7 @@ def _agent_end_event(
     prompt_tokens: int,
     usage_supported: bool,
 ) -> dict[str, Any]:
+    """构造 agent_end 事件，附带 token 用量（如果 provider 支持）。"""
     event: dict[str, Any] = {"type": "agent_end", "error": error}
     if usage_supported:
         event["totalTokens"] = total_tokens
@@ -494,6 +507,7 @@ def _agent_end_event(
 
 
 def _tool_result_payload(result: ToolResult) -> dict[str, Any]:
+    """将工具执行结果转换为前端事件用的字典，output 截断到 2000 字符。"""
     return {
         "callId": result.call_id,
         "name": result.name,

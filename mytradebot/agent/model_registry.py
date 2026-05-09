@@ -30,15 +30,19 @@ class AgentModelRegistry:
     """Registry that resolves model config and instantiates providers."""
 
     def __init__(self) -> None:
+        """初始化模型提供者注册表。"""
         self._providers: dict[str, AgentModelProvider] = {}
 
     def register(self, provider: AgentModelProvider) -> None:
+        """注册一个模型提供者后端。"""
         self._providers[provider.name] = provider
 
     def resolve(self, config: AgentConfig) -> AgentModelProfile:
+        """根据配置解析出对应的模型配置档案。"""
         return resolve_agent_model(config)
 
     def create_provider(self, config: AgentConfig) -> LLMProvider:
+        """根据配置创建并返回对应的 LLM 提供者实例。"""
         profile = self.resolve(config)
         provider = self._providers.get(profile.provider)
         if provider is None:
@@ -48,6 +52,7 @@ class AgentModelRegistry:
     async def list_available_models(
         self, config: AgentConfig, *, provider_override: str | None = None,
     ) -> list[dict]:
+        """列出指定提供者支持的所有可用模型。"""
         if provider_override:
             from ..config.agent_models import normalize_api_mode, normalize_model, normalize_reasoning_effort
             profile = AgentModelProfile(
@@ -71,21 +76,25 @@ def default_agent_model_registry() -> AgentModelRegistry:
     registry = AgentModelRegistry()
 
     def build_codex(config: AgentConfig, profile: AgentModelProfile) -> LLMProvider:
+        """构建 Codex 提供者实例。"""
         from .providers.codex import CodexProvider
 
         return CodexProvider(config, profile)
 
     async def list_codex(config: AgentConfig, profile: AgentModelProfile) -> list[dict]:
+        """列出 Codex 提供者支持的模型。"""
         from .providers.codex import CodexProvider
 
         return await CodexProvider(config, profile).list_models()
 
     def build_anthropic(config: AgentConfig, profile: AgentModelProfile) -> LLMProvider:
+        """构建 Anthropic 提供者实例。"""
         from .providers.anthropic import AnthropicProvider
 
         return AnthropicProvider(config, profile)
 
     async def list_anthropic(config: AgentConfig, profile: AgentModelProfile) -> list[dict]:
+        """列出 Anthropic 提供者支持的模型。"""
         from .providers.anthropic import AnthropicProvider
 
         return await AnthropicProvider(config, profile).list_models()

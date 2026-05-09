@@ -32,9 +32,9 @@ from .tools import (
     build_news_tools,
     build_social_feed_tools,
     build_trading_tools,
+    build_web_tools,
     merge_registries,
 )
-from .web_tools import build_web_tools
 from .providers.anthropic import AnthropicProvider
 from .providers.codex import CodexProvider, _codex_request_headers, _read_codex_cli_credentials
 from .session_store import (

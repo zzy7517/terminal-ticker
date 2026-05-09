@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..domain.price_action import Candle
-from ..domain.quotes import QuoteState
-from ..market_data.router import MarketInstrument
+from ...domain.price_action import Candle
+from ...domain.quotes import QuoteState
+from ...market_data.router import MarketInstrument
 
 
 def short_candle(candle: Candle) -> dict[str, Any]:
@@ -71,6 +71,7 @@ def _serialized_timeframes(
     primary_interval: str,
     max_candles: int,
 ) -> list[dict[str, Any]]:
+    """将报价中各时间周期的K线数据序列化为字典列表。"""
     ordered: list[str] = []
     if primary_interval in quote.multi_timeframe_candles:
         ordered.append(primary_interval)

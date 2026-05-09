@@ -128,6 +128,7 @@ class AgentSessionStore(BaseStore):
         super().__init__(resolved)
 
     def _init_schema(self, conn: sqlite3.Connection) -> None:
+        """初始化数据库表结构。"""
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS agent_sessions (
@@ -661,6 +662,7 @@ class AgentSessionStore(BaseStore):
         return tuple(history)
 
     def _context_usage_for_sessions(self, session_ids: tuple[str, ...]) -> dict[str, dict[str, Any] | None]:
+        """批量查询多个会话的上下文 token 用量。"""
         clean_ids = tuple(dict.fromkeys(session_id for session_id in session_ids if session_id))
         if not clean_ids:
             return {}
@@ -702,6 +704,7 @@ def _session_from_row(row: sqlite3.Row) -> AgentSession:
 
 
 def _context_usage_from_messages(messages: tuple[AgentMessage, ...]) -> dict[str, Any] | None:
+    """从消息列表中提取最近一次助手回复的 token 用量。"""
     if not messages:
         return None
     for message in reversed(messages):
@@ -729,6 +732,7 @@ def _context_usage_from_messages(messages: tuple[AgentMessage, ...]) -> dict[str
 
 
 def _int_field(*values: Any) -> int | None:
+    """从多个候选值中返回第一个整数值。"""
     for value in values:
         if isinstance(value, int):
             return value

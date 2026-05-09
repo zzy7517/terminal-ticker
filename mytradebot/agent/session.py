@@ -50,6 +50,7 @@ class AgentSessionRuntime:
         )
 
     async def append_user_message(self, content: str) -> dict[str, Any]:
+        """追加一条用户消息并返回其 payload。"""
         message = await asyncio.to_thread(
             self.store.append_message,
             session_id=self.session.id,
@@ -59,6 +60,7 @@ class AgentSessionRuntime:
         return message.to_payload()
 
     async def history_for_context(self, *, limit: int = 8) -> tuple[dict[str, Any], ...]:
+        """获取最近的对话历史用于上下文构建。"""
         return await asyncio.to_thread(
             self.store.history_for_context,
             self.session.id,
@@ -71,6 +73,7 @@ class AgentSessionRuntime:
         *,
         context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """将一条对话记录消息持久化到会话存储。"""
         stored = await asyncio.to_thread(
             self.store.append_message,
             session_id=self.session.id,
@@ -88,6 +91,7 @@ class AgentSessionRuntime:
         *,
         context: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
+        """批量追加多条对话记录消息到会话存储。"""
         stored: list[dict[str, Any]] = []
         for index, message in enumerate(messages):
             stored.append(
@@ -99,10 +103,12 @@ class AgentSessionRuntime:
         return stored
 
     async def payload(self) -> dict[str, Any]:
+        """返回当前会话及其消息的完整 payload。"""
         payload = await asyncio.to_thread(self.store.session_payload, self.session.id)
         return payload or {"session": None, "messages": []}
 
     async def history_payload(self, instrument_key: str) -> dict[str, Any]:
+        """返回指定标的的所有历史会话列表 payload。"""
         sessions = await asyncio.to_thread(
             self.store.list_sessions,
             instrument_key,

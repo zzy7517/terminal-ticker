@@ -18,8 +18,8 @@ from .tools import (
     build_news_tools,
     build_social_feed_tools,
     build_trading_tools,
+    build_web_tools,
 )
-from .web_tools import build_web_tools
 
 
 @dataclass(frozen=True)
@@ -66,6 +66,7 @@ class TradingAgentRuntime:
         config: AgentConfig,
         services: TradingAgentRuntimeServices,
     ) -> None:
+        """初始化交易领域 Agent 运行时，绑定 LLM 提供者、配置和外部服务。"""
         self.provider = provider
         self.config = config
         self.services = services
@@ -109,6 +110,7 @@ class TradingAgentRuntime:
         *,
         candidate_instrument_keys: tuple[str, ...],
     ) -> tuple[ToolPack, ...]:
+        """组装当前会话可用的全部工具包。"""
         services = self.services
         return (
             ToolPack(
@@ -137,6 +139,7 @@ class TradingAgentRuntime:
         )
 
     def _build_system_prompt(self) -> str | None:
+        """构建包含记忆指令的系统提示词，无记忆时返回 None。"""
         if not self.services.memory_policy.use_memories:
             return None
         memory_instructions = build_memory_developer_instructions()
@@ -150,6 +153,7 @@ class TradingAgentRuntime:
         user_prompt: str,
         candidate_instrument_keys: tuple[str, ...],
     ) -> str:
+        """将用户消息与候选标的列表拼接为完整的用户提示词。"""
         candidates = (
             "\n".join(f"- {key}" for key in candidate_instrument_keys)
             if candidate_instrument_keys
