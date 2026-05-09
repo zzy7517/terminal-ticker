@@ -1,43 +1,61 @@
-import { useMemo, useState } from 'react';
-import { Loader2, Plus, Search, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Loader2, Plus, Search, Sparkles, X } from 'lucide-react';
 import type { Instrument, InstrumentCatalogItem, InstrumentSearchResult } from '../../types';
 import type { SearchSource } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
 import { removeWatchlistInstrument } from '../../api';
-import {
-  addInstrumentBySource,
-  instrumentVenue,
-  sourceName,
-  watchlistSections,
-} from '../../utils';
+import { addInstrumentBySource, sourceName } from '../../utils';
 
-const SEARCH_LIMIT = 80;
+const SOURCE_LABEL: Record<SearchSource, string> = {
+  bitget: 'Bitget Futures',
+  'hyperliquid-testnet': 'Hyperliquid Testnet',
+};
 
-function sourceTitle(source: SearchSource) {
-  return source === 'bitget' ? 'Bitget Futures' : 'Hyperliquid Testnet';
+const SOURCE_ORDER: SearchSource[] = ['bitget', 'hyperliquid-testnet'];
+
+const QUOTE_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'USDT', label: 'USDT' },
+  { id: 'USDC', label: 'USDC' },
+  { id: 'USD', label: 'USD' },
+] as const;
+type QuoteFilter = (typeof QUOTE_FILTERS)[number]['id'];
+
+function bucketOf(symbol: string): string {
+  const ch = symbol.charAt(0).toUpperCase();
+  return ch >= 'A' && ch <= 'Z' ? ch : '#';
 }
 
-function catalogMatches(item: InstrumentCatalogItem, query: string) {
+function inferQuote(item: InstrumentCatalogItem): string {
+  // Bitget futures symbols look like BTCUSDT / ETHUSDC. Hyperliquid coins (BTC) have no quote suffix.
+  const upper = item.symbol.toUpperCase();
+  for (const q of ['USDT', 'USDC', 'USD']) {
+    if (upper.endsWith(q)) return q;
+  }
+  return '';
+}
+
+function matchesQuery(item: InstrumentCatalogItem, query: string): boolean {
   if (!query) return true;
-  const haystack = [
-    item.symbol,
-    item.label,
-    item.instType ?? '',
-    item.key,
-    item.displayText,
-  ].join(' ').toLowerCase();
+  const haystack = [item.symbol, item.label, item.instType ?? '', item.key, item.displayText]
+    .join(' ')
+    .toLowerCase();
   return haystack.includes(query);
 }
 
-function catalogScore(item: InstrumentCatalogItem, query: string) {
+function queryRank(item: InstrumentCatalogItem, query: string): number {
   if (!query) return 0;
   const symbol = item.symbol.toLowerCase();
   const label = item.label.toLowerCase();
-  const key = item.key.toLowerCase();
   if (symbol === query || label === query) return 0;
   if (symbol.startsWith(query) || label.startsWith(query)) return 1;
-  if (key.startsWith(query)) return 2;
+  if (item.key.toLowerCase().startsWith(query)) return 2;
   return 3;
+}
+
+interface CatalogGroup {
+  letter: string;
+  items: Array<InstrumentCatalogItem & { exists: boolean }>;
 }
 
 export function WatchlistSettingsPanel() {
@@ -46,46 +64,103 @@ export function WatchlistSettingsPanel() {
   const catalogLoadedAt = useMarketStore((s) => s.catalogLoadedAt);
   const catalogErrors = useMarketStore((s) => s.catalogErrors);
   const catalogStatus = useMarketStore((s) => s.catalogStatus);
+
   const [searchSource, setSearchSource] = useState<SearchSource>('bitget');
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('Catalog is loaded at startup. Search runs locally in the browser.');
+  const [quote, setQuote] = useState<QuoteFilter>('all');
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+
   const editable = Boolean(state?.config.sourcePath);
-  const sections = useMemo(() => watchlistSections(state?.instruments ?? []), [state?.instruments]);
+  const instruments = state?.instruments ?? [];
   const activeKeys = useMemo(
-    () => new Set((state?.instruments ?? []).map((instrument) => instrument.key)),
-    [state?.instruments],
+    () => new Set(instruments.map((i) => i.key)),
+    [instruments],
   );
-  const normalizedQuery = query.trim().toLowerCase();
+
   const sourceCatalog = useMemo(
     () => catalog.filter((item) => item.source === searchSource),
     [catalog, searchSource],
   );
-  const visibleCatalog = useMemo(
-    () =>
-      sourceCatalog
-        .filter((item) => catalogMatches(item, normalizedQuery))
-        .sort((a, b) => {
-          const score = catalogScore(a, normalizedQuery) - catalogScore(b, normalizedQuery);
-          return score || a.symbol.localeCompare(b.symbol);
-        })
-        .slice(0, SEARCH_LIMIT)
-        .map((item) => ({ ...item, exists: activeKeys.has(item.key) })),
-    [activeKeys, normalizedQuery, sourceCatalog],
-  );
+
+  const availableQuotes = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of sourceCatalog) {
+      const q = inferQuote(item);
+      if (q) set.add(q);
+    }
+    return set;
+  }, [sourceCatalog]);
+
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const groups = useMemo<CatalogGroup[]>(() => {
+    const filtered = sourceCatalog.filter((item) => {
+      if (!matchesQuery(item, normalizedQuery)) return false;
+      if (quote !== 'all') {
+        if (inferQuote(item) !== quote) return false;
+      }
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      const r = queryRank(a, normalizedQuery) - queryRank(b, normalizedQuery);
+      return r || a.symbol.localeCompare(b.symbol);
+    });
+
+    const decorated = filtered.map((item) => ({ ...item, exists: activeKeys.has(item.key) }));
+
+    const map = new Map<string, CatalogGroup>();
+    for (const item of decorated) {
+      const letter = bucketOf(item.symbol);
+      let g = map.get(letter);
+      if (!g) {
+        g = { letter, items: [] };
+        map.set(letter, g);
+      }
+      g.items.push(item);
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.letter === '#') return 1;
+      if (b.letter === '#') return -1;
+      return a.letter.localeCompare(b.letter);
+    });
+  }, [sourceCatalog, normalizedQuery, quote, activeKeys]);
+
+  const visibleLetters = useMemo(() => new Set(groups.map((g) => g.letter)), [groups]);
+  const totalShown = useMemo(() => groups.reduce((acc, g) => acc + g.items.length, 0), [groups]);
   const catalogErrorItems = Object.entries(catalogErrors);
 
-  async function addResult(result: InstrumentSearchResult) {
+  // Reset query/quote on source switch so user doesn't get stuck on an empty list.
+  useEffect(() => {
+    setQuery('');
+    setQuote('all');
+    if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
+  }, [searchSource]);
+
+  function jumpToLetter(letter: string) {
+    const scroller = scrollerRef.current;
+    const el = scroller?.querySelector<HTMLElement>(`[data-letter="${letter}"]`);
+    if (!scroller || !el) return;
+    const elRect = el.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    const offset = elRect.top - scrollerRect.top + scroller.scrollTop;
+    scroller.scrollTo({ top: Math.max(offset - 4, 0), behavior: 'smooth' });
+  }
+
+  async function handleAdd(result: InstrumentSearchResult) {
     if (!editable || result.exists || busyKey) return;
     if (result.source === 'bitget' && !result.instType) {
       setStatus('Bitget result is missing instType.');
       return;
     }
     setBusyKey(result.key);
-    setStatus(`Adding ${result.symbol}...`);
+    setStatus(`Adding ${result.symbol}…`);
     try {
-      const nextState = await addInstrumentBySource(result);
-      useMarketStore.getState().setState(nextState);
+      const next = await addInstrumentBySource(result);
+      useMarketStore.getState().setState(next);
       setStatus(`Added ${result.symbol}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Add failed.');
@@ -94,17 +169,17 @@ export function WatchlistSettingsPanel() {
     }
   }
 
-  async function removeInstrument(instrument: Instrument) {
+  async function handleRemove(instrument: Instrument) {
     if (!editable || busyKey) return;
-    if ((state?.instruments.length ?? 0) <= 1) {
+    if (instruments.length <= 1) {
       setStatus('At least one symbol must stay in the watchlist.');
       return;
     }
     setBusyKey(instrument.key);
-    setStatus(`Removing ${instrument.symbol}...`);
+    setStatus(`Removing ${instrument.symbol}…`);
     try {
-      const nextState = await removeWatchlistInstrument(instrument.key);
-      useMarketStore.getState().setState(nextState);
+      const next = await removeWatchlistInstrument(instrument.key);
+      useMarketStore.getState().setState(next);
       setStatus(`Removed ${instrument.symbol}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Remove failed.');
@@ -114,145 +189,229 @@ export function WatchlistSettingsPanel() {
   }
 
   if (!state) {
-    return <div className="settings-loading">Loading watchlist...</div>;
+    return <div className="settings-loading">Loading watchlist…</div>;
   }
 
   return (
     <>
-      <header className="settings-stage-head">
+      <header className="settings-stage-head wl-head">
         <div>
           <div className="eyebrow">Symbols</div>
           <h2>Watchlist</h2>
         </div>
         <div className="settings-stage-actions">
-          <span className="models-count">{state.instruments.length} active</span>
+          <span className="models-count">{instruments.length} active</span>
+          {!editable && <span className="provider-inline-badge">Readonly</span>}
         </div>
       </header>
 
-      <div className="provider-layout watchlist-provider-layout">
-        <section className="provider-catalog watchlist-catalog">
-          <div className="provider-toolbar">
-            <div className="settings-search">
-              <Search size={17} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={
-                  searchSource === 'bitget'
-                    ? 'Search futures, e.g. BTCUSDT'
-                    : 'Search coins, e.g. BTC'
-                }
-              />
-            </div>
+      <section className="wl-browse" aria-label="Watchlist">
+        <div className="wl-active" aria-label="Active symbols">
+          <div className="wl-active-head">
+            <span className="wl-active-eyebrow">In your watchlist</span>
+            <span className="wl-active-count">
+              <Sparkles size={12} aria-hidden /> {instruments.length}
+            </span>
           </div>
-
-          <div className="source-toggle watchlist-source-toggle">
-            <button
-              className={searchSource === 'bitget' ? 'active' : ''}
-              type="button"
-              onClick={() => setSearchSource('bitget')}
-            >
-              Bitget Futures
-            </button>
-            <button
-              className={searchSource === 'hyperliquid-testnet' ? 'active' : ''}
-              type="button"
-              onClick={() => setSearchSource('hyperliquid-testnet')}
-            >
-              Hyperliquid
-            </button>
-          </div>
-
-          <div className="models-showing watchlist-catalog-meta">
-            {catalogStatus === 'loading'
-              ? 'Loading catalog...'
-              : `${visibleCatalog.length} shown of ${sourceCatalog.length} ${sourceTitle(searchSource)} symbols`}
-            {catalogLoadedAt && <span>Loaded {new Date(catalogLoadedAt).toLocaleTimeString()}</span>}
-          </div>
-
-          {catalogErrorItems.length > 0 && (
-            <div className="watchlist-catalog-errors">
-              {catalogErrorItems.map(([source, message]) => (
-                <div key={source}>
-                  <strong>{sourceName(source)}</strong>
-                  <span>{message}</span>
-                </div>
-              ))}
-            </div>
+          {instruments.length === 0 ? (
+            <p className="wl-active-empty">
+              No symbols yet. Add some from the catalog below to start streaming quotes.
+            </p>
+          ) : (
+            <ul className="wl-chips">
+              {instruments.map((instrument) => {
+                const removing = busyKey === instrument.key;
+                const disabled = !editable || instruments.length <= 1 || Boolean(busyKey);
+                return (
+                  <li key={instrument.key} className={`wl-chip ${removing ? 'is-busy' : ''}`}>
+                    <span className="wl-chip-label">{instrument.label}</span>
+                    <span className="wl-chip-symbol">{instrument.symbol}</span>
+                    <span className="wl-chip-meta">
+                      <span>{sourceName(instrument.source)}</span>
+                      <span className="wl-chip-dot" aria-hidden>·</span>
+                      <span>{instrument.analysisInterval}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="wl-chip-remove"
+                      aria-label={`Remove ${instrument.symbol}`}
+                      disabled={disabled}
+                      onClick={() => handleRemove(instrument)}
+                    >
+                      {removing ? <Loader2 size={13} className="spin" /> : <X size={13} />}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
+        </div>
 
-          <div className="provider-list watchlist-catalog-list">
-            {visibleCatalog.map((result) => (
+        <div className="wl-browse-toolbar">
+          <div className="wl-source-tabs" role="tablist" aria-label="Catalog source">
+            {SOURCE_ORDER.map((src) => {
+              const count = catalog.filter((c) => c.source === src).length;
+              return (
+                <button
+                  key={src}
+                  type="button"
+                  role="tab"
+                  aria-selected={searchSource === src}
+                  className={`wl-source-tab ${searchSource === src ? 'active' : ''}`}
+                  onClick={() => setSearchSource(src)}
+                >
+                  <span>{SOURCE_LABEL[src]}</span>
+                  <span className="wl-source-tab-count">{count.toLocaleString()}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="wl-search">
+            <Search size={16} aria-hidden />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={
+                searchSource === 'bitget'
+                  ? 'Search Bitget futures (e.g. BTCUSDT)'
+                  : 'Search Hyperliquid coins (e.g. BTC)'
+              }
+              aria-label="Filter catalog"
+            />
+            {query && (
               <button
-                className={`provider-item watchlist-catalog-item ${result.exists ? 'selected' : ''}`}
-                disabled={!editable || result.exists || busyKey === result.key}
-                key={result.key}
-                onClick={() => addResult(result)}
                 type="button"
+                className="wl-search-clear"
+                aria-label="Clear search"
+                onClick={() => setQuery('')}
               >
-                <div className="provider-item-copy">
-                  <strong>{result.symbol}</strong>
-                  <small>{result.displayText}</small>
-                </div>
-                <span className={result.exists ? 'remove-action' : 'add-action'}>
-                  {busyKey === result.key ? <Loader2 className="spin" size={14} /> : <Plus size={14} />}
-                  {result.exists ? 'Active' : 'Add'}
-                </span>
+                <X size={13} />
               </button>
-            ))}
-            {visibleCatalog.length === 0 && (
-              <div className="provider-empty">No symbols match this search.</div>
             )}
           </div>
-        </section>
+        </div>
 
-        <section className="provider-detail watchlist-detail">
-          <div className="provider-hero">
-            <div className="provider-hero-title">
-              <h3>Active Symbols</h3>
-              <span className="provider-state-badge active">{state.instruments.length} active</span>
-              {!editable && <span className="provider-inline-badge">Readonly</span>}
-            </div>
-            <p>Search the preloaded provider catalog on the left, then add futures/perp symbols to the local watchlist.</p>
+        <div className="wl-browse-meta">
+          <span>
+            {catalogStatus === 'loading'
+              ? 'Loading catalog…'
+              : `${totalShown.toLocaleString()} of ${sourceCatalog.length.toLocaleString()} ${SOURCE_LABEL[searchSource]} symbols`}
+          </span>
+          {catalogLoadedAt && (
+            <span className="wl-browse-meta-loaded">
+              Cached at {new Date(catalogLoadedAt).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+
+        {searchSource === 'bitget' && availableQuotes.size > 0 && (
+          <div className="wl-quote-filter" role="group" aria-label="Quote currency">
+            {QUOTE_FILTERS.map((q) => {
+              const enabled = q.id === 'all' || availableQuotes.has(q.id);
+              return (
+                <button
+                  key={q.id}
+                  type="button"
+                  className={`wl-quote-pill ${quote === q.id ? 'active' : ''}`}
+                  disabled={!enabled}
+                  onClick={() => setQuote(q.id as QuoteFilter)}
+                >
+                  {q.label}
+                </button>
+              );
+            })}
           </div>
+        )}
 
-          <div className="watchlist-table">
-            {sections.map((section) => (
-              <div className="watchlist-source-section" key={section.source}>
-                <div className="watchlist-source-head">
-                  <div>
-                    <span>{section.label}</span>
-                    <small>{sourceName(section.source)}</small>
-                  </div>
-                  <span className="source-count">{section.instruments.length}</span>
-                </div>
-                {section.instruments.map((instrument) => (
-                  <div className="watchlist-table-row" key={instrument.key}>
-                    <div>
-                      <strong>{instrument.label}</strong>
-                      <small>{instrument.symbol}</small>
-                    </div>
-                    <span>{sourceName(instrument.source)}</span>
-                    <span>{instrumentVenue(instrument)}</span>
-                    <span>{instrument.analysisInterval}</span>
-                    <button
-                      aria-label={`Remove ${instrument.symbol}`}
-                      className="danger-icon-button"
-                      disabled={!editable || state.instruments.length <= 1 || busyKey === instrument.key}
-                      onClick={() => removeInstrument(instrument)}
-                      type="button"
-                    >
-                      {busyKey === instrument.key ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}
-                    </button>
-                  </div>
-                ))}
+        {catalogErrorItems.length > 0 && (
+          <div className="wl-errors">
+            {catalogErrorItems.map(([source, message]) => (
+              <div key={source}>
+                <strong>{sourceName(source)}</strong>
+                <span>{message}</span>
               </div>
             ))}
           </div>
+        )}
 
-          <div className="provider-status-bar">{status}</div>
-        </section>
-      </div>
+        <div className="wl-browse-body">
+          <nav className="wl-alpha" aria-label="Jump to letter">
+            {'#ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((letter) => {
+              const enabled = visibleLetters.has(letter);
+              return (
+                <button
+                  key={letter}
+                  type="button"
+                  className="wl-alpha-key"
+                  disabled={!enabled}
+                  onClick={() => jumpToLetter(letter)}
+                  aria-label={`Jump to ${letter}`}
+                >
+                  {letter}
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="wl-catalog-scroller" ref={scrollerRef}>
+            {groups.length === 0 ? (
+              <div className="wl-catalog-empty">
+                {catalogStatus === 'loading'
+                  ? 'Loading…'
+                  : normalizedQuery
+                    ? 'No symbols match this search.'
+                    : 'No symbols available.'}
+              </div>
+            ) : (
+              groups.map((group) => (
+                <div key={group.letter} className="wl-catalog-group" data-letter={group.letter}>
+                  <div className="wl-catalog-group-head">
+                    <span>{group.letter}</span>
+                    <small>{group.items.length}</small>
+                  </div>
+                  <ul className="wl-catalog-list">
+                    {group.items.map((item) => {
+                      const busy = busyKey === item.key;
+                      return (
+                        <li key={item.key} className={`wl-catalog-row ${item.exists ? 'is-active' : ''}`}>
+                          <div className="wl-catalog-id">
+                            <strong>{item.symbol}</strong>
+                            {item.label && item.label !== item.symbol && (
+                              <span className="wl-catalog-label">{item.label}</span>
+                            )}
+                          </div>
+                          <span className="wl-catalog-venue">
+                            {item.instType ?? SOURCE_LABEL[searchSource]}
+                          </span>
+                          <button
+                            type="button"
+                            className={`wl-catalog-action ${item.exists ? 'is-active' : ''}`}
+                            disabled={!editable || item.exists || busy}
+                            onClick={() => handleAdd(item)}
+                            aria-label={item.exists ? `${item.symbol} is active` : `Add ${item.symbol}`}
+                          >
+                            {busy ? (
+                              <Loader2 size={13} className="spin" />
+                            ) : item.exists ? (
+                              <Check size={13} />
+                            ) : (
+                              <Plus size={13} />
+                            )}
+                            <span>{item.exists ? 'Active' : 'Add'}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {status && <div className="wl-status">{status}</div>}
+      </section>
     </>
   );
 }
