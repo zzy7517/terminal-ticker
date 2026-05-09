@@ -164,19 +164,26 @@ def get_open_orders() -> list[ExchangeOrder]:
         is_buy = o.get("side", "").upper() == "B"
         sz = _to_float(o.get("sz")) or 0.0
         px = _to_float(o.get("limitPx"))
+        trigger_px = _to_float(o.get("triggerPx"))
         ts = int(o.get("timestamp", 0))
+        reduce_only = o.get("reduceOnly")
+        if isinstance(reduce_only, str):
+            reduce_only = reduce_only.lower() == "true"
         orders.append(ExchangeOrder(
             exchange=HYPERLIQUID_FILL_SOURCE,
             symbol=coin,
             instrument_key=f"hyperliquid-testnet:{coin}",
             order_id=oid,
             side="buy" if is_buy else "sell",
-            order_type="limit",
+            order_type="trigger" if trigger_px is not None else "limit",
             size=sz,
             price=px,
             filled_size=0.0,
             status="open",
             created_at_ms=ts,
+            reduce_only=reduce_only if isinstance(reduce_only, bool) else None,
+            trigger_price=trigger_px,
+            tpsl=o.get("tpsl"),
         ))
     return orders
 
@@ -246,6 +253,8 @@ def open_testnet_position(
     order_type: str,
     limit_price: float | None = None,
     slippage: float = 0.05,
+    take_profit_price: float | None = None,
+    stop_loss_price: float | None = None,
 ) -> HyperliquidOrderResult:
     """说明：在 Hyperliquid 测试网开仓，market 使用 SDK 的 IOC 包装。"""
     if size <= 0:
@@ -262,17 +271,181 @@ def open_testnet_position(
             float(size),
             slippage=float(slippage),
         )
+        result = _parse_order_result(payload)
+        tpsl_payloads = _place_tpsl_children(
+            exchange,
+            coin=normalized_coin,
+            is_buy=bool(is_buy),
+            size=float(size),
+            take_profit_price=take_profit_price,
+            stop_loss_price=stop_loss_price,
+        )
+        if tpsl_payloads:
+            return HyperliquidOrderResult(
+                raw={"parent": payload, "tpsl": tpsl_payloads},
+                external_order_id=result.external_order_id,
+                average_price=result.average_price,
+                filled_size=result.filled_size,
+                resting=result.resting,
+            )
+        return result
     elif normalized_type == "limit":
         if limit_price is None:
             raise HyperliquidTradingError("limit order requires limit_price")
-        payload = exchange.order(
-            normalized_coin,
-            bool(is_buy),
-            float(size),
-            float(limit_price),
-            {"limit": {"tif": "Gtc"}},
-            reduce_only=False,
-        )
+        if take_profit_price is not None or stop_loss_price is not None:
+            orders = [{
+                "coin": normalized_coin,
+                "is_buy": bool(is_buy),
+                "sz": float(size),
+                "limit_px": float(limit_price),
+                "order_type": {"limit": {"tif": "Gtc"}},
+                "reduce_only": False,
+            }]
+            orders.extend(_tpsl_order_specs(
+                coin=normalized_coin,
+                is_buy=bool(is_buy),
+                size=float(size),
+                take_profit_price=take_profit_price,
+                stop_loss_price=stop_loss_price,
+            ))
+            payload = exchange.bulk_orders(orders, grouping="normalTpsl")
+        else:
+            payload = exchange.order(
+                normalized_coin,
+                bool(is_buy),
+                float(size),
+                float(limit_price),
+                {"limit": {"tif": "Gtc"}},
+                reduce_only=False,
+            )
     else:
         raise HyperliquidTradingError("order_type must be market or limit")
+    return _parse_order_result(payload)
+
+
+def _tpsl_order_specs(
+    *,
+    coin: str,
+    is_buy: bool,
+    size: float,
+    take_profit_price: float | None,
+    stop_loss_price: float | None,
+) -> list[dict[str, Any]]:
+    """说明：构建 Hyperliquid reduce-only TP/SL trigger 子单。"""
+    orders: list[dict[str, Any]] = []
+    close_is_buy = not is_buy
+    if take_profit_price is not None:
+        orders.append({
+            "coin": coin,
+            "is_buy": close_is_buy,
+            "sz": size,
+            "limit_px": float(take_profit_price),
+            "order_type": {
+                "trigger": {
+                    "triggerPx": float(take_profit_price),
+                    "isMarket": True,
+                    "tpsl": "tp",
+                }
+            },
+            "reduce_only": True,
+        })
+    if stop_loss_price is not None:
+        orders.append({
+            "coin": coin,
+            "is_buy": close_is_buy,
+            "sz": size,
+            "limit_px": float(stop_loss_price),
+            "order_type": {
+                "trigger": {
+                    "triggerPx": float(stop_loss_price),
+                    "isMarket": True,
+                    "tpsl": "sl",
+                }
+            },
+            "reduce_only": True,
+        })
+    return orders
+
+
+def _place_tpsl_children(
+    exchange: Any,
+    *,
+    coin: str,
+    is_buy: bool,
+    size: float,
+    take_profit_price: float | None,
+    stop_loss_price: float | None,
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for spec in _tpsl_order_specs(
+        coin=coin,
+        is_buy=is_buy,
+        size=size,
+        take_profit_price=take_profit_price,
+        stop_loss_price=stop_loss_price,
+    ):
+        payload = exchange.order(
+            spec["coin"],
+            spec["is_buy"],
+            spec["sz"],
+            spec["limit_px"],
+            spec["order_type"],
+            reduce_only=True,
+        )
+        payloads.append(payload)
+    return payloads
+
+
+def place_trigger_order(
+    *,
+    coin: str,
+    is_buy: bool,
+    size: float,
+    trigger_price: float,
+    tpsl: str,
+    limit_price: float | None = None,
+) -> HyperliquidOrderResult:
+    """说明：提交 reduce-only TP/SL trigger order，用于调整已有仓位风控。"""
+    if size <= 0:
+        raise HyperliquidTradingError("size must be positive")
+    normalized_tpsl = tpsl.strip().lower()
+    if normalized_tpsl not in {"tp", "sl"}:
+        raise HyperliquidTradingError("tpsl must be tp or sl")
+    normalized_coin = coin.strip().upper()
+    if not normalized_coin:
+        raise HyperliquidTradingError("coin is required")
+    exchange = _load_exchange()
+    payload = exchange.order(
+        normalized_coin,
+        bool(is_buy),
+        float(size),
+        float(limit_price if limit_price is not None else trigger_price),
+        {"trigger": {
+            "triggerPx": float(trigger_price),
+            "isMarket": True,
+            "tpsl": normalized_tpsl,
+        }},
+        reduce_only=True,
+    )
+    return _parse_order_result(payload)
+
+
+def close_position(
+    *,
+    coin: str,
+    size: float | None = None,
+    slippage: float = 0.05,
+) -> HyperliquidOrderResult:
+    """说明：用 Hyperliquid market_close 市价平仓；size 为空时平该 coin 全部仓位。"""
+    normalized_coin = coin.strip().upper()
+    if not normalized_coin:
+        raise HyperliquidTradingError("coin is required")
+    if size is not None and size <= 0:
+        raise HyperliquidTradingError("size must be positive")
+    exchange = _load_exchange()
+    payload = exchange.market_close(
+        normalized_coin,
+        sz=None if size is None else float(size),
+        slippage=float(slippage),
+    )
     return _parse_order_result(payload)

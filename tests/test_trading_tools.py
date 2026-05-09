@@ -66,6 +66,8 @@ class TradingToolsTests(unittest.TestCase):
                     "size": 0.25,
                     "reasoning": "testnet execution",
                     "order_type": "market",
+                    "take_profit_price": 120.0,
+                    "stop_loss_price": 90.0,
                 },
             )
 
@@ -77,9 +79,13 @@ class TradingToolsTests(unittest.TestCase):
             order_type="market",
             limit_price=None,
             slippage=0.05,
+            take_profit_price=120.0,
+            stop_loss_price=90.0,
         )
         trade = data["trade"]
         self.assertEqual(trade["status"], "open")
+        self.assertEqual(trade["targetPrices"], [120.0])
+        self.assertEqual(trade["stopPrice"], 90.0)
         self.assertEqual(trade["sessionId"], "sess-1")
         self.assertEqual(trade["fillSource"], "hyperliquid-testnet")
         self.assertEqual(trade["externalOrderId"], "oid-1")
@@ -177,6 +183,8 @@ class TradingToolsTests(unittest.TestCase):
                     "reasoning": "demo breakout",
                     "order_type": "limit",
                     "limit_price": 60000.0,
+                    "take_profit_price": 63000.0,
+                    "stop_loss_price": 58500.0,
                 },
             )
 
@@ -184,12 +192,16 @@ class TradingToolsTests(unittest.TestCase):
         _, kwargs = placed.call_args
         self.assertEqual(kwargs["symbol"], "BTCUSDT")
         self.assertEqual(kwargs["product_type"], "USDT-FUTURES")
+        self.assertEqual(kwargs["preset_stop_surplus_price"], 63000.0)
+        self.assertEqual(kwargs["preset_stop_loss_price"], 58500.0)
         self.assertTrue(data["ok"])
         self.assertEqual(data["exchange"], "bitget-demo")
         trade = data["trade"]
         self.assertEqual(trade["fillSource"], "bitget-demo")
         self.assertEqual(trade["externalOrderId"], "bg-1")
         self.assertEqual(trade["status"], "planned")
+        self.assertEqual(trade["targetPrices"], [63000.0])
+        self.assertEqual(trade["stopPrice"], 58500.0)
 
     def test_open_bitget_demo_trade_rejects_non_bitget_key(self) -> None:
         data = self._exec(

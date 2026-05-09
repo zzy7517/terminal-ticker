@@ -29,6 +29,7 @@ class TradingAgentRuntimeServices:
     context_provider: Any
     trade_store: TradeStore
     snapshot_provider: Callable[[str], dict[str, Any]]
+    exchange_router: Any = None
     news_service: Any = None
     social_feed_service: Any = None
     memory_policy: MemoryRuntimePolicy = field(default_factory=MemoryRuntimePolicy.normal)
@@ -126,6 +127,7 @@ class TradingAgentRuntime:
                     store=services.trade_store,
                     snapshot_provider=services.snapshot_provider,
                     session_id_provider=lambda: session_id,
+                    exchange_router=services.exchange_router,
                 ),
             ),
             ToolPack("news", lambda: build_news_tools(services.news_service)),

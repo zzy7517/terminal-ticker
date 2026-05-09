@@ -180,6 +180,10 @@ def place_order(
     order_type: str = "market",
     size: float,
     price: float | None = None,
+    preset_stop_surplus_price: float | None = None,
+    preset_stop_loss_price: float | None = None,
+    preset_stop_surplus_execute_price: float | None = None,
+    preset_stop_loss_execute_price: float | None = None,
 ) -> OrderResult:
     body: dict[str, Any] = {
         "symbol": symbol,
@@ -193,6 +197,14 @@ def place_order(
     }
     if price is not None and order_type == "limit":
         body["price"] = str(price)
+    if preset_stop_surplus_price is not None:
+        body["presetStopSurplusPrice"] = str(preset_stop_surplus_price)
+    if preset_stop_loss_price is not None:
+        body["presetStopLossPrice"] = str(preset_stop_loss_price)
+    if preset_stop_surplus_execute_price is not None:
+        body["presetStopSurplusExecutePrice"] = str(preset_stop_surplus_execute_price)
+    if preset_stop_loss_execute_price is not None:
+        body["presetStopLossExecutePrice"] = str(preset_stop_loss_execute_price)
 
     try:
         resp = _request("POST", "/api/v2/mix/order/place-order", body=body)
@@ -209,6 +221,93 @@ def place_order(
     return OrderResult(
         exchange=BITGET_DEMO_FILL_SOURCE,
         order_id=data.get("orderId"),
+        raw=resp,
+    )
+
+
+def place_tpsl_order(
+    *,
+    symbol: str,
+    product_type: str = "USDT-FUTURES",
+    margin_coin: str = "USDT",
+    plan_type: str,
+    trigger_price: float,
+    hold_side: str,
+    size: float | None = None,
+    trigger_type: str = "mark_price",
+    execute_price: float | None = None,
+) -> OrderResult:
+    body: dict[str, Any] = {
+        "symbol": symbol,
+        "productType": product_type,
+        "marginCoin": margin_coin,
+        "planType": plan_type,
+        "triggerPrice": str(trigger_price),
+        "triggerType": trigger_type,
+        "executePrice": "0" if execute_price is None else str(execute_price),
+        "holdSide": hold_side,
+    }
+    if size is not None:
+        body["size"] = str(size)
+
+    try:
+        resp = _request("POST", "/api/v2/mix/order/place-tpsl-order", body=body)
+    except BitgetTradingError as exc:
+        return OrderResult(exchange=BITGET_DEMO_FILL_SOURCE, error=str(exc))
+
+    if resp.get("code") != "00000":
+        return OrderResult(
+            exchange=BITGET_DEMO_FILL_SOURCE,
+            error=resp.get("msg") or "unknown error",
+            raw=resp,
+        )
+    data = resp.get("data", {})
+    return OrderResult(
+        exchange=BITGET_DEMO_FILL_SOURCE,
+        order_id=data.get("orderId"),
+        raw=resp,
+    )
+
+
+def close_position(
+    *,
+    symbol: str,
+    product_type: str = "USDT-FUTURES",
+    hold_side: str | None = None,
+) -> OrderResult:
+    body: dict[str, Any] = {
+        "symbol": symbol,
+        "productType": product_type,
+    }
+    if hold_side:
+        body["holdSide"] = hold_side
+
+    try:
+        resp = _request("POST", "/api/v2/mix/order/close-positions", body=body)
+    except BitgetTradingError as exc:
+        return OrderResult(exchange=BITGET_DEMO_FILL_SOURCE, error=str(exc))
+
+    if resp.get("code") != "00000":
+        return OrderResult(
+            exchange=BITGET_DEMO_FILL_SOURCE,
+            error=resp.get("msg") or "unknown error",
+            raw=resp,
+        )
+    data = resp.get("data", {})
+    success_list = data.get("successList", []) if isinstance(data, dict) else []
+    failure_list = data.get("failureList", []) if isinstance(data, dict) else []
+    if not success_list and failure_list:
+        first_failure = failure_list[0]
+        error = first_failure.get("errorMsg") if isinstance(first_failure, dict) else None
+        return OrderResult(
+            exchange=BITGET_DEMO_FILL_SOURCE,
+            error=error or "close position failed",
+            raw=resp,
+        )
+    first_success = success_list[0] if success_list else {}
+    return OrderResult(
+        exchange=BITGET_DEMO_FILL_SOURCE,
+        order_id=first_success.get("orderId") if isinstance(first_success, dict) else None,
         raw=resp,
     )
 

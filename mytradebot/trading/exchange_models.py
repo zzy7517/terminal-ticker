@@ -52,9 +52,12 @@ class ExchangeOrder:
     filled_size: float
     status: str
     created_at_ms: int
+    reduce_only: bool | None = None
+    trigger_price: float | None = None
+    tpsl: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "exchange": self.exchange,
             "symbol": self.symbol,
             "instrumentKey": self.instrument_key,
@@ -67,6 +70,13 @@ class ExchangeOrder:
             "status": self.status,
             "createdAtMs": self.created_at_ms,
         }
+        if self.reduce_only is not None:
+            payload["reduceOnly"] = self.reduce_only
+        if self.trigger_price is not None:
+            payload["triggerPrice"] = self.trigger_price
+        if self.tpsl is not None:
+            payload["tpsl"] = self.tpsl
+        return payload
 
 
 @dataclass(frozen=True)

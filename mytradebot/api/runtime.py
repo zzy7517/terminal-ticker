@@ -1078,6 +1078,7 @@ class MarketRuntime:
                 context_provider=MarketContextProvider(self),
                 trade_store=self.trade_store,
                 snapshot_provider=lambda key: self._trading_snapshot_payload(key),
+                exchange_router=self.exchange_router,
                 news_service=self.news_service,
                 social_feed_service=self.social_feed_service,
                 memory_policy=self.memory_pipeline.policy
