@@ -41,7 +41,7 @@ export function AgentContextSettingsPanel() {
           <h2>Context</h2>
         </div>
       </header>
-      <section className="provider-shared-settings agent-context-settings">
+      <section className="provider-detail">
         <div className="provider-section-head">
           <strong>Market Context</strong>
           <small>Number of recent candles included in agent prompts and tools.</small>
@@ -59,7 +59,7 @@ export function AgentContextSettingsPanel() {
             />
           </label>
         </div>
-        <div className="provider-shared-actions">
+        <div className="settings-action-row">
           <button className="shell-button primary" type="button" onClick={saveContext} disabled={saving}>
             {saving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
             Save
