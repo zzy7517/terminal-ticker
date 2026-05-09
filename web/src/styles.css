@@ -1992,10 +1992,11 @@ textarea:focus-visible {
 }
 
 .switch-row input:checked + .switch-slider {
-  background: var(--accent);
+  background: var(--up);
 }
 
 .switch-row input:checked + .switch-slider::after {
+  background: #fff;
   transform: translateX(22px);
 }
 
@@ -2476,10 +2477,11 @@ textarea:focus-visible {
 }
 
 .settings-toggle.on {
-  background: var(--accent);
+  background: var(--up);
 }
 
 .settings-toggle.on > span {
+  background: #fff;
   transform: translateX(22px);
 }
 
