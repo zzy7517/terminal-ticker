@@ -12,7 +12,7 @@ from . import (
     SocialFeedConfig,
     BITGET_SOURCE,
     GROUP_ALIASES,
-    HYPERLIQUID_TESTNET_SOURCE,
+    HYPERLIQUID_SOURCE,
     SUPPORTED_INST_TYPES,
     load_config,
 )
@@ -33,7 +33,12 @@ def _normalize_bitget_symbol(symbol: str) -> str:
 
 def _normalize_hyperliquid_symbol(symbol: str) -> str:
     """说明：写入或删除前规范化 Hyperliquid coin 名称。"""
-    normalized = symbol.strip().upper()
+    value = symbol.strip()
+    if ":" in value:
+        dex, coin = value.split(":", 1)
+        normalized = f"{dex.strip().lower()}:{coin.strip().upper()}"
+    else:
+        normalized = value.upper()
     if not normalized:
         raise ValueError("symbol entries cannot be blank")
     return normalized
@@ -88,13 +93,13 @@ def _format_hyperliquid_entry(
     group: str,
     show_collapsed: bool,
 ) -> str:
-    """说明：渲染一行 Hyperliquid 测试网 inline TOML 标的配置。"""
+    """说明：渲染一行 Hyperliquid inline TOML 标的配置。"""
     label_text = label or f"{symbol} Perp"
     collapsed_text = "true" if show_collapsed else "false"
     return (
         "  { "
         f"symbol = {_toml_string(symbol)}, "
-        f"source = {_toml_string(HYPERLIQUID_TESTNET_SOURCE)}, "
+        f"source = {_toml_string(HYPERLIQUID_SOURCE)}, "
         f"label = {_toml_string(label_text)}, "
         f"group = {_toml_string(group)}, "
         f"show_collapsed = {collapsed_text}"
@@ -235,7 +240,7 @@ def append_hyperliquid_symbol_to_watchlist(
     group: str = "crypto",
     show_collapsed: bool = True,
 ) -> bool:
-    """说明：不存在时把 Hyperliquid 测试网标的追加到 symbols 数组。"""
+    """说明：不存在时把 Hyperliquid 标的追加到 symbols 数组。"""
     source_path = Path(path).expanduser().resolve()
     normalized_symbol = _normalize_hyperliquid_symbol(symbol)
     normalized_group = _normalize_group(group)
@@ -243,7 +248,7 @@ def append_hyperliquid_symbol_to_watchlist(
     config = load_config(source_path)
     for instrument in config.instruments:
         if (
-            instrument.source == HYPERLIQUID_TESTNET_SOURCE
+            instrument.source == HYPERLIQUID_SOURCE
             and instrument.symbol == normalized_symbol
         ):
             return False

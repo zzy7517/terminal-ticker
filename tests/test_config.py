@@ -67,7 +67,7 @@ class ConfigTests(unittest.TestCase):
         """Verify removed market-data sources are rejected at config load time."""
         with self.assertRaisesRegex(
             ValueError,
-            "source must be one of: bitget, hyperliquid-testnet",
+            "source must be one of: bitget, hyperliquid",
         ):
             parse_config(
                 {

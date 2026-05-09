@@ -1,17 +1,17 @@
 # mytradebot
 
-mytradebot 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 测试网行情、React 图表、LLM Agent、Reuters 新闻和本地 SQLite 交易记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
+mytradebot 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 主网行情、React 图表、LLM Agent、Reuters 新闻和本地 SQLite 交易记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
 
-它不是生产级交易终端，也不会连接真实盘账户自动交易。显式配置测试网/模拟盘凭证后，可以向 Hyperliquid testnet 或 Bitget Demo Trading 提交测试订单，并把外部订单号写回本地 SQLite。
+它不是生产级交易终端。显式配置凭证并打开主网交易开关后，可以向 Hyperliquid 主网提交真实订单；Bitget 仍只使用 Demo Trading。外部订单号会写回本地 SQLite。
 
 ## 现在它能做什么
 
-- **行情监控**：订阅 Bitget futures，拉取 Hyperliquid 测试网快照、K 线与 extended stats。
+- **行情监控**：订阅 Bitget futures，拉取 Hyperliquid 主网快照、K 线与 extended stats。
 - **多周期图表**：前端展示 watchlist、实时价格、K 线、成交量、均线、VWAP、布林带、RSI、MACD、ATR，并支持图表画线。
-- **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Hyperliquid 测试网标的，也可以直接编辑 `watchlist.toml`。
+- **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Hyperliquid 主网标的，也可以直接编辑 `watchlist.toml`。
 - **Agent 分析**：支持 Codex Responses provider 和 Anthropic Messages provider。Agent 可以读取行情、K 线、新闻和本地交易记录，并返回结构化交易观察。
 - **会话持久化**：每个标的都有独立 Agent session，历史记录保存在本地 SQLite，可以 resume、reset 或删除。
-- **测试网 / 模拟盘交易**：Agent 或 API 可以向 Hyperliquid testnet 或 Bitget 模拟盘提交测试订单，并把结果同步记录到本地交易表。
+- **交易执行**：Agent 或 API 可以向 Hyperliquid 主网提交真实订单，或向 Bitget 模拟盘提交测试订单，并把结果同步记录到本地交易表。
 - **交易复盘**：Positions 页面可以查看 open/planned/history/fills/lessons，也可以手动触发 review。
 - **新闻流**：Reuters sitemap provider 会拉取新闻，写入本地 SQLite，并通过 Web UI 展示最新新闻。
 
@@ -36,7 +36,7 @@ React + Vite frontend
 - `mytradebot/runtime/feed.py`：watchlist 行情循环、多周期 K 线、缓存与 provider 路由。
 - `mytradebot/market_data/`：Bitget、Hyperliquid、catalog 和 candle provider。
 - `mytradebot/agent/`：LLM provider、agent loop、工具和 session 存储。
-- `mytradebot/trading/`：交易数据模型、SQLite store、Hyperliquid testnet / Bitget Demo Trading 客户端和 review controller。
+- `mytradebot/trading/`：交易数据模型、SQLite store、Hyperliquid 主网 / Bitget Demo Trading 客户端和 review controller。
 - `mytradebot/news/`：Reuters 新闻抓取、存储和 API 数据源。
 - `web/src/App.tsx`：主 UI，包含 Chart、Agent、Positions 和设置页面。
 
@@ -201,7 +201,7 @@ Agent 不是只看一段 prompt。打开 `agent.use_tools = true` 后，它可�
 - `list_instruments`：列出 watchlist 当前标的。
 - `get_recent_news` / `refresh_news`：读取或刷新新闻。
 - `open_bitget_demo_trade`：向 Bitget 模拟盘提交测试订单并记录 orderId。
-- `open_hyperliquid_testnet_trade`：向 Hyperliquid 测试网提交测试订单并记录 orderId / fill。
+- `open_hyperliquid_trade`：向 Hyperliquid 主网提交真实订单并记录 orderId / fill。
 - `list_open_trades`：查看 open/planned 交易。
 - `get_trade_history`：读取历史交易、fills 和 lessons。
 - `web_search` / `web_fetch`：受限制的网页搜索和读取工具，会拒绝 localhost、内网地址和不安全 scheme。
@@ -218,13 +218,13 @@ export MYTRADEBOT_WEB_SEARCH_BACKEND="duckduckgo" # 只用 DuckDuckGo
 
 Agent 输出会被解析成结构化结果，核心字段包括 `summary`、`bias`、`confidence`、`key_levels`、`watch_plan`、`invalidation` 和 `risk_notes`。
 
-## 交易记录与测试网
+## 交易记录与外部交易所
 
-本地不再用 K 线模拟成交。Hyperliquid testnet 和 Bitget Demo Trading 订单会提交到对应测试环境，然后把订单结果写入 SQLite。
+本地不再用 K 线模拟成交。Hyperliquid 订单会提交到主网，Bitget 订单会提交到 Demo Trading，然后把订单结果写入 SQLite。
 
 流程大致是：
 
-1. Agent 或 API 提交 Hyperliquid testnet 或 Bitget Demo Trading 订单。
+1. Agent 或 API 提交 Hyperliquid 主网或 Bitget Demo Trading 订单。
 2. 下单结果写入本地 trade store。
 3. review controller 定期或手动复盘交易，并把 lessons 写回本地。
 
@@ -235,15 +235,16 @@ Positions 页面可以看到：
 - 每笔交易的 fills、snapshot 和 lesson。
 - 手动 review 按钮。
 
-## 测试网 / 模拟盘下单
+## 主网 / 模拟盘下单
 
-Hyperliquid testnet 使用 SDK 和测试网私钥：
+Hyperliquid 主网使用 SDK 和主网私钥。除凭证外，还必须显式打开主网交易开关：
 
 ```bash
-export HYPERLIQUID_TESTNET_PRIVATE_KEY="..."
+export HYPERLIQUID_PRIVATE_KEY="..."
+export MYTRADEBOT_ENABLE_HYPERLIQUID_MAINNET_TRADING=true
 # 可选
-export HYPERLIQUID_TESTNET_ACCOUNT_ADDRESS="..."
-export HYPERLIQUID_TESTNET_VAULT_ADDRESS="..."
+export HYPERLIQUID_ACCOUNT_ADDRESS="..."
+export HYPERLIQUID_VAULT_ADDRESS="..."
 ```
 
 Bitget Demo Trading 使用 Demo API Key。请求仍走 `https://api.bitget.com`，后端会强制加 `paptrading: 1` header：
@@ -335,7 +336,7 @@ npm run build
 
 ## 当前边界
 
-- 不连接真实盘账户下单；只支持 Hyperliquid testnet 和 Bitget Demo Trading。
-- 本地不会用 1m K 线模拟成交；未成交或挂单状态需要以后接入交易所状态同步/撤单能力。
+- Hyperliquid 是真实主网交易；Bitget 只支持 Demo Trading。
+- 本地不会用 1m K 线模拟成交；未成交或挂单状态依赖交易所状态同步/撤单能力。
 - Agent 和 news analyst 适合做研究辅助，不应该直接当作交易信号执行。
 - 新闻来源目前以 Reuters sitemap provider 为主。

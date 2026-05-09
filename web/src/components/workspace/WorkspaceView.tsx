@@ -51,7 +51,7 @@ export function WorkspaceView() {
   const canLoadOlder =
     Boolean(
       selectedInstrument &&
-        ['bitget', 'hyperliquid-testnet'].includes(selectedInstrument.source),
+        ['bitget', 'hyperliquid'].includes(selectedInstrument.source),
     ) &&
     Boolean(historyKey && !exhaustedHistoryKeys.has(historyKey));
   const nextThemeName: ThemeName = nextTheme(theme);

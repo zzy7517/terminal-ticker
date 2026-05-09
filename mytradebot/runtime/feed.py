@@ -176,7 +176,7 @@ class FeedWorker(threading.Thread):
                 self.listen_task = None
 
     async def _run_hyperliquid(self) -> None:
-        """说明：按配置周期轮询 Hyperliquid 测试网快照。"""
+        """说明：按配置周期轮询 Hyperliquid 快照。"""
         while not self.stop_event.is_set():
             try:
                 payloads = await asyncio.to_thread(

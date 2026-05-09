@@ -1,4 +1,4 @@
-"""文件用途：Hyperliquid 测试网公开行情 provider。"""
+"""文件用途：Hyperliquid 主网公开行情 provider。"""
 from __future__ import annotations
 
 import json
@@ -7,11 +7,13 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.request import Request, urlopen
 
-from ..config import HYPERLIQUID_TESTNET_SOURCE, InstrumentConfig
+from ..config import HYPERLIQUID_SOURCE, InstrumentConfig
 from ..domain.price_action import Candle
 
-HYPERLIQUID_TESTNET_API_BASE = "https://api.hyperliquid-testnet.xyz"
+HYPERLIQUID_API_BASE = "https://api.hyperliquid.xyz"
 QUOTE_ASSET = "USDC"
+DEFAULT_DEX = ""
+TRADEFI_GROUPS = {"stocks", "indices", "commodities", "fx", "preipo"}
 
 _INTERVAL_SECONDS = {
     "1m": 60,
@@ -32,19 +34,21 @@ _INTERVAL_SECONDS = {
 
 @dataclass(frozen=True)
 class HyperliquidInstrument:
-    """说明：封装一个 Hyperliquid 测试网永续合约行情标的。"""
+    """说明：封装一个 Hyperliquid 主网永续合约行情标的。"""
 
     symbol: str
     label: str
     base_asset: str
     quote_asset: str = QUOTE_ASSET
-    market_kind: str = "testnet-perp"
+    market_kind: str = "perp"
     sz_decimals: int | None = None
     max_leverage: int | None = None
     show_collapsed: bool = True
-    source: str = HYPERLIQUID_TESTNET_SOURCE
+    source: str = HYPERLIQUID_SOURCE
     group: str = "crypto"
     analysis_interval: str | None = None
+    dex: str | None = None
+    category: str | None = None
 
     @property
     def key(self) -> str:
@@ -55,7 +59,7 @@ class HyperliquidInstrument:
 def _post_info(payload: dict[str, Any]) -> Any:
     """说明：请求 Hyperliquid /info 接口并解析 JSON。"""
     request = Request(
-        f"{HYPERLIQUID_TESTNET_API_BASE}/info",
+        f"{HYPERLIQUID_API_BASE}/info",
         data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
@@ -65,6 +69,46 @@ def _post_info(payload: dict[str, Any]) -> Any:
     )
     with urlopen(request, timeout=15) as response:
         return json.load(response)
+
+
+def _normalize_symbol(symbol: str) -> str:
+    """说明：生成配置查找键；builder DEX 前缀必须是小写。"""
+    value = symbol.strip()
+    if ":" in value:
+        dex, coin = value.split(":", 1)
+        dex = dex.strip().lower()
+        coin = coin.strip().upper()
+        return f"{dex}:{coin}" if dex and coin else ""
+    return value.upper()
+
+
+def _api_symbol(symbol: str) -> str:
+    """说明：生成可直接传给 Hyperliquid API 的 symbol，保留主 DEX 混合大小写。"""
+    value = symbol.strip()
+    if ":" in value:
+        dex, coin = value.split(":", 1)
+        dex = dex.strip().lower()
+        coin = coin.strip().upper()
+        return f"{dex}:{coin}" if dex and coin else ""
+    return value
+
+
+def _base_asset(symbol: str) -> str:
+    """说明：从 flx:NVDA 这类 builder DEX symbol 中提取展示资产名。"""
+    return symbol.split(":", 1)[1] if ":" in symbol else symbol
+
+
+def _dex_name(symbol: str) -> str | None:
+    """说明：返回 builder DEX 名称；主 DEX 标的返回 None。"""
+    return symbol.split(":", 1)[0] if ":" in symbol else None
+
+
+def _group_for_category(category: str | None) -> str:
+    """说明：把 Hyperliquid 分类映射到 UI 分组。"""
+    normalized = (category or "crypto").strip().lower()
+    if normalized in TRADEFI_GROUPS:
+        return normalized
+    return "crypto"
 
 
 def _as_float(raw_value: Any) -> float | None:
@@ -103,9 +147,73 @@ def _expect_int(raw_value: Any, field_name: str) -> int:
     return value
 
 
+def _load_perp_categories() -> dict[str, str]:
+    """说明：读取 Hyperliquid perps 分类，主要用于识别 TradeFi 标的。"""
+    try:
+        payload = _post_info({"type": "perpCategories"})
+    except Exception:
+        return {}
+    if not isinstance(payload, list):
+        return {}
+    categories: dict[str, str] = {}
+    for item in payload:
+        if (
+            isinstance(item, list)
+            and len(item) >= 2
+            and isinstance(item[0], str)
+            and isinstance(item[1], str)
+        ):
+            categories[_normalize_symbol(item[0])] = item[1].strip().lower()
+    return categories
+
+
+def _load_perp_dex_names() -> tuple[str | None, ...]:
+    """说明：读取主 DEX 和 builder-deployed perp DEX 名称。"""
+    try:
+        payload = _post_info({"type": "perpDexs"})
+    except Exception:
+        return (None,)
+    if not isinstance(payload, list):
+        return (None,)
+    names: list[str | None] = [None]
+    for item in payload:
+        if item is None:
+            continue
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return tuple(names)
+
+
+def _meta_and_contexts_payload(dex: str | None = None) -> Any:
+    payload: dict[str, Any] = {"type": "metaAndAssetCtxs"}
+    if dex:
+        payload["dex"] = dex
+    return _post_info(payload)
+
+
 def load_instrument_catalog() -> dict[str, HyperliquidInstrument]:
-    """说明：加载 Hyperliquid 测试网永续合约目录。"""
-    payload = _post_info({"type": "metaAndAssetCtxs"})
+    """说明：加载 Hyperliquid 主网永续合约目录（包含 TradeFi builder DEX）。"""
+    categories = _load_perp_categories()
+    catalog: dict[str, HyperliquidInstrument] = {}
+
+    for dex in _load_perp_dex_names():
+        try:
+            payload = _meta_and_contexts_payload(dex)
+        except Exception:
+            continue
+        catalog.update(_catalog_from_meta_payload(payload, categories=categories, dex=dex))
+    return catalog
+
+
+def _catalog_from_meta_payload(
+    payload: Any,
+    *,
+    categories: dict[str, str],
+    dex: str | None,
+) -> dict[str, HyperliquidInstrument]:
     if not isinstance(payload, list) or not payload:
         raise RuntimeError("Hyperliquid meta returned unexpected payload")
     meta = payload[0]
@@ -117,15 +225,26 @@ def load_instrument_catalog() -> dict[str, HyperliquidInstrument]:
     for item in universe:
         if not isinstance(item, dict):
             continue
-        symbol = str(item.get("name") or "").strip()
+        symbol = _api_symbol(str(item.get("name") or ""))
+        if dex and ":" not in symbol:
+            symbol = f"{dex}:{symbol.upper()}"
         if not symbol:
             continue
-        catalog[symbol.upper()] = HyperliquidInstrument(
+        base_asset = _base_asset(symbol)
+        symbol_dex = _dex_name(symbol) or dex
+        category = categories.get(symbol, "crypto")
+        label = f"{base_asset} Perp"
+        if symbol_dex:
+            label = f"{label} ({symbol_dex})"
+        catalog[_normalize_symbol(symbol)] = HyperliquidInstrument(
             symbol=symbol,
-            label=f"{symbol} Perp",
-            base_asset=symbol,
+            label=label,
+            base_asset=base_asset,
             sz_decimals=_as_int(item.get("szDecimals")),
             max_leverage=_as_int(item.get("maxLeverage")),
+            group=_group_for_category(category),
+            dex=symbol_dex,
+            category=category,
         )
     return catalog
 
@@ -133,15 +252,15 @@ def load_instrument_catalog() -> dict[str, HyperliquidInstrument]:
 def resolve_instruments(
     configured: tuple[InstrumentConfig, ...],
 ) -> tuple[HyperliquidInstrument, ...]:
-    """说明：把配置标的解析为 Hyperliquid 测试网标的，并保持 watchlist 顺序。"""
+    """说明：把配置标的解析为 Hyperliquid 主网标的，并保持 watchlist 顺序。"""
     catalog = load_instrument_catalog()
     resolved: list[HyperliquidInstrument] = []
 
     for requested in configured:
-        symbol = requested.symbol.upper()
+        symbol = _normalize_symbol(requested.symbol)
         instrument = catalog.get(symbol)
         if instrument is None:
-            raise ValueError(f"Hyperliquid testnet instrument not found: {requested.symbol}")
+            raise ValueError(f"Hyperliquid instrument not found: {requested.symbol}")
         resolved.append(
             HyperliquidInstrument(
                 symbol=instrument.symbol,
@@ -152,8 +271,10 @@ def resolve_instruments(
                 sz_decimals=instrument.sz_decimals,
                 max_leverage=instrument.max_leverage,
                 show_collapsed=requested.show_collapsed,
-                group=requested.group,
+                group=instrument.group if requested.group == "crypto" else requested.group,
                 analysis_interval=requested.analysis_interval,
+                dex=instrument.dex,
+                category=instrument.category,
             )
         )
 
@@ -203,7 +324,7 @@ def fetch_candles(
     after_open_time_ms: int | None = None,
     before_open_time_ms: int | None = None,
 ) -> tuple[Candle, ...]:
-    """说明：拉取指定 Hyperliquid 测试网标的的近期 K 线。"""
+    """说明：拉取指定 Hyperliquid 主网标的的近期 K 线。"""
     if after_open_time_ms is not None and before_open_time_ms is not None:
         raise ValueError("after_open_time_ms and before_open_time_ms cannot both be set")
     interval_ms = _interval_ms(interval)
@@ -240,9 +361,9 @@ def fetch_candles(
     return tuple(sorted(candles, key=lambda candle: candle.open_time_ms)[-limit:])
 
 
-def _instrument_contexts_by_symbol() -> dict[str, dict[str, Any]]:
+def _instrument_contexts_by_symbol(dex: str | None = None) -> dict[str, dict[str, Any]]:
     """说明：按 symbol 返回 metaAndAssetCtxs 中的资产上下文。"""
-    payload = _post_info({"type": "metaAndAssetCtxs"})
+    payload = _meta_and_contexts_payload(dex)
     if not isinstance(payload, list) or len(payload) < 2:
         raise RuntimeError("Hyperliquid asset contexts returned unexpected payload")
     meta, contexts = payload[0], payload[1]
@@ -253,7 +374,9 @@ def _instrument_contexts_by_symbol() -> dict[str, dict[str, Any]]:
     for item, context in zip(universe, contexts):
         if not isinstance(item, dict) or not isinstance(context, dict):
             continue
-        symbol = str(item.get("name") or "").strip()
+        symbol = _api_symbol(str(item.get("name") or ""))
+        if dex and ":" not in symbol:
+            symbol = f"{dex}:{symbol.upper()}"
         if symbol:
             by_symbol[symbol] = context
     return by_symbol
@@ -286,8 +409,8 @@ def _normalize_ticker_payload(
         "day_volume": _as_float(context.get("dayNtlVlm")),
         "volume": _as_float(context.get("dayNtlVlm")),
         "currency": instrument.quote_asset,
-        "exchange": "Hyperliquid Testnet",
-        "status": instrument.market_kind,
+        "exchange": "Hyperliquid",
+        "status": instrument.category or instrument.market_kind,
         "time": int(time.time() * 1000),
         "index_price": _as_float(context.get("oraclePx")),
         "mark_price": _as_float(context.get("markPx")),
@@ -299,11 +422,15 @@ def _normalize_ticker_payload(
 def fetch_snapshot_payloads(
     instruments: tuple[HyperliquidInstrument, ...],
 ) -> dict[str, dict[str, Any]]:
-    """说明：为配置的 Hyperliquid 测试网标的拉取一次 REST 快照。"""
-    contexts = _instrument_contexts_by_symbol()
+    """说明：为配置的 Hyperliquid 主网标的拉取一次 REST 快照。"""
     payloads: dict[str, dict[str, Any]] = {}
+    by_dex: dict[str | None, list[HyperliquidInstrument]] = {}
     for instrument in instruments:
-        context = contexts.get(instrument.symbol)
-        if context is not None:
-            payloads[instrument.key] = _normalize_ticker_payload(context, instrument)
+        by_dex.setdefault(instrument.dex, []).append(instrument)
+    for dex, dex_instruments in by_dex.items():
+        contexts = _instrument_contexts_by_symbol(dex)
+        for instrument in dex_instruments:
+            context = contexts.get(instrument.symbol)
+            if context is not None:
+                payloads[instrument.key] = _normalize_ticker_payload(context, instrument)
     return payloads

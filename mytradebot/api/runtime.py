@@ -37,7 +37,7 @@ from ..config import (
     AgentConfig,
     AppConfig,
     BITGET_SOURCE,
-    HYPERLIQUID_TESTNET_SOURCE,
+    HYPERLIQUID_SOURCE,
     NewsConfig,
     ProviderProfile,
     SocialFeedConfig,
@@ -72,7 +72,7 @@ from ..trading.bitget_demo import (
 from ..trading.hyperliquid import (
     HYPERLIQUID_FILL_SOURCE,
     HyperliquidTradingError,
-    open_testnet_position as open_hyperliquid_testnet_position,
+    open_position as open_hyperliquid_position,
 )
 from ..trading.models import FillKind, TradeDirection
 from ..config.watchlist_store import (
@@ -110,7 +110,7 @@ LOGGER = logging.getLogger(__name__)
 BITGET_CATALOG_PRODUCT_ORDER = {
     product_type: index for index, product_type in enumerate(FUTURES_PRODUCT_TYPES)
 }
-OLDER_CANDLE_SOURCES = {BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
+OLDER_CANDLE_SOURCES = {BITGET_SOURCE, HYPERLIQUID_SOURCE}
 MANUAL_MEMORY_TRIGGERS = (
     "帮我记住",
     "请记住",
@@ -488,7 +488,7 @@ class MarketRuntime:
             )
         except Exception as exc:
             LOGGER.warning("Hyperliquid catalog preload failed", exc_info=True)
-            errors[HYPERLIQUID_TESTNET_SOURCE] = str(exc)
+            errors[HYPERLIQUID_SOURCE] = str(exc)
 
         self.instrument_catalog = tuple(catalog)
         self.instrument_catalog_loaded_at = utc_now_iso()
@@ -534,13 +534,19 @@ class MarketRuntime:
         source_path = self._require_source_path()
         symbol = str(payload.get("symbol") or "")
         label = str(payload.get("label") or "").strip() or None
+        group = str(payload.get("group") or payload.get("category") or "").strip() or None
+        if group is None:
+            for item in self.instrument_catalog:
+                if item.source == HYPERLIQUID_SOURCE and item.symbol == symbol:
+                    group = item.group
+                    break
         try:
             changed = await asyncio.to_thread(
                 append_hyperliquid_symbol_to_watchlist,
                 source_path,
                 symbol=symbol,
                 label=label,
-                group="crypto",
+                group=group or "crypto",
                 show_collapsed=True,
             )
         except ValueError as exc:
@@ -956,16 +962,16 @@ class MarketRuntime:
             "state": self.snapshot(),
         }
 
-    async def open_hyperliquid_testnet_trade(
+    async def open_hyperliquid_trade(
         self,
         instrument_key: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         instrument = self._instrument_by_key(instrument_key)
-        if instrument.source != HYPERLIQUID_TESTNET_SOURCE:
+        if instrument.source != HYPERLIQUID_SOURCE:
             raise HTTPException(
                 status_code=400,
-                detail="Hyperliquid testnet trading only supports hyperliquid-testnet instruments.",
+                detail="Hyperliquid trading only supports hyperliquid instruments.",
             )
         try:
             direction = TradeDirection(str(payload.get("direction") or "").lower())
@@ -986,10 +992,10 @@ class MarketRuntime:
         slippage = request_float(payload.get("slippage", 0.05), "slippage")
         if slippage < 0:
             raise HTTPException(status_code=400, detail="slippage must be non-negative")
-        reasoning = str(payload.get("reasoning") or "Manual Hyperliquid testnet trade")
+        reasoning = str(payload.get("reasoning") or "Manual Hyperliquid trade")
         try:
             result = await asyncio.to_thread(
-                open_hyperliquid_testnet_position,
+                open_hyperliquid_position,
                 coin=instrument.symbol,
                 is_buy=direction is TradeDirection.LONG,
                 size=size,
@@ -1021,7 +1027,7 @@ class MarketRuntime:
             reasoning_text=reasoning,
             session_id=None,
             snapshot_id=snapshot_id,
-            market_kind="hyperliquid-testnet-perp",
+            market_kind="hyperliquid-perp",
             fill_source=HYPERLIQUID_FILL_SOURCE,
             status=status,
             external_order_id=result.external_order_id,
@@ -1034,7 +1040,7 @@ class MarketRuntime:
                 kind=FillKind.ENTRY,
                 price=float(result.average_price),
                 quantity=float(result.filled_size),
-                trigger_reason="hyperliquid testnet order filled",
+                trigger_reason="hyperliquid order filled",
                 fill_source=HYPERLIQUID_FILL_SOURCE,
                 external_order_id=result.external_order_id,
             )
@@ -1043,7 +1049,7 @@ class MarketRuntime:
         await self.broadcast()
         return {
             "ok": True,
-            "testnet": True,
+            "live": True,
             "trade": trade.to_payload(),
             "fill": fill_payload,
             "order": result.raw,

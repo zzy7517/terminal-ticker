@@ -33,7 +33,7 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
     async def add_bitget_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         return await runtime.add_bitget(payload)
 
-    @app.post("/api/watchlist/hyperliquid-testnet")
+    @app.post("/api/watchlist/hyperliquid")
     async def add_hyperliquid_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         return await runtime.add_hyperliquid(payload)
 
@@ -168,14 +168,14 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
         require_local_trading_request(request)
         return await runtime.open_bitget_demo_trade(instrument_key, payload)
 
-    @app.post("/api/hyperliquid-testnet/trades/{instrument_key}")
-    async def open_hyperliquid_testnet_trade_endpoint(
+    @app.post("/api/hyperliquid/trades/{instrument_key}")
+    async def open_hyperliquid_trade_endpoint(
         request: Request,
         instrument_key: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         require_local_trading_request(request)
-        return await runtime.open_hyperliquid_testnet_trade(instrument_key, payload)
+        return await runtime.open_hyperliquid_trade(instrument_key, payload)
 
     @app.get("/api/trades")
     async def list_trades_endpoint(
@@ -209,14 +209,14 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
         require_local_trading_request(request)
         return await runtime.open_bitget_demo_trade(instrument_key, payload)
 
-    @app.post("/api/hyperliquid-testnet/{instrument_key}/open")
-    async def open_hyperliquid_testnet_trade_alias_endpoint(
+    @app.post("/api/hyperliquid/{instrument_key}/open")
+    async def open_hyperliquid_trade_alias_endpoint(
         request: Request,
         instrument_key: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         require_local_trading_request(request)
-        return await runtime.open_hyperliquid_testnet_trade(instrument_key, payload)
+        return await runtime.open_hyperliquid_trade(instrument_key, payload)
 
     @app.get("/api/trades/{trade_id}")
     async def get_trade_endpoint(trade_id: int) -> dict[str, Any]:
@@ -261,7 +261,8 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
         return {"orders": [o.to_payload() for o in orders]}
 
     @app.post("/api/exchange/orders")
-    async def place_exchange_order_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+    async def place_exchange_order_endpoint(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+        require_local_trading_request(request)
         instrument_key = payload.get("instrumentKey", "")
         if not instrument_key:
             raise HTTPException(status_code=400, detail="instrumentKey required")
@@ -322,10 +323,12 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
 
     @app.delete("/api/exchange/orders/{exchange}/{order_id}")
     async def cancel_exchange_order_endpoint(
+        request: Request,
         exchange: str,
         order_id: str,
         symbol: str = "",
     ) -> dict[str, Any]:
+        require_local_trading_request(request)
         ok = runtime.exchange_router.cancel_order(
             exchange=exchange,
             order_id=order_id,

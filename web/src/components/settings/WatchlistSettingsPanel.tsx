@@ -9,10 +9,10 @@ import './WatchlistSettingsPanel.css';
 
 const SOURCE_LABEL: Record<SearchSource, string> = {
   bitget: 'Bitget Futures',
-  'hyperliquid-testnet': 'Hyperliquid Testnet',
+  hyperliquid: 'Hyperliquid',
 };
 
-const SOURCE_ORDER: SearchSource[] = ['bitget', 'hyperliquid-testnet'];
+const SOURCE_ORDER: SearchSource[] = ['bitget', 'hyperliquid'];
 
 const QUOTE_FILTERS = [
   { id: 'all', label: 'All' },
@@ -21,6 +21,19 @@ const QUOTE_FILTERS = [
   { id: 'USD', label: 'USD' },
 ] as const;
 type QuoteFilter = (typeof QUOTE_FILTERS)[number]['id'];
+
+const HYPERLIQUID_GROUP_FILTERS = [
+  { id: 'tradefi', label: 'TradeFi' },
+  { id: 'all', label: 'All' },
+  { id: 'stocks', label: 'Stocks' },
+  { id: 'indices', label: 'Indices' },
+  { id: 'commodities', label: 'Commodities' },
+  { id: 'fx', label: 'FX' },
+  { id: 'preipo', label: 'Pre-IPO' },
+  { id: 'crypto', label: 'Crypto' },
+] as const;
+type HyperliquidGroupFilter = (typeof HYPERLIQUID_GROUP_FILTERS)[number]['id'];
+const TRADEFI_GROUPS = new Set(['stocks', 'indices', 'commodities', 'fx', 'preipo']);
 
 function bucketOf(symbol: string): string {
   const ch = symbol.charAt(0).toUpperCase();
@@ -34,6 +47,10 @@ function inferQuote(item: InstrumentCatalogItem): string {
     if (upper.endsWith(q)) return q;
   }
   return '';
+}
+
+function inferHyperliquidGroup(item: InstrumentCatalogItem): string {
+  return (item.group ?? item.category ?? 'crypto').toLowerCase();
 }
 
 function matchesQuery(item: InstrumentCatalogItem, query: string): boolean {
@@ -69,6 +86,7 @@ export function WatchlistSettingsPanel() {
   const [searchSource, setSearchSource] = useState<SearchSource>('bitget');
   const [query, setQuery] = useState('');
   const [quote, setQuote] = useState<QuoteFilter>('all');
+  const [hyperliquidGroup, setHyperliquidGroup] = useState<HyperliquidGroupFilter>('tradefi');
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -103,6 +121,14 @@ export function WatchlistSettingsPanel() {
       if (quote !== 'all') {
         if (inferQuote(item) !== quote) return false;
       }
+      if (searchSource === 'hyperliquid' && hyperliquidGroup !== 'all') {
+        const group = inferHyperliquidGroup(item);
+        if (hyperliquidGroup === 'tradefi') {
+          if (!TRADEFI_GROUPS.has(group)) return false;
+        } else if (group !== hyperliquidGroup) {
+          return false;
+        }
+      }
       return true;
     });
 
@@ -128,7 +154,7 @@ export function WatchlistSettingsPanel() {
       if (b.letter === '#') return -1;
       return a.letter.localeCompare(b.letter);
     });
-  }, [sourceCatalog, normalizedQuery, quote, activeKeys]);
+  }, [sourceCatalog, normalizedQuery, quote, hyperliquidGroup, searchSource, activeKeys]);
 
   const visibleLetters = useMemo(() => new Set(groups.map((g) => g.letter)), [groups]);
   const totalShown = useMemo(() => groups.reduce((acc, g) => acc + g.items.length, 0), [groups]);
@@ -138,6 +164,7 @@ export function WatchlistSettingsPanel() {
   useEffect(() => {
     setQuery('');
     setQuote('all');
+    setHyperliquidGroup(searchSource === 'hyperliquid' ? 'tradefi' : 'all');
     if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
   }, [searchSource]);
 
@@ -276,7 +303,7 @@ export function WatchlistSettingsPanel() {
               placeholder={
                 searchSource === 'bitget'
                   ? 'Search Bitget futures (e.g. BTCUSDT)'
-                  : 'Search Hyperliquid coins (e.g. BTC)'
+                  : 'Search Hyperliquid TradeFi (e.g. NVDA, AAPL, GOLD)'
               }
               aria-label="Filter catalog"
             />
@@ -322,6 +349,21 @@ export function WatchlistSettingsPanel() {
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {searchSource === 'hyperliquid' && (
+          <div className="wl-quote-filter" role="group" aria-label="Hyperliquid category">
+            {HYPERLIQUID_GROUP_FILTERS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`wl-quote-pill ${hyperliquidGroup === item.id ? 'active' : ''}`}
+                onClick={() => setHyperliquidGroup(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         )}
 
@@ -383,7 +425,7 @@ export function WatchlistSettingsPanel() {
                             )}
                           </div>
                           <span className="wl-catalog-venue">
-                            {item.instType ?? SOURCE_LABEL[searchSource]}
+                            {item.displayText || item.instType || SOURCE_LABEL[searchSource]}
                           </span>
                           <button
                             type="button"

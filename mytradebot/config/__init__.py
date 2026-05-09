@@ -20,8 +20,8 @@ from .agent_models import (
 )
 
 BITGET_SOURCE = "bitget"
-HYPERLIQUID_TESTNET_SOURCE = "hyperliquid-testnet"
-SUPPORTED_SOURCES = {BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}
+HYPERLIQUID_SOURCE = "hyperliquid"
+SUPPORTED_SOURCES = {BITGET_SOURCE, HYPERLIQUID_SOURCE}
 SUPPORTED_INST_TYPES = {"USDT-FUTURES", "USDC-FUTURES", "COIN-FUTURES"}
 
 # Reuters 现役新闻 sitemap。老的 /sitemap_news.xml 已下线（401/404）。
@@ -61,10 +61,14 @@ GROUP_ALIASES = {
     "stocks": "stocks",
     "equity": "stocks",
     "equities": "stocks",
-    "metal": "metals",
-    "metals": "metals",
-    "commodity": "metals",
-    "commodities": "metals",
+    "metal": "commodities",
+    "metals": "commodities",
+    "commodity": "commodities",
+    "commodities": "commodities",
+    "fx": "fx",
+    "forex": "fx",
+    "preipo": "preipo",
+    "pre_ipo": "preipo",
     "index": "indices",
     "indices": "indices",
     "watch": "watchlist",
@@ -248,7 +252,7 @@ def _normalize_label(raw_value: Any) -> str | None:
 
 def _default_group(source: str) -> str:
     """说明：根据数据源选择默认 UI 分组。"""
-    if source in {BITGET_SOURCE, HYPERLIQUID_TESTNET_SOURCE}:
+    if source in {BITGET_SOURCE, HYPERLIQUID_SOURCE}:
         return "crypto"
     return DEFAULT_GROUP
 
@@ -582,7 +586,7 @@ def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> Ins
             inst_type = normalized_inst_type
             symbol = maybe_symbol
 
-    normalized_symbol = symbol.strip().upper()
+    normalized_symbol = _normalize_symbol_for_source(symbol, source=source)
     if not normalized_symbol:
         raise ValueError("symbol entries cannot be blank")
     return InstrumentConfig(
@@ -591,6 +595,19 @@ def _parse_symbol_string(raw_symbol: str, *, source: str = BITGET_SOURCE) -> Ins
         inst_type=inst_type,
         group=_default_group(source),
     )
+
+
+def _normalize_symbol_for_source(symbol: str, *, source: str) -> str:
+    """说明：按 provider 规范化 symbol；Hyperliquid builder DEX 前缀必须保留小写。"""
+    value = symbol.strip()
+    if not value:
+        return ""
+    if source == HYPERLIQUID_SOURCE and ":" in value:
+        dex, coin = value.split(":", 1)
+        dex = dex.strip().lower()
+        coin = coin.strip().upper()
+        return f"{dex}:{coin}" if dex and coin else ""
+    return value.upper()
 
 
 def _normalize_instruments(symbols: Iterable[Any]) -> tuple[InstrumentConfig, ...]:

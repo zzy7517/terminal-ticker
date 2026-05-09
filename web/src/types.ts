@@ -412,6 +412,9 @@ export interface InstrumentSearchResult {
   symbol: string;
   label: string;
   instType: string | null;
+  group?: string | null;
+  category?: string | null;
+  dex?: string | null;
   key: string;
   displayText: string;
   exists: boolean;

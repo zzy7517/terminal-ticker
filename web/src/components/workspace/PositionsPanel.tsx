@@ -4,7 +4,7 @@ import { useMarketStore } from '../../stores/marketStore';
 import { cancelExchangeOrder, listLessons } from '../../api';
 
 const EXCHANGE_LABELS: Record<string, string> = {
-  'hyperliquid-testnet': 'Hyperliquid Testnet',
+  hyperliquid: 'Hyperliquid',
   'bitget-demo': 'Bitget Demo',
 };
 

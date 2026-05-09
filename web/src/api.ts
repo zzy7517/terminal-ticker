@@ -67,14 +67,16 @@ export async function addBitgetSymbol(result: InstrumentSearchResult): Promise<M
   return payload.state;
 }
 
-// Persists a Hyperliquid testnet instrument to the watchlist and returns the reloaded state.
-export async function addHyperliquidTestnetSymbol(result: InstrumentSearchResult): Promise<MarketState> {
-  const response = await fetch('/api/watchlist/hyperliquid-testnet', {
+// Persists a Hyperliquid instrument to the watchlist and returns the reloaded state.
+export async function addHyperliquidSymbol(result: InstrumentSearchResult): Promise<MarketState> {
+  const response = await fetch('/api/watchlist/hyperliquid', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       symbol: result.symbol,
       label: result.label,
+      group: result.group,
+      category: result.category,
     }),
   });
   if (!response.ok) {

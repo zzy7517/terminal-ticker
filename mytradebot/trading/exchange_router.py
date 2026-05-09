@@ -12,7 +12,7 @@ from .store import TradeStore
 
 _log = logging.getLogger(__name__)
 
-EXCHANGE_HYPERLIQUID = "hyperliquid-testnet"
+EXCHANGE_HYPERLIQUID = "hyperliquid"
 EXCHANGE_BITGET = "bitget-demo"
 BITGET_FUTURES_PREFIXES = ("USDT-FUTURES:", "USDC-FUTURES:", "COIN-FUTURES:")
 
@@ -255,7 +255,7 @@ class ExchangeRouter:
 
     @staticmethod
     def _exchange_for_key(instrument_key: str) -> str:
-        if instrument_key.startswith("hyperliquid-testnet:"):
+        if instrument_key.startswith("hyperliquid:"):
             return EXCHANGE_HYPERLIQUID
         if instrument_key.startswith(BITGET_FUTURES_PREFIXES):
             return EXCHANGE_BITGET
@@ -278,7 +278,7 @@ class ExchangeRouter:
         limit_price = kwargs.get("limit_price")
         slippage = float(kwargs.get("slippage", 0.05))
         try:
-            result = hl_trading.open_testnet_position(
+            result = hl_trading.open_position(
                 coin=coin,
                 is_buy=is_buy,
                 size=size,

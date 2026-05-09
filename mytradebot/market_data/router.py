@@ -6,7 +6,7 @@ from .bitget import BitgetInstrument
 from .hyperliquid import HyperliquidInstrument
 from ..config import (
     BITGET_SOURCE,
-    HYPERLIQUID_TESTNET_SOURCE,
+    HYPERLIQUID_SOURCE,
     InstrumentConfig,
 )
 
@@ -18,7 +18,7 @@ def resolve_instruments(configured: tuple[InstrumentConfig, ...]) -> tuple[Marke
     """说明：把配置标的解析为具体 provider 标的，并保持 watchlist 顺序。"""
     bitget_configs = tuple(item for item in configured if item.source == BITGET_SOURCE)
     hyperliquid_configs = tuple(
-        item for item in configured if item.source == HYPERLIQUID_TESTNET_SOURCE
+        item for item in configured if item.source == HYPERLIQUID_SOURCE
     )
 
     resolved_bitget = {}
@@ -42,7 +42,7 @@ def resolve_instruments(configured: tuple[InstrumentConfig, ...]) -> tuple[Marke
     for config in configured:
         if config.source == BITGET_SOURCE:
             resolved.append(resolved_bitget[config.dedupe_key])
-        elif config.source == HYPERLIQUID_TESTNET_SOURCE:
+        elif config.source == HYPERLIQUID_SOURCE:
             resolved.append(resolved_hyperliquid[config.dedupe_key])
         else:
             raise ValueError(f"unsupported data source: {config.source}")

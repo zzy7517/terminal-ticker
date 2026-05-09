@@ -1,20 +1,24 @@
-"""文件用途：Hyperliquid 测试网交易客户端封装。"""
+"""文件用途：Hyperliquid 主网交易客户端封装。"""
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
 from typing import Any
+from urllib.request import Request, urlopen
 
 from .exchange_models import ExchangeOrder, ExchangePosition
 
-HYPERLIQUID_TESTNET_API_BASE = "https://api.hyperliquid-testnet.xyz"
-HYPERLIQUID_FILL_SOURCE = "hyperliquid-testnet"
+HYPERLIQUID_API_BASE = "https://api.hyperliquid.xyz"
+HYPERLIQUID_FILL_SOURCE = "hyperliquid"
+MAINNET_TRADING_ENV = "MYTRADEBOT_ENABLE_HYPERLIQUID_MAINNET_TRADING"
+_TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 _log = logging.getLogger(__name__)
 
 
 class HyperliquidTradingError(RuntimeError):
-    """说明：Hyperliquid 测试网交易配置或下单失败。"""
+    """说明：Hyperliquid 主网交易配置或下单失败。"""
 
 
 @dataclass(frozen=True)
@@ -40,23 +44,35 @@ def _optional_env(*names: str) -> str | None:
 
 
 def hyperliquid_credentials_available() -> bool:
-    """说明：返回测试网下单所需凭证是否已配置。"""
-    return _optional_env("HYPERLIQUID_TESTNET_PRIVATE_KEY", "HYPERLIQUID_PRIVATE_KEY") is not None
+    """说明：返回主网下单所需凭证是否已配置。"""
+    return _optional_env("HYPERLIQUID_PRIVATE_KEY") is not None
+
+
+def hyperliquid_mainnet_trading_enabled() -> bool:
+    """说明：主网真实交易必须显式启用，避免仅配置私钥就可下单。"""
+    value = os.environ.get(MAINNET_TRADING_ENV, "")
+    return value.strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def _require_mainnet_trading_enabled() -> None:
+    if not hyperliquid_mainnet_trading_enabled():
+        raise HyperliquidTradingError(
+            f"Hyperliquid mainnet trading is disabled. Set {MAINNET_TRADING_ENV}=true to enable live order mutations."
+        )
 
 
 def _load_exchange():
     """说明：延迟导入 SDK 并根据环境变量构建 Exchange。"""
-    private_key = _optional_env("HYPERLIQUID_TESTNET_PRIVATE_KEY", "HYPERLIQUID_PRIVATE_KEY")
+    _require_mainnet_trading_enabled()
+    private_key = _optional_env("HYPERLIQUID_PRIVATE_KEY")
     if private_key is None:
         raise HyperliquidTradingError(
-            "Hyperliquid testnet trading requires HYPERLIQUID_TESTNET_PRIVATE_KEY."
+            "Hyperliquid trading requires HYPERLIQUID_PRIVATE_KEY."
         )
     account_address = _optional_env(
-        "HYPERLIQUID_TESTNET_ACCOUNT_ADDRESS",
         "HYPERLIQUID_ACCOUNT_ADDRESS",
     )
     vault_address = _optional_env(
-        "HYPERLIQUID_TESTNET_VAULT_ADDRESS",
         "HYPERLIQUID_VAULT_ADDRESS",
     )
     try:
@@ -64,13 +80,13 @@ def _load_exchange():
         from hyperliquid.exchange import Exchange
     except ImportError as exc:
         raise HyperliquidTradingError(
-            "Hyperliquid testnet trading requires hyperliquid-python-sdk and eth-account."
+            "Hyperliquid trading requires hyperliquid-python-sdk and eth-account."
         ) from exc
 
     wallet = eth_account.Account.from_key(private_key)
     return Exchange(
         wallet,
-        HYPERLIQUID_TESTNET_API_BASE,
+        HYPERLIQUID_API_BASE,
         account_address=account_address,
         vault_address=vault_address,
     )
@@ -79,12 +95,11 @@ def _load_exchange():
 def _get_user_address() -> str:
     """说明：返回用户地址：优先 account_address 环境变量，否则从私钥派生。"""
     addr = _optional_env(
-        "HYPERLIQUID_TESTNET_ACCOUNT_ADDRESS",
         "HYPERLIQUID_ACCOUNT_ADDRESS",
     )
     if addr:
         return addr
-    private_key = _optional_env("HYPERLIQUID_TESTNET_PRIVATE_KEY", "HYPERLIQUID_PRIVATE_KEY")
+    private_key = _optional_env("HYPERLIQUID_PRIVATE_KEY")
     if private_key is None:
         raise HyperliquidTradingError("Hyperliquid credentials not configured.")
     try:
@@ -103,28 +118,102 @@ def _load_info():
         raise HyperliquidTradingError(
             "hyperliquid-python-sdk is required for Info API."
         ) from exc
-    return Info(HYPERLIQUID_TESTNET_API_BASE, skip_ws=True)
+    return Info(HYPERLIQUID_API_BASE, skip_ws=True)
+
+
+def _post_info(payload: dict[str, Any]) -> Any:
+    """说明：调用 Hyperliquid 主网 /info；用于 SDK 暂未覆盖的 dex 参数。"""
+    request = Request(
+        f"{HYPERLIQUID_API_BASE}/info",
+        data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": "mytradebot/0.1"},
+        method="POST",
+    )
+    with urlopen(request, timeout=15) as response:
+        return json.load(response)
+
+
+def _perp_dex_names() -> tuple[str | None, ...]:
+    """说明：返回主 DEX 和 builder DEX 名称；失败时至少返回主 DEX。"""
+    try:
+        payload = _post_info({"type": "perpDexs"})
+    except Exception:
+        return (None,)
+    if not isinstance(payload, list):
+        return (None,)
+    names: list[str | None] = [None]
+    for item in payload:
+        if item is None or not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return tuple(names)
+
+
+def _dex_payload(base: dict[str, Any], dex: str | None) -> dict[str, Any]:
+    payload = dict(base)
+    if dex:
+        payload["dex"] = dex
+    return payload
+
+
+def _normalize_coin_for_api(coin: str) -> str:
+    """说明：规范化 builder DEX coin，避免把 flx:NVDA 错改成 FLX:NVDA。"""
+    value = coin.strip()
+    if ":" in value:
+        dex, asset = value.split(":", 1)
+        dex = dex.strip().lower()
+        asset = asset.strip().upper()
+        return f"{dex}:{asset}" if dex and asset else ""
+    return value
+
+
+def _coin_with_dex(coin: Any, dex: str | None) -> str:
+    """说明：把 per-dex 查询返回的裸 coin 补成全局唯一 coin。"""
+    value = str(coin or "").strip()
+    if not value:
+        return ""
+    if ":" in value:
+        return _normalize_coin_for_api(value)
+    if dex:
+        return f"{dex.strip().lower()}:{value.upper()}"
+    return value
 
 
 def get_positions() -> list[ExchangePosition]:
-    """说明：查询 Hyperliquid 测试网当前持仓。"""
+    """说明：查询 Hyperliquid 主网当前持仓。"""
     if not hyperliquid_credentials_available():
         return []
-    try:
-        info = _load_info()
-        address = _get_user_address()
-        state = info.user_state(address)
-    except Exception:
-        _log.warning("Failed to fetch Hyperliquid testnet positions", exc_info=True)
+    address = _get_user_address()
+    positions: list[ExchangePosition] = []
+    for dex in _perp_dex_names():
+        try:
+            state = _post_info(_dex_payload({
+                "type": "clearinghouseState",
+                "user": address,
+            }, dex))
+        except Exception:
+            _log.warning("Failed to fetch Hyperliquid positions for dex=%s", dex or "main", exc_info=True)
+            continue
+        positions.extend(_positions_from_state(state, dex=dex))
+    return positions
+
+
+def _positions_from_state(state: Any, *, dex: str | None = None) -> list[ExchangePosition]:
+    if not isinstance(state, dict):
         return []
     positions: list[ExchangePosition] = []
     for pos in state.get("assetPositions", []):
-        p = pos.get("position", {})
-        coin = p.get("coin", "")
+        p = pos.get("position", {}) if isinstance(pos, dict) else {}
+        if not isinstance(p, dict):
+            continue
+        coin = _coin_with_dex(p.get("coin", ""), dex)
         szi = _to_float(p.get("szi")) or 0.0
         if szi == 0:
             continue
         entry = _to_float(p.get("entryPx")) or 0.0
+        mark = _to_float(p.get("markPx")) or entry
         unrealized = _to_float(p.get("unrealizedPnl")) or 0.0
         leverage_info = p.get("leverage", {})
         lev = _to_float(leverage_info.get("value")) if isinstance(leverage_info, dict) else None
@@ -133,11 +222,11 @@ def get_positions() -> list[ExchangePosition]:
         positions.append(ExchangePosition(
             exchange=HYPERLIQUID_FILL_SOURCE,
             symbol=coin,
-            instrument_key=f"hyperliquid-testnet:{coin}",
+            instrument_key=f"hyperliquid:{coin}",
             side="long" if szi > 0 else "short",
             size=abs(szi),
             entry_price=entry,
-            mark_price=entry,
+            mark_price=mark,
             unrealized_pnl=unrealized,
             leverage=lev,
             margin=margin_used,
@@ -146,20 +235,44 @@ def get_positions() -> list[ExchangePosition]:
     return positions
 
 
-def get_open_orders() -> list[ExchangeOrder]:
-    """说明：查询 Hyperliquid 测试网挂单。"""
-    if not hyperliquid_credentials_available():
-        return []
+def _legacy_sdk_positions() -> list[ExchangePosition]:
     try:
         info = _load_info()
         address = _get_user_address()
-        raw_orders = info.open_orders(address)
+        state = info.user_state(address)
     except Exception:
-        _log.warning("Failed to fetch Hyperliquid testnet open orders", exc_info=True)
+        _log.warning("Failed to fetch Hyperliquid positions", exc_info=True)
+        return []
+    return _positions_from_state(state)
+
+
+def get_open_orders() -> list[ExchangeOrder]:
+    """说明：查询 Hyperliquid 主网挂单。"""
+    if not hyperliquid_credentials_available():
+        return []
+    address = _get_user_address()
+    orders: list[ExchangeOrder] = []
+    for dex in _perp_dex_names():
+        try:
+            raw_orders = _post_info(_dex_payload({
+                "type": "openOrders",
+                "user": address,
+            }, dex))
+        except Exception:
+            _log.warning("Failed to fetch Hyperliquid open orders for dex=%s", dex or "main", exc_info=True)
+            continue
+        orders.extend(_orders_from_payload(raw_orders, dex=dex))
+    return orders
+
+
+def _orders_from_payload(raw_orders: Any, *, dex: str | None = None) -> list[ExchangeOrder]:
+    if not isinstance(raw_orders, list):
         return []
     orders: list[ExchangeOrder] = []
     for o in raw_orders:
-        coin = o.get("coin", "")
+        if not isinstance(o, dict):
+            continue
+        coin = _coin_with_dex(o.get("coin", ""), dex)
         oid = str(o.get("oid", ""))
         is_buy = o.get("side", "").upper() == "B"
         sz = _to_float(o.get("sz")) or 0.0
@@ -172,7 +285,7 @@ def get_open_orders() -> list[ExchangeOrder]:
         orders.append(ExchangeOrder(
             exchange=HYPERLIQUID_FILL_SOURCE,
             symbol=coin,
-            instrument_key=f"hyperliquid-testnet:{coin}",
+            instrument_key=f"hyperliquid:{coin}",
             order_id=oid,
             side="buy" if is_buy else "sell",
             order_type="trigger" if trigger_px is not None else "limit",
@@ -186,6 +299,17 @@ def get_open_orders() -> list[ExchangeOrder]:
             tpsl=o.get("tpsl"),
         ))
     return orders
+
+
+def _legacy_sdk_open_orders() -> list[ExchangeOrder]:
+    try:
+        info = _load_info()
+        address = _get_user_address()
+        raw_orders = info.open_orders(address)
+    except Exception:
+        _log.warning("Failed to fetch Hyperliquid open orders", exc_info=True)
+        return []
+    return _orders_from_payload(raw_orders)
 
 
 def get_user_fills(
@@ -216,7 +340,7 @@ def get_user_fills(
         results.append({
             "oid": item.get("oid"),
             "coin": fill_coin,
-            "instrumentKey": f"hyperliquid-testnet:{fill_coin}",
+            "instrumentKey": f"hyperliquid:{fill_coin}",
             "side": item.get("side"),
             "price": float(px) if px is not None else 0.0,
             "size": float(sz) if sz is not None else 0.0,
@@ -232,10 +356,10 @@ def get_user_fills(
 
 
 def cancel_order(*, order_id: str, coin: str) -> bool:
-    """说明：撤销 Hyperliquid 测试网挂单。"""
+    """说明：撤销 Hyperliquid 主网挂单。"""
     exchange = _load_exchange()
     try:
-        result = exchange.cancel(coin.strip().upper(), int(order_id))
+        result = exchange.cancel(_normalize_coin_for_api(coin), int(order_id))
         if isinstance(result, dict) and result.get("status") == "ok":
             return True
         return False
@@ -288,7 +412,7 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def open_testnet_position(
+def open_position(
     *,
     coin: str,
     is_buy: bool,
@@ -299,10 +423,10 @@ def open_testnet_position(
     take_profit_price: float | None = None,
     stop_loss_price: float | None = None,
 ) -> HyperliquidOrderResult:
-    """说明：在 Hyperliquid 测试网开仓，market 使用 SDK 的 IOC 包装。"""
+    """说明：在 Hyperliquid 主网开仓，market 使用 SDK 的 IOC 包装。"""
     if size <= 0:
         raise HyperliquidTradingError("size must be positive")
-    normalized_coin = coin.strip().upper()
+    normalized_coin = _normalize_coin_for_api(coin)
     if not normalized_coin:
         raise HyperliquidTradingError("coin is required")
     exchange = _load_exchange()
@@ -427,15 +551,23 @@ def _place_tpsl_children(
         take_profit_price=take_profit_price,
         stop_loss_price=stop_loss_price,
     ):
-        payload = exchange.order(
-            spec["coin"],
-            spec["is_buy"],
-            spec["sz"],
-            spec["limit_px"],
-            spec["order_type"],
-            reduce_only=True,
-        )
-        payloads.append(payload)
+        try:
+            payload = exchange.order(
+                spec["coin"],
+                spec["is_buy"],
+                spec["sz"],
+                spec["limit_px"],
+                spec["order_type"],
+                reduce_only=True,
+            )
+            payloads.append(payload)
+        except Exception as exc:
+            _log.warning("Failed to place Hyperliquid TP/SL child order", exc_info=True)
+            payloads.append({
+                "status": "error",
+                "error": str(exc) or exc.__class__.__name__,
+                "order": spec,
+            })
     return payloads
 
 
@@ -454,7 +586,7 @@ def place_trigger_order(
     normalized_tpsl = tpsl.strip().lower()
     if normalized_tpsl not in {"tp", "sl"}:
         raise HyperliquidTradingError("tpsl must be tp or sl")
-    normalized_coin = coin.strip().upper()
+    normalized_coin = _normalize_coin_for_api(coin)
     if not normalized_coin:
         raise HyperliquidTradingError("coin is required")
     exchange = _load_exchange()
@@ -480,7 +612,7 @@ def close_position(
     slippage: float = 0.05,
 ) -> HyperliquidOrderResult:
     """说明：用 Hyperliquid market_close 市价平仓；size 为空时平该 coin 全部仓位。"""
-    normalized_coin = coin.strip().upper()
+    normalized_coin = _normalize_coin_for_api(coin)
     if not normalized_coin:
         raise HyperliquidTradingError("coin is required")
     if size is not None and size <= 0:

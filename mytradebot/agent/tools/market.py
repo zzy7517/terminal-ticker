@@ -59,7 +59,7 @@ def build_market_tools(
             "properties": {
                 "instrument_key": {
                     "type": "string",
-                    "description": "标的唯一标识，优先使用 list_instruments 返回的 key，如 USDT-FUTURES:BTCUSDT 或 hyperliquid-testnet:BTC",
+                    "description": "标的唯一标识，优先使用 list_instruments 返回的 key，如 USDT-FUTURES:BTCUSDT 或 hyperliquid:BTC",
                 },
             },
             "required": ["instrument_key"],

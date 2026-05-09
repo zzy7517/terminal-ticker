@@ -20,7 +20,7 @@ import {
 } from './constants';
 import {
   addBitgetSymbol,
-  addHyperliquidTestnetSymbol,
+  addHyperliquidSymbol,
 } from './api';
 
 export function readInitialTheme(): ThemeName {
@@ -77,7 +77,7 @@ export function navigateToRoute(route: AppRoute) {
 
 export function orderedGroups(state: MarketState | null) {
   if (!state) return [];
-  const preferred = ['bitget', 'hyperliquid-testnet'];
+  const preferred = ['bitget', 'hyperliquid'];
   const present = Object.keys(state.groups);
   return [
     ...preferred.filter((group) => present.includes(group)),
@@ -98,7 +98,7 @@ export function sourceLabel(instrument: Instrument | undefined) {
 }
 
 export function sourceName(source: string) {
-  if (source === 'hyperliquid-testnet') return 'Hyperliquid Testnet';
+  if (source === 'hyperliquid') return 'Hyperliquid';
   return source.toUpperCase();
 }
 
@@ -114,7 +114,7 @@ export function watchlistSectionLabel(source: string) {
 }
 
 export function watchlistSections(instruments: Instrument[]) {
-  const preferred = ['bitget', 'hyperliquid-testnet'];
+  const preferred = ['bitget', 'hyperliquid'];
   const sources = [
     ...preferred.filter((source) => instruments.some((instrument) => instrument.source === source)),
     ...Array.from(new Set(instruments.map((instrument) => instrument.source)))
@@ -130,7 +130,7 @@ export function watchlistSections(instruments: Instrument[]) {
 
 export function addInstrumentBySource(result: InstrumentSearchResult) {
   if (result.source === 'bitget') return addBitgetSymbol(result);
-  return addHyperliquidTestnetSymbol(result);
+  return addHyperliquidSymbol(result);
 }
 
 export function formatLevelPrice(price: number | null) {

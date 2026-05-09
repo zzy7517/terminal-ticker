@@ -2,7 +2,13 @@ import { ColorType } from 'lightweight-charts';
 
 export const GROUP_LABELS: Record<string, string> = {
   bitget: 'Bitget',
-  'hyperliquid-testnet': 'Hyperliquid Testnet',
+  hyperliquid: 'Hyperliquid',
+  crypto: 'Crypto',
+  stocks: 'Stocks',
+  indices: 'Indices',
+  commodities: 'Commodities',
+  fx: 'FX',
+  preipo: 'Pre-IPO',
 };
 
 export const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
@@ -35,7 +41,7 @@ export const SOCIAL_HASH = '#/settings/social';
 export const THEME_STORAGE_KEY = 'mytradebot-theme';
 export const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
 export type SettingsSection = 'providers' | 'agent-context' | 'watchlist' | 'news' | 'social';
-export type SearchSource = 'bitget' | 'hyperliquid-testnet';
+export type SearchSource = 'bitget' | 'hyperliquid';
 export type SourceHint = SearchSource;
 export type ThemeName = 'light' | 'dark';
 

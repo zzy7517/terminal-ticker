@@ -50,8 +50,8 @@ class FeedWorkerTests(unittest.TestCase):
             with patch(
                 "mytradebot.runtime.feed.fetch_hyperliquid_snapshot_payloads",
                 return_value={
-                    "hyperliquid-testnet:BTC": {
-                        "id": "hyperliquid-testnet:BTC",
+                    "hyperliquid:BTC": {
+                        "id": "hyperliquid:BTC",
                         "price": 101000,
                     },
                 },
@@ -94,7 +94,7 @@ class FeedWorkerTests(unittest.TestCase):
             event = event_queue.get_nowait()
             self.assertEqual(event.kind, "error")
             self.assertEqual(event.payload["message"], "poll failed")
-            self.assertEqual(event.payload["ids"], ["hyperliquid-testnet:BTC"])
+            self.assertEqual(event.payload["ids"], ["hyperliquid:BTC"])
 
         asyncio.run(run_test())
 

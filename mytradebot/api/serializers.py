@@ -53,15 +53,23 @@ def instrument_catalog_item_payload(
     base_asset = getattr(instrument, "base_asset", instrument.symbol)
     quote_asset = getattr(instrument, "quote_asset", "")
     inst_type = getattr(instrument, "inst_type", None)
+    group = getattr(instrument, "group", None)
+    category = getattr(instrument, "category", None)
+    dex = getattr(instrument, "dex", None)
     if instrument.source == "bitget":
         display_text = f"{inst_type} · {base_asset}/{quote_asset}"
     else:
-        display_text = f"Testnet perp · {base_asset}/{quote_asset}"
+        prefix = (category or "perp").upper()
+        suffix = f" · {dex}" if dex else ""
+        display_text = f"{prefix} perp · {base_asset}/{quote_asset}{suffix}"
     return {
         "source": instrument.source,
         "symbol": instrument.symbol,
         "label": instrument.label,
         "instType": inst_type,
+        "group": group,
+        "category": category,
+        "dex": dex,
         "key": instrument.key,
         "displayText": display_text,
         "exists": instrument.key in active_keys,

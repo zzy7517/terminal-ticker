@@ -1,4 +1,4 @@
-"""交易工具：Hyperliquid 测试网 / Bitget 模拟盘下单 + 交易历史查询。"""
+"""交易工具：Hyperliquid 主网 / Bitget 模拟盘下单 + 交易历史查询。"""
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -10,11 +10,11 @@ from ...trading import (
     TradeDirection,
     TradeStatus,
     TradeStore,
-    open_testnet_position as open_hyperliquid_testnet_position,
+    open_hyperliquid_position,
 )
 from ...trading import bitget as bitget_trading
 from ...trading.exchange_models import OrderResult
-from ...config import HYPERLIQUID_TESTNET_SOURCE
+from ...config import HYPERLIQUID_SOURCE
 from .registry import ToolDefinition, ToolRegistry, _json_output
 
 
@@ -25,7 +25,7 @@ def build_trading_tools(
     session_id_provider: Callable[[], str | None] | None = None,
     exchange_router: Any = None,
 ) -> ToolRegistry:
-    """构建交易记录和 Hyperliquid 测试网工具集。
+    """构建交易记录和 Hyperliquid 主网工具集。
 
     snapshot_provider(instrument_key) 应返回当前多周期上下文字典，open 时冻结。
     session_id_provider() 返回当前 agent 会话 ID，用于串联 trade 与对话。
@@ -78,7 +78,7 @@ def build_trading_tools(
             return str(positions[0].side)
         return None
 
-    async def open_hyperliquid_testnet_trade(
+    async def open_hyperliquid_trade(
         instrument_key: str,
         direction: str,
         size: float,
@@ -89,12 +89,12 @@ def build_trading_tools(
         take_profit_price: float | None = None,
         stop_loss_price: float | None = None,
     ) -> str:
-        """在 Hyperliquid 测试网真实提交开仓订单，并同步记录到本地交易表。"""
-        if not instrument_key.startswith(f"{HYPERLIQUID_TESTNET_SOURCE}:"):
+        """在 Hyperliquid 主网真实提交开仓订单，并同步记录到本地交易表。"""
+        if not instrument_key.startswith(f"{HYPERLIQUID_SOURCE}:"):
             return _json_output({
                 "error": (
-                    "open_hyperliquid_testnet_trade only supports "
-                    f"{HYPERLIQUID_TESTNET_SOURCE}:* instruments"
+                    "open_hyperliquid_trade only supports "
+                    f"{HYPERLIQUID_SOURCE}:* instruments"
                 )
             })
         coin = instrument_key.split(":", 1)[1]
@@ -111,7 +111,7 @@ def build_trading_tools(
             return _json_output({"error": "take_profit_price and stop_loss_price are required when opening a trade"})
         is_buy = direction_enum is TradeDirection.LONG
         try:
-            result = open_hyperliquid_testnet_position(
+            result = open_hyperliquid_position(
                 coin=coin,
                 is_buy=is_buy,
                 size=float(size),
@@ -138,7 +138,7 @@ def build_trading_tools(
                 reasoning_text=reasoning,
                 session_id=_resolve_session_id(),
                 snapshot_id=snapshot_id,
-                market_kind="hyperliquid-testnet-perp",
+                market_kind="hyperliquid-perp",
                 fill_source=HYPERLIQUID_FILL_SOURCE,
                 status=status,
                 external_order_id=result.external_order_id,
@@ -150,7 +150,7 @@ def build_trading_tools(
                     kind=FillKind.ENTRY,
                     price=float(result.average_price),
                     quantity=float(result.filled_size),
-                    trigger_reason="hyperliquid testnet order filled",
+                    trigger_reason="hyperliquid order filled",
                     fill_source=HYPERLIQUID_FILL_SOURCE,
                     external_order_id=result.external_order_id,
                 )
@@ -160,27 +160,27 @@ def build_trading_tools(
 
         return _json_output({
             "ok": True,
-            "testnet": True,
+            "live": True,
             "trade": trade.to_payload(),
             "fill": fill.to_payload() if fill is not None else None,
             "order": result.raw,
         })
 
     registry.register(ToolDefinition(
-        name="open_hyperliquid_testnet_trade",
+        name="open_hyperliquid_trade",
         description=(
-            "在 Hyperliquid 测试网提交真实开仓订单，并把结果写入本地交易记录。"
+            "在 Hyperliquid 主网提交真实开仓订单，并把结果写入本地交易记录。"
             "开仓必须同时设置 take_profit_price 和 stop_loss_price。"
-            "只支持 hyperliquid-testnet:* 标的。需要环境变量 "
-            "HYPERLIQUID_TESTNET_PRIVATE_KEY，可选 HYPERLIQUID_TESTNET_ACCOUNT_ADDRESS / "
-            "HYPERLIQUID_TESTNET_VAULT_ADDRESS。market 单通过 SDK 以 IOC aggressive limit 实现。"
+            "只支持 hyperliquid:* 标的。需要环境变量 "
+            "HYPERLIQUID_PRIVATE_KEY，可选 HYPERLIQUID_ACCOUNT_ADDRESS / "
+            "HYPERLIQUID_VAULT_ADDRESS。market 单通过 SDK 以 IOC aggressive limit 实现。"
         ),
         parameters={
             "type": "object",
             "properties": {
                 "instrument_key": {
                     "type": "string",
-                    "description": "标的唯一标识，如 hyperliquid-testnet:BTC",
+                    "description": "标的唯一标识，如 hyperliquid:BTC 或 hyperliquid:flx:NVDA",
                 },
                 "direction": {"type": "string", "enum": ["long", "short"]},
                 "size": {"type": "number", "description": "合约数量，必须 > 0"},
@@ -220,7 +220,7 @@ def build_trading_tools(
                 "stop_loss_price",
             ],
         },
-        handler=open_hyperliquid_testnet_trade,
+        handler=open_hyperliquid_trade,
     ))
 
     def _record_exchange_trade(

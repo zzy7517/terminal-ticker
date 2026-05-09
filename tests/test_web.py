@@ -403,7 +403,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(payload[0]["instType"], "USDC-FUTURES")
         self.assertFalse(payload[0]["exists"])
         self.assertTrue(payload[1]["exists"])
-        self.assertEqual(payload[2]["source"], "hyperliquid-testnet")
+        self.assertEqual(payload[2]["source"], "hyperliquid")
 
     def test_runtime_start_preloads_instrument_catalog(self) -> None:
         """Verify app startup warms the provider catalogs before serving the UI."""
@@ -429,7 +429,7 @@ class WebTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["errors"], {})
-        self.assertEqual([item["key"] for item in payload["items"]], ["USDT-FUTURES:BTCUSDT", "hyperliquid-testnet:BTC"])
+        self.assertEqual([item["key"] for item in payload["items"]], ["USDT-FUTURES:BTCUSDT", "hyperliquid:BTC"])
 
     def test_bitget_add_endpoint_persists_symbol(self) -> None:
         """Verify browser can add Bitget symbols to the watchlist."""
@@ -468,7 +468,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(persisted.instruments[1].inst_type, "USDT-FUTURES")
 
     def test_hyperliquid_trade_endpoint_rejects_non_local_origin(self) -> None:
-        """Verify real testnet order endpoint rejects cross-site browser calls."""
+        """Verify real Hyperliquid order endpoint rejects cross-site browser calls."""
         instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
         app = create_app(
             config=AppConfig(instruments=tuple(), display=DisplayConfig()),
@@ -479,9 +479,46 @@ class WebTests(unittest.TestCase):
 
         with TestClient(app) as client:
             response = client.post(
-                "/api/hyperliquid-testnet/trades/hyperliquid-testnet%3ABTC",
+                "/api/hyperliquid/trades/hyperliquid%3ABTC",
                 headers={"origin": "https://example.com"},
                 json={"direction": "long", "size": 0.1},
+            )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_exchange_order_endpoint_rejects_non_local_origin(self) -> None:
+        """Verify generic exchange mutation route uses the trading local-only guard."""
+        instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/exchange/orders",
+                headers={"origin": "https://example.com"},
+                json={"instrumentKey": "hyperliquid:BTC", "direction": "long", "size": 0.1},
+            )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_exchange_cancel_endpoint_rejects_non_local_origin(self) -> None:
+        """Verify generic exchange cancel route uses the trading local-only guard."""
+        instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with TestClient(app) as client:
+            response = client.delete(
+                "/api/exchange/orders/hyperliquid/123?symbol=BTC",
+                headers={"origin": "https://example.com"},
             )
 
         self.assertEqual(response.status_code, 403)
@@ -496,10 +533,10 @@ class WebTests(unittest.TestCase):
             auto_start=False,
         )
 
-        with patch("mytradebot.api.runtime.open_hyperliquid_testnet_position") as opened:
+        with patch("mytradebot.api.runtime.open_hyperliquid_position") as opened:
             with TestClient(app) as client:
                 response = client.post(
-                    "/api/hyperliquid-testnet/trades/hyperliquid-testnet%3ABTC",
+                    "/api/hyperliquid/trades/hyperliquid%3ABTC",
                     json={"direction": "long", "size": 0.1, "orderType": "limit"},
                 )
 
@@ -508,7 +545,7 @@ class WebTests(unittest.TestCase):
         opened.assert_not_called()
 
     def test_hyperliquid_add_endpoint_persists_symbol(self) -> None:
-        """Verify browser can add Hyperliquid testnet symbols to the watchlist."""
+        """Verify browser can add Hyperliquid symbols to the watchlist."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "watchlist.toml"
             config_path.write_text(
@@ -533,7 +570,7 @@ class WebTests(unittest.TestCase):
             with patch("mytradebot.api.runtime.resolve_instruments", return_value=(bitget, hyperliquid)):
                 with TestClient(app) as client:
                     response = client.post(
-                        "/api/watchlist/hyperliquid-testnet",
+                        "/api/watchlist/hyperliquid",
                         json={"symbol": "ETH", "label": "ETH"},
                     )
             persisted = load_config(config_path)
@@ -541,7 +578,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["changed"])
         self.assertEqual(persisted.instruments[1].symbol, "ETH")
-        self.assertEqual(persisted.instruments[1].source, "hyperliquid-testnet")
+        self.assertEqual(persisted.instruments[1].source, "hyperliquid")
 
     def test_remove_instrument_endpoint_persists_bitget_symbol(self) -> None:
         """Verify browser can remove any active watchlist instrument by key."""

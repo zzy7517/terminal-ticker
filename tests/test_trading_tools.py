@@ -9,7 +9,11 @@ from unittest.mock import patch
 from mytradebot.agent.tools import ToolCall, build_trading_tools
 from mytradebot.trading import TradeStore, TradeStatus
 from mytradebot.trading.exchange_models import OrderResult
-from mytradebot.trading.hyperliquid import HyperliquidOrderResult
+from mytradebot.trading.hyperliquid import (
+    HyperliquidOrderResult,
+    HyperliquidTradingError,
+    open_position,
+)
 
 
 def _run(coro):
@@ -39,13 +43,30 @@ class TradingToolsTests(unittest.TestCase):
         self.assertFalse(result.error, result.output)
         return json.loads(result.output)
 
-    def test_registry_exposes_real_testnet_tool_not_local_paper_entry_tools(self) -> None:
+    def test_registry_exposes_real_hyperliquid_tool_not_local_paper_entry_tools(self) -> None:
         names = {tool.name for tool in self.registry.list_tools()}
-        self.assertIn("open_hyperliquid_testnet_trade", names)
+        self.assertIn("open_hyperliquid_trade", names)
         self.assertIn("open_bitget_demo_trade", names)
         self.assertNotIn("open_paper_trade", names)
         self.assertNotIn("cancel_paper_trade", names)
         self.assertNotIn("adjust_paper_trade", names)
+
+    def test_hyperliquid_mainnet_requires_explicit_enable_flag(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "HYPERLIQUID_PRIVATE_KEY": "0x" + "1" * 64,
+                "MYTRADEBOT_ENABLE_HYPERLIQUID_MAINNET_TRADING": "",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(HyperliquidTradingError, "mainnet trading is disabled"):
+                open_position(
+                    coin="BTC",
+                    is_buy=True,
+                    size=0.01,
+                    order_type="market",
+                )
 
     def test_open_hyperliquid_trade_records_real_fill_snapshot_and_session(self) -> None:
         fake_result = HyperliquidOrderResult(
@@ -55,16 +76,16 @@ class TradingToolsTests(unittest.TestCase):
             filled_size=0.25,
         )
         with patch(
-            "mytradebot.agent.tools.trading.open_hyperliquid_testnet_position",
+            "mytradebot.agent.tools.trading.open_hyperliquid_position",
             return_value=fake_result,
         ) as opened:
             data = self._exec(
-                "open_hyperliquid_testnet_trade",
+                "open_hyperliquid_trade",
                 {
-                    "instrument_key": "hyperliquid-testnet:BTC",
+                    "instrument_key": "hyperliquid:BTC",
                     "direction": "long",
                     "size": 0.25,
-                    "reasoning": "testnet execution",
+                    "reasoning": "live execution",
                     "order_type": "market",
                     "take_profit_price": 120.0,
                     "stop_loss_price": 90.0,
@@ -87,18 +108,18 @@ class TradingToolsTests(unittest.TestCase):
         self.assertEqual(trade["targetPrices"], [120.0])
         self.assertEqual(trade["stopPrice"], 90.0)
         self.assertEqual(trade["sessionId"], "sess-1")
-        self.assertEqual(trade["fillSource"], "hyperliquid-testnet")
+        self.assertEqual(trade["fillSource"], "hyperliquid")
         self.assertEqual(trade["externalOrderId"], "oid-1")
         self.assertIsNotNone(trade["snapshotId"])
-        self.assertEqual(data["fill"]["fillSource"], "hyperliquid-testnet")
+        self.assertEqual(data["fill"]["fillSource"], "hyperliquid")
         self.assertEqual(data["fill"]["externalOrderId"], "oid-1")
         snap = self.store.get_snapshot(trade["snapshotId"])
         assert snap is not None
-        self.assertEqual(snap.payload["key"], "hyperliquid-testnet:BTC")
+        self.assertEqual(snap.payload["key"], "hyperliquid:BTC")
 
-    def test_hyperliquid_trade_rejects_non_testnet_instrument(self) -> None:
+    def test_hyperliquid_trade_rejects_non_hyperliquid_instrument(self) -> None:
         data = self._exec(
-            "open_hyperliquid_testnet_trade",
+            "open_hyperliquid_trade",
             {
                 "instrument_key": "bitget:BTCUSDT:USDT-FUTURES",
                 "direction": "long",
@@ -110,9 +131,9 @@ class TradingToolsTests(unittest.TestCase):
 
     def test_reject_invalid_direction(self) -> None:
         data = self._exec(
-            "open_hyperliquid_testnet_trade",
+            "open_hyperliquid_trade",
             {
-                "instrument_key": "hyperliquid-testnet:BTC",
+                "instrument_key": "hyperliquid:BTC",
                 "direction": "sideways",
                 "size": 1.0,
                 "reasoning": "?",
@@ -122,9 +143,9 @@ class TradingToolsTests(unittest.TestCase):
 
     def test_limit_requires_limit_price(self) -> None:
         data = self._exec(
-            "open_hyperliquid_testnet_trade",
+            "open_hyperliquid_trade",
             {
-                "instrument_key": "hyperliquid-testnet:BTC",
+                "instrument_key": "hyperliquid:BTC",
                 "direction": "long",
                 "size": 1.0,
                 "reasoning": "?",
@@ -207,7 +228,7 @@ class TradingToolsTests(unittest.TestCase):
         data = self._exec(
             "open_bitget_demo_trade",
             {
-                "instrument_key": "hyperliquid-testnet:BTC",
+                "instrument_key": "hyperliquid:BTC",
                 "direction": "long",
                 "size": 0.01,
                 "reasoning": "wrong venue",

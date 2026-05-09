@@ -49,7 +49,7 @@ class ProviderTests(unittest.TestCase):
         configs = (
             InstrumentConfig(
                 symbol="BTC",
-                source="hyperliquid-testnet",
+                source="hyperliquid",
                 label="BTC",
                 group="watchlist",
             ),
@@ -64,13 +64,13 @@ class ProviderTests(unittest.TestCase):
                 instruments = resolve_instruments(configs)
 
         bitget_resolve.assert_not_called()
-        self.assertEqual(instruments[0].key, "hyperliquid-testnet:BTC")
+        self.assertEqual(instruments[0].key, "hyperliquid:BTC")
         self.assertEqual(instruments[0].group, "watchlist")
 
     def test_resolve_mixed_sources_preserves_watchlist_order(self) -> None:
         """Verify resolve mixed sources preserves watchlist order."""
         configs = (
-            InstrumentConfig(symbol="BTC", source="hyperliquid-testnet", label="BTC"),
+            InstrumentConfig(symbol="BTC", source="hyperliquid", label="BTC"),
             InstrumentConfig(symbol="BTCUSDT", source="bitget", inst_type="USDT-FUTURES"),
         )
         hyperliquid_instrument = HyperliquidInstrument("BTC", "BTC", "BTC")
@@ -95,7 +95,7 @@ class ProviderTests(unittest.TestCase):
 
         self.assertEqual(
             [instrument.key for instrument in instruments],
-            ["hyperliquid-testnet:BTC", "USDT-FUTURES:BTCUSDT"],
+            ["hyperliquid:BTC", "USDT-FUTURES:BTCUSDT"],
         )
 
 if __name__ == "__main__":
