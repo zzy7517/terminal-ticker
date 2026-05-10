@@ -1,9 +1,11 @@
-"""社交流工具：refresh_x_following_feed / get_recent_social_feed。"""
+"""社交流工具：refresh_x_following_feed / get_recent_social_feed / search_x_tweets。"""
 from __future__ import annotations
 
 from typing import Any
 
 from .registry import ToolDefinition, ToolRegistry, _json_output
+
+_SEARCH_PRODUCTS = {"Top", "Latest", "Photos", "Videos"}
 
 
 def build_social_feed_tools(social_feed_service: Any) -> ToolRegistry:
@@ -100,6 +102,67 @@ def build_social_feed_tools(social_feed_service: Any) -> ToolRegistry:
             },
         },
         handler=get_recent_social_feed,
+    ))
+
+    async def search_x_tweets(
+        query: str,
+        count: int = 20,
+        product: str = "Latest",
+    ) -> str:
+        """按关键词实时搜索 X/Twitter 推文，不写入本地缓存。"""
+        if social_feed_service is None:
+            return _disabled_reply("search X tweets")
+        resolved_query = (query or "").strip()
+        if not resolved_query:
+            return _json_output({
+                "status": "error",
+                "query": resolved_query,
+                "product": product,
+                "count": 0,
+                "items": [],
+                "error": "query is required",
+            })
+        resolved_count = max(1, min(int(count or 20), 100))
+        normalized_product = str(product or "Latest").strip().lower()
+        resolved_product = next(
+            (candidate for candidate in _SEARCH_PRODUCTS if candidate.lower() == normalized_product),
+            "Latest",
+        )
+        outcome = await social_feed_service.search_x_tweets(
+            query=resolved_query,
+            count=resolved_count,
+            product=resolved_product,
+        )
+        return _json_output({
+            "status": outcome.status,
+            "query": resolved_query,
+            "product": resolved_product,
+            "count": len(outcome.items),
+            "error": outcome.error,
+            "items": [_item_payload(item) for item in outcome.items],
+        })
+
+    registry.register(ToolDefinition(
+        name="search_x_tweets",
+        description=(
+            "实时搜索 X/Twitter 推文，用于按关键词主动查找市场消息。"
+            "不会写入本地 Following feed 缓存。"
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "搜索关键词，例如 BTC liquidation"},
+                "count": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100},
+                "product": {
+                    "type": "string",
+                    "default": "Latest",
+                    "enum": ["Top", "Latest", "Photos", "Videos"],
+                    "description": "搜索 tab，交易监控默认使用 Latest",
+                },
+            },
+            "required": ["query"],
+        },
+        handler=search_x_tweets,
     ))
 
     return registry

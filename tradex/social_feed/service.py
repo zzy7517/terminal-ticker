@@ -24,6 +24,15 @@ class SocialFeedRefreshOutcome:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class SocialFeedSearchOutcome:
+    """说明：一次 X 搜索结果摘要。"""
+
+    status: str
+    items: list[SocialFeedItem]
+    error: str | None = None
+
+
 class SocialFeedService:
     """说明：低频读取 X Following，并把结果写入本地 SQLite。"""
 
@@ -61,6 +70,17 @@ class SocialFeedService:
         resolved = self.recent_limit if limit is None else max(1, int(limit))
         return self.store.recent_items(limit=resolved, since_ms=since_ms, query=query)
 
+    async def search_x_tweets(
+        self,
+        *,
+        query: str,
+        count: int = 20,
+        product: str = "Latest",
+    ) -> SocialFeedSearchOutcome:
+        """手动触发一次 X 关键词搜索，不写入本地缓存。"""
+        async with self._refresh_lock:
+            return await asyncio.to_thread(self._search_x_tweets_sync, query, count, product)
+
     def _refresh_x_following_sync(self, count: int) -> SocialFeedRefreshOutcome:
         resolved_count = max(1, min(int(count), 200))
         try:
@@ -95,3 +115,25 @@ class SocialFeedService:
                 total_recent=len(self.store.recent_items(limit=self.recent_limit)),
                 error=self.last_error,
             )
+
+    def _search_x_tweets_sync(
+        self,
+        query: str,
+        count: int,
+        product: str,
+    ) -> SocialFeedSearchOutcome:
+        try:
+            resolved_count = max(1, min(int(count), 100))
+            client = self.client_factory()
+            items = client.fetch_search(
+                query=query,
+                count=resolved_count,
+                product=product,
+            )
+            if isinstance(items, tuple):
+                items = items[0]
+            return SocialFeedSearchOutcome(status="ok", items=items)
+        except Exception as exc:  # noqa: BLE001
+            error = str(exc) or exc.__class__.__name__
+            LOGGER.warning("social feed: X search failed: %s", error)
+            return SocialFeedSearchOutcome(status="error", items=[], error=error)

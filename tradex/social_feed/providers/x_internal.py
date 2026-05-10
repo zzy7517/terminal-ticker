@@ -3,8 +3,8 @@
 说明：这是参考 jackwener/twitter-cli (xcli) 的只读行为重写：
 https://github.com/jackwener/twitter-cli
 
-本文件不是 vendored copy，只保留读取 Following feed 所需的 cookie 鉴权、
-HomeLatestTimeline GraphQL 请求、timeline 解析和基础反限流处理。
+本文件不是 vendored copy，只保留读取 Following feed / Search 所需的 cookie 鉴权、
+HomeLatestTimeline / SearchTimeline GraphQL 请求、timeline 解析和基础反限流处理。
 不包含发推、点赞、关注等写操作。
 """
 from __future__ import annotations
@@ -30,6 +30,8 @@ from ..types import SocialAuthor, SocialFeedItem, SocialMetrics
 
 LOGGER = logging.getLogger(__name__)
 SOURCE_NAME = "x_following"
+SEARCH_SOURCE_NAME = "x_search"
+SEARCH_PRODUCTS = {"Top", "Latest", "Photos", "Videos"}
 TWITTER_OPENAPI_URL = (
     "https://raw.githubusercontent.com/fa0311/"
     "twitter-openapi/refs/heads/main/src/config/placeholder.json"
@@ -40,6 +42,7 @@ BEARER_TOKEN = (
 )
 FALLBACK_QUERY_IDS = {
     "HomeLatestTimeline": "BKB7oi212Fi7kQtCBGE4zA",
+    "SearchTimeline": "VhUd6vHVmLBcw0uX-6jMLA",
 }
 FEATURES = {
     "responsive_web_graphql_exclude_directive_enabled": True,
@@ -229,6 +232,14 @@ def _build_graphql_url(
     )
 
 
+def _normalize_search_product(product: str) -> str:
+    normalized = (product or "Latest").strip().lower()
+    for candidate in SEARCH_PRODUCTS:
+        if candidate.lower() == normalized:
+            return candidate
+    return "Latest"
+
+
 def _extract_author(user_data: dict[str, Any]) -> SocialAuthor:
     legacy = user_data.get("legacy", {}) if isinstance(user_data.get("legacy"), dict) else {}
     core = user_data.get("core", {}) if isinstance(user_data.get("core"), dict) else {}
@@ -258,6 +269,8 @@ def _parse_tweet_result(
     *,
     fetched_at_ms: int,
     depth: int = 0,
+    source: str = SOURCE_NAME,
+    query_name: str = "HomeLatestTimeline",
 ) -> SocialFeedItem | None:
     if depth > 2:
         return None
@@ -300,14 +313,20 @@ def _parse_tweet_result(
     )
     quoted = _deep_get(actual_data, "quoted_status_result", "result")
     quoted_item = (
-        _parse_tweet_result(quoted, fetched_at_ms=fetched_at_ms, depth=depth + 1)
+        _parse_tweet_result(
+            quoted,
+            fetched_at_ms=fetched_at_ms,
+            depth=depth + 1,
+            source=source,
+            query_name=query_name,
+        )
         if isinstance(quoted, dict)
         else None
     )
     created_at = _created_at_ms(str(actual_legacy.get("created_at") or ""), fetched_at_ms)
     url = f"https://x.com/{author.handle}/status/{tweet_id}" if tweet_id and author.handle else ""
     return SocialFeedItem(
-        source=SOURCE_NAME,
+        source=source,
         external_id=tweet_id,
         url=url,
         author=author,
@@ -327,7 +346,7 @@ def _parse_tweet_result(
         is_repost=is_repost,
         reposted_by=reposted_by or None,
         quoted_item=quoted_item,
-        raw={"typename": actual_data.get("__typename", ""), "query": "HomeLatestTimeline"},
+        raw={"typename": actual_data.get("__typename", ""), "query": query_name},
     )
 
 
@@ -336,6 +355,8 @@ def _parse_timeline_response(
     get_instructions: Callable[[Any], Any],
     *,
     fetched_at_ms: int,
+    source: str = SOURCE_NAME,
+    query_name: str = "HomeLatestTimeline",
 ) -> tuple[list[SocialFeedItem], str | None]:
     tweets: list[SocialFeedItem] = []
     next_cursor: str | None = None
@@ -360,7 +381,12 @@ def _parse_timeline_response(
             item_content = content.get("itemContent", {})
             result = _deep_get(item_content, "tweet_results", "result")
             if isinstance(result, dict):
-                tweet = _parse_tweet_result(result, fetched_at_ms=fetched_at_ms)
+                tweet = _parse_tweet_result(
+                    result,
+                    fetched_at_ms=fetched_at_ms,
+                    source=source,
+                    query_name=query_name,
+                )
                 if tweet is not None:
                     tweets.append(tweet)
 
@@ -373,7 +399,12 @@ def _parse_timeline_response(
                     "result",
                 )
                 if isinstance(nested_result, dict):
-                    tweet = _parse_tweet_result(nested_result, fetched_at_ms=fetched_at_ms)
+                    tweet = _parse_tweet_result(
+                        nested_result,
+                        fetched_at_ms=fetched_at_ms,
+                        source=source,
+                        query_name=query_name,
+                    )
                     if tweet is not None:
                         tweets.append(tweet)
     return tweets, next_cursor
@@ -432,13 +463,56 @@ class XInternalClient:
             return_cursor=return_cursor,
         )
 
+    def fetch_search(
+        self,
+        *,
+        query: str,
+        count: int = 20,
+        product: str = "Latest",
+        cursor: str | None = None,
+        return_cursor: bool = False,
+    ) -> list[SocialFeedItem] | tuple[list[SocialFeedItem], str | None]:
+        """按关键词搜索 X 推文。"""
+        resolved_query = (query or "").strip()
+        if not resolved_query:
+            raise XInternalError("X search query is required", status_code=400)
+        resolved_product = _normalize_search_product(product)
+        return self._fetch_timeline(
+            "SearchTimeline",
+            count=max(1, int(count)),
+            get_instructions=lambda data: _deep_get(
+                data,
+                "data",
+                "search_by_raw_query",
+                "search_timeline",
+                "timeline",
+                "instructions",
+            ),
+            extra_variables={
+                "rawQuery": resolved_query,
+                "querySource": "typed_query",
+                "product": resolved_product,
+            },
+            override_base_variables=True,
+            use_post=True,
+            source=SEARCH_SOURCE_NAME,
+            query_name="SearchTimeline",
+            start_cursor=cursor,
+            return_cursor=return_cursor,
+        )
+
     def _fetch_timeline(
         self,
         operation_name: str,
         *,
         count: int,
         get_instructions: Callable[[Any], Any],
+        extra_variables: dict[str, Any] | None = None,
+        override_base_variables: bool = False,
+        use_post: bool = False,
         include_promoted: bool = False,
+        source: str = SOURCE_NAME,
+        query_name: str | None = None,
         start_cursor: str | None = None,
         return_cursor: bool = False,
     ) -> list[SocialFeedItem] | tuple[list[SocialFeedItem], str | None]:
@@ -450,20 +524,31 @@ class XInternalClient:
         max_attempts = int(math.ceil(count / 20.0)) + 2
 
         for attempt_index in range(max_attempts):
-            variables: dict[str, Any] = {
-                "count": min(count - len(tweets) + 5, 40),
-                "includePromotedContent": include_promoted,
-                "latestControlAvailable": True,
-                "requestContext": "launch",
-            }
+            if override_base_variables:
+                variables: dict[str, Any] = {"count": min(count - len(tweets) + 5, 40)}
+            else:
+                variables = {
+                    "count": min(count - len(tweets) + 5, 40),
+                    "includePromotedContent": include_promoted,
+                    "latestControlAvailable": True,
+                    "requestContext": "launch",
+                }
+            if extra_variables:
+                variables.update(extra_variables)
             if cursor:
                 variables["cursor"] = cursor
             fetched_at_ms = int(time.time() * 1000)
-            data = self._graphql_get(operation_name, variables)
+            data = (
+                self._graphql_post(operation_name, variables)
+                if use_post
+                else self._graphql_get(operation_name, variables)
+            )
             new_tweets, next_cursor = _parse_timeline_response(
                 data,
                 get_instructions,
                 fetched_at_ms=fetched_at_ms,
+                source=source,
+                query_name=query_name or operation_name,
             )
             for tweet in new_tweets:
                 if tweet.external_id and tweet.external_id not in seen_ids:
@@ -492,6 +577,29 @@ class XInternalClient:
                 refreshed_query_id = self._resolve_query_id(operation_name, prefer_fallback=False)
                 retry_url = _build_graphql_url(refreshed_query_id, operation_name, variables, FEATURES)
                 return self._api_get(retry_url)
+            raise
+
+    def _graphql_post(self, operation_name: str, variables: dict[str, Any]) -> dict[str, Any]:
+        query_id = self._resolve_query_id(operation_name, prefer_fallback=True)
+
+        def _post_with_query_id(resolved_query_id: str) -> dict[str, Any]:
+            url = f"https://x.com/i/api/graphql/{resolved_query_id}/{operation_name}"
+            compact_features = {key: value for key, value in FEATURES.items() if value is not False}
+            return self._api_post(
+                url,
+                {
+                    "variables": variables,
+                    "features": compact_features,
+                    "queryId": resolved_query_id,
+                },
+            )
+
+        try:
+            return _post_with_query_id(query_id)
+        except XInternalError as exc:
+            if exc.status_code in (404, 422):
+                refreshed_query_id = self._resolve_query_id(operation_name, prefer_fallback=False)
+                return _post_with_query_id(refreshed_query_id)
             raise
 
     def _resolve_query_id(self, operation_name: str, *, prefer_fallback: bool) -> str:
@@ -524,13 +632,27 @@ class XInternalClient:
         return query_id if isinstance(query_id, str) and query_id else None
 
     def _api_get(self, url: str) -> dict[str, Any]:
-        return self._api_request(url)
+        return self._api_request(url, method="GET")
 
-    def _api_request(self, url: str) -> dict[str, Any]:
+    def _api_post(self, url: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self._api_request(url, method="POST", body=body)
+
+    def _api_request(
+        self,
+        url: str,
+        *,
+        method: str,
+        body: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         headers = self._build_headers()
+        if method == "POST":
+            headers["Content-Type"] = "application/json"
         for attempt in range(self.max_retries + 1):
             try:
-                response = self.session.get(url, headers=headers, timeout=30)
+                if method == "POST":
+                    response = self.session.post(url, headers=headers, json=body or {}, timeout=30)
+                else:
+                    response = self.session.get(url, headers=headers, timeout=30)
             except Exception as exc:
                 raise XInternalError(f"X network error: {exc}") from exc
             if response.status_code == 429 and attempt < self.max_retries:

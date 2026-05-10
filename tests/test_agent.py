@@ -16,6 +16,7 @@ from tradex.agent import (
     ToolCall,
     ToolRegistry,
     build_market_tools,
+    build_social_feed_tools,
     _codex_request_headers,
     _read_codex_cli_credentials,
 )
@@ -405,6 +406,52 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(tools.get("get_candles").parameters["properties"]["count"]["minimum"], 1)
         self.assertEqual(tools.get("get_candles").parameters["properties"]["count"]["maximum"], 50)
         self.assertIn("interval", tools.get("get_candles").parameters["properties"])
+
+    def test_social_feed_tools_search_x_tweets(self) -> None:
+        """Verify X search is exposed as a bounded social-feed tool."""
+        item = SimpleNamespace(to_payload=lambda: {
+            "source": "x_search",
+            "externalId": "tweet-1",
+            "url": "https://x.com/test/status/tweet-1",
+            "author": {"handle": "test"},
+            "text": "BTC update",
+            "createdAt": "2026-05-10T00:00:00+00:00",
+            "metrics": {"likes": 1},
+            "urls": [],
+            "isRepost": False,
+            "repostedBy": None,
+        })
+
+        class FakeSocialFeedService:
+            def __init__(self) -> None:
+                self.calls = []
+
+            async def search_x_tweets(self, *, query: str, count: int, product: str):
+                self.calls.append({"query": query, "count": count, "product": product})
+                return SimpleNamespace(status="ok", items=[item], error=None)
+
+        service = FakeSocialFeedService()
+        tools = build_social_feed_tools(service)
+        definition = tools.get("search_x_tweets")
+
+        self.assertIsNotNone(definition)
+        self.assertEqual(definition.parameters["required"], ["query"])
+        self.assertEqual(definition.parameters["properties"]["product"]["default"], "Latest")
+
+        result = asyncio.run(tools.execute(ToolCall(
+            id="call_1",
+            name="search_x_tweets",
+            arguments={"query": " BTC ", "count": 999, "product": "latest"},
+        )))
+        payload = json.loads(result.output)
+
+        self.assertFalse(result.error)
+        self.assertEqual(service.calls, [{"query": "BTC", "count": 100, "product": "Latest"}])
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["query"], "BTC")
+        self.assertEqual(payload["product"], "Latest")
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["items"][0]["source"], "x_search")
 
     def test_session_store_persists_active_conversation(self) -> None:
         """Verify local agent sessions survive store re-instantiation."""
