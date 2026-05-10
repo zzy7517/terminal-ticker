@@ -49,7 +49,7 @@ from ..config.agent_models import (
     normalize_model,
     normalize_reasoning_effort,
 )
-from ..domain.price_action import Candle, merge_candles
+from ..domain.price_action import Candle
 from ..domain.quotes import QuoteState
 from ..market_data.bitget import (
     FUTURES_PRODUCT_TYPES,
@@ -62,7 +62,6 @@ from ..memory.backend import LocalMemoryBackend, MemoryAccessError
 from ..news import NewsService, NewsStore
 from ..news.providers.reuters import ReutersSitemapProvider
 from ..runtime.controller import TickerController
-from ..runtime.feed import CHART_CANDLE_LIMIT, OLDER_CANDLE_LIMIT
 from ..social_feed import SocialFeedService, SocialFeedStore, XAuthStore
 from ..trading import Trade, TradeStatus, TradeStore, ExchangeRouter
 from ..trading.bitget_demo import (
@@ -114,7 +113,6 @@ LOGGER = logging.getLogger(__name__)
 BITGET_CATALOG_PRODUCT_ORDER = {
     product_type: index for index, product_type in enumerate(FUTURES_PRODUCT_TYPES)
 }
-OLDER_CANDLE_SOURCES = {BITGET_SOURCE, HYPERLIQUID_SOURCE}
 MANUAL_MEMORY_TRIGGERS = (
     "帮我记住",
     "请记住",
@@ -1509,51 +1507,6 @@ class MarketRuntime:
                 run_id,
                 bool(error_message),
             )
-
-    # ------------------------------------------------------------------
-    # Candle loading
-    # ------------------------------------------------------------------
-
-    async def load_older_candles(self, instrument_key: str) -> dict[str, Any]:
-        instrument = self._instrument_by_key(instrument_key)
-        if instrument.source not in OLDER_CANDLE_SOURCES:
-            raise HTTPException(status_code=400, detail="Older candle loading is not supported.")
-        quote = self.controller.quotes.get(instrument.key)
-        if quote is None:
-            raise HTTPException(status_code=404, detail="Quote is not available.")
-        interval = instrument.analysis_interval or self.config.analysis.interval
-        before_open_time_ms = quote.candles[0].open_time_ms if quote.candles else None
-        limit = OLDER_CANDLE_LIMIT if before_open_time_ms is not None else CHART_CANDLE_LIMIT
-        try:
-            incoming = await asyncio.to_thread(
-                self.controller.fetch_older_candles,
-                instrument,
-                interval=interval,
-                before_open_time_ms=before_open_time_ms,
-                limit=limit,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=str(exc) or exc.__class__.__name__) from exc
-        if before_open_time_ms is not None:
-            incoming = tuple(
-                candle for candle in incoming if candle.open_time_ms < before_open_time_ms
-            )
-        previous_count = len(quote.candles)
-        quote.apply_candles(
-            candles=merge_candles(quote.candles, tuple(incoming)),
-            thumbnail_candles=quote.thumbnail_candles,
-        )
-        added = max(0, len(quote.candles) - previous_count)
-        if added:
-            self.agent_analyses.pop(instrument.key, None)
-        await self.broadcast()
-        return {"added": added, "state": self.snapshot()}
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     async def _capture_manual_memory_request(self, user_prompt: str, *, session_id: str) -> None:
         if (

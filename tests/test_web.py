@@ -51,8 +51,6 @@ class DummyController:
         }
         self.stream_status = "idle"
         self.started = False
-        self.older_candles = tuple()
-        self.older_requests = []
 
     def start(self) -> None:
         """Record start calls."""
@@ -65,18 +63,6 @@ class DummyController:
     def drain_events(self) -> DrainResult:
         """Report no queued changes."""
         return DrainResult(dirty=False, flash_directions={})
-
-    def fetch_older_candles(
-        self,
-        instrument,
-        *,
-        interval,
-        before_open_time_ms,
-        limit,
-    ):
-        """Return fixture older candles for API tests."""
-        self.older_requests.append((instrument.key, interval, before_open_time_ms, limit))
-        return self.older_candles
 
 
 def _bitget_btc() -> BitgetInstrument:
@@ -191,17 +177,15 @@ class WebTests(unittest.TestCase):
         self.assertEqual(payload["type"], "state")
         self.assertIn(instrument.key, payload["quotes"])
 
-    def test_serialize_market_state_includes_quotes_and_candles(self) -> None:
-        """Verify browser state contains quote labels and chart data."""
+    def test_serialize_market_state_includes_quote_labels(self) -> None:
+        """Verify browser state contains quote labels and workspace metadata."""
         instrument = _bitget_btc()
         config = AppConfig(instruments=tuple(), display=DisplayConfig())
         quote = QuoteState.placeholder("AAPL")
         quote.apply_payload({"short_name": "AAPL", "price": 201.25, "change_percent": 0.72})
         candle = Candle("USDT-FUTURES:BTCUSDT", 1776846000000, 200, 202, 199, 201.25, 12345)
-        thumbnail_candle = Candle("USDT-FUTURES:BTCUSDT", 1776849600000, 201, 203, 200, 202.25, 14000)
         quote.apply_candles(
             candles=(candle,),
-            thumbnail_candles=(thumbnail_candle,),
         )
 
         payload = serialize_market_state(
@@ -215,9 +199,9 @@ class WebTests(unittest.TestCase):
         self.assertEqual(payload["instruments"][0]["instType"], "USDT-FUTURES")
         self.assertEqual(payload["quotes"][instrument.key]["priceLabel"], "201.25")
         self.assertNotIn("priceAction", payload["quotes"][instrument.key])
-        self.assertEqual(payload["quotes"][instrument.key]["multiTimeframeIntervals"], [])
-        self.assertEqual(payload["quotes"][instrument.key]["candles"][0]["time"], 1776846000)
-        self.assertEqual(payload["quotes"][instrument.key]["thumbnailCandles"][0]["time"], 1776849600)
+        self.assertNotIn("candles", payload["quotes"][instrument.key])
+        self.assertNotIn("thumbnailCandles", payload["quotes"][instrument.key])
+        self.assertNotIn("multiTimeframeIntervals", payload["quotes"][instrument.key])
         self.assertEqual(payload["instruments"][0]["analysisInterval"], "5m")
         self.assertEqual(payload["config"]["agent"]["provider"], "codex")
         self.assertNotIn("baseUrl", payload["config"]["agent"])
@@ -320,59 +304,6 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertIn("trading API origin denied", response.text)
-
-    def test_load_older_candles_endpoint_merges_history(self) -> None:
-        """Verify browser can request earlier candles for the selected chart."""
-        instrument = _bitget_btc()
-        app = create_app(
-            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
-            instruments=(instrument,),
-            controller_factory=DummyController,
-            auto_start=False,
-        )
-        runtime = app.state.runtime
-        existing = Candle("USDT-FUTURES:BTCUSDT", 1777406400000, 200, 202, 199, 201.25, 12345)
-        older = Candle("USDT-FUTURES:BTCUSDT", 1777406100000, 199, 201, 198.5, 200.0, 12000)
-        runtime.controller.quotes[instrument.key].apply_candles(candles=(existing,))
-        runtime.controller.older_candles = (older,)
-
-        with TestClient(app) as client:
-            response = client.post("/api/instruments/USDT-FUTURES%3ABTCUSDT/candles/older")
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["added"], 1)
-        self.assertEqual(
-            runtime.controller.older_requests,
-            [("USDT-FUTURES:BTCUSDT", "5m", 1777406400000, 200)],
-        )
-        self.assertEqual(
-            [item["time"] for item in payload["state"]["quotes"]["USDT-FUTURES:BTCUSDT"]["candles"]],
-            [1777406100, 1777406400],
-        )
-
-    def test_load_older_candles_rejects_unsupported_provider(self) -> None:
-        """Verify unsupported providers do not issue ambiguous history requests."""
-        class UnsupportedInstrument:
-            symbol = "TEST"
-            label = "TEST"
-            source = "paper"
-            group = "other"
-            analysis_interval = None
-            key = "paper:TEST"
-
-        instrument = UnsupportedInstrument()
-        app = create_app(
-            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
-            instruments=(instrument,),
-            controller_factory=DummyController,
-            auto_start=False,
-        )
-
-        with TestClient(app) as client:
-            response = client.post("/api/instruments/paper%3ATEST/candles/older")
-
-        self.assertEqual(response.status_code, 400)
 
     def test_catalog_endpoint_returns_preloaded_symbols(self) -> None:
         """Verify preloaded instrument catalog reports source, inst_type, and active state."""

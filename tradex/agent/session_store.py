@@ -1,4 +1,4 @@
-"""文件用途：本地持久化 K-line agent 会话和消息历史。"""
+"""文件用途：本地持久化 agent 会话和消息历史。"""
 from __future__ import annotations
 
 from dataclasses import dataclass

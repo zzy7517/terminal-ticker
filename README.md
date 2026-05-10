@@ -1,13 +1,13 @@
 # tradex
 
-tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 主网行情、React 图表、LLM Agent、Reuters 新闻和本地 SQLite 交易记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
+tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 主网行情、LLM Agent、Reuters 新闻和本地 SQLite 交易记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
 
 它不是生产级交易终端。显式配置凭证并在 `watchlist.toml` 打开平台交易权限后，可以向 Hyperliquid 主网提交真实订单；Bitget 仍只使用 Demo Trading。外部订单号会写回本地 SQLite。
 
 ## 现在它能做什么
 
 - **行情监控**：订阅 Bitget futures，拉取 Hyperliquid 主网快照、K 线与 extended stats。
-- **多周期图表**：前端展示 watchlist、实时价格、K 线、成交量、均线、VWAP、布林带、RSI、MACD、ATR，并支持图表画线。
+- **行情工作区**：前端展示 watchlist、实时价格摘要、Agent、新闻、社交动态和持仓面板。
 - **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Hyperliquid 主网标的，也可以直接编辑 `watchlist.toml`。
 - **Agent 分析**：支持 Codex Responses provider 和 Anthropic Messages provider。Agent 可以读取行情、K 线、新闻和本地交易记录，并返回结构化交易观察。
 - **会话持久化**：每个标的都有独立 Agent session，历史记录保存在本地 SQLite，可以 resume、reset 或删除。
@@ -38,7 +38,7 @@ React + Vite frontend
 - `tradex/agent/`：LLM provider、agent loop、工具和 session 存储。
 - `tradex/trading/`：交易数据模型、SQLite store、Hyperliquid 主网 / Bitget Demo Trading 客户端和 review controller。
 - `tradex/news/`：Reuters 新闻抓取、存储和 API 数据源。
-- `web/src/App.tsx`：主 UI，包含 Chart、Agent、Positions 和设置页面。
+- `web/src/App.tsx`：主 UI，包含 watchlist、Agent、Positions 和设置页面。
 
 ## 快速启动
 
@@ -302,12 +302,10 @@ Content-Type: application/json
 主界面分几块：
 
 - **Watchlist**：左侧标的列表、分组、搜索、价格和涨跌幅。
-- **Chart**：主 K 线图，支持周期切换、指标显示和本地画线。
+- **Market Summary**：当前聚焦标的的价格、来源、周期和基础统计摘要。
 - **Agent**：按标的发起分析，查看和恢复历史 session。
 - **Positions**：查看交易记录、fills、history、lessons 和手动复盘。
 - **Settings**：管理 Providers、Watchlist 和 News 配置。
-
-画线数据保存在浏览器 localStorage，不会写入后端数据库。
 
 ## 本地数据
 
@@ -318,7 +316,7 @@ Content-Type: application/json
 - `~/.cache/tradex/trades.sqlite3`：交易记录、fills、snapshots、lessons。
 - `~/.cache/tradex/news.sqlite3`：新闻、新闻决策和处理状态。
 - `~/.cache/tradex/candles.sqlite3`：默认 K 线 cache；如果设置了 `XDG_CACHE_HOME` 或 `[cache].path`，会使用对应路径。
-- 浏览器 localStorage：图表画线和部分前端偏好。
+- 浏览器 localStorage：主题和部分前端偏好。
 
 这些数据都是本地优先，没有服务端账号体系。
 
@@ -326,7 +324,7 @@ Content-Type: application/json
 
 常用接口：
 
-- `GET /api/state`：当前 watchlist、报价、K 线、provider 状态。
+- `GET /api/state`：当前 watchlist、报价、provider 状态。
 - `GET /api/instruments/catalog`：读取启动时预加载的可添加标的目录，前端基于它做本地搜索。
 - `POST /api/watchlist/bitget`：添加 Bitget 标的。
 - `GET /api/agent/models`：当前 provider 可用模型。

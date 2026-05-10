@@ -1,5 +1,3 @@
-import { ColorType } from 'lightweight-charts';
-
 export const GROUP_LABELS: Record<string, string> = {
   bitget: 'Bitget',
   hyperliquid: 'Hyperliquid',
@@ -19,8 +17,8 @@ export const AGENT_PROVIDER_OPTIONS = [
     label: 'Codex',
     apiMode: 'codex_responses',
     defaultModel: 'gpt-5.4-mini',
-    description: 'Responses adapter for chart analysis',
-    detail: 'Codex Responses adapter used by the chart agent for structured commentary and watch-plan output.',
+    description: 'Responses adapter for market analysis',
+    detail: 'Codex Responses adapter used by the local agent for structured commentary and watch-plan output.',
     supportsReasoning: true,
   },
   {
@@ -29,7 +27,7 @@ export const AGENT_PROVIDER_OPTIONS = [
     apiMode: 'anthropic_messages',
     defaultModel: DEFAULT_ANTHROPIC_MODEL,
     description: 'Messages adapter via x-api-key',
-    detail: 'Anthropic Messages adapter used by the chart agent through the official or custom endpoint.',
+    detail: 'Anthropic Messages adapter used by the local agent through the official or custom endpoint.',
     supportsReasoning: false,
   },
 ] as const;
@@ -53,73 +51,4 @@ export type AppRoute =
 export const THEME_LABELS: Record<ThemeName, string> = {
   light: 'Light',
   dark: 'Dark',
-};
-
-export const CHART_THEMES = {
-  light: {
-    chart: {
-      layout: {
-        background: { type: ColorType.Solid, color: '#fbfcfb' },
-        textColor: 'rgba(39, 49, 49, 0.64)',
-        fontFamily: 'Aptos, "Avenir Next", "Segoe UI", sans-serif',
-      },
-      grid: {
-        vertLines: { color: 'rgba(42, 66, 70, 0.07)' },
-        horzLines: { color: 'rgba(42, 66, 70, 0.09)' },
-      },
-      rightPriceScale: {
-        borderColor: 'rgba(42, 66, 70, 0.14)',
-        scaleMargins: { top: 0.12, bottom: 0.14 },
-      },
-      timeScale: {
-        borderColor: 'rgba(42, 66, 70, 0.14)',
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      crosshair: {
-        vertLine: { color: 'rgba(15, 124, 144, 0.38)' },
-        horzLine: { color: 'rgba(15, 124, 144, 0.38)' },
-      },
-    },
-    series: {
-      upColor: '#2e9a66',
-      downColor: '#c65047',
-      wickUpColor: '#25885b',
-      wickDownColor: '#b3433d',
-      borderVisible: false,
-    },
-  },
-  dark: {
-    chart: {
-      layout: {
-        background: { type: ColorType.Solid, color: '#0e0f11' },
-        textColor: 'rgba(186, 193, 204, 0.72)',
-        fontFamily: 'Aptos, "Avenir Next", "Segoe UI", sans-serif',
-      },
-      grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.06)' },
-      },
-      rightPriceScale: {
-        borderColor: 'rgba(255, 255, 255, 0.08)',
-        scaleMargins: { top: 0.12, bottom: 0.14 },
-      },
-      timeScale: {
-        borderColor: 'rgba(255, 255, 255, 0.08)',
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      crosshair: {
-        vertLine: { color: 'rgba(79, 140, 255, 0.42)' },
-        horzLine: { color: 'rgba(79, 140, 255, 0.42)' },
-      },
-    },
-    series: {
-      upColor: '#00b076',
-      downColor: '#ff4466',
-      wickUpColor: '#00b076',
-      wickDownColor: '#ff4466',
-      borderVisible: false,
-    },
-  },
 };

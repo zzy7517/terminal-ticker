@@ -129,7 +129,7 @@ export async function createAgentSession(options?: {
   return response.json();
 }
 
-// Loads an agent session by id, or a legacy active chart-agent session by instrument key.
+// Loads an agent session by id, or a legacy active instrument-scoped session by instrument key.
 export async function fetchAgentSession(key: string): Promise<AgentSessionResponse> {
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}`);
   if (!response.ok) {
@@ -418,31 +418,6 @@ export async function memorySearch(queries: string[], path?: string): Promise<Me
   });
   if (!response.ok) {
     throw await responseError(response, 'memory search failed');
-  }
-  return response.json();
-}
-
-// Saves the selected K-line interval for a single watchlist instrument.
-export async function saveInstrumentAnalysisInterval(key: string, interval: string): Promise<MarketState> {
-  const response = await fetch(`/api/instruments/${encodeURIComponent(key)}/analysis-interval`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ interval }),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'instrument interval save failed');
-  }
-  const payload = await response.json();
-  return payload.state;
-}
-
-// Requests another historical candle page for the selected instrument.
-export async function loadOlderCandles(key: string): Promise<{ added: number; state: MarketState }> {
-  const response = await fetch(`/api/instruments/${encodeURIComponent(key)}/candles/older`, {
-    method: 'POST',
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'older candles request failed');
   }
   return response.json();
 }

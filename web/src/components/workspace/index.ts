@@ -1,6 +1,5 @@
 export { ConnectionBadge } from './ConnectionBadge';
 export { StatTile } from './StatTile';
-export { CandlestickPane, intervalOptions } from './CandlestickPane';
 export { WatchlistRow } from './WatchlistRow';
 export { NewsPanel } from './NewsPanel';
 export { SocialFeedPanel } from './SocialFeedPanel';

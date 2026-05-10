@@ -8,7 +8,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "lightweight-charts": "^5.0.9",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

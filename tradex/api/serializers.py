@@ -6,12 +6,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..config import AppConfig
-from ..domain.price_action import Candle
 from ..domain.quotes import QuoteState
 from ..market_data.router import MarketInstrument
 
-THUMBNAIL_CANDLE_LIMIT = 60
-DEFAULT_AGENT_USER_PROMPT = "Analyze the current K-line chart and update the watch plan."
+DEFAULT_AGENT_USER_PROMPT = "Analyze the current market structure and update the watch plan."
 
 
 def utc_now_iso() -> str:
@@ -76,17 +74,6 @@ def instrument_catalog_item_payload(
     }
 
 
-def candle_payload(candle: Candle) -> dict[str, Any]:
-    return {
-        "time": candle.open_time_ms // 1000,
-        "open": candle.open,
-        "high": candle.high,
-        "low": candle.low,
-        "close": candle.close,
-        "volume": candle.volume,
-    }
-
-
 def quote_payload(
     quote: QuoteState,
     *,
@@ -113,12 +100,6 @@ def quote_payload(
         "stale": quote.is_stale(stale_after_seconds),
         "lastError": quote.last_error,
         "updateCount": quote.update_count,
-        "multiTimeframeIntervals": sorted(quote.multi_timeframe_candles.keys()),
-        "candles": [candle_payload(candle) for candle in quote.candles],
-        "thumbnailCandles": [
-            candle_payload(candle)
-            for candle in quote.thumbnail_candles[-THUMBNAIL_CANDLE_LIMIT:]
-        ],
     }
 
 

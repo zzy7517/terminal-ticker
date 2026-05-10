@@ -5,8 +5,6 @@ import {
   connectStateSocket,
   fetchInstrumentCatalog,
   fetchState,
-  loadOlderCandles,
-  saveInstrumentAnalysisInterval,
 } from '../api';
 import { orderedGroups } from '../utils';
 import { useUiStore } from './uiStore';
@@ -27,11 +25,7 @@ interface MarketStoreState {
   }) => void;
   setSocketStatus: (status: string) => void;
   initSocket: () => () => void;
-  updateAnalysisInterval: (interval: string) => Promise<void>;
-  loadOlderForSelected: () => Promise<void>;
 }
-
-const olderBusyRef = { current: null as string | null };
 
 export const useMarketStore = create<MarketStoreState>((set, get) => ({
   state: null,
@@ -89,56 +83,6 @@ export const useMarketStore = create<MarketStoreState>((set, get) => ({
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       socket?.close();
     };
-  },
-
-  updateAnalysisInterval: async (interval) => {
-    const { state } = get();
-    const ui = useUiStore.getState();
-    const { selectedKey, analysisIntervalBusy } = ui;
-    const selectedInstrument = state?.instruments.find((i) => i.key === selectedKey);
-    if (!state || !selectedKey || interval === selectedInstrument?.analysisInterval || analysisIntervalBusy) return;
-    ui.setAnalysisIntervalBusy(true);
-    try {
-      const nextState = await saveInstrumentAnalysisInterval(selectedKey, interval);
-      set({ state: nextState });
-    } catch (error) {
-      console.error(error);
-    } finally {
-      ui.setAnalysisIntervalBusy(false);
-    }
-  },
-
-  loadOlderForSelected: async () => {
-    const { state } = get();
-    const ui = useUiStore.getState();
-    const { selectedKey, exhaustedHistoryKeys } = ui;
-    const selectedInstrument = state?.instruments.find((i) => i.key === selectedKey);
-    const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
-    const historyKey = selectedKey ? `${selectedKey}:${currentInterval}` : null;
-
-    if (
-      !selectedKey || !selectedInstrument || !historyKey ||
-      olderBusyRef.current === historyKey ||
-      exhaustedHistoryKeys.has(historyKey) ||
-      !['bitget', 'hyperliquid'].includes(selectedInstrument.source)
-    ) return;
-
-    olderBusyRef.current = historyKey;
-    ui.setOlderBusyKey(historyKey);
-    try {
-      const payload = await loadOlderCandles(selectedKey);
-      set({ state: payload.state });
-      if (payload.added === 0) {
-        ui.markHistoryExhausted(historyKey);
-      } else {
-        ui.clearHistoryExhausted(historyKey);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      olderBusyRef.current = null;
-      ui.setOlderBusyKey(null);
-    }
   },
 }));
 

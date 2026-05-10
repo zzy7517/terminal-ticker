@@ -114,7 +114,7 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.quotes[key].last_error, "missing credentials")
 
     def test_candle_event_stores_candles_without_flash(self) -> None:
-        """Verify candle events update chart data without price flash."""
+        """Verify candle events update local candle state without price flash."""
         key = self.instruments[0].key
         candles = (
             Candle(key, 1, 100, 101, 99, 100.5, 1000),
@@ -155,26 +155,6 @@ class ControllerTests(unittest.TestCase):
         self.controller.drain_events()
 
         self.assertEqual(self.controller.quotes[key].candles, (older, refreshed_current))
-
-    def test_candle_event_stores_thumbnail_candles(self) -> None:
-        """Verify candle events can update fixed thumbnail candles."""
-        key = self.instruments[0].key
-        thumbnail_candles = (
-            Candle(key, 1, 100, 101, 99, 100.5, 1000),
-        )
-        self.controller.event_queue.put(
-            FeedEvent(
-                "candles",
-                {
-                    "id": key,
-                    "thumbnail_candles": thumbnail_candles,
-                },
-            )
-        )
-
-        self.controller.drain_events()
-
-        self.assertEqual(self.controller.quotes[key].thumbnail_candles, thumbnail_candles)
 
 
 if __name__ == "__main__":

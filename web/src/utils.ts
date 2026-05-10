@@ -1,7 +1,6 @@
 import type {
   AgentMessage,
   AgentStreamPayload,
-  CandlePoint,
   Instrument,
   InstrumentSearchResult,
   MarketState,
@@ -154,22 +153,6 @@ export function formatSignedNumber(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return '-';
   const prefix = value > 0 ? '+' : '';
   return `${prefix}${value.toFixed(2)}`;
-}
-
-export function candleRangeLabel(candles: CandlePoint[]) {
-  if (candles.length === 0) return '-';
-  const low = Math.min(...candles.map((item) => item.low));
-  const high = Math.max(...candles.map((item) => item.high));
-  if (!Number.isFinite(low) || !Number.isFinite(high)) return '-';
-  return `${formatLevelPrice(low)} / ${formatLevelPrice(high)}`;
-}
-
-export function closeDeltaPercent(candles: CandlePoint[]) {
-  if (candles.length < 2) return null;
-  const first = candles[0].close;
-  const last = candles[candles.length - 1].close;
-  if (!Number.isFinite(first) || first === 0 || !Number.isFinite(last)) return null;
-  return ((last - first) / Math.abs(first)) * 100;
 }
 
 export function upsertAgentMessage(messages: AgentMessage[], message: AgentMessage) {

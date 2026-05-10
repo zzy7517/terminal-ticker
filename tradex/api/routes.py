@@ -165,10 +165,6 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
     ) -> dict[str, Any]:
         return await runtime.update_instrument_analysis_interval(instrument_key, payload)
 
-    @app.post("/api/instruments/{instrument_key}/candles/older")
-    async def load_older_candles_endpoint(instrument_key: str) -> dict[str, Any]:
-        return await runtime.load_older_candles(instrument_key)
-
     @app.post("/api/agent/analyze/{instrument_key}")
     async def analyze_instrument_endpoint(instrument_key: str) -> dict[str, Any]:
         return await runtime.analyze_instrument(instrument_key)

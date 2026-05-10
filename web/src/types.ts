@@ -1,12 +1,3 @@
-export interface CandlePoint {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
-
 export interface LoopToolCall {
   id: string;
   name: string;
@@ -349,9 +340,6 @@ export interface Quote {
   stale: boolean;
   lastError: string | null;
   updateCount: number;
-  multiTimeframeIntervals: string[];
-  candles: CandlePoint[];
-  thumbnailCandles: CandlePoint[];
 }
 
 export interface Instrument {

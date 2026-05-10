@@ -107,7 +107,6 @@ class QuoteState:
     update_count: int = 0
     last_error: str | None = None
     candles: tuple[Candle, ...] = tuple()
-    thumbnail_candles: tuple[Candle, ...] = tuple()
     multi_timeframe_candles: dict[str, tuple[Candle, ...]] = None
 
     def __post_init__(self) -> None:
@@ -175,13 +174,10 @@ class QuoteState:
         self,
         *,
         candles: tuple[Candle, ...] = tuple(),
-        thumbnail_candles: tuple[Candle, ...] | None = None,
         multi_timeframe_candles: dict[str, tuple[Candle, ...]] | None = None,
     ) -> None:
-        """说明：把图表 K 线写入报价状态。"""
+        """说明：把分析所需 K 线写入报价状态。"""
         self.candles = candles
-        if thumbnail_candles is not None:
-            self.thumbnail_candles = thumbnail_candles
         if multi_timeframe_candles is not None:
             self.multi_timeframe_candles = dict(multi_timeframe_candles)
 

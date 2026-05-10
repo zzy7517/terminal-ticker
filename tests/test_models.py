@@ -66,7 +66,7 @@ class QuoteStateTests(unittest.TestCase):
         self.assertTrue(label.endswith("ms"))
 
     def test_apply_candles_stores_chart_candles(self) -> None:
-        """Verify chart candles are tracked for charting and agent context."""
+        """Verify candles are tracked for agent context."""
         quote = QuoteState.placeholder("BTCUSDT")
         candles = (
             Candle(
@@ -83,17 +83,6 @@ class QuoteStateTests(unittest.TestCase):
         quote.apply_candles(candles=candles)
 
         self.assertEqual(quote.candles, candles)
-
-    def test_apply_candles_stores_thumbnail_candles(self) -> None:
-        """Verify thumbnail candles are tracked separately from chart candles."""
-        quote = QuoteState.placeholder("BTCUSDT")
-        thumbnail_candles = (
-            Candle("USDT-FUTURES:BTCUSDT", 1, 100, 101, 99, 100.5, 1000),
-        )
-
-        quote.apply_candles(thumbnail_candles=thumbnail_candles)
-
-        self.assertEqual(quote.thumbnail_candles, thumbnail_candles)
 
 
 if __name__ == "__main__":

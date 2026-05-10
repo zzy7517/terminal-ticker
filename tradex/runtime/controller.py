@@ -62,22 +62,6 @@ class TickerController:
             except RuntimeError:
                 pass
 
-    def fetch_older_candles(
-        self,
-        instrument: MarketInstrument,
-        *,
-        interval: str,
-        before_open_time_ms: int | None,
-        limit: int,
-    ):
-        """说明：同步拉取一批更早的历史 K 线。"""
-        return self.feed_worker.fetch_older_candles(
-            instrument,
-            interval=interval,
-            before_open_time_ms=before_open_time_ms,
-            limit=limit,
-        )
-
     def drain_events(self) -> DrainResult:
         """说明：消费所有排队事件并收集行闪动方向。"""
         dirty = False
@@ -143,9 +127,6 @@ class TickerController:
                 candles=merge_candles(self.quotes[key].candles, incoming_candles)
                 if incoming_candles
                 else tuple(),
-                thumbnail_candles=tuple(payload["thumbnail_candles"])
-                if "thumbnail_candles" in payload
-                else None,
                 multi_timeframe_candles={
                     interval: tuple(candles)
                     for interval, candles in multi_tf_raw.items()

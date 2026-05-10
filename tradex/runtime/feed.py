@@ -30,11 +30,6 @@ from ..market_data.router import MarketInstrument
 
 LOGGER = logging.getLogger(__name__)
 CHART_CANDLE_LIMIT = 1000
-OLDER_CANDLE_LIMIT = 200
-THUMBNAIL_INTERVAL = "1H"
-THUMBNAIL_CANDLE_LIMIT = 60
-THUMBNAIL_RETENTION_SECONDS = THUMBNAIL_CANDLE_LIMIT * 60 * 60
-THUMBNAIL_CACHE_MAX_AGE_SECONDS = 15 * 60
 MULTI_TIMEFRAME_CANDLE_LIMIT = 120
 MULTI_TIMEFRAME_STACKS = {
     "1m": ("1D", "4H", "1H", "15m", "5m", "1m"),
@@ -207,7 +202,7 @@ class FeedWorker(threading.Thread):
                 break
 
     async def _run_candles(self) -> None:
-        """说明：轮询 provider K 线并发送图表数据。"""
+        """说明：轮询 provider K 线并发送分析数据。"""
         while not self.stop_event.is_set():
             for instrument in (
                 self.bitget_instruments + self.hyperliquid_instruments
@@ -215,7 +210,6 @@ class FeedWorker(threading.Thread):
                 if self.stop_event.is_set():
                     break
                 candles = tuple()
-                thumbnail_candles = None
                 multi_timeframe_candles: dict[str, tuple] = {}
                 error = None
                 interval = getattr(instrument, "analysis_interval", None) or self.config.analysis.interval
@@ -257,18 +251,6 @@ class FeedWorker(threading.Thread):
                             exc,
                         )
 
-                try:
-                    thumbnail_candles = await self._thumbnail_candles(instrument, candles, interval)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    LOGGER.debug(
-                        "Thumbnail candles unavailable for %s %s: %s",
-                        instrument.key,
-                        THUMBNAIL_INTERVAL,
-                        exc,
-                    )
-
                 payload = {
                     "id": instrument.key,
                     "candles": candles,
@@ -276,8 +258,6 @@ class FeedWorker(threading.Thread):
                 }
                 if error is not None:
                     payload["error"] = error
-                if thumbnail_candles is not None:
-                    payload["thumbnail_candles"] = thumbnail_candles
                 self.event_queue.put(
                     FeedEvent(
                         "candles",
@@ -318,24 +298,6 @@ class FeedWorker(threading.Thread):
                 LOGGER.warning("Candle cache unavailable for %s %s: %s", instrument.key, interval, exc)
         return self._fetch_provider_candles(instrument, interval=interval, limit=limit)
 
-    async def _thumbnail_candles(
-        self,
-        instrument: MarketInstrument,
-        analysis_candles: tuple,
-        analysis_interval: str,
-    ):
-        """说明：返回固定 1 小时级别的缩略图 K 线。"""
-        if analysis_interval == THUMBNAIL_INTERVAL and len(analysis_candles) >= THUMBNAIL_CANDLE_LIMIT:
-            return analysis_candles[-THUMBNAIL_CANDLE_LIMIT:]
-        return await asyncio.to_thread(
-            self._fetch_candles,
-            instrument,
-            interval=THUMBNAIL_INTERVAL,
-            limit=THUMBNAIL_CANDLE_LIMIT,
-            minimum_retention_seconds=THUMBNAIL_RETENTION_SECONDS,
-            max_cache_age_seconds=THUMBNAIL_CACHE_MAX_AGE_SECONDS,
-        )
-
     def _fetch_provider_candles(
         self,
         instrument: MarketInstrument,
@@ -363,28 +325,6 @@ class FeedWorker(threading.Thread):
                 before_open_time_ms=before_open_time_ms,
             )
         raise ValueError(f"unsupported candle provider: {instrument!r}")
-
-    def fetch_older_candles(
-        self,
-        instrument: MarketInstrument,
-        *,
-        interval: str,
-        before_open_time_ms: int | None,
-        limit: int = OLDER_CANDLE_LIMIT,
-    ):
-        """说明：按最早缓存 K 线继续向前拉取一批历史 K 线。"""
-        candles = self._fetch_provider_candles(
-            instrument,
-            interval=interval,
-            limit=limit,
-            before_open_time_ms=before_open_time_ms,
-        )
-        if candles and self.candle_cache is not None:
-            try:
-                self.candle_cache.upsert(candles, interval=interval)
-            except (OSError, sqlite3.Error) as exc:
-                LOGGER.warning("Candle cache unavailable for %s %s: %s", instrument.key, interval, exc)
-        return candles
 
     def _handle_message(self, payload: dict[str, Any]) -> None:
         """说明：把一条 Bitget WebSocket 消息转发到事件队列。"""
