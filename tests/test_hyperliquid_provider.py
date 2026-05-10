@@ -2,8 +2,8 @@
 import unittest
 from unittest.mock import patch
 
-from mytradebot.config import HYPERLIQUID_SOURCE, InstrumentConfig
-from mytradebot.market_data.hyperliquid import (
+from tradex.config import HYPERLIQUID_SOURCE, InstrumentConfig
+from tradex.market_data.hyperliquid import (
     HyperliquidInstrument,
     _catalog_from_meta_payload,
     resolve_instruments,
@@ -27,7 +27,7 @@ class HyperliquidProviderTests(unittest.TestCase):
             ),
         )
 
-        with patch("mytradebot.market_data.hyperliquid.load_instrument_catalog", return_value=catalog):
+        with patch("tradex.market_data.hyperliquid.load_instrument_catalog", return_value=catalog):
             resolved = resolve_instruments(configured)
 
         self.assertEqual(resolved[0].symbol, "kPEPE")

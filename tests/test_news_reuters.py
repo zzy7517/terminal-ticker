@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 
-from mytradebot.news.providers.reuters import (
+from tradex.news.providers.reuters import (
     REUTERS_SOURCE,
     ReutersSitemapProvider,
     parse_sitemap,

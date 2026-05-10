@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from typing import Iterable
 
-from mytradebot.news import NewsItem, NewsService, NewsStore
-from mytradebot.news.providers.reuters import FetchResult
+from tradex.news import NewsItem, NewsService, NewsStore
+from tradex.news.providers.reuters import FetchResult
 
 
 class FakeProvider:

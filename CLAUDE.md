@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-All commands assume the repo's virtualenv at `.venv` (already present). Python code lives under `mytradebot/`; the frontend lives under `web/`.
+All commands assume the repo's virtualenv at `.venv` (already present). Python code lives under `tradex/`; the frontend lives under `web/`.
 
 ### Running the app
 
@@ -12,7 +12,7 @@ Dev mode needs two terminals:
 
 ```bash
 # Terminal 1 — backend (FastAPI + uvicorn on :8765)
-.venv/bin/python -m mytradebot --host 127.0.0.1 --port 8765
+.venv/bin/python -m tradex --host 127.0.0.1 --port 8765
 
 # Terminal 2 — Vite dev server on :5173 (proxies /api and /ws to :8765)
 npm run dev
@@ -22,7 +22,7 @@ Single-process mode (backend serves the built frontend on :8765):
 
 ```bash
 npm run build
-.venv/bin/python -m mytradebot --host 127.0.0.1 --port 8765
+.venv/bin/python -m tradex --host 127.0.0.1 --port 8765
 ```
 
 CLI overrides: `--config my.toml`, `--symbols USDT-FUTURES:BTCUSDT ...`, `--log-level DEBUG`.
@@ -64,14 +64,14 @@ This is a local-first market monitoring and LLM research tool. One Python proces
 
 ### Layering (read in this order if new to the codebase)
 
-The Python package `mytradebot/` is organized as strict layers. Upper layers import lower layers, never the reverse:
+The Python package `tradex/` is organized as strict layers. Upper layers import lower layers, never the reverse:
 
 1. **`domain/`** — pure dataclasses. `Candle` (OHLCV, self-validating), `QuoteState`, `merge_candles`. No I/O.
 2. **`config/`** — parses `watchlist.toml` → `AppConfig`. Also holds agent model normalization (`agent_models.py`) and `watchlist_store.py` which round-trips the TOML on add/remove from the UI.
 3. **`market_data/`** — per-provider adapters (`bitget.py`, `hyperliquid.py`) plus `router.py` which dispatches `InstrumentConfig` to the right provider and preserves watchlist order. `candle_cache.py` provides the local OHLCV cache that agent tools read from.
 4. **`runtime/`** — `feed.py` runs a background worker that streams quotes/candles from providers into a `queue.Queue` of `FeedEvent`s. `controller.py` (`TickerController`) drains that queue into an in-memory `QuoteState` map and tracks flash directions.
-5. **`trading/`** — local trade records and external live/demo execution. `store.py` is a SQLite-backed `TradeStore` at `~/.cache/mytradebot/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.py` submits signed Hyperliquid mainnet orders when `[trading].hyperliquid_enabled` is true; `bitget_demo.py` signs Bitget Demo Trading orders when `[trading].bitget_demo_enabled` is true. `review.py` orchestrates LLM post-trade reviews that produce lesson rows.
-6. **`agent/`** — LLM layer. `provider.py` builds the multi-timeframe context and normalizes model output to a fixed JSON schema. `providers/codex.py` and `providers/anthropic.py` implement the transport. `loop.py` is a tool-calling agent loop (OpenAI-style function calling internally, converted by each provider); `tools.py` defines the `ToolRegistry` plus two tool factories: `build_market_tools` (read-only data access) and `build_trading_tools` (Hyperliquid mainnet and Bitget demo order entry plus local trade history). `session_store.py` is a SQLite-backed per-instrument chat history at `~/.cache/mytradebot/agent_sessions.sqlite3`.
+5. **`trading/`** — local trade records and external live/demo execution. `store.py` is a SQLite-backed `TradeStore` at `~/.cache/tradex/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.py` submits signed Hyperliquid mainnet orders when `[trading].hyperliquid_enabled` is true; `bitget_demo.py` signs Bitget Demo Trading orders when `[trading].bitget_demo_enabled` is true. `review.py` orchestrates LLM post-trade reviews that produce lesson rows.
+6. **`agent/`** — LLM layer. `provider.py` builds the multi-timeframe context and normalizes model output to a fixed JSON schema. `providers/codex.py` and `providers/anthropic.py` implement the transport. `loop.py` is a tool-calling agent loop (OpenAI-style function calling internally, converted by each provider); `tools.py` defines the `ToolRegistry` plus two tool factories: `build_market_tools` (read-only data access) and `build_trading_tools` (Hyperliquid mainnet and Bitget demo order entry plus local trade history). `session_store.py` is a SQLite-backed per-instrument chat history at `~/.cache/tradex/agent_sessions.sqlite3`.
 7. **`api/app.py`** — the only place where async FastAPI meets the sync `TickerController`. It owns the `WebSocket` client set, broadcasts state snapshots (now including `openTrades`), runs a periodic review loop, and exposes all routes under `/api/*` plus `/ws`. This file is large (~1200 lines) because it's the integration seam.
 
 ### The one seam that matters

@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from mytradebot.agent import (
+from tradex.agent import (
     AgentLoop,
     AgentSessionStore,
     ChatResponse,
@@ -19,7 +19,7 @@ from mytradebot.agent import (
     _codex_request_headers,
     _read_codex_cli_credentials,
 )
-from mytradebot.agent.providers.codex import (
+from tradex.agent.providers.codex import (
     _codex_tools_payload,
     _collect_response_stream_full,
     _messages_to_codex_input,

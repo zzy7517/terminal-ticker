@@ -1,7 +1,7 @@
 """Test normalized candle primitives."""
 import unittest
 
-from mytradebot.domain.price_action import Candle
+from tradex.domain.price_action import Candle
 
 
 class CandleTests(unittest.TestCase):

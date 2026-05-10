@@ -208,7 +208,7 @@ function StoragePathInput({
               if (e.key === 'Enter') commit();
               if (e.key === 'Escape') cancel();
             }}
-            placeholder="~/.local/share/mytradebot/memories"
+            placeholder="~/.local/share/tradex/memories"
             disabled={disabled}
           />
           <button className="memory-browser-btn" type="button" onClick={commit} disabled={disabled}>
@@ -227,7 +227,7 @@ function StoragePathInput({
         >
           <Database size={12} />
           <span className="memory-storage-path-value">
-            {value || '~/.local/share/mytradebot/memories'}
+            {value || '~/.local/share/tradex/memories'}
           </span>
           {!value && <span className="memory-model-option-hint">default</span>}
         </button>

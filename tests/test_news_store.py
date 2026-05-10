@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mytradebot.news import NewsItem, NewsStore
+from tradex.news import NewsItem, NewsStore
 
 
 def _item(url: str, published_at_ms: int, title: str = "t") -> NewsItem:

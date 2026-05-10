@@ -7,12 +7,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from mytradebot.market_data.candle_cache import CandleCache
-from mytradebot.config import AnalysisConfig, AppConfig, DisplayConfig
-from mytradebot.runtime.feed import FeedWorker, THUMBNAIL_CANDLE_LIMIT, THUMBNAIL_INTERVAL
-from mytradebot.market_data.bitget import BitgetInstrument
-from mytradebot.market_data.hyperliquid import HyperliquidInstrument
-from mytradebot.domain.price_action import Candle
+from tradex.market_data.candle_cache import CandleCache
+from tradex.config import AnalysisConfig, AppConfig, DisplayConfig
+from tradex.runtime.feed import FeedWorker, THUMBNAIL_CANDLE_LIMIT, THUMBNAIL_INTERVAL
+from tradex.market_data.bitget import BitgetInstrument
+from tradex.market_data.hyperliquid import HyperliquidInstrument
+from tradex.domain.price_action import Candle
 
 
 class FeedWorkerTests(unittest.TestCase):
@@ -48,7 +48,7 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch(
-                "mytradebot.runtime.feed.fetch_hyperliquid_snapshot_payloads",
+                "tradex.runtime.feed.fetch_hyperliquid_snapshot_payloads",
                 return_value={
                     "hyperliquid:BTC": {
                         "id": "hyperliquid:BTC",
@@ -83,7 +83,7 @@ class FeedWorkerTests(unittest.TestCase):
             )
 
             with patch(
-                "mytradebot.runtime.feed.fetch_hyperliquid_snapshot_payloads",
+                "tradex.runtime.feed.fetch_hyperliquid_snapshot_payloads",
                 side_effect=RuntimeError("poll failed"),
             ):
                 task = asyncio.create_task(worker._run_hyperliquid())

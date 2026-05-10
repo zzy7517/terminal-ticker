@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from mytradebot.trading.bitget_demo import (
+from tradex.trading.bitget_demo import (
     BitgetDemoTradingError,
     _signed_post,
     _sign,
@@ -71,8 +71,8 @@ class BitgetDemoTradingTests(unittest.TestCase):
                 "BITGET_DEMO_PASSPHRASE": "pass",
             },
             clear=True,
-        ), patch("mytradebot.trading.bitget_demo.time.time", return_value=1.234), patch(
-            "mytradebot.trading.bitget_demo.urlopen",
+        ), patch("tradex.trading.bitget_demo.time.time", return_value=1.234), patch(
+            "tradex.trading.bitget_demo.urlopen",
             side_effect=fake_urlopen,
         ):
             payload = _signed_post("/api/v2/mix/order/place-order", {"symbol": "BTCUSDT"})
@@ -105,8 +105,8 @@ class BitgetDemoTradingTests(unittest.TestCase):
             captured["body"] = body
             return {"code": "00000", "data": {"orderId": "o-1", "clientOid": body["clientOid"]}}
 
-        with patch("mytradebot.trading.bitget_demo._client_oid", return_value="cid-1"), patch(
-            "mytradebot.trading.bitget_demo._signed_post",
+        with patch("tradex.trading.bitget_demo._client_oid", return_value="cid-1"), patch(
+            "tradex.trading.bitget_demo._signed_post",
             side_effect=fake_signed_post,
         ):
             result = open_demo_position(

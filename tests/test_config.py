@@ -4,8 +4,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from mytradebot.config import build_runtime_config, load_config, parse_config
-from mytradebot.config.agent_models import DEFAULT_CODEX_MODEL
+from tradex.config import build_runtime_config, load_config, parse_config
+from tradex.config.agent_models import DEFAULT_CODEX_MODEL
 
 
 class ConfigTests(unittest.TestCase):
@@ -115,14 +115,14 @@ class ConfigTests(unittest.TestCase):
                 "symbols": ["USDT-FUTURES:BTCUSDT"],
                 "cache": {
                     "enabled": False,
-                    "path": "~/tmp/mytradebot-cache.sqlite3",
+                    "path": "~/tmp/tradex-cache.sqlite3",
                     "candle_retention_seconds": 3_600,
                 },
             }
         )
 
         self.assertFalse(config.cache.enabled)
-        self.assertEqual(config.cache.path, Path("~/tmp/mytradebot-cache.sqlite3").expanduser())
+        self.assertEqual(config.cache.path, Path("~/tmp/tradex-cache.sqlite3").expanduser())
         self.assertEqual(config.cache.candle_retention_seconds, 3_600)
 
     def test_parse_config_supports_per_symbol_analysis_interval(self) -> None:

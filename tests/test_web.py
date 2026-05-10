@@ -11,8 +11,8 @@ from unittest.mock import patch
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from mytradebot.agent import AgentSessionStore, ChatResponse
-from mytradebot.config import (
+from tradex.agent import AgentSessionStore, ChatResponse
+from tradex.config import (
     AgentConfig,
     AppConfig,
     DisplayConfig,
@@ -21,21 +21,21 @@ from mytradebot.config import (
     TradingConfig,
     load_config,
 )
-from mytradebot.runtime.controller import DrainResult
-from mytradebot.market_data.bitget import BitgetInstrument
-from mytradebot.market_data.hyperliquid import HyperliquidInstrument
-from mytradebot.domain.quotes import QuoteState
-from mytradebot.domain.price_action import Candle
-from mytradebot.api.app import (
+from tradex.runtime.controller import DrainResult
+from tradex.market_data.bitget import BitgetInstrument
+from tradex.market_data.hyperliquid import HyperliquidInstrument
+from tradex.domain.quotes import QuoteState
+from tradex.domain.price_action import Candle
+from tradex.api.app import (
     PROJECT_ROOT,
     WEB_DIST,
     create_app,
 )
-from mytradebot.api.runtime import MarketContextProvider, MarketRuntime
-from mytradebot.api.serializers import serialize_market_state
-from mytradebot.memory import MemoryStateStore, SOURCE_MANUAL_NOTE
-from mytradebot.trading import BitgetDemoOrderResult
-from mytradebot.trading.store import TradeStore
+from tradex.api.runtime import MarketContextProvider, MarketRuntime
+from tradex.api.serializers import serialize_market_state
+from tradex.memory import MemoryStateStore, SOURCE_MANUAL_NOTE
+from tradex.trading import BitgetDemoOrderResult
+from tradex.trading.store import TradeStore
 
 
 class DummyController:
@@ -126,10 +126,10 @@ class WebTests(unittest.TestCase):
                 runtime.memory_pipeline = fake_pipeline  # type: ignore[assignment]
 
                 with patch(
-                    "mytradebot.api.runtime.load_bitget_instrument_catalog",
+                    "tradex.api.runtime.load_bitget_instrument_catalog",
                     return_value={},
                 ), patch(
-                    "mytradebot.api.runtime.load_hyperliquid_instrument_catalog",
+                    "tradex.api.runtime.load_hyperliquid_instrument_catalog",
                     return_value={},
                 ):
                     await runtime.start()
@@ -260,7 +260,7 @@ class WebTests(unittest.TestCase):
             runtime.trade_store = TradeStore(Path(tmp_dir) / "trades.sqlite3")
 
             with patch(
-                "mytradebot.api.runtime.open_bitget_demo_position",
+                "tradex.api.runtime.open_bitget_demo_position",
                 return_value=BitgetDemoOrderResult(
                     raw={"code": "00000", "data": {"orderId": "bg-1", "clientOid": "cid-1"}},
                     external_order_id="bg-1",
@@ -418,10 +418,10 @@ class WebTests(unittest.TestCase):
         )
 
         with patch(
-            "mytradebot.api.runtime.load_bitget_instrument_catalog",
+            "tradex.api.runtime.load_bitget_instrument_catalog",
             return_value={("USDT-FUTURES", "BTCUSDT"): bitget},
         ), patch(
-            "mytradebot.api.runtime.load_hyperliquid_instrument_catalog",
+            "tradex.api.runtime.load_hyperliquid_instrument_catalog",
             return_value={"BTC": hyperliquid},
         ):
             with TestClient(app) as client:
@@ -455,7 +455,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(eth, bitget)):
+            with patch("tradex.api.runtime.resolve_instruments", return_value=(eth, bitget)):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/watchlist/bitget",
@@ -546,7 +546,7 @@ class WebTests(unittest.TestCase):
             auto_start=False,
         )
 
-        with patch("mytradebot.api.runtime.open_hyperliquid_position") as opened:
+        with patch("tradex.api.runtime.open_hyperliquid_position") as opened:
             with TestClient(app) as client:
                 response = client.post(
                     "/api/hyperliquid/trades/hyperliquid%3ABTC",
@@ -567,7 +567,7 @@ class WebTests(unittest.TestCase):
             auto_start=False,
         )
 
-        with patch("mytradebot.api.runtime.open_hyperliquid_position") as opened:
+        with patch("tradex.api.runtime.open_hyperliquid_position") as opened:
             with TestClient(app) as client:
                 response = client.post(
                     "/api/hyperliquid/trades/hyperliquid%3ABTC",
@@ -601,7 +601,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(bitget, hyperliquid)):
+            with patch("tradex.api.runtime.resolve_instruments", return_value=(bitget, hyperliquid)):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/watchlist/hyperliquid",
@@ -638,7 +638,7 @@ class WebTests(unittest.TestCase):
                 auto_start=False,
             )
 
-            with patch("mytradebot.api.runtime.resolve_instruments", return_value=(eth,)):
+            with patch("tradex.api.runtime.resolve_instruments", return_value=(eth,)):
                 with TestClient(app) as client:
                     response = client.delete("/api/watchlist/instruments/USDT-FUTURES%3ABTCUSDT")
             persisted_text = config_path.read_text()
@@ -708,7 +708,7 @@ class WebTests(unittest.TestCase):
             )
             provider = FakeProvider()
 
-            with patch("mytradebot.api.runtime.create_llm_provider", return_value=provider):
+            with patch("tradex.api.runtime.create_llm_provider", return_value=provider):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/USDT-FUTURES:BTCUSDT/messages",
@@ -745,7 +745,7 @@ class WebTests(unittest.TestCase):
     def test_memory_note_endpoint_queues_manual_note(self) -> None:
         """Verify the REST path creates a manual memory source."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir) / "mytradebot" / "memories"
+            root = Path(tmp_dir) / "tradex" / "memories"
             with patch.dict(os.environ, {"XDG_DATA_HOME": str(Path(tmp_dir))}, clear=False):
                 app = create_app(
                     config=AppConfig(
@@ -977,7 +977,7 @@ class WebTests(unittest.TestCase):
             )
             started = asyncio.Event()
             release = asyncio.Event()
-            with patch("mytradebot.api.runtime.create_llm_provider", return_value=BlockingProvider()):
+            with patch("tradex.api.runtime.create_llm_provider", return_value=BlockingProvider()):
                 asyncio.run(scenario(app.state.runtime, session.id))
 
     def test_agent_stream_disconnect_does_not_cancel_background_run(self) -> None:
@@ -1023,7 +1023,7 @@ class WebTests(unittest.TestCase):
             )
             started = asyncio.Event()
             release = asyncio.Event()
-            with patch("mytradebot.api.runtime.create_llm_provider", return_value=BlockingProvider()):
+            with patch("tradex.api.runtime.create_llm_provider", return_value=BlockingProvider()):
                 asyncio.run(scenario(app.state.runtime, session.id))
 
     def test_agent_loop_prompt_uses_market_context_tool(self) -> None:
@@ -1066,7 +1066,7 @@ class WebTests(unittest.TestCase):
             )
             provider = FakeLoopProvider()
 
-            with patch("mytradebot.api.runtime.create_llm_provider", return_value=provider):
+            with patch("tradex.api.runtime.create_llm_provider", return_value=provider):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/USDT-FUTURES:BTCUSDT/messages",
@@ -1144,7 +1144,7 @@ class WebTests(unittest.TestCase):
                 candles=(Candle("USDT-FUTURES:BTCUSDT", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
 
-            with patch("mytradebot.api.runtime.create_llm_provider", return_value=FailingLoopProvider()):
+            with patch("tradex.api.runtime.create_llm_provider", return_value=FailingLoopProvider()):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/USDT-FUTURES:BTCUSDT/messages",
@@ -1183,7 +1183,7 @@ class WebTests(unittest.TestCase):
                 candles=(Candle("USDT-FUTURES:BTCUSDT", 1776846000000, 200, 202, 199, 201.25, 12345),),
             )
 
-            with patch("mytradebot.api.runtime.create_llm_provider", return_value=EmptyLoopProvider()):
+            with patch("tradex.api.runtime.create_llm_provider", return_value=EmptyLoopProvider()):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/agent/sessions/USDT-FUTURES:BTCUSDT/messages",
@@ -1207,7 +1207,7 @@ class WebTests(unittest.TestCase):
         )
 
         with patch(
-            "mytradebot.api.runtime.list_available_agent_models",
+            "tradex.api.runtime.list_available_agent_models",
             return_value=[
                 {
                     "slug": "gpt-5.4-mini",
@@ -1378,8 +1378,8 @@ class WebTests(unittest.TestCase):
 
     def test_news_endpoint_returns_cached_items_when_enabled(self) -> None:
         """Verify /api/news returns cached items and refresh calls the service."""
-        from mytradebot.news import NewsItem, NewsStore
-        from mytradebot.news.providers.reuters import FetchResult
+        from tradex.news import NewsItem, NewsStore
+        from tradex.news.providers.reuters import FetchResult
 
         instrument = _bitget_btc()
         app = create_app(

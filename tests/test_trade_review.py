@@ -4,13 +4,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mytradebot.trading import (
+from tradex.trading import (
     FillKind,
     TradeDirection,
     TradeStatus,
     TradeStore,
 )
-from mytradebot.trading.review import review_pending
+from tradex.trading.review import review_pending
 
 
 def _run(coro):

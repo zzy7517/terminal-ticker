@@ -2,10 +2,10 @@
 import unittest
 from unittest.mock import patch
 
-from mytradebot.market_data.bitget import BitgetInstrument
-from mytradebot.market_data.hyperliquid import HyperliquidInstrument
-from mytradebot.config import InstrumentConfig
-from mytradebot.market_data.router import resolve_instruments
+from tradex.market_data.bitget import BitgetInstrument
+from tradex.market_data.hyperliquid import HyperliquidInstrument
+from tradex.config import InstrumentConfig
+from tradex.market_data.router import resolve_instruments
 
 
 class ProviderTests(unittest.TestCase):
@@ -32,11 +32,11 @@ class ProviderTests(unittest.TestCase):
         )
 
         with patch(
-            "mytradebot.market_data.router.bitget.resolve_instruments",
+            "tradex.market_data.router.bitget.resolve_instruments",
             return_value=(bitget_instrument,),
         ):
             with patch(
-                "mytradebot.market_data.router.hyperliquid.resolve_instruments"
+                "tradex.market_data.router.hyperliquid.resolve_instruments"
             ) as hyperliquid_resolve:
                 instruments = resolve_instruments(configs)
 
@@ -56,9 +56,9 @@ class ProviderTests(unittest.TestCase):
         )
         hyperliquid_instrument = HyperliquidInstrument("BTC", "BTC", "BTC", group="watchlist")
 
-        with patch("mytradebot.market_data.router.bitget.resolve_instruments") as bitget_resolve:
+        with patch("tradex.market_data.router.bitget.resolve_instruments") as bitget_resolve:
             with patch(
-                "mytradebot.market_data.router.hyperliquid.resolve_instruments",
+                "tradex.market_data.router.hyperliquid.resolve_instruments",
                 return_value=(hyperliquid_instrument,),
             ):
                 instruments = resolve_instruments(configs)
@@ -84,11 +84,11 @@ class ProviderTests(unittest.TestCase):
         )
 
         with patch(
-            "mytradebot.market_data.router.hyperliquid.resolve_instruments",
+            "tradex.market_data.router.hyperliquid.resolve_instruments",
             return_value=(hyperliquid_instrument,),
         ):
             with patch(
-                "mytradebot.market_data.router.bitget.resolve_instruments",
+                "tradex.market_data.router.bitget.resolve_instruments",
                 return_value=(bitget_instrument,),
             ):
                 instruments = resolve_instruments(configs)

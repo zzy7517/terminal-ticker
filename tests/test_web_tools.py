@@ -5,8 +5,8 @@ import json
 import unittest
 from unittest.mock import patch
 
-from mytradebot.agent import build_web_tools
-from mytradebot.agent.tools.web import (
+from tradex.agent import build_web_tools
+from tradex.agent.tools.web import (
     _extract_exa_mcp_text,
     _http_get,
     _parse_exa_mcp_results,
@@ -108,7 +108,7 @@ class WebSearchTests(unittest.TestCase):
             return 200, sample_html
 
         registry = build_web_tools()
-        with self._duckduckgo_backend(), patch("mytradebot.agent.tools.web._http_post_ddg", fake_post):
+        with self._duckduckgo_backend(), patch("tradex.agent.tools.web._http_post_ddg", fake_post):
             tool = registry.get("web_search")
             assert tool is not None
             out = self._run(tool.handler(query="fed rate cut", limit=5))
@@ -135,8 +135,8 @@ class WebSearchTests(unittest.TestCase):
         registry = build_web_tools()
         with (
             self._auto_backend(),
-            patch("mytradebot.agent.tools.web._http_post_exa_mcp", fake_exa),
-            patch("mytradebot.agent.tools.web._http_post_ddg", fail_ddg),
+            patch("tradex.agent.tools.web._http_post_exa_mcp", fake_exa),
+            patch("tradex.agent.tools.web._http_post_ddg", fail_ddg),
         ):
             out = self._run(registry.get("web_search").handler(query="fed rate cut", limit=5))
         data = json.loads(out)
@@ -154,8 +154,8 @@ class WebSearchTests(unittest.TestCase):
         registry = build_web_tools()
         with (
             self._auto_backend(),
-            patch("mytradebot.agent.tools.web._http_post_exa_mcp", fake_exa),
-            patch("mytradebot.agent.tools.web._http_post_ddg", fake_ddg),
+            patch("tradex.agent.tools.web._http_post_exa_mcp", fake_exa),
+            patch("tradex.agent.tools.web._http_post_ddg", fake_ddg),
         ):
             out = self._run(registry.get("web_search").handler(query="fed", limit=5))
         data = json.loads(out)
@@ -173,8 +173,8 @@ class WebSearchTests(unittest.TestCase):
         registry = build_web_tools()
         with (
             patch.dict("os.environ", {"WEB_SEARCH_BACKEND": "exa_mcp"}, clear=False),
-            patch("mytradebot.agent.tools.web._http_post_exa_mcp", fake_exa),
-            patch("mytradebot.agent.tools.web._http_post_ddg", fail_ddg),
+            patch("tradex.agent.tools.web._http_post_exa_mcp", fake_exa),
+            patch("tradex.agent.tools.web._http_post_ddg", fail_ddg),
         ):
             out = self._run(registry.get("web_search").handler(query="fed", limit=5))
         data = json.loads(out)
@@ -192,7 +192,7 @@ class WebSearchTests(unittest.TestCase):
             return 502, ""
 
         registry = build_web_tools()
-        with self._duckduckgo_backend(), patch("mytradebot.agent.tools.web._http_post_ddg", fake_post):
+        with self._duckduckgo_backend(), patch("tradex.agent.tools.web._http_post_ddg", fake_post):
             out = self._run(registry.get("web_search").handler(query="x"))
         data = json.loads(out)
         self.assertEqual(data["error"], "HTTP 502")
@@ -202,7 +202,7 @@ class WebSearchTests(unittest.TestCase):
             return 200, "<html><body>no matches</body></html>"
 
         registry = build_web_tools()
-        with self._duckduckgo_backend(), patch("mytradebot.agent.tools.web._http_post_ddg", fake_post):
+        with self._duckduckgo_backend(), patch("tradex.agent.tools.web._http_post_ddg", fake_post):
             out = self._run(registry.get("web_search").handler(query="x"))
         data = json.loads(out)
         self.assertEqual(data["count"], 0)
@@ -213,7 +213,7 @@ class WebSearchTests(unittest.TestCase):
             raise RuntimeError("connection refused")
 
         registry = build_web_tools()
-        with self._duckduckgo_backend(), patch("mytradebot.agent.tools.web._http_post_ddg", fake_post):
+        with self._duckduckgo_backend(), patch("tradex.agent.tools.web._http_post_ddg", fake_post):
             out = self._run(registry.get("web_search").handler(query="x"))
         data = json.loads(out)
         self.assertIn("connection refused", data["error"])
@@ -223,7 +223,7 @@ class WebSearchTests(unittest.TestCase):
             return 200, ""
 
         registry = build_web_tools()
-        with self._duckduckgo_backend(), patch("mytradebot.agent.tools.web._http_post_ddg", fake_post):
+        with self._duckduckgo_backend(), patch("tradex.agent.tools.web._http_post_ddg", fake_post):
             # limit=999 should be clamped silently and return 0 results
             out = self._run(registry.get("web_search").handler(query="x", limit=999))
         # 不抛异常，正常返回 0 结果
@@ -244,7 +244,7 @@ class WebFetchTests(unittest.TestCase):
         async def allow_fetch(url):
             return None
 
-        return patch("mytradebot.agent.tools.web._fetch_target_validation_error", allow_fetch)
+        return patch("tradex.agent.tools.web._fetch_target_validation_error", allow_fetch)
 
     def test_fetch_happy_path_strips_scripts_and_tags(self) -> None:
         async def fake_get(url, timeout):
@@ -256,7 +256,7 @@ class WebFetchTests(unittest.TestCase):
             return 200, "text/html; charset=utf-8", body, False
 
         registry = build_web_tools()
-        with self._allow_fetch_validation(), patch("mytradebot.agent.tools.web._http_get", fake_get):
+        with self._allow_fetch_validation(), patch("tradex.agent.tools.web._http_get", fake_get):
             out = self._run(registry.get("web_fetch").handler(url="https://example.com/p"))
         data = json.loads(out)
         self.assertEqual(data["status"], 200)
@@ -286,7 +286,7 @@ class WebFetchTests(unittest.TestCase):
             raise AssertionError("web_fetch should reject localhost before HTTP")
 
         registry = build_web_tools()
-        with patch("mytradebot.agent.tools.web._http_get", fail_get):
+        with patch("tradex.agent.tools.web._http_get", fail_get):
             out = self._run(registry.get("web_fetch").handler(url="http://localhost:8000/x"))
         data = json.loads(out)
         self.assertIn("blocked private/internal host", data["error"])
@@ -296,7 +296,7 @@ class WebFetchTests(unittest.TestCase):
             raise AssertionError("web_fetch should reject metadata IP before HTTP")
 
         registry = build_web_tools()
-        with patch("mytradebot.agent.tools.web._http_get", fail_get):
+        with patch("tradex.agent.tools.web._http_get", fail_get):
             out = self._run(
                 registry.get("web_fetch").handler(url="http://169.254.169.254/latest/meta-data/")
             )
@@ -313,8 +313,8 @@ class WebFetchTests(unittest.TestCase):
 
         registry = build_web_tools()
         with (
-            patch("mytradebot.agent.tools.web._resolve_host_ips", fake_resolve),
-            patch("mytradebot.agent.tools.web._http_get", fail_get),
+            patch("tradex.agent.tools.web._resolve_host_ips", fake_resolve),
+            patch("tradex.agent.tools.web._http_get", fail_get),
         ):
             out = self._run(registry.get("web_fetch").handler(url="https://example.com/x"))
         data = json.loads(out)
@@ -327,7 +327,7 @@ class WebFetchTests(unittest.TestCase):
             return 200, "text/html", big_text, False
 
         registry = build_web_tools(body_limit=8000)
-        with self._allow_fetch_validation(), patch("mytradebot.agent.tools.web._http_get", fake_get):
+        with self._allow_fetch_validation(), patch("tradex.agent.tools.web._http_get", fake_get):
             out = self._run(
                 registry.get("web_fetch").handler(url="https://example.com/x", max_chars=500)
             )
@@ -341,7 +341,7 @@ class WebFetchTests(unittest.TestCase):
             return 404, "text/html", "not found", False
 
         registry = build_web_tools()
-        with self._allow_fetch_validation(), patch("mytradebot.agent.tools.web._http_get", fake_get):
+        with self._allow_fetch_validation(), patch("tradex.agent.tools.web._http_get", fake_get):
             out = self._run(registry.get("web_fetch").handler(url="https://example.com/x"))
         data = json.loads(out)
         self.assertEqual(data["error"], "HTTP 404")
@@ -352,7 +352,7 @@ class WebFetchTests(unittest.TestCase):
             return 200, "application/pdf", "%PDF-1.6 \x00\x01\x02 binary garbage", False
 
         registry = build_web_tools()
-        with self._allow_fetch_validation(), patch("mytradebot.agent.tools.web._http_get", fake_get):
+        with self._allow_fetch_validation(), patch("tradex.agent.tools.web._http_get", fake_get):
             out = self._run(
                 registry.get("web_fetch").handler(url="https://example.com/x.pdf")
             )
@@ -367,7 +367,7 @@ class WebFetchTests(unittest.TestCase):
             return 200, "image/png", "\x89PNG\r\n", False
 
         registry = build_web_tools()
-        with self._allow_fetch_validation(), patch("mytradebot.agent.tools.web._http_get", fake_get):
+        with self._allow_fetch_validation(), patch("tradex.agent.tools.web._http_get", fake_get):
             out = self._run(
                 registry.get("web_fetch").handler(url="https://example.com/x.png")
             )
@@ -378,7 +378,7 @@ class WebFetchTests(unittest.TestCase):
             return 200, "application/json", '{"k": "v"}', False
 
         registry = build_web_tools()
-        with self._allow_fetch_validation(), patch("mytradebot.agent.tools.web._http_get", fake_get):
+        with self._allow_fetch_validation(), patch("tradex.agent.tools.web._http_get", fake_get):
             out = self._run(
                 registry.get("web_fetch").handler(url="https://api.example.com/x")
             )
@@ -392,7 +392,7 @@ class WebFetchTests(unittest.TestCase):
             return 200, "", "<p>plain html</p>", False
 
         registry = build_web_tools()
-        with self._allow_fetch_validation(), patch("mytradebot.agent.tools.web._http_get", fake_get):
+        with self._allow_fetch_validation(), patch("tradex.agent.tools.web._http_get", fake_get):
             out = self._run(
                 registry.get("web_fetch").handler(url="https://example.com/x")
             )
@@ -405,7 +405,7 @@ class WebFetchTests(unittest.TestCase):
             raise RuntimeError("dns boom")
 
         registry = build_web_tools()
-        with self._allow_fetch_validation(), patch("mytradebot.agent.tools.web._http_get", fake_get):
+        with self._allow_fetch_validation(), patch("tradex.agent.tools.web._http_get", fake_get):
             out = self._run(registry.get("web_fetch").handler(url="https://example.com/x"))
         data = json.loads(out)
         self.assertIn("dns boom", data["error"])
@@ -415,7 +415,7 @@ class WebFetchTests(unittest.TestCase):
             return 200, "text/html", "<p>Hello</p>", False
 
         registry = build_web_tools()
-        with self._allow_fetch_validation(), patch("mytradebot.agent.tools.web._http_get", fake_get):
+        with self._allow_fetch_validation(), patch("tradex.agent.tools.web._http_get", fake_get):
             out = self._run(
                 registry.get("web_fetch").handler(url="https://example.com/x", max_chars="wide")
             )
@@ -452,7 +452,7 @@ class WebFetchTests(unittest.TestCase):
                 case.assertEqual(allow_redirects, False)
                 return FakeStream()
 
-        with patch("mytradebot.agent.tools.web._CurlAsyncSession", FakeSession):
+        with patch("tradex.agent.tools.web._CurlAsyncSession", FakeSession):
             with self.assertRaisesRegex(ValueError, "blocked redirect target"):
                 self._run(_http_get("https://example.com/start", timeout=1))
 
@@ -487,8 +487,8 @@ class WebFetchTests(unittest.TestCase):
                 return FakeStream()
 
         with (
-            patch("mytradebot.agent.tools.web._CurlAsyncSession", FakeSession),
-            patch("mytradebot.agent.tools.web._FETCH_READ_LIMIT_BYTES", 5),
+            patch("tradex.agent.tools.web._CurlAsyncSession", FakeSession),
+            patch("tradex.agent.tools.web._FETCH_READ_LIMIT_BYTES", 5),
         ):
             status, content_type, body, truncated = self._run(
                 _http_get("https://example.com/start", timeout=1)
@@ -513,12 +513,12 @@ class RegistryIntegrationTests(unittest.TestCase):
             self.assertTrue(callable(tool.handler))
 
     def test_package_all_exports_build_web_tools(self) -> None:
-        import mytradebot.agent as agent
+        import tradex.agent as agent
 
         self.assertIn("build_web_tools", agent.__all__)
 
     def test_merge_with_other_registries(self) -> None:
-        from mytradebot.agent import merge_registries, build_news_tools
+        from tradex.agent import merge_registries, build_news_tools
 
         merged = merge_registries(build_web_tools(), build_news_tools(news_service=None))
         names = sorted(t.name for t in merged.list_tools())

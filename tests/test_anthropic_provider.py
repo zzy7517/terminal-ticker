@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 
-from mytradebot.agent.providers.anthropic import (
+from tradex.agent.providers.anthropic import (
     DEFAULT_ANTHROPIC_BASE_URL,
     AnthropicProvider,
     _anthropic_headers,
@@ -12,7 +12,7 @@ from mytradebot.agent.providers.anthropic import (
     _messages_to_anthropic,
     _parse_anthropic_response,
 )
-from mytradebot.config import AgentConfig, ProviderProfile
+from tradex.config import AgentConfig, ProviderProfile
 
 
 class AnthropicProviderTests(unittest.TestCase):

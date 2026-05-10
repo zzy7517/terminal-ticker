@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mytradebot.trading import (
+from tradex.trading import (
     FillKind,
     TradeDirection,
     TradeStatus,

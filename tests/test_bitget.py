@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 
-from mytradebot.market_data.bitget import (
+from tradex.market_data.bitget import (
     BitgetInstrument,
     _api_granularity,
     _normalize_candle_row,
@@ -84,7 +84,7 @@ class BitgetTests(unittest.TestCase):
         )
 
         with patch(
-            "mytradebot.market_data.bitget._fetch_json",
+            "tradex.market_data.bitget._fetch_json",
             return_value={
                 "code": "00000",
                 "data": [["1695835800000", "1", "2", "0.5", "1.5", "10"]],
@@ -114,7 +114,7 @@ class BitgetTests(unittest.TestCase):
         )
 
         with patch(
-            "mytradebot.market_data.bitget._fetch_json",
+            "tradex.market_data.bitget._fetch_json",
             return_value={
                 "code": "00000",
                 "data": [
@@ -153,7 +153,7 @@ class BitgetTests(unittest.TestCase):
                 ],
             }
 
-        with patch("mytradebot.market_data.bitget._fetch_json", side_effect=fake_fetch) as fetch_json:
+        with patch("tradex.market_data.bitget._fetch_json", side_effect=fake_fetch) as fetch_json:
             catalog = load_instrument_catalog()
 
         product_types = [call.args[1]["productType"] for call in fetch_json.call_args_list]

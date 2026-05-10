@@ -4,8 +4,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from mytradebot import __main__ as cli
-from mytradebot.logging_config import configure_logging, normalize_log_level, uvicorn_log_level
+from tradex import __main__ as cli
+from tradex.logging_config import configure_logging, normalize_log_level, uvicorn_log_level
 
 
 class LoggingConfigTests(unittest.TestCase):

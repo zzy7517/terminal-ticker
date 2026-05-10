@@ -80,7 +80,7 @@ export function WorkspaceView() {
             </div>
             <div>
               <div className="eyebrow">Local Price Action Agent</div>
-              <h1>mytradebot</h1>
+              <h1>tradex</h1>
             </div>
           </div>
         </div>

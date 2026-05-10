@@ -6,11 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mytradebot.agent.tools import ToolCall, build_trading_tools
-from mytradebot.config import TradingConfig
-from mytradebot.trading import ExchangeRouter, TradeStore, TradeStatus
-from mytradebot.trading.exchange_models import OrderResult
-from mytradebot.trading.hyperliquid import HyperliquidOrderResult
+from tradex.agent.tools import ToolCall, build_trading_tools
+from tradex.config import TradingConfig
+from tradex.trading import ExchangeRouter, TradeStore, TradeStatus
+from tradex.trading.exchange_models import OrderResult
+from tradex.trading.hyperliquid import HyperliquidOrderResult
 
 
 def _run(coro):
@@ -87,7 +87,7 @@ class TradingToolsTests(unittest.TestCase):
             filled_size=0.25,
         )
         with patch(
-            "mytradebot.agent.tools.trading.open_hyperliquid_position",
+            "tradex.agent.tools.trading.open_hyperliquid_position",
             return_value=fake_result,
         ) as opened:
             data = self._exec(
@@ -168,14 +168,14 @@ class TradingToolsTests(unittest.TestCase):
     def test_list_open_trades_excludes_closed(self) -> None:
         self.store.create_trade(
             instrument_key="USDT-FUTURES:BTCUSDT",
-            direction=__import__("mytradebot.trading", fromlist=["TradeDirection"]).TradeDirection.LONG,
+            direction=__import__("tradex.trading", fromlist=["TradeDirection"]).TradeDirection.LONG,
             size=1.0,
             intent_price=100.0,
             stop_price=95.0,
         )
         t = self.store.create_trade(
             instrument_key="USDT-FUTURES:BTCUSDT",
-            direction=__import__("mytradebot.trading", fromlist=["TradeDirection"]).TradeDirection.LONG,
+            direction=__import__("tradex.trading", fromlist=["TradeDirection"]).TradeDirection.LONG,
             size=1.0, intent_price=None, stop_price=None,
             status=TradeStatus.OPEN,
         )
@@ -185,7 +185,7 @@ class TradingToolsTests(unittest.TestCase):
         self.assertEqual(listed[0]["status"], "planned")
 
     def test_trade_history_returns_closed_and_cancelled(self) -> None:
-        from mytradebot.trading import TradeDirection
+        from tradex.trading import TradeDirection
         t = self.store.create_trade(
             instrument_key="USDT-FUTURES:BTCUSDT",
             direction=TradeDirection.LONG, size=1.0,
@@ -199,7 +199,7 @@ class TradingToolsTests(unittest.TestCase):
 
     def test_open_bitget_demo_trade_records_external_order(self) -> None:
         with patch(
-            "mytradebot.agent.tools.trading.bitget_trading.place_order",
+            "tradex.agent.tools.trading.bitget_trading.place_order",
             return_value=OrderResult(
                 exchange="bitget-demo",
                 order_id="bg-1",

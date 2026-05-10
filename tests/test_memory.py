@@ -10,12 +10,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from mytradebot.agent.loop import ChatResponse
-from mytradebot.agent.session_store import AgentSessionStore
-from mytradebot.agent.tools import ToolCall
-from mytradebot.agent.trading_runtime import TradingAgentRuntime, TradingAgentRuntimeServices
-from mytradebot.config import AgentConfig
-from mytradebot.memory import (
+from tradex.agent.loop import ChatResponse
+from tradex.agent.session_store import AgentSessionStore
+from tradex.agent.tools import ToolCall
+from tradex.agent.trading_runtime import TradingAgentRuntime, TradingAgentRuntimeServices
+from tradex.config import AgentConfig
+from tradex.memory import (
     JOB_CLAIMED,
     JOB_FAILED,
     JOB_PENDING,
@@ -35,7 +35,7 @@ from mytradebot.memory import (
     validate_fact_text,
     validate_review_metadata,
 )
-from mytradebot.trading import FillKind, TradeDirection, TradeStatus, TradeStore
+from tradex.trading import FillKind, TradeDirection, TradeStatus, TradeStore
 
 
 class MemoryBackendTests(unittest.TestCase):
@@ -200,7 +200,7 @@ class MemoryBackendTests(unittest.TestCase):
                 return ChatResponse(content="ok")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir) / "mytradebot" / "memories"
+            root = Path(tmp_dir) / "tradex" / "memories"
             root.mkdir(parents=True)
             (root / "memory_summary.md").write_text("Remember BTCUSDT breakout reviews.")
             provider = CaptureProvider()
@@ -246,7 +246,7 @@ class MemoryBackendTests(unittest.TestCase):
                 return ChatResponse(content="ok")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir) / "mytradebot" / "memories"
+            root = Path(tmp_dir) / "tradex" / "memories"
             root.mkdir(parents=True)
             (root / "memory_summary.md").write_text("This should not be injected.")
             provider = CaptureProvider()

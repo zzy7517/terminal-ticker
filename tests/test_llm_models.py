@@ -1,8 +1,8 @@
 """Test agent model configuration resolution."""
 import unittest
 
-from mytradebot.config import AgentConfig
-from mytradebot.config.agent_models import (
+from tradex.config import AgentConfig
+from tradex.config.agent_models import (
     ANTHROPIC_MESSAGES_API_MODE,
     CODEX_API_MODE,
     DEFAULT_ANTHROPIC_MODEL,

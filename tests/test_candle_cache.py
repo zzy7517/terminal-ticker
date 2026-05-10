@@ -3,12 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mytradebot.market_data.candle_cache import (
+from tradex.market_data.candle_cache import (
     CandleCache,
     cached_fetch_candles,
     retention_seconds_for_window,
 )
-from mytradebot.domain.price_action import Candle
+from tradex.domain.price_action import Candle
 
 
 def _candle(symbol_key: str, open_time_ms: int, close: float = 101.0) -> Candle:

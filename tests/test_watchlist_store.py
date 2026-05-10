@@ -4,8 +4,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from mytradebot.config import AgentConfig, AnalysisConfig, ProviderProfile, load_config
-from mytradebot.config.watchlist_store import (
+from tradex.config import AgentConfig, AnalysisConfig, ProviderProfile, load_config
+from tradex.config.watchlist_store import (
     append_bitget_symbol_to_watchlist,
     remove_symbol_from_watchlist,
     update_agent_config_in_watchlist,

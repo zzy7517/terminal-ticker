@@ -1,6 +1,6 @@
-# mytradebot
+# tradex
 
-mytradebot 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 主网行情、React 图表、LLM Agent、Reuters 新闻和本地 SQLite 交易记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
+tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 主网行情、React 图表、LLM Agent、Reuters 新闻和本地 SQLite 交易记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
 
 它不是生产级交易终端。显式配置凭证并在 `watchlist.toml` 打开平台交易权限后，可以向 Hyperliquid 主网提交真实订单；Bitget 仍只使用 Demo Trading。外部订单号会写回本地 SQLite。
 
@@ -32,12 +32,12 @@ React + Vite frontend
 
 核心代码路径：
 
-- `mytradebot/api/app.py`：HTTP API、WebSocket、后台 worker 生命周期。
-- `mytradebot/runtime/feed.py`：watchlist 行情循环、多周期 K 线、缓存与 provider 路由。
-- `mytradebot/market_data/`：Bitget、Hyperliquid、catalog 和 candle provider。
-- `mytradebot/agent/`：LLM provider、agent loop、工具和 session 存储。
-- `mytradebot/trading/`：交易数据模型、SQLite store、Hyperliquid 主网 / Bitget Demo Trading 客户端和 review controller。
-- `mytradebot/news/`：Reuters 新闻抓取、存储和 API 数据源。
+- `tradex/api/app.py`：HTTP API、WebSocket、后台 worker 生命周期。
+- `tradex/runtime/feed.py`：watchlist 行情循环、多周期 K 线、缓存与 provider 路由。
+- `tradex/market_data/`：Bitget、Hyperliquid、catalog 和 candle provider。
+- `tradex/agent/`：LLM provider、agent loop、工具和 session 存储。
+- `tradex/trading/`：交易数据模型、SQLite store、Hyperliquid 主网 / Bitget Demo Trading 客户端和 review controller。
+- `tradex/news/`：Reuters 新闻抓取、存储和 API 数据源。
 - `web/src/App.tsx`：主 UI，包含 Chart、Agent、Positions 和设置页面。
 
 ## 快速启动
@@ -57,7 +57,7 @@ npm run dev
 
 ```bash
 source .venv/bin/activate
-python -m mytradebot --config watchlist.toml --host 127.0.0.1 --port 8765
+python -m tradex --config watchlist.toml --host 127.0.0.1 --port 8765
 ```
 
 然后打开：
@@ -70,7 +70,7 @@ http://127.0.0.1:5173
 
 ```bash
 npm run build
-python -m mytradebot --config watchlist.toml --host 127.0.0.1 --port 8765
+python -m tradex --config watchlist.toml --host 127.0.0.1 --port 8765
 ```
 
 这种模式下 FastAPI 会直接服务 `web/dist`。
@@ -314,10 +314,10 @@ Content-Type: application/json
 默认本地状态主要在这些地方：
 
 - `watchlist.toml`：watchlist、display、agent、news、cache 配置。
-- `~/.cache/mytradebot/agent_sessions.sqlite3`：Agent session 和消息历史。
-- `~/.cache/mytradebot/trades.sqlite3`：交易记录、fills、snapshots、lessons。
-- `~/.cache/mytradebot/news.sqlite3`：新闻、新闻决策和处理状态。
-- `~/.cache/mytradebot/candles.sqlite3`：默认 K 线 cache；如果设置了 `XDG_CACHE_HOME` 或 `[cache].path`，会使用对应路径。
+- `~/.cache/tradex/agent_sessions.sqlite3`：Agent session 和消息历史。
+- `~/.cache/tradex/trades.sqlite3`：交易记录、fills、snapshots、lessons。
+- `~/.cache/tradex/news.sqlite3`：新闻、新闻决策和处理状态。
+- `~/.cache/tradex/candles.sqlite3`：默认 K 线 cache；如果设置了 `XDG_CACHE_HOME` 或 `[cache].path`，会使用对应路径。
 - 浏览器 localStorage：图表画线和部分前端偏好。
 
 这些数据都是本地优先，没有服务端账号体系。
