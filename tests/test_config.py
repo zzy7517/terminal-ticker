@@ -182,6 +182,25 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(anthropic_config.agent.provider, "anthropic")
         self.assertEqual(anthropic_config.agent.api_mode, "anthropic_messages")
 
+        provider_config = parse_config(
+            {
+                "symbols": ["USDT-FUTURES:BTCUSDT"],
+                "agent": {
+                    "providers": {
+                        "anthropic": {
+                            "enabled": True,
+                            "api_key": "sk-ant-test",
+                            "base_url": " https://example.test/v1 ",
+                            "models": ["global.anthropic.claude-opus-4-6-v1"],
+                        }
+                    }
+                },
+            }
+        )
+        anthropic_profile = provider_config.agent.provider_profiles["anthropic"]
+        self.assertEqual(anthropic_profile.api_key, "sk-ant-test")
+        self.assertEqual(anthropic_profile.base_url, "https://example.test/v1")
+
     def test_parse_config_supports_memory_defaults_and_overrides(self) -> None:
         """Verify parse config supports local memory settings."""
         default_config = parse_config({"symbols": ["USDT-FUTURES:BTCUSDT"]})

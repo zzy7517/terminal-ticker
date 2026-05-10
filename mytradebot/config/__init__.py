@@ -111,6 +111,8 @@ class ProviderProfile:
     enabled: bool = False
     models: tuple[str, ...] = ()
     model_efforts: tuple[tuple[str, str], ...] = ()
+    api_key: str = ""
+    base_url: str = ""
 
     @property
     def model(self) -> str:
@@ -385,6 +387,13 @@ def _parse_model_efforts(name: str, raw: dict[str, Any]) -> tuple[tuple[str, str
     return ()
 
 
+def _parse_optional_provider_secret(raw: dict[str, Any], field: str) -> str:
+    value = raw.get(field)
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
 def _parse_provider_profiles(
     raw_agent: dict[str, Any],
 ) -> dict[str, ProviderProfile]:
@@ -400,6 +409,8 @@ def _parse_provider_profiles(
                 enabled=_normalize_bool(raw.get("enabled"), f"agent.providers.{name}.enabled", False),
                 models=_parse_models_field(name, raw),
                 model_efforts=_parse_model_efforts(name, raw),
+                api_key=_parse_optional_provider_secret(raw, "api_key"),
+                base_url=_parse_optional_provider_secret(raw, "base_url"),
             )
         return profiles
 

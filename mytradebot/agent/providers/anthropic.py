@@ -21,10 +21,9 @@ from ...config.agent_models import (
 from ..loop import ChatResponse, StreamDeltaHandler, ToolCall
 from ..provider import LLMProviderError, LLMProviderUnavailable
 
-DEFAULT_ANTHROPIC_BASE_URL = "https://claude-proxy.p1.cn/api"
+DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
 DEFAULT_ANTHROPIC_TIMEOUT_SECONDS = 45.0
 ANTHROPIC_ENV_API_KEYS = ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY")
-ANTHROPIC_ENV_BASE_URLS = ("ANTHROPIC_BASE_URL",)
 ANTHROPIC_ENV_MODELS = ("ANTHROPIC_MODELS",)
 ANTHROPIC_ENV_MAX_TOKENS = ("ANTHROPIC_MAX_TOKENS",)
 
@@ -42,8 +41,12 @@ class AnthropicProvider:
             raise LLMProviderUnavailable(
                 f"Unsupported Anthropic api_mode: {self.profile.api_mode}"
             )
+        provider_profile = self.config.provider_profiles.get(ANTHROPIC_PROVIDER)
         self.model = self.profile.model
-        self._base_url = _first_env(ANTHROPIC_ENV_BASE_URLS) or DEFAULT_ANTHROPIC_BASE_URL
+        self._api_key = provider_profile.api_key if provider_profile else ""
+        self._base_url = _resolve_anthropic_base_url(
+            provider_profile.base_url if provider_profile else ""
+        )
         self._max_tokens = _resolve_max_tokens()
 
     async def chat(
@@ -53,7 +56,7 @@ class AnthropicProvider:
         on_delta: StreamDeltaHandler | None = None,
     ) -> ChatResponse:
         """调用 Anthropic Messages API，支持 Anthropic tool_use/tool_result 循环。"""
-        api_key = _resolve_anthropic_api_key()
+        api_key = _resolve_anthropic_api_key(self._api_key)
         system_text, anthropic_messages = _messages_to_anthropic(messages)
         payload: dict[str, Any] = {
             "model": self.model,
@@ -79,7 +82,7 @@ class AnthropicProvider:
     async def list_models(self) -> list[dict[str, Any]]:
         """从 Anthropic Models API 获取可用模型列表，失败时回退到本地静态列表。"""
         try:
-            return await _fetch_anthropic_models(self._base_url)
+            return await _fetch_anthropic_models(self._base_url, self._api_key)
         except Exception:
             logger.debug("Anthropic models API unavailable, falling back to static list", exc_info=True)
             slugs = [self.model, DEFAULT_ANTHROPIC_MODEL]
@@ -98,14 +101,19 @@ def _first_env(names: tuple[str, ...]) -> str:
     return ""
 
 
-def _resolve_anthropic_api_key() -> str:
-    """从环境变量中获取 Anthropic API 密钥，未找到则抛出异常。"""
-    api_key = _first_env(ANTHROPIC_ENV_API_KEYS)
+def _resolve_anthropic_api_key(configured_api_key: str = "") -> str:
+    """从配置或环境变量中获取 Anthropic API 密钥，未找到则抛出异常。"""
+    api_key = configured_api_key.strip() or _first_env(ANTHROPIC_ENV_API_KEYS)
     if api_key:
         return api_key
     raise LLMProviderUnavailable(
         "No Anthropic API key found. Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY."
     )
+
+
+def _resolve_anthropic_base_url(configured_base_url: str = "") -> str:
+    """解析 Anthropic base URL，配置为空时使用官方 Messages API 根路径。"""
+    return configured_base_url.strip().rstrip("/") or DEFAULT_ANTHROPIC_BASE_URL
 
 
 def _resolve_max_tokens() -> int:
@@ -485,9 +493,9 @@ def _infer_anthropic_context_window(slug: str) -> int | None:
     return None
 
 
-async def _fetch_anthropic_models(base_url: str) -> list[dict[str, Any]]:
+async def _fetch_anthropic_models(base_url: str, configured_api_key: str = "") -> list[dict[str, Any]]:
     """调用 GET /v1/models 获取 Anthropic 可用模型列表。"""
-    api_key = _resolve_anthropic_api_key()
+    api_key = _resolve_anthropic_api_key(configured_api_key)
     url = _models_endpoint(base_url)
     headers = _anthropic_headers(api_key, url)
     timeout = httpx.Timeout(10.0)

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Bot, Loader2, RefreshCw, Search, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bot, Eye, EyeOff, KeyRound, Loader2, RefreshCw, Save, Search, Sparkles } from 'lucide-react';
 import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -17,6 +17,9 @@ export function ProviderSettingsPanel() {
   const [modelSearch, setModelSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [baseUrlInput, setBaseUrlInput] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const models = modelCache[activeProvider] ?? [];
 
@@ -24,6 +27,13 @@ export function ProviderSettingsPanel() {
   const profile = profiles[activeProvider];
   const enabled = profile?.enabled ?? false;
   const selectedModels = new Set(profile?.models ?? []);
+  const isAnthropic = activeProvider === 'anthropic';
+
+  useEffect(() => {
+    setApiKeyInput('');
+    setBaseUrlInput(profile?.baseUrl ?? '');
+    setShowApiKey(false);
+  }, [activeProvider, profile?.baseUrl, profile?.apiKeyConfigured]);
 
   function switchProvider(provider: string) {
     setActiveProvider(provider);
@@ -74,6 +84,23 @@ export function ProviderSettingsPanel() {
       setStatus('已保存。');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Save failed.');
+    }
+  }
+
+  async function saveConnectionSettings() {
+    setStatus('保存连接设置...');
+    try {
+      const update: { apiKey?: string; baseUrl?: string } = {
+        baseUrl: baseUrlInput.trim(),
+      };
+      const trimmedApiKey = apiKeyInput.trim();
+      if (trimmedApiKey) update.apiKey = trimmedApiKey;
+      const nextState = await saveProviderProfile(activeProvider, update);
+      useMarketStore.getState().setState(nextState);
+      setApiKeyInput('');
+      setStatus('连接设置已保存。');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Connection settings save failed.');
     }
   }
 
@@ -149,6 +176,67 @@ export function ProviderSettingsPanel() {
             </div>
             <p>{option.detail}</p>
           </div>
+
+          {enabled && isAnthropic && (
+            <div className="provider-connection-form">
+              <label className="provider-field">
+                <span className="provider-field-label">API Key</span>
+                <div className="provider-secret-row">
+                  <input
+                    className="input mono"
+                    type={showApiKey ? 'text' : 'password'}
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder={profile?.apiKeyConfigured ? 'Saved. Enter a new key to replace it.' : 'Enter your API key'}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button
+                    className="shell-button icon muted"
+                    type="button"
+                    title={showApiKey ? 'Hide API key' : 'Show API key'}
+                    onClick={() => setShowApiKey((value) => !value)}
+                  >
+                    {showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                <span className="provider-field-hint">
+                  {profile?.apiKeyConfigured ? 'API key saved locally.' : 'Get your API key from '}
+                  {!profile?.apiKeyConfigured && (
+                    <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
+                      Anthropic Console
+                    </a>
+                  )}
+                </span>
+              </label>
+
+              <label className="provider-field">
+                <span className="provider-field-label">Base URL <em>Optional</em></span>
+                <input
+                  className="input mono"
+                  type="url"
+                  value={baseUrlInput}
+                  onChange={(e) => setBaseUrlInput(e.target.value)}
+                  placeholder="https://api.anthropic.com/v1"
+                  spellCheck={false}
+                />
+                <span className="provider-field-hint">
+                  Leave empty to use https://api.anthropic.com/v1.
+                </span>
+              </label>
+
+              <div className="provider-connection-actions">
+                <div className="provider-connection-status">
+                  <KeyRound size={13} />
+                  <span>{profile?.baseUrl ? 'Custom endpoint' : 'Default endpoint'}</span>
+                </div>
+                <button className="shell-button muted" type="button" onClick={saveConnectionSettings}>
+                  <Save size={14} />
+                  Save
+                </button>
+              </div>
+            </div>
+          )}
 
           {enabled && (() => {
             const efforts = profile?.modelEfforts ?? {};

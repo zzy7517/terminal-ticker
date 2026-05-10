@@ -1253,6 +1253,14 @@ class WebTests(unittest.TestCase):
                         "reasoningEffort": "high",
                     },
                 )
+                anthropic_response = client.post(
+                    "/api/agent/providers/anthropic",
+                    json={
+                        "enabled": True,
+                        "apiKey": "sk-ant-test",
+                        "baseUrl": "https://example.test/v1",
+                    },
+                )
                 shared_response = client.post(
                     "/api/agent/config",
                     json={
@@ -1262,6 +1270,7 @@ class WebTests(unittest.TestCase):
                 )
 
         self.assertEqual(provider_response.status_code, 200)
+        self.assertEqual(anthropic_response.status_code, 200)
         self.assertEqual(shared_response.status_code, 200)
         shared_state = shared_response.json()["state"]["config"]["agent"]
         self.assertFalse(shared_state["enabled"])
@@ -1269,6 +1278,10 @@ class WebTests(unittest.TestCase):
         provider_state = shared_state["providerProfiles"]["codex"]
         self.assertTrue(provider_state["enabled"])
         self.assertIn("gpt-5.4", provider_state["models"])
+        anthropic_state = shared_state["providerProfiles"]["anthropic"]
+        self.assertTrue(anthropic_state["apiKeyConfigured"])
+        self.assertEqual(anthropic_state["baseUrl"], "https://example.test/v1")
+        self.assertNotIn("apiKey", anthropic_state)
 
     def test_analysis_config_endpoint_persists_interval(self) -> None:
         """Verify browser can switch K-line intervals through the runtime."""

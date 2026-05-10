@@ -151,6 +151,8 @@ export interface ProviderProfileState {
   enabled: boolean;
   models: string[];
   modelEfforts: Record<string, string>;
+  baseUrl?: string;
+  apiKeyConfigured?: boolean;
 }
 
 export interface AgentConfig {
@@ -174,6 +176,9 @@ export interface ProviderProfileUpdate {
   toggleModel?: string;
   modelEffort?: { model: string; effort: string };
   reasoningEffort?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  clearApiKey?: boolean;
 }
 
 export interface AnalysisConfigUpdate {
@@ -198,6 +203,7 @@ export interface MemoryConfig {
   enabled: boolean;
   useMemories: boolean;
   generateMemories: boolean;
+  storagePath: string | null;
   extractModel: string | null;
   consolidationModel: string | null;
   maxRawMemories: number;
@@ -212,6 +218,7 @@ export interface MemoryConfigUpdate {
   enabled?: boolean;
   useMemories?: boolean;
   generateMemories?: boolean;
+  storagePath?: string | null;
   extractModel?: string | null;
   consolidationModel?: string | null;
   maxRawMemories?: number;

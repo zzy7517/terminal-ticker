@@ -29,7 +29,7 @@ export const AGENT_PROVIDER_OPTIONS = [
     apiMode: 'anthropic_messages',
     defaultModel: DEFAULT_ANTHROPIC_MODEL,
     description: 'Messages adapter via x-api-key',
-    detail: 'Anthropic Messages adapter used by the chart agent through the configured Claude proxy endpoint.',
+    detail: 'Anthropic Messages adapter used by the chart agent through the official or custom endpoint.',
     supportsReasoning: false,
   },
 ] as const;

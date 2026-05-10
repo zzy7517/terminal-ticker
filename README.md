@@ -152,13 +152,19 @@ Bitget：
 Anthropic provider 使用 Messages API 形态，默认 base URL 是：
 
 ```text
-https://claude-proxy.p1.cn/api
+https://api.anthropic.com/v1
 ```
 
 实际请求会发到：
 
 ```text
-https://claude-proxy.p1.cn/api/v1/messages
+https://api.anthropic.com/v1/messages
+```
+
+模型刷新会请求：
+
+```text
+https://api.anthropic.com/v1/models?limit=100
 ```
 
 认证 header 使用：
@@ -168,7 +174,18 @@ x-api-key: <token>
 content-type: application/json
 ```
 
-环境变量：
+API key 和可选 base URL 可以在设置页保存到 `watchlist.toml`：
+
+```toml
+[agent.providers.anthropic]
+enabled = true
+api_key = "..."
+# 留空或不写时使用 https://api.anthropic.com/v1
+base_url = "https://api.anthropic.com/v1"
+models = ["global.anthropic.claude-opus-4-6-v1"]
+```
+
+也可以继续用环境变量提供 key：
 
 ```bash
 export ANTHROPIC_AUTH_TOKEN="..."
@@ -176,7 +193,6 @@ export ANTHROPIC_AUTH_TOKEN="..."
 export ANTHROPIC_API_KEY="..."
 
 # 可选
-export ANTHROPIC_BASE_URL="https://claude-proxy.p1.cn/api"
 export ANTHROPIC_MODELS="global.anthropic.claude-opus-4-6-v1,global.anthropic.claude-sonnet-4-5-v1"
 export ANTHROPIC_MAX_TOKENS="1200"
 ```

@@ -1626,6 +1626,76 @@ textarea:focus-visible {
   min-height: 40px;
 }
 
+.provider-connection-form {
+  display: grid;
+  gap: 14px;
+  padding: 2px 0 4px;
+}
+
+.provider-field {
+  color: var(--text-primary);
+  display: grid;
+  gap: 7px;
+}
+
+.provider-field-label {
+  align-items: center;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 650;
+  gap: 7px;
+}
+
+.provider-field-label em {
+  color: var(--text-muted);
+  font-style: normal;
+  font-weight: 500;
+}
+
+.provider-secret-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.provider-secret-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.provider-field-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.provider-field-hint a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.provider-field-hint a:hover {
+  text-decoration: underline;
+}
+
+.provider-connection-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.provider-connection-status {
+  align-items: center;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 11px;
+  gap: 6px;
+  min-width: 0;
+}
+
 .models-panel {
   background: var(--canvas);
   border: 1px solid var(--line-soft);
@@ -2102,6 +2172,12 @@ textarea:focus-visible {
   .provider-section,
   .provider-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .provider-connection-actions,
+  .provider-secret-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .chart-header {

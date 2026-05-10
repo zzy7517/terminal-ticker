@@ -162,6 +162,8 @@ def serialize_market_state(
                         "enabled": profile.enabled,
                         "models": list(profile.models),
                         "modelEfforts": dict(profile.model_efforts),
+                        "baseUrl": profile.base_url,
+                        "apiKeyConfigured": bool(profile.api_key),
                     }
                     for name, profile in config.agent.provider_profiles.items()
                 },
@@ -190,6 +192,7 @@ def serialize_market_state(
                 "enabled": config.memory.enabled,
                 "useMemories": config.memory.use_memories,
                 "generateMemories": config.memory.generate_memories,
+                "storagePath": config.memory.storage_path,
                 "extractModel": config.memory.extract_model,
                 "consolidationModel": config.memory.consolidation_model,
                 "maxRawMemories": config.memory.max_raw_memories_for_consolidation,

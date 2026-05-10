@@ -370,6 +370,10 @@ def _format_agent_config(config: AgentConfig) -> list[str]:
         lines.append("")
         lines.append(f"[agent.providers.{name}]")
         lines.append(f"enabled = {'true' if profile.enabled else 'false'}")
+        if profile.api_key:
+            lines.append(f"api_key = {_toml_string(profile.api_key)}")
+        if profile.base_url:
+            lines.append(f"base_url = {_toml_string(profile.base_url)}")
         models_arr = ", ".join(_toml_string(m) for m in profile.models)
         lines.append(f"models = [{models_arr}]")
         if profile.model_efforts:

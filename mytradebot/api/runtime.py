@@ -684,11 +684,23 @@ class MarketRuntime:
             for model, effort in new_efforts.items()
             if model in new_models
         }
+        new_api_key = old.api_key
+        if payload.get("clearApiKey"):
+            new_api_key = ""
+        elif "apiKey" in payload or "api_key" in payload:
+            raw_api_key = payload.get("apiKey", payload.get("api_key"))
+            new_api_key = raw_api_key.strip() if isinstance(raw_api_key, str) else ""
+        new_base_url = old.base_url
+        if "baseUrl" in payload or "base_url" in payload:
+            raw_base_url = payload.get("baseUrl", payload.get("base_url"))
+            new_base_url = raw_base_url.strip() if isinstance(raw_base_url, str) else ""
         from ..config import _primary_from_profiles
         profiles[provider_name] = ProviderProfile(
             enabled=payload.get("enabled", old.enabled),
             models=new_models,
             model_efforts=tuple(new_efforts.items()),
+            api_key=new_api_key,
+            base_url=new_base_url,
         )
         primary_provider, primary_model, primary_effort = _primary_from_profiles(profiles)
         next_config = AgentConfig(

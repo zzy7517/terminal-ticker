@@ -4,21 +4,35 @@ from unittest.mock import patch
 
 from mytradebot.agent.providers.anthropic import (
     DEFAULT_ANTHROPIC_BASE_URL,
+    AnthropicProvider,
     _anthropic_headers,
     _anthropic_model_option,
+    _models_endpoint,
     _messages_endpoint,
     _messages_to_anthropic,
     _parse_anthropic_response,
 )
+from mytradebot.config import AgentConfig, ProviderProfile
 
 
 class AnthropicProviderTests(unittest.TestCase):
     """Group tests for Anthropic Messages provider support."""
 
-    def test_default_endpoint_matches_proxy_messages_url(self) -> None:
-        """Verify the default proxy base becomes /api/v1/messages."""
+    def test_default_endpoint_matches_official_messages_url(self) -> None:
+        """Verify the default official base becomes /v1/messages."""
         self.assertEqual(
             _messages_endpoint(DEFAULT_ANTHROPIC_BASE_URL),
+            "https://api.anthropic.com/v1/messages",
+        )
+        self.assertEqual(
+            _models_endpoint(DEFAULT_ANTHROPIC_BASE_URL),
+            "https://api.anthropic.com/v1/models",
+        )
+
+    def test_custom_endpoint_shapes(self) -> None:
+        """Verify custom proxy base URLs still map to Anthropic-style paths."""
+        self.assertEqual(
+            _messages_endpoint("https://claude-proxy.p1.cn/api"),
             "https://claude-proxy.p1.cn/api/v1/messages",
         )
         self.assertEqual(
@@ -38,6 +52,27 @@ class AnthropicProviderTests(unittest.TestCase):
         self.assertEqual(headers["x-api-key"], "secret")
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertNotIn("anthropic-version", headers)
+
+    def test_provider_uses_configured_connection_settings(self) -> None:
+        """Verify provider profile credentials override defaults."""
+        config = AgentConfig(
+            provider="anthropic",
+            api_mode="anthropic_messages",
+            model="global.anthropic.claude-opus-4-6-v1",
+            provider_profiles={
+                "anthropic": ProviderProfile(
+                    enabled=True,
+                    models=("global.anthropic.claude-opus-4-6-v1",),
+                    api_key="configured-secret",
+                    base_url="https://example.test/anthropic/v1/",
+                )
+            },
+        )
+
+        provider = AnthropicProvider(config)
+
+        self.assertEqual(provider._api_key, "configured-secret")
+        self.assertEqual(provider._base_url, "https://example.test/anthropic/v1")
 
     def test_messages_convert_tool_loop_history(self) -> None:
         """Verify OpenAI-style loop history becomes Anthropic tool blocks."""

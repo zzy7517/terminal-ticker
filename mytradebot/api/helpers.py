@@ -113,6 +113,8 @@ def agent_config_from_payload(current: AgentConfig, payload: dict[str, Any]) -> 
                 "enabled": p.enabled,
                 "models": list(p.models),
                 "model_efforts": dict(p.model_efforts),
+                "api_key": p.api_key,
+                "base_url": p.base_url,
             }
             for name, p in profiles.items()
         },

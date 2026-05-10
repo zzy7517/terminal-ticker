@@ -4,7 +4,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from mytradebot.config import AgentConfig, AnalysisConfig, load_config
+from mytradebot.config import AgentConfig, AnalysisConfig, ProviderProfile, load_config
 from mytradebot.config.watchlist_store import (
     append_bitget_symbol_to_watchlist,
     remove_symbol_from_watchlist,
@@ -139,6 +139,45 @@ class WatchlistStoreTests(unittest.TestCase):
         self.assertTrue(config.agent.enabled)
         self.assertEqual(config.agent.model, "gpt-5.4-mini")
         self.assertNotIn("base_url", persisted_text)
+
+    def test_update_agent_config_in_watchlist_persists_anthropic_connection(self) -> None:
+        """Verify Anthropic API key and optional base URL persist in provider profile."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "BTCUSDT", inst_type = "USDT-FUTURES", label = "BTC" },
+                    ]
+                    """
+                ).strip()
+            )
+
+            update_agent_config_in_watchlist(
+                config_path,
+                AgentConfig(
+                    provider="anthropic",
+                    api_mode="anthropic_messages",
+                    model="global.anthropic.claude-opus-4-6-v1",
+                    provider_profiles={
+                        "anthropic": ProviderProfile(
+                            enabled=True,
+                            models=("global.anthropic.claude-opus-4-6-v1",),
+                            api_key="sk-ant-test",
+                            base_url="https://example.test/v1",
+                        ),
+                    },
+                ),
+            )
+            config = load_config(config_path)
+            persisted_text = config_path.read_text()
+
+        profile = config.agent.provider_profiles["anthropic"]
+        self.assertEqual(profile.api_key, "sk-ant-test")
+        self.assertEqual(profile.base_url, "https://example.test/v1")
+        self.assertIn('api_key = "sk-ant-test"', persisted_text)
+        self.assertIn('base_url = "https://example.test/v1"', persisted_text)
 
     def test_update_analysis_config_in_watchlist_inserts_and_replaces_table(self) -> None:
         """Verify K-line analysis settings persist in TOML."""
