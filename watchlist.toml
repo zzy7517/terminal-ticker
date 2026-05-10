@@ -69,3 +69,5 @@ max_source_age_days = 180
 max_rollouts_per_startup = 5000
 min_session_idle_hours = 12
 extension_retention_days = 7
+extract_model = "codex:gpt-5.5"
+consolidation_model = "codex:gpt-5.5"

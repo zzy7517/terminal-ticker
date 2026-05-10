@@ -83,22 +83,59 @@ function normalizeCodexModelOption(item: unknown): Record<string, unknown> | nul
 function resolveCodexCredentials(): { accessToken: string; accountId: string | null } {
   if (process.env.CODEX_API_KEY) return { accessToken: process.env.CODEX_API_KEY, accountId: process.env.CODEX_ACCOUNT_ID || null };
   const authPath = process.env.CODEX_HOME ? path.join(process.env.CODEX_HOME, "auth.json") : path.join(os.homedir(), ".codex", "auth.json");
+  let parsed: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(fs.readFileSync(authPath, "utf8")) as Record<string, unknown>;
-    const accessToken = String(parsed.access_token || parsed.accessToken || "");
-    const accountId = parsed.account_id || parsed.accountId;
-    return { accessToken, accountId: typeof accountId === "string" ? accountId : null };
+    parsed = JSON.parse(fs.readFileSync(authPath, "utf8")) as Record<string, unknown>;
   } catch {
     return { accessToken: "", accountId: null };
   }
+  const tokens = parsed.tokens && typeof parsed.tokens === "object" && !Array.isArray(parsed.tokens)
+    ? parsed.tokens as Record<string, unknown>
+    : {};
+  const accessToken = String(tokens.access_token || parsed.access_token || parsed.accessToken || "").trim();
+  if (!accessToken) return { accessToken: "", accountId: null };
+  if (accessTokenIsExpired(accessToken)) {
+    throw new Error("Codex CLI access token is expired. Run `codex` once to refresh the login.");
+  }
+  const accountId = tokens.account_id || parsed.account_id || parsed.accountId || jwtClaims(accessToken).chatgpt_account_id;
+  return { accessToken, accountId: typeof accountId === "string" && accountId.trim() ? accountId.trim() : null };
 }
 
 function codexHeaders(accessToken: string, accountId: string | null): Record<string, string> {
+  const resolvedAccountId = accountId || accountIdFromToken(accessToken);
   return {
     Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
-    ...(accountId ? { "OpenAI-Account": accountId } : {}),
+    "User-Agent": "codex_cli_rs/0.0.0 (tradex)",
+    "originator": "codex_cli_rs",
+    ...(resolvedAccountId ? { "ChatGPT-Account-ID": resolvedAccountId } : {}),
   };
+}
+
+function accessTokenIsExpired(accessToken: string): boolean {
+  const exp = jwtClaims(accessToken).exp;
+  return typeof exp === "number" && exp <= Date.now() / 1000;
+}
+
+function accountIdFromToken(accessToken: string): string | null {
+  const claims = jwtClaims(accessToken);
+  const nestedAuth = claims["https://api.openai.com/auth"];
+  const accountId = claims.chatgpt_account_id || (nestedAuth && typeof nestedAuth === "object" && !Array.isArray(nestedAuth)
+    ? (nestedAuth as Record<string, unknown>).chatgpt_account_id
+    : null);
+  return typeof accountId === "string" && accountId.trim() ? accountId.trim() : null;
+}
+
+function jwtClaims(token: string): Record<string, unknown> {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return {};
+    const payload = parts[1] + "=".repeat((4 - (parts[1].length % 4)) % 4);
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
 }
 
 function messagesToCodexInput(messages: Array<Record<string, unknown>>): Array<Record<string, unknown>> {

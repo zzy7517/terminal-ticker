@@ -15,7 +15,7 @@ function hasEntryFill(trade: Trade): boolean {
 
 export class ExchangeRouter {
   private readonly tradeStore: TradeStore | null;
-  readonly tradingConfig: TradingConfig;
+  tradingConfig: TradingConfig;
 
   constructor(input: { tradeStore?: TradeStore | null; tradingConfig?: TradingConfig | null } = {}) {
     this.tradeStore = input.tradeStore ?? null;

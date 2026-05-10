@@ -89,7 +89,10 @@ export class FeedWorker {
     await this.hyperliquidSocket?.close();
     this.bitgetSocket = null;
     this.hyperliquidSocket = null;
-    await Promise.allSettled(this.tasks);
+    await Promise.race([
+      Promise.allSettled(this.tasks),
+      new Promise((resolve) => setTimeout(resolve, 2_000)),
+    ]);
     this.tasks = [];
     this.abortController = null;
   }

@@ -9,7 +9,16 @@ import { buildSocialFeedTools } from "../agent/tools/social.js";
 import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildWebTools } from "../agent/tools/web.js";
 import { mergeRegistries } from "../agent/tools/registry.js";
-import type { AgentConfig } from "../config/index.js";
+import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type SocialFeedConfig } from "../config/index.js";
+import {
+  appendBitgetSymbolToWatchlist,
+  appendHyperliquidSymbolToWatchlist,
+  removeSymbolFromWatchlist,
+  updateAgentConfigInWatchlist,
+  updateMemoryConfigInWatchlist,
+  updateNewsConfigInWatchlist,
+  updateSocialFeedConfigInWatchlist,
+} from "../config/watchlist_store.js";
 import { LocalMemoryBackend } from "../memory/backend.js";
 import { newsItemToPayload } from "../news/types.js";
 import { socialItemToPayload } from "../social_feed/types.js";
@@ -52,11 +61,43 @@ export function createApp(options: CreateAppOptions): Hono {
     }),
   );
 
-  app.post("/api/watchlist/bitget", async (c) => c.json({ state: await runtime.state() }));
-  app.post("/api/watchlist/hyperliquid", async (c) => c.json({ state: await runtime.state() }));
-  app.delete("/api/watchlist/instruments/:key", async (c) => c.json({ state: await runtime.state() }));
+  app.post("/api/watchlist/bitget", async (c) => {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    const watchlistPath = requireConfigPath(runtime);
+    await appendBitgetSymbolToWatchlist(watchlistPath, {
+      symbol: String(body.symbol || ""),
+      instType: String(body.instType || body.inst_type || ""),
+      label: typeof body.label === "string" ? body.label : null,
+      group: typeof body.group === "string" ? body.group : "crypto",
+      showCollapsed: typeof body.showCollapsed === "boolean" ? body.showCollapsed : true,
+    });
+    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+  });
+  app.post("/api/watchlist/hyperliquid", async (c) => {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    const watchlistPath = requireConfigPath(runtime);
+    await appendHyperliquidSymbolToWatchlist(watchlistPath, {
+      symbol: String(body.symbol || ""),
+      label: typeof body.label === "string" ? body.label : null,
+      group: typeof body.group === "string" ? body.group : "crypto",
+      showCollapsed: typeof body.showCollapsed === "boolean" ? body.showCollapsed : true,
+    });
+    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+  });
+  app.delete("/api/watchlist/instruments/:key", async (c) => {
+    const key = decodeURIComponent(c.req.param("key"));
+    const instrument = runtime.instruments.find((item) => item.key === key);
+    if (!instrument) return c.json({ detail: `instrument not found: ${key}` }, 404);
+    const watchlistPath = requireConfigPath(runtime);
+    await removeSymbolFromWatchlist(watchlistPath, {
+      source: instrument.source,
+      symbol: instrument.symbol,
+      instType: "instType" in instrument ? instrument.instType : null,
+    });
+    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+  });
 
-  app.get("/api/agent/sessions", (c) => c.json({ sessions: [], preloadedSessions: [] }));
+  app.get("/api/agent/sessions", (c) => c.json(sessionHistory(runtime)));
   app.post("/api/agent/sessions", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const session = runtime.agentSessionStore.createGlobalSession({
@@ -76,8 +117,7 @@ export function createApp(options: CreateAppOptions): Hono {
     });
   });
   app.get("/api/agent/sessions/:id", (c) => {
-    const payload = runtime.agentSessionStore.sessionPayload(c.req.param("id"));
-    return c.json(payload ?? { session: null, messages: [] });
+    return c.json(sessionResponse(runtime, c.req.param("id")));
   });
   app.delete("/api/agent/sessions/:id", async (c) => {
     runtime.agentSessionStore.deleteSessionById(c.req.param("id"));
@@ -258,11 +298,41 @@ export function createApp(options: CreateAppOptions): Hono {
     }
   });
 
-  app.post("/api/agent/providers/:provider", async (c) => c.json({ state: await runtime.state() }));
-  app.post("/api/agent/config", async (c) => c.json({ state: await runtime.state() }));
-  app.post("/api/news/config", async (c) => c.json({ state: await runtime.state() }));
-  app.post("/api/social/config", async (c) => c.json({ state: await runtime.state() }));
-  app.post("/api/memory/config", async (c) => c.json({ state: await runtime.state() }));
+  app.post("/api/agent/providers/:provider", async (c) => {
+    const provider = c.req.param("provider");
+    const body = (await c.req.json()) as Record<string, unknown>;
+    const watchlistPath = requireConfigPath(runtime);
+    await updateAgentConfigInWatchlist(watchlistPath, mergeProviderProfile(runtime.config.agent, provider, body));
+    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+  });
+  app.post("/api/agent/config", async (c) => {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    const watchlistPath = requireConfigPath(runtime);
+    await updateAgentConfigInWatchlist(watchlistPath, {
+      ...runtime.config.agent,
+      enabled: typeof body.enabled === "boolean" ? body.enabled : runtime.config.agent.enabled,
+      maxCandles: Number.isFinite(Number(body.maxCandles)) ? Number(body.maxCandles) : runtime.config.agent.maxCandles,
+    });
+    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+  });
+  app.post("/api/news/config", async (c) => {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    const watchlistPath = requireConfigPath(runtime);
+    await updateNewsConfigInWatchlist(watchlistPath, mergeNewsConfig(runtime.config.news, body));
+    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+  });
+  app.post("/api/social/config", async (c) => {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    const watchlistPath = requireConfigPath(runtime);
+    await updateSocialFeedConfigInWatchlist(watchlistPath, mergeSocialFeedConfig(runtime.config.socialFeed, body));
+    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+  });
+  app.post("/api/memory/config", async (c) => {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    const watchlistPath = requireConfigPath(runtime);
+    await updateMemoryConfigInWatchlist(watchlistPath, mergeMemoryConfig(runtime.config.memory, body));
+    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+  });
 
   app.post("/api/news/refresh", async (c) => {
     const outcome = await runtime.newsService.refreshNow();
@@ -313,9 +383,30 @@ export function createApp(options: CreateAppOptions): Hono {
   app.post("/api/memory/browse", async (c) => {
     const body = (await c.req.json()) as { action?: string; params?: Record<string, unknown> };
     const backend = new LocalMemoryBackend(runtime.config.memory.storagePath);
-    if (body.action === "read") return c.json(backend.read({ path: String(body.params?.path || "") }));
-    if (body.action === "search") return c.json({ matches: backend.search({ query: String((body.params?.queries as string[] | undefined)?.join(" ") || "") }) });
-    return c.json({ path: body.params?.path ?? null, entries: backend.list({ path: body.params?.path ? String(body.params.path) : null }), nextCursor: null, truncated: false });
+    if (body.action === "read") {
+      const result = backend.read({ path: String(body.params?.path || "") });
+      return c.json({ startLineNumber: 1, ...result });
+    }
+    if (body.action === "search") {
+      const queries = Array.isArray(body.params?.queries) ? body.params.queries.map(String) : [];
+      const matches = backend.search({ query: queries.join(" "), path: body.params?.path ? String(body.params.path) : null }).map((item) => ({
+        path: item.path,
+        matchLineNumber: 1,
+        contentStartLineNumber: 1,
+        content: item.preview,
+        matchedQueries: queries,
+      }));
+      return c.json({ queries, matches, nextCursor: null, truncated: false });
+    }
+    return c.json({
+      path: body.params?.path ?? null,
+      entries: backend.list({ path: body.params?.path ? String(body.params.path) : null }).map((item) => ({
+        path: item.path,
+        entryType: item.type,
+      })),
+      nextCursor: null,
+      truncated: false,
+    });
   });
 
   app.get("/api/lessons", (c) => c.json({ lessons: runtime.tradeStore.listLessons({ instrumentKey: c.req.query("instrument_key") || null, limit: Number(c.req.query("limit") || 50) }) }));
@@ -367,6 +458,106 @@ function agentConfigForRequest(config: AgentConfig, body: Record<string, unknown
       },
     },
   };
+}
+
+function requireConfigPath(runtime: MarketRuntime): string {
+  if (!runtime.config.sourcePath) throw new Error("watchlist config path is not available");
+  return runtime.config.sourcePath;
+}
+
+async function reloadAndState(runtime: MarketRuntime, watchlistPath: string): Promise<Record<string, unknown>> {
+  await runtime.reloadConfig(await loadConfig(watchlistPath));
+  return runtime.state();
+}
+
+function mergeProviderProfile(config: AgentConfig, provider: string, body: Record<string, unknown>): AgentConfig {
+  const current = config.providerProfiles[provider] ?? {
+    enabled: false,
+    models: [],
+    modelEfforts: [],
+    apiKey: "",
+    baseUrl: "",
+  };
+  let models = [...current.models];
+  if (Array.isArray(body.models)) models = body.models.map(String).filter(Boolean);
+  if (typeof body.toggleModel === "string" && body.toggleModel.trim()) {
+    const slug = body.toggleModel.trim();
+    models = models.includes(slug) ? models.filter((item) => item !== slug) : [...models, slug];
+  }
+  const effortUpdate = body.modelEffort && typeof body.modelEffort === "object" && !Array.isArray(body.modelEffort)
+    ? body.modelEffort as Record<string, unknown>
+    : null;
+  let modelEfforts = [...current.modelEfforts];
+  if (effortUpdate && typeof effortUpdate.model === "string" && typeof effortUpdate.effort === "string") {
+    modelEfforts = modelEfforts.filter(([model]) => model !== effortUpdate.model);
+    modelEfforts.push([effortUpdate.model, effortUpdate.effort]);
+  }
+  const nextProfile: ProviderProfile = {
+    ...current,
+    enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
+    models,
+    modelEfforts,
+    apiKey: body.clearApiKey === true ? "" : typeof body.apiKey === "string" && body.apiKey ? body.apiKey : current.apiKey,
+    baseUrl: typeof body.baseUrl === "string" ? body.baseUrl.trim() : current.baseUrl,
+  };
+  const providerProfiles = { ...config.providerProfiles, [provider]: nextProfile };
+  const firstEnabled = Object.entries(providerProfiles).find(([, profile]) => profile.enabled && profile.models.length > 0);
+  const activeProvider = firstEnabled?.[0] ?? config.provider;
+  const activeProfile = providerProfiles[activeProvider] ?? nextProfile;
+  return {
+    ...config,
+    provider: activeProvider,
+    apiMode: apiModeForProvider(activeProvider),
+    model: activeProfile.models[0] ?? config.model,
+    reasoningEffort: activeProfile.modelEfforts.find(([model]) => model === activeProfile.models[0])?.[1] ?? config.reasoningEffort,
+    providerProfiles,
+  };
+}
+
+function mergeNewsConfig(config: NewsConfig, body: Record<string, unknown>): NewsConfig {
+  return {
+    ...config,
+    enabled: typeof body.enabled === "boolean" ? body.enabled : config.enabled,
+    pollIntervalSeconds: numberField(body.pollIntervalSeconds, config.pollIntervalSeconds),
+    maxIntervalSeconds: numberField(body.maxIntervalSeconds, config.maxIntervalSeconds),
+    reutersUrl: typeof body.reutersUrl === "string" && body.reutersUrl.trim() ? body.reutersUrl.trim() : config.reutersUrl,
+    requestTimeoutSeconds: numberField(body.requestTimeoutSeconds, config.requestTimeoutSeconds),
+    retentionDays: numberField(body.retentionDays, config.retentionDays),
+    recentLimit: numberField(body.recentLimit, config.recentLimit),
+  };
+}
+
+function mergeSocialFeedConfig(config: SocialFeedConfig, body: Record<string, unknown>): SocialFeedConfig {
+  return {
+    ...config,
+    enabled: typeof body.enabled === "boolean" ? body.enabled : config.enabled,
+    recentLimit: numberField(body.recentLimit, config.recentLimit),
+    retentionDays: numberField(body.retentionDays, config.retentionDays),
+    maxItems: numberField(body.maxItems, config.maxItems),
+  };
+}
+
+function mergeMemoryConfig(config: MemoryConfig, body: Record<string, unknown>): MemoryConfig {
+  return {
+    ...config,
+    enabled: typeof body.enabled === "boolean" ? body.enabled : config.enabled,
+    useMemories: typeof body.useMemories === "boolean" ? body.useMemories : config.useMemories,
+    generateMemories: typeof body.generateMemories === "boolean" ? body.generateMemories : config.generateMemories,
+    storagePath: typeof body.storagePath === "string" ? body.storagePath || null : config.storagePath,
+    extractModel: typeof body.extractModel === "string" ? body.extractModel || null : config.extractModel,
+    consolidationModel: typeof body.consolidationModel === "string" ? body.consolidationModel || null : config.consolidationModel,
+    maxRawMemoriesForConsolidation: numberField(body.maxRawMemories, config.maxRawMemoriesForConsolidation),
+    maxUnusedDays: numberField(body.maxUnusedDays, config.maxUnusedDays),
+    maxSourceAgeDays: numberField(body.maxSourceAgeDays, config.maxSourceAgeDays),
+    maxRolloutsPerStartup: numberField(body.maxRolloutsPerStartup, config.maxRolloutsPerStartup),
+    minSessionIdleHours: numberField(body.minSessionIdleHours, config.minSessionIdleHours),
+    extensionRetentionDays: numberField(body.extensionRetentionDays, config.extensionRetentionDays),
+  };
+}
+
+function numberField(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function apiModeForProvider(provider: string): string {

@@ -12,9 +12,9 @@ import { resolveInstruments, MarketInstrument } from "../market_data/router.js";
 import { serializeState } from "./serializers.js";
 
 export class MarketRuntime {
-  readonly config: AppConfig;
-  readonly instruments: MarketInstrument[];
-  readonly controller: TickerController;
+  config: AppConfig;
+  instruments: MarketInstrument[];
+  controller: TickerController;
   readonly tradeStore: TradeStore;
   readonly exchangeRouter: ExchangeRouter;
   readonly newsService: NewsService;
@@ -41,6 +41,17 @@ export class MarketRuntime {
 
   static async create(config: AppConfig): Promise<MarketRuntime> {
     return new MarketRuntime(config, await resolveInstruments(config.instruments));
+  }
+
+  async reloadConfig(config: AppConfig): Promise<void> {
+    await this.controller.stop();
+    this.config = config;
+    this.instruments = await resolveInstruments(config.instruments);
+    this.controller = new TickerController({ config, instruments: this.instruments });
+    this.exchangeRouter.tradingConfig = config.trading;
+    Object.assign(this.newsService.config, config.news);
+    Object.assign(this.socialFeedService.config, config.socialFeed);
+    this.controller.start();
   }
 
   async start(): Promise<void> {
