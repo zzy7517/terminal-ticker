@@ -648,6 +648,83 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("BTCUSDT", persisted_text)
         self.assertIn("ETHUSDT", persisted_text)
 
+    def test_remove_instrument_endpoint_persists_hyperliquid_builder_symbol(self) -> None:
+        """Verify browser can remove a Hyperliquid builder DEX instrument by key."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "xyz:VIX", source = "hyperliquid", label = "VIX Perp (xyz)", group = "indices" },
+                      { symbol = "xyz:SP500", source = "hyperliquid", label = "SP500 Perp (xyz)", group = "indices" },
+                    ]
+                    """
+                ).strip()
+            )
+            config = load_config(config_path)
+            vix = HyperliquidInstrument("xyz:VIX", "VIX Perp (xyz)", "VIX", group="indices")
+            sp500 = HyperliquidInstrument("xyz:SP500", "SP500 Perp (xyz)", "SP500", group="indices")
+            app = create_app(
+                config=config,
+                instruments=(vix, sp500),
+                controller_factory=DummyController,
+                auto_start=False,
+            )
+
+            with patch("tradex.api.runtime.resolve_instruments", return_value=(sp500,)):
+                with TestClient(app) as client:
+                    response = client.delete(
+                        "/api/watchlist/instruments/hyperliquid%3Axyz%3AVIX"
+                    )
+            payload = response.json()
+            persisted_text = config_path.read_text()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["changed"])
+        self.assertNotIn("xyz:VIX", persisted_text)
+        self.assertIn("xyz:SP500", persisted_text)
+        self.assertEqual(
+            [instrument["key"] for instrument in payload["state"]["instruments"]],
+            ["hyperliquid:xyz:SP500"],
+        )
+
+    def test_remove_instrument_endpoint_logs_and_500s_when_file_remove_noops(self) -> None:
+        """Verify runtime/file mismatches are surfaced instead of returning changed=false."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "xyz:VIX", source = "hyperliquid", label = "VIX Perp (xyz)", group = "indices" },
+                      { symbol = "xyz:SP500", source = "hyperliquid", label = "SP500 Perp (xyz)", group = "indices" },
+                    ]
+                    """
+                ).strip()
+            )
+            config = load_config(config_path)
+            vix = HyperliquidInstrument("xyz:VIX", "VIX Perp (xyz)", "VIX", group="indices")
+            sp500 = HyperliquidInstrument("xyz:SP500", "SP500 Perp (xyz)", "SP500", group="indices")
+            app = create_app(
+                config=config,
+                instruments=(vix, sp500),
+                controller_factory=DummyController,
+                auto_start=False,
+            )
+
+            with patch("tradex.api.runtime.remove_symbol_from_watchlist", return_value=False):
+                with self.assertLogs("tradex.api.runtime", level="ERROR") as captured:
+                    with TestClient(app) as client:
+                        response = client.delete(
+                            "/api/watchlist/instruments/hyperliquid%3Axyz%3AVIX"
+                        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json()["detail"], "Watchlist remove failed.")
+        self.assertIn("watchlist remove failed after runtime match", captured.output[0])
+        self.assertIn("hyperliquid:xyz:VIX", captured.output[0])
+
     def test_remove_instrument_endpoint_rejects_last_symbol(self) -> None:
         """Verify browser cannot remove the final active watchlist instrument."""
         with tempfile.TemporaryDirectory() as tmp_dir:

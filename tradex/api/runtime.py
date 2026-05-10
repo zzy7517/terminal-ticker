@@ -749,6 +749,16 @@ class MarketRuntime:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         self.agent_analyses.pop(instrument.key, None)
+        if not changed:
+            LOGGER.error(
+                "watchlist remove failed after runtime match: instrument_key=%s source=%s symbol=%s inst_type=%s path=%s",
+                instrument.key,
+                instrument.source,
+                instrument.symbol,
+                getattr(instrument, "inst_type", None),
+                source_path,
+            )
+            raise HTTPException(status_code=500, detail="Watchlist remove failed.")
         if changed:
             await self.reload_from_source()
         return {"changed": changed, "state": self.snapshot()}

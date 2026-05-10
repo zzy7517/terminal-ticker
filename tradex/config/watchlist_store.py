@@ -46,6 +46,14 @@ def _normalize_hyperliquid_symbol(symbol: str) -> str:
     return normalized
 
 
+def _normalize_symbol_for_source(source: str, symbol: str) -> str:
+    """说明：按 provider 规则规范化标的代码。"""
+    normalized_source = source.strip().lower()
+    if normalized_source == HYPERLIQUID_SOURCE:
+        return _normalize_hyperliquid_symbol(symbol)
+    return _normalize_bitget_symbol(symbol)
+
+
 def _normalize_bitget_inst_type(inst_type: str | None) -> str:
     """说明：写入或删除前规范化 Bitget 合约类型。"""
     normalized = str(inst_type or "").strip().upper()
@@ -148,10 +156,15 @@ def _is_symbol_entry(
     entry = _parse_inline_symbol_entry(line)
     if entry is None:
         return False
-    raw_symbol = str(entry.get("symbol") or "").strip().upper()
+    entry_source = _entry_source(entry)
+    raw_symbol = str(entry.get("symbol") or "")
+    try:
+        normalized_entry_symbol = _normalize_symbol_for_source(entry_source, raw_symbol)
+    except ValueError:
+        return False
     return (
-        _entry_source(entry) == source
-        and raw_symbol == symbol
+        entry_source == source
+        and normalized_entry_symbol == symbol
         and _entry_inst_type(entry) == inst_type
     )
 
@@ -297,7 +310,7 @@ def remove_symbol_from_watchlist(
     """说明：从 watchlist 文件中删除指定 provider 标的。"""
     source_path = Path(path).expanduser().resolve()
     normalized_source = source.strip().lower()
-    normalized_symbol = symbol.strip().upper()
+    normalized_symbol = _normalize_symbol_for_source(normalized_source, symbol)
     normalized_inst_type = inst_type.strip().upper() if inst_type else None
 
     config = load_config(source_path)
@@ -338,7 +351,7 @@ def update_instrument_analysis_interval_in_watchlist(
     """说明：持久化单个标的的 K 线周期覆盖。"""
     source_path = Path(path).expanduser().resolve()
     normalized_source = source.strip().lower()
-    normalized_symbol = symbol.strip().upper()
+    normalized_symbol = _normalize_symbol_for_source(normalized_source, symbol)
     normalized_inst_type = inst_type.strip().upper() if inst_type else None
 
     lines = source_path.read_text().splitlines()

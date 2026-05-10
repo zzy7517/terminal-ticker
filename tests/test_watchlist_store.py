@@ -78,6 +78,35 @@ class WatchlistStoreTests(unittest.TestCase):
         self.assertEqual(len(config.instruments), 1)
         self.assertEqual(config.instruments[0].inst_type, "USDC-FUTURES")
 
+    def test_remove_symbol_from_watchlist_removes_hyperliquid_builder_symbol(self) -> None:
+        """Verify Hyperliquid builder DEX symbols preserve the lowercase dex prefix."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "watchlist.toml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    symbols = [
+                      { symbol = "xyz:VIX", source = "hyperliquid", label = "VIX Perp (xyz)" },
+                      { symbol = "xyz:SP500", source = "hyperliquid", label = "SP500 Perp (xyz)" },
+                    ]
+                    """
+                ).strip()
+            )
+
+            removed = remove_symbol_from_watchlist(
+                config_path,
+                source="hyperliquid",
+                symbol="xyz:VIX",
+                inst_type=None,
+            )
+            persisted_text = config_path.read_text()
+            config = load_config(config_path)
+
+        self.assertTrue(removed)
+        self.assertNotIn("xyz:VIX", persisted_text)
+        self.assertEqual(len(config.instruments), 1)
+        self.assertEqual(config.instruments[0].symbol, "xyz:SP500")
+
     def test_remove_symbol_from_watchlist_rejects_last_symbol(self) -> None:
         """Verify generic remove keeps at least one watchlist symbol."""
         with tempfile.TemporaryDirectory() as tmp_dir:
