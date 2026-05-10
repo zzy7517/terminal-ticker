@@ -7,14 +7,13 @@ import {
   Sun,
   Zap,
 } from 'lucide-react';
-import { useMarketStore, useGroups, useSelectedInstrument, useSelectedQuote } from '../../stores/marketStore';
+import { useMarketStore, useGroups } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
 import { GROUP_LABELS, THEME_LABELS } from '../../constants';
 import type { ThemeName } from '../../constants';
-import { changeClass, nextTheme, sourceName } from '../../utils';
+import { changeClass, nextTheme } from '../../utils';
 import { ConnectionBadge } from './ConnectionBadge';
 import { WatchlistRow } from './WatchlistRow';
-import { StatTile } from './StatTile';
 import { AgentSessionHistoryList } from './AgentSessionHistoryList';
 import { AgentSessionPanel } from './AgentSessionPanel';
 import { NewsPanel } from './NewsPanel';
@@ -35,22 +34,12 @@ export function WorkspaceView() {
   const openSettings = useUiStore((s) => s.openSettings);
 
   const groups = useGroups();
-  const selectedInstrument = useSelectedInstrument();
-  const selectedQuote = useSelectedQuote();
-
-  const currentInterval = selectedInstrument?.analysisInterval ?? state?.config.analysis.interval ?? '5m';
   const nextThemeName: ThemeName = nextTheme(theme);
 
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
   const collapsedKeys = state?.instruments.map((instrument) => instrument.key) ?? [];
 
   const [activeTab, setActiveTab] = useState<'agent' | 'news' | 'social' | 'positions'>('agent');
-  const selectedSourceLabel = selectedInstrument ? sourceName(selectedInstrument.source) : '-';
-  const selectedGroupLabel = selectedInstrument ? GROUP_LABELS[selectedInstrument.group] ?? selectedInstrument.group : '-';
-  const selectedPrice = selectedQuote?.priceLabel ?? '-';
-  const selectedChange = selectedQuote
-    ? `${selectedQuote.changeLabel ?? '-'} · ${selectedQuote.percentLabel ?? '-'}`
-    : '-';
 
   return (
     <main className="app-shell">
@@ -199,34 +188,6 @@ export function WorkspaceView() {
         </aside>
 
         <section className="main-content">
-          <section className="market-summary">
-            <div className="market-summary-head">
-              <div>
-                <div className="eyebrow">Focus Symbol</div>
-                <h2>{selectedInstrument?.label ?? '选择标的'}</h2>
-                <p className="market-summary-meta">
-                  {selectedInstrument?.symbol ?? '-'} · {selectedSourceLabel} · {selectedGroupLabel}
-                </p>
-              </div>
-              <div className="price-readout">
-                <span className="readout-label">Last</span>
-                <strong>{selectedPrice}</strong>
-                <span className={changeClass(selectedQuote)}>
-                  {selectedChange}
-                </span>
-              </div>
-            </div>
-
-            <div className="stat-grid">
-              <StatTile label="Source" value={selectedSourceLabel} />
-              <StatTile label="Interval" value={currentInterval} />
-              <StatTile label="High" value={selectedQuote?.dayHigh?.toFixed(2) ?? '-'} />
-              <StatTile label="Low" value={selectedQuote?.dayLow?.toFixed(2) ?? '-'} />
-              <StatTile label="Volume" value={selectedQuote?.volumeLabel ?? '-'} />
-              <StatTile label="Age" value={selectedQuote?.ageLabel ?? 'waiting'} />
-            </div>
-          </section>
-
           {activeTab === 'agent' && (
             <div className="agent-tab-layout">
               <AgentSessionHistoryList />

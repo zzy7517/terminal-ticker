@@ -837,96 +837,6 @@ textarea:focus-visible {
   font-weight: var(--ctl-weight-strong);
 }
 
-/* ── Market summary ───────────────────────────────────────────────── */
-.market-summary {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.market-summary {
-  display: flex;
-  flex-direction: column;
-  padding: 14px;
-}
-
-.market-summary-head {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.price-readout {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.price-readout strong {
-  display: block;
-  font-size: 32px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.price-readout span {
-  display: block;
-  margin-top: 4px;
-}
-
-.readout-label {
-  color: var(--text-muted);
-  display: block;
-  font-family: var(--mono);
-  font-size: 10px;
-  margin-bottom: 2px;
-  text-transform: uppercase;
-}
-
-.market-summary-meta {
-  color: var(--text-secondary);
-  font-size: 13px;
-  margin-top: 6px;
-}
-
-/* ── Stat grid ────────────────────────────────────────────────────── */
-.stat-grid {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  margin-top: 10px;
-}
-
-.stat-tile {
-  background: var(--canvas);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
-  padding: 8px 10px;
-}
-
-.stat-tile span,
-.stat-tile strong {
-  display: block;
-}
-
-.stat-tile span {
-  color: var(--text-muted);
-  font-size: 10px;
-}
-
-.stat-tile strong {
-  font-family: var(--mono);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ── Agent main panel ─────────────────────────────────────────────── */
 .agent-main-panel {
   display: flex;
@@ -2004,10 +1914,6 @@ textarea:focus-visible {
     max-height: none;
   }
 
-  .stat-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .agent-tab-layout {
     grid-template-columns: 1fr;
   }
@@ -2032,7 +1938,6 @@ textarea:focus-visible {
     width: 100%;
   }
 
-  .stat-grid,
   .provider-section,
   .provider-form-grid {
     grid-template-columns: 1fr;
@@ -2042,20 +1947,6 @@ textarea:focus-visible {
   .provider-secret-row {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .market-summary-head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .price-readout {
-    text-align: left;
-    width: 100%;
-  }
-
-  .price-readout strong {
-    font-size: 28px;
   }
 
   .settings-frame,

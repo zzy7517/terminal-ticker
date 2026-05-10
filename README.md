@@ -21,7 +21,7 @@ tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bit
 Bitget / Hyperliquid / Reuters
         |
         v
-FastAPI backend  <---->  SQLite stores
+Hono TypeScript backend  <---->  SQLite stores
         |
         +-- feed worker
         +-- agent runtime
@@ -32,8 +32,8 @@ React + Vite frontend
 
 核心代码路径：
 
-- `tradex/api/app.py`：HTTP API、WebSocket、后台 worker 生命周期。
-- `tradex/runtime/feed.py`：watchlist 行情循环、多周期 K 线、缓存与 provider 路由。
+- `tradex/api/app.ts`：HTTP API、WebSocket、后台 worker 生命周期。
+- `tradex/runtime/feed.ts`：watchlist 行情循环、多周期 K 线、缓存与 provider 路由。
 - `tradex/market_data/`：Bitget、Hyperliquid、catalog 和 candle provider。
 - `tradex/agent/`：LLM provider、agent loop、工具和 session 存储。
 - `tradex/trading/`：交易数据模型、SQLite store、Hyperliquid 主网 / Bitget Demo Trading 客户端和 review controller。
@@ -42,22 +42,18 @@ React + Vite frontend
 
 ## 快速启动
 
-后端使用 Python，前端使用 Vite。开发时通常开两个进程：
+后端和前端都使用 TypeScript。开发时直接启动两个进程：
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
 npm install
-npm run dev
+npm run dev:all
 ```
 
-另一个终端启动后端：
+也可以分别启动：
 
 ```bash
-source .venv/bin/activate
-python -m tradex --config watchlist.toml --host 127.0.0.1 --port 8765
+npm run dev:backend
+npm run dev
 ```
 
 然后打开：
@@ -70,10 +66,11 @@ http://127.0.0.1:5173
 
 ```bash
 npm run build
-python -m tradex --config watchlist.toml --host 127.0.0.1 --port 8765
+npm run build:backend
+npm run start:backend -- --config watchlist.toml --host 127.0.0.1 --port 8765
 ```
 
-这种模式下 FastAPI 会直接服务 `web/dist`。
+生产构建产物会写入 `dist/backend` 和 `dist/`。
 
 ## 配置
 
@@ -340,16 +337,17 @@ Content-Type: application/json
 
 ## 验证
 
-后端测试：
+类型检查：
 
 ```bash
-python -m unittest discover -s tests -p "test_*.py"
+npm run typecheck
 ```
 
-前端构建：
+构建：
 
 ```bash
 npm run build
+npm run build:backend
 ```
 
 ## 当前边界
