@@ -11,10 +11,12 @@ from fastapi import HTTPException, Request
 from ..config import (
     AgentConfig,
     AnalysisConfig,
+    MemoryConfig,
     NewsConfig,
     SocialFeedConfig,
     parse_agent_config,
     parse_analysis_config,
+    parse_memory_config,
     parse_news_config,
     parse_social_feed_config,
 )
@@ -178,6 +180,51 @@ def news_config_from_payload(current: NewsConfig, payload: dict[str, Any]) -> Ne
         if incoming in payload:
             raw[normalized] = payload[incoming]
     return parse_news_config(raw)
+
+
+def memory_config_from_payload(current: MemoryConfig, payload: dict[str, Any]) -> MemoryConfig:
+    raw: dict[str, Any] = {
+        "enabled": current.enabled,
+        "use_memories": current.use_memories,
+        "generate_memories": current.generate_memories,
+        "max_raw_memories_for_consolidation": current.max_raw_memories_for_consolidation,
+        "max_unused_days": current.max_unused_days,
+        "max_source_age_days": current.max_source_age_days,
+        "max_rollouts_per_startup": current.max_rollouts_per_startup,
+        "min_session_idle_hours": current.min_session_idle_hours,
+        "extension_retention_days": current.extension_retention_days,
+    }
+    if current.extract_model:
+        raw["extract_model"] = current.extract_model
+    if current.consolidation_model:
+        raw["consolidation_model"] = current.consolidation_model
+    field_map = {
+        "enabled": "enabled",
+        "useMemories": "use_memories",
+        "use_memories": "use_memories",
+        "generateMemories": "generate_memories",
+        "generate_memories": "generate_memories",
+        "extractModel": "extract_model",
+        "extract_model": "extract_model",
+        "consolidationModel": "consolidation_model",
+        "consolidation_model": "consolidation_model",
+        "maxRawMemories": "max_raw_memories_for_consolidation",
+        "max_raw_memories_for_consolidation": "max_raw_memories_for_consolidation",
+        "maxUnusedDays": "max_unused_days",
+        "max_unused_days": "max_unused_days",
+        "maxSourceAgeDays": "max_source_age_days",
+        "max_source_age_days": "max_source_age_days",
+        "maxRolloutsPerStartup": "max_rollouts_per_startup",
+        "max_rollouts_per_startup": "max_rollouts_per_startup",
+        "minSessionIdleHours": "min_session_idle_hours",
+        "min_session_idle_hours": "min_session_idle_hours",
+        "extensionRetentionDays": "extension_retention_days",
+        "extension_retention_days": "extension_retention_days",
+    }
+    for incoming, normalized in field_map.items():
+        if incoming in payload:
+            raw[normalized] = payload[incoming]
+    return parse_memory_config(raw)
 
 
 def social_feed_config_from_payload(

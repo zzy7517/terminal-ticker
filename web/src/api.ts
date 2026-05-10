@@ -11,6 +11,11 @@ import type {
   InstrumentSearchResult,
   Lesson,
   MarketState,
+  MemoryBrowseListResult,
+  MemoryBrowseReadResult,
+  MemoryBrowseSearchResult,
+  MemoryConfigUpdate,
+  MemoryStatus,
   NewsConfigUpdate,
   NewsItem,
   SocialAuthStatus,
@@ -353,6 +358,68 @@ export async function fetchRecentSocialFeed(limit = 3): Promise<SocialFeedItem[]
   }
   const payload = await response.json();
   return payload.items ?? [];
+}
+
+// Fetches the current memory pipeline status and config.
+export async function fetchMemoryStatus(): Promise<MemoryStatus> {
+  const response = await fetch('/api/memory/status');
+  if (!response.ok) {
+    throw await responseError(response, 'memory status failed');
+  }
+  return response.json();
+}
+
+// Saves memory module settings (enabled, models, etc.) and returns the updated state.
+export async function saveMemoryConfig(config: MemoryConfigUpdate): Promise<MarketState> {
+  const response = await fetch('/api/memory/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'memory config save failed');
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
+// Lists files in the memory directory.
+export async function memoryList(path?: string): Promise<MemoryBrowseListResult> {
+  const response = await fetch('/api/memory/browse', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'list', params: { path: path || null } }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'memory list failed');
+  }
+  return response.json();
+}
+
+// Reads a memory file by relative path.
+export async function memoryRead(path: string): Promise<MemoryBrowseReadResult> {
+  const response = await fetch('/api/memory/browse', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'read', params: { path } }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'memory read failed');
+  }
+  return response.json();
+}
+
+// Searches memory files by keywords.
+export async function memorySearch(queries: string[], path?: string): Promise<MemoryBrowseSearchResult> {
+  const response = await fetch('/api/memory/browse', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'search', params: { queries, path: path || null } }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'memory search failed');
+  }
+  return response.json();
 }
 
 // Saves the selected K-line interval for a single watchlist instrument.

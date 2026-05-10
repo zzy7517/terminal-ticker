@@ -194,6 +194,78 @@ export interface NewsConfigUpdate {
   recentLimit?: number;
 }
 
+export interface MemoryConfig {
+  enabled: boolean;
+  useMemories: boolean;
+  generateMemories: boolean;
+  extractModel: string | null;
+  consolidationModel: string | null;
+  maxRawMemories: number;
+  maxUnusedDays: number;
+  maxSourceAgeDays: number;
+  maxRolloutsPerStartup: number;
+  minSessionIdleHours: number;
+  extensionRetentionDays: number;
+}
+
+export interface MemoryConfigUpdate {
+  enabled?: boolean;
+  useMemories?: boolean;
+  generateMemories?: boolean;
+  extractModel?: string | null;
+  consolidationModel?: string | null;
+  maxRawMemories?: number;
+  maxUnusedDays?: number;
+  maxSourceAgeDays?: number;
+  maxRolloutsPerStartup?: number;
+  minSessionIdleHours?: number;
+  extensionRetentionDays?: number;
+}
+
+export interface MemoryStatus {
+  enabled: boolean;
+  pipelineAvailable: boolean;
+  pipelineRunning: boolean;
+  sourceCount: number;
+  outputCount: number;
+  phase2Status: string;
+  config: MemoryConfig;
+}
+
+export interface MemoryEntry {
+  path: string;
+  entryType: 'file' | 'directory';
+}
+
+export interface MemoryBrowseListResult {
+  path: string | null;
+  entries: MemoryEntry[];
+  nextCursor: string | null;
+  truncated: boolean;
+}
+
+export interface MemoryBrowseReadResult {
+  path: string;
+  startLineNumber: number;
+  content: string;
+  truncated: boolean;
+}
+
+export interface MemorySearchMatch {
+  path: string;
+  matchLineNumber: number;
+  contentStartLineNumber: number;
+  content: string;
+  matchedQueries: string[];
+}
+
+export interface MemoryBrowseSearchResult {
+  queries: string[];
+  matches: MemorySearchMatch[];
+  nextCursor: string | null;
+  truncated: boolean;
+}
+
 export interface SocialFeedConfig {
   enabled: boolean;
   recentLimit: number;
@@ -330,6 +402,7 @@ export interface MarketState {
       requestTimeoutSeconds: number;
       retentionDays: number;
     };
+    memory: MemoryConfig;
     socialFeed: SocialFeedConfig;
     trading: {
       hyperliquidEnabled: boolean;

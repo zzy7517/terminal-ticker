@@ -10,6 +10,7 @@ import {
   ProviderSettingsPanel,
   AgentContextSettingsPanel,
   NewsSettingsPanel,
+  MemorySettingsPanel,
   SocialSettingsPanel,
   WatchlistSettingsPanel,
 } from './components/settings';
@@ -89,6 +90,8 @@ export default function App() {
           <AgentContextSettingsPanel />
         ) : route.section === 'news' ? (
           <NewsSettingsPanel />
+        ) : route.section === 'memory' ? (
+          <MemorySettingsPanel />
         ) : route.section === 'social' ? (
           <SocialSettingsPanel />
         ) : (

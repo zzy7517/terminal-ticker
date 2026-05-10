@@ -10,6 +10,7 @@ import type {
 import {
   AGENT_CONTEXT_HASH,
   GROUP_LABELS,
+  MEMORY_HASH,
   NEWS_HASH,
   PROVIDERS_HASH,
   SOCIAL_HASH,
@@ -39,6 +40,9 @@ export function readRouteFromHash(): AppRoute {
   if (window.location.hash.startsWith(SOCIAL_HASH)) {
     return { view: 'settings', section: 'social' };
   }
+  if (window.location.hash.startsWith(MEMORY_HASH)) {
+    return { view: 'settings', section: 'memory' };
+  }
   if (window.location.hash.startsWith(AGENT_CONTEXT_HASH)) {
     return { view: 'settings', section: 'agent-context' };
   }
@@ -59,6 +63,8 @@ export function navigateToRoute(route: AppRoute) {
     const hash =
       route.section === 'social'
         ? SOCIAL_HASH
+        : route.section === 'memory'
+        ? MEMORY_HASH
         : route.section === 'agent-context'
         ? AGENT_CONTEXT_HASH
         : route.section === 'news'

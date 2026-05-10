@@ -151,10 +151,18 @@ class AgentConfig:
 
 @dataclass(frozen=True)
 class MemoryConfig:
-    """说明：封装本地持久记忆的读写开关。"""
+    """说明：封装本地持久记忆的全部运行参数（对齐 Codex MemoriesConfig）。"""
     enabled: bool = False
     use_memories: bool = True
     generate_memories: bool = True
+    extract_model: str | None = None
+    consolidation_model: str | None = None
+    max_raw_memories_for_consolidation: int = 256
+    max_unused_days: int = 180
+    max_source_age_days: int = 180
+    max_rollouts_per_startup: int = 5000
+    min_session_idle_hours: int = 12
+    extension_retention_days: int = 7
 
 
 @dataclass(frozen=True)
@@ -453,6 +461,10 @@ def parse_memory_config(raw_memory: dict[str, Any] | None) -> MemoryConfig:
         raw_memory = {}
     if not isinstance(raw_memory, dict):
         raise ValueError("memory must be a table")
+    raw_extract = raw_memory.get("extract_model")
+    extract_model = str(raw_extract).strip() if isinstance(raw_extract, str) and raw_extract.strip() else None
+    raw_consolidation = raw_memory.get("consolidation_model")
+    consolidation_model = str(raw_consolidation).strip() if isinstance(raw_consolidation, str) and raw_consolidation.strip() else None
     return MemoryConfig(
         enabled=_normalize_bool(raw_memory.get("enabled"), "memory.enabled", False),
         use_memories=_normalize_bool(raw_memory.get("use_memories"), "memory.use_memories", True),
@@ -460,6 +472,38 @@ def parse_memory_config(raw_memory: dict[str, Any] | None) -> MemoryConfig:
             raw_memory.get("generate_memories"),
             "memory.generate_memories",
             True,
+        ),
+        extract_model=extract_model,
+        consolidation_model=consolidation_model,
+        max_raw_memories_for_consolidation=_coerce_min_int(
+            raw_memory.get("max_raw_memories_for_consolidation"),
+            "memory.max_raw_memories_for_consolidation",
+            256, 1,
+        ),
+        max_unused_days=_coerce_min_int(
+            raw_memory.get("max_unused_days"),
+            "memory.max_unused_days",
+            180, 1,
+        ),
+        max_source_age_days=_coerce_min_int(
+            raw_memory.get("max_source_age_days"),
+            "memory.max_source_age_days",
+            180, 1,
+        ),
+        max_rollouts_per_startup=_coerce_min_int(
+            raw_memory.get("max_rollouts_per_startup"),
+            "memory.max_rollouts_per_startup",
+            5000, 1,
+        ),
+        min_session_idle_hours=_coerce_min_int(
+            raw_memory.get("min_session_idle_hours"),
+            "memory.min_session_idle_hours",
+            12, 0,
+        ),
+        extension_retention_days=_coerce_min_int(
+            raw_memory.get("extension_retention_days"),
+            "memory.extension_retention_days",
+            7, 1,
         ),
     )
 

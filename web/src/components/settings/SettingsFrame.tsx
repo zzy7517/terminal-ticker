@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import {
   ArrowLeft,
   Bot,
+  Brain,
   CircleDot,
   KeyRound,
   Newspaper,
@@ -71,6 +72,14 @@ export function SettingsFrame({
             >
               <Newspaper size={18} />
               <span>News</span>
+            </button>
+            <button
+              className={`settings-nav-item ${section === 'memory' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('memory')}
+            >
+              <Brain size={18} />
+              <span>Memory</span>
             </button>
             <button
               className={`settings-nav-item ${section === 'social' ? 'active' : ''}`}

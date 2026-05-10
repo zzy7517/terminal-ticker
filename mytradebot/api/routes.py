@@ -67,6 +67,22 @@ def register_routes(app: FastAPI, runtime: MarketRuntime) -> None:
     async def create_memory_note_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         return await runtime.create_memory_note(payload)
 
+    @app.get("/api/memory/status")
+    async def memory_status_endpoint() -> dict[str, Any]:
+        return runtime.memory_status()
+
+    @app.post("/api/memory/config")
+    async def update_memory_config_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+        return await runtime.update_memory_config(payload)
+
+    @app.post("/api/memory/browse")
+    async def memory_browse_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+        action = str(payload.get("action") or "list")
+        params = payload.get("params") or {}
+        if not isinstance(params, dict):
+            params = {}
+        return await runtime.memory_browse(action, params)
+
     # -- Agent sessions --
 
     @app.get("/api/agent/sessions")

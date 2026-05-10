@@ -8,6 +8,7 @@ import tomllib
 from . import (
     AgentConfig,
     AnalysisConfig,
+    MemoryConfig,
     NewsConfig,
     SocialFeedConfig,
     TradingConfig,
@@ -485,6 +486,38 @@ def update_social_feed_config_in_watchlist(path: str | Path, config: SocialFeedC
     source_path = Path(path).expanduser().resolve()
     text = source_path.read_text()
     rendered = _replace_top_level_table(text, "social_feed", _format_social_feed_config(config))
+    if rendered == text:
+        return False
+    source_path.write_text(rendered)
+    return True
+
+
+def _format_memory_config(config: MemoryConfig) -> list[str]:
+    """说明：把 MemoryConfig 渲染成顶层 TOML 表。"""
+    lines = [
+        "[memory]",
+        f"enabled = {'true' if config.enabled else 'false'}",
+        f"use_memories = {'true' if config.use_memories else 'false'}",
+        f"generate_memories = {'true' if config.generate_memories else 'false'}",
+        f"max_raw_memories_for_consolidation = {config.max_raw_memories_for_consolidation}",
+        f"max_unused_days = {config.max_unused_days}",
+        f"max_source_age_days = {config.max_source_age_days}",
+        f"max_rollouts_per_startup = {config.max_rollouts_per_startup}",
+        f"min_session_idle_hours = {config.min_session_idle_hours}",
+        f"extension_retention_days = {config.extension_retention_days}",
+    ]
+    if config.extract_model:
+        lines.append(f"extract_model = {_toml_string(config.extract_model)}")
+    if config.consolidation_model:
+        lines.append(f"consolidation_model = {_toml_string(config.consolidation_model)}")
+    return lines
+
+
+def update_memory_config_in_watchlist(path: str | Path, config: MemoryConfig) -> bool:
+    """说明：在 watchlist 文件中插入或替换 memory 配置表。"""
+    source_path = Path(path).expanduser().resolve()
+    text = source_path.read_text()
+    rendered = _replace_top_level_table(text, "memory", _format_memory_config(config))
     if rendered == text:
         return False
     source_path.write_text(rendered)
