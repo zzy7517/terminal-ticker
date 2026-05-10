@@ -196,6 +196,8 @@ def memory_config_from_payload(current: MemoryConfig, payload: dict[str, Any]) -
         "min_session_idle_hours": current.min_session_idle_hours,
         "extension_retention_days": current.extension_retention_days,
     }
+    if current.storage_path:
+        raw["storage_path"] = current.storage_path
     if current.extract_model:
         raw["extract_model"] = current.extract_model
     if current.consolidation_model:
@@ -206,6 +208,8 @@ def memory_config_from_payload(current: MemoryConfig, payload: dict[str, Any]) -
         "use_memories": "use_memories",
         "generateMemories": "generate_memories",
         "generate_memories": "generate_memories",
+        "storagePath": "storage_path",
+        "storage_path": "storage_path",
         "extractModel": "extract_model",
         "extract_model": "extract_model",
         "consolidationModel": "consolidation_model",

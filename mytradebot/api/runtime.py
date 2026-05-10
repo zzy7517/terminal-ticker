@@ -58,6 +58,7 @@ from ..market_data.bitget import (
 from ..market_data.hyperliquid import load_instrument_catalog as load_hyperliquid_instrument_catalog
 from ..market_data.router import MarketInstrument, resolve_instruments
 from ..memory import MemoryPipeline, MemoryRuntimePolicy, parse_memory_citations
+from ..memory.backend import LocalMemoryBackend, MemoryAccessError
 from ..news import NewsService, NewsStore
 from ..news.providers.reuters import ReutersSitemapProvider
 from ..runtime.controller import TickerController
@@ -82,6 +83,7 @@ from ..config.watchlist_store import (
     update_agent_config_in_watchlist,
     update_analysis_config_in_watchlist,
     update_instrument_analysis_interval_in_watchlist,
+    update_memory_config_in_watchlist,
     update_news_config_in_watchlist,
     update_social_feed_config_in_watchlist,
     update_trading_config_in_watchlist,
@@ -92,6 +94,7 @@ from .helpers import (
     analysis_config_from_payload,
     effective_agent_config,
     news_config_from_payload,
+    memory_config_from_payload,
     normalize_agent_prompt,
     request_float,
     social_feed_config_from_payload,
@@ -337,16 +340,23 @@ class MarketRuntime:
             )
 
     def _create_memory_pipeline(self) -> MemoryPipeline | None:
-        """说明：按当前运行策略创建写入流水线；失败时降级为不可用。"""
+        """说明：按当前运行策略和 MemoryConfig 创建写入流水线；失败时降级为不可用。"""
+        cfg = self.config.memory
         try:
             return MemoryPipeline(
+                root=cfg.storage_path,
                 agent_session_store=self.agent_session_store,
                 trade_store=self.trade_store,
-                agent_config_provider=lambda: self.config.agent,
+                agent_config_provider=lambda: _memory_agent_config(self.config, phase="extract"),
+                phase2_config_provider=lambda: _memory_agent_config(self.config, phase="consolidation"),
                 policy=self.memory_policy,
+                startup_scan_limit=cfg.max_rollouts_per_startup,
+                max_source_age_days=cfg.max_source_age_days,
+                min_agent_session_idle_hours=cfg.min_session_idle_hours,
+                max_unused_days=cfg.max_unused_days,
+                extension_retention_days=cfg.extension_retention_days,
             )
         except OSError as exc:
-            # 记忆目录不可创建时降级为关闭，不影响主应用和测试环境。
             LOGGER.warning("memory pipeline disabled: %s", exc)
             return None
 
@@ -436,6 +446,126 @@ class MarketRuntime:
         )
         self._kickoff_memory_pipeline_if_ready()
         return {"ok": True, "noteId": note_key, "queued": True}
+
+    async def update_memory_config(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """说明：更新 memory 配置并持久化到 TOML。"""
+        self._require_source_path()
+        try:
+            next_config = memory_config_from_payload(self.config.memory, payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        self.config = replace(self.config, memory=next_config)
+        self.memory_policy = _memory_policy_from_config(self.config)
+        self._schedule_flush()
+        await self._rebuild_memory_pipeline()
+        await self.broadcast()
+        return {"changed": True, "state": self.snapshot()}
+
+    def memory_status(self) -> dict[str, Any]:
+        """说明：返回 memory pipeline 的运行状态。"""
+        cfg = self.config.memory
+        pipeline_running = (
+            self.memory_pipeline is not None
+            and self.memory_pipeline._startup_task is not None
+            and not self.memory_pipeline._startup_task.done()
+        )
+        source_count = 0
+        output_count = 0
+        phase2_status = "unknown"
+        if self.memory_pipeline is not None:
+            try:
+                with self.memory_pipeline.state_store._get_conn() as conn:
+                    row = conn.execute("SELECT COUNT(*) AS cnt FROM memory_sources").fetchone()
+                    source_count = int(row["cnt"]) if row else 0
+                    row = conn.execute("SELECT COUNT(*) AS cnt FROM stage1_outputs").fetchone()
+                    output_count = int(row["cnt"]) if row else 0
+                    row = conn.execute("SELECT status FROM phase2_jobs WHERE id = 1").fetchone()
+                    phase2_status = str(row["status"]) if row else "pending"
+            except Exception:
+                pass
+        return {
+            "enabled": cfg.enabled,
+            "pipelineAvailable": self.memory_pipeline is not None,
+            "pipelineRunning": pipeline_running,
+            "sourceCount": source_count,
+            "outputCount": output_count,
+            "phase2Status": phase2_status,
+            "config": {
+                "enabled": cfg.enabled,
+                "useMemories": cfg.use_memories,
+                "generateMemories": cfg.generate_memories,
+                "storagePath": cfg.storage_path,
+                "extractModel": cfg.extract_model,
+                "consolidationModel": cfg.consolidation_model,
+                "maxRawMemories": cfg.max_raw_memories_for_consolidation,
+                "maxUnusedDays": cfg.max_unused_days,
+                "maxSourceAgeDays": cfg.max_source_age_days,
+                "maxRolloutsPerStartup": cfg.max_rollouts_per_startup,
+                "minSessionIdleHours": cfg.min_session_idle_hours,
+                "extensionRetentionDays": cfg.extension_retention_days,
+            },
+        }
+
+    async def memory_browse(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
+        """说明：前端用的记忆文件浏览 API，支持 list / read / search。"""
+        backend = LocalMemoryBackend(self.config.memory.storage_path)
+        try:
+            if action == "list":
+                return backend.list(
+                    path=params.get("path"),
+                    cursor=params.get("cursor"),
+                    max_results=_safe_int(params.get("maxResults"), 2000),
+                )
+            if action == "read":
+                path = params.get("path")
+                if not path:
+                    raise MemoryAccessError("path is required")
+                return backend.read(
+                    path=path,
+                    line_offset=_safe_int(params.get("lineOffset"), 1),
+                    max_lines=_safe_int(params.get("maxLines"), None),
+                    max_tokens=_safe_int(params.get("maxTokens"), 20000),
+                )
+            if action == "search":
+                queries = params.get("queries")
+                if not queries or not isinstance(queries, list):
+                    raise MemoryAccessError("queries must be a non-empty array")
+                return backend.search(
+                    queries=queries,
+                    path=params.get("path"),
+                    match_mode=params.get("matchMode", "any"),
+                    case_sensitive=bool(params.get("caseSensitive", False)),
+                    max_results=_safe_int(params.get("maxResults"), 200),
+                )
+            raise HTTPException(status_code=400, detail=f"unknown memory action: {action}")
+        except MemoryAccessError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    async def _rebuild_memory_pipeline(self) -> None:
+        """说明：用最新 MemoryConfig 重建 pipeline 实例，先关闭旧实例。"""
+        if self.memory_pipeline is not None:
+            await self.memory_pipeline.shutdown()
+            self.memory_pipeline = None
+        cfg = self.config.memory
+        if not cfg.enabled:
+            return
+        try:
+            self.memory_pipeline = MemoryPipeline(
+                root=cfg.storage_path,
+                agent_session_store=self.agent_session_store,
+                trade_store=self.trade_store,
+                agent_config_provider=lambda: _memory_agent_config(self.config, phase="extract"),
+                phase2_config_provider=lambda: _memory_agent_config(self.config, phase="consolidation"),
+                policy=self.memory_policy,
+                startup_scan_limit=cfg.max_rollouts_per_startup,
+                max_source_age_days=cfg.max_source_age_days,
+                min_agent_session_idle_hours=cfg.min_session_idle_hours,
+                max_unused_days=cfg.max_unused_days,
+                extension_retention_days=cfg.extension_retention_days,
+            )
+        except OSError as exc:
+            LOGGER.warning("memory pipeline rebuild failed: %s", exc)
+            self.memory_pipeline = None
 
     def snapshot(self) -> dict[str, Any]:
         open_trades = [
@@ -1669,6 +1799,9 @@ class MarketRuntime:
             await asyncio.to_thread(
                 update_trading_config_in_watchlist, source_path, self.config.trading,
             )
+            await asyncio.to_thread(
+                update_memory_config_in_watchlist, source_path, self.config.memory,
+            )
         except Exception:
             LOGGER.warning("Config flush to disk failed", exc_info=True)
 
@@ -1941,6 +2074,15 @@ class MarketRuntime:
         }
 
 
+def _safe_int(value: Any, default: int | None) -> int | None:
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _request_int(value: Any, *, default: int = 0) -> int:
     """Parse an optional integer request value."""
     if value in (None, ""):
@@ -2003,6 +2145,31 @@ def _memory_policy_from_config(config: AppConfig) -> MemoryRuntimePolicy:
     return MemoryRuntimePolicy(
         generate_memories=memory.generate_memories,
         use_memories=memory.use_memories,
+    )
+
+
+def _memory_agent_config(config: AppConfig, *, phase: str = "extract") -> AgentConfig:
+    """说明：构造 memory pipeline 使用的 AgentConfig，支持按阶段覆盖模型。
+
+    格式为 "provider:model" 或纯 model slug；未设置时 fallback 到全局 agent config。
+    """
+    mem_cfg = config.memory
+    model_spec = mem_cfg.consolidation_model if phase == "consolidation" else mem_cfg.extract_model
+    if not model_spec:
+        if phase == "consolidation" and mem_cfg.extract_model:
+            model_spec = mem_cfg.extract_model
+        else:
+            return config.agent
+    if ":" in model_spec:
+        provider, model = model_spec.split(":", 1)
+    else:
+        provider = config.agent.provider
+        model = model_spec
+    return replace(
+        config.agent,
+        provider=provider,
+        api_mode=normalize_api_mode(provider),
+        model=normalize_model(provider, model),
     )
 
 

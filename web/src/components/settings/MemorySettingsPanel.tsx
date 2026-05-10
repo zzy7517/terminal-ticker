@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Bot,
   Brain,
+  Check,
+  ChevronDown,
   ChevronRight,
   File,
   Folder,
@@ -10,18 +13,23 @@ import {
   Database,
   Cpu,
   Clock,
+  Sparkles,
   Trash2,
 } from 'lucide-react';
 import type {
+  AgentModelOption,
   MemoryBrowseListResult,
   MemoryBrowseReadResult,
   MemoryBrowseSearchResult,
   MemoryConfigUpdate,
   MemoryStatus,
 } from '../../types';
+import { AGENT_PROVIDER_OPTIONS } from '../../constants';
+import { useAgentStore } from '../../stores/agentStore';
 import { useMarketStore } from '../../stores/marketStore';
 import {
   fetchMemoryStatus,
+  fetchProviderModels,
   saveMemoryConfig,
   memoryList,
   memoryRead,
@@ -29,6 +37,204 @@ import {
 } from '../../api';
 
 type BrowseMode = 'tree' | 'read' | 'search';
+
+function MemoryModelPicker({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  disabled: boolean;
+  onChange: (model: string | null) => void;
+}) {
+  const modelCache = useAgentStore((s) => s.modelCache);
+  const agentConfig = useMarketStore((s) => s.state?.config.agent);
+  const profiles = agentConfig?.providerProfiles ?? {};
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [localCache, setLocalCache] = useState<Record<string, AgentModelOption[]>>({});
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch('');
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const enabledProviders = AGENT_PROVIDER_OPTIONS.filter((o) => profiles[o.provider]?.enabled);
+    for (const opt of enabledProviders) {
+      if (modelCache[opt.provider]?.length || localCache[opt.provider]?.length) continue;
+      fetchProviderModels(opt.provider)
+        .then((payload) => {
+          const visible = payload.models.filter((m) => m.supportedInApi && m.visibility !== 'hide');
+          useAgentStore.getState().setModelCache((prev) => ({ ...prev, [opt.provider]: visible }));
+          setLocalCache((prev) => ({ ...prev, [opt.provider]: visible }));
+        })
+        .catch(() => {});
+    }
+  }, [open, profiles, modelCache, localCache]);
+
+  const enabledProviders = AGENT_PROVIDER_OPTIONS.filter((o) => profiles[o.provider]?.enabled);
+  const kw = search.trim().toLowerCase();
+
+  const displayValue = value || 'Agent default';
+  const providerForValue = value && value.includes(':') ? value.split(':')[0] : null;
+  const modelSlugForValue = value && value.includes(':') ? value.split(':').slice(1).join(':') : value;
+
+  return (
+    <div className="memory-model-picker" ref={ref}>
+      <span className="memory-model-picker-label">{label}</span>
+      <button
+        className="memory-model-trigger"
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(!open)}
+      >
+        {providerForValue ? (
+          <span className="memory-model-provider-icon">
+            {providerForValue === 'anthropic' ? <Sparkles size={11} /> : <Bot size={11} />}
+          </span>
+        ) : (
+          <span className="memory-model-provider-icon"><Cpu size={11} /></span>
+        )}
+        <span className="memory-model-trigger-text">{modelSlugForValue || displayValue}</span>
+        <ChevronDown size={13} />
+      </button>
+      {open && (
+        <div className="memory-model-dropdown">
+          <div className="memory-model-dropdown-search">
+            <Search size={13} />
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search models..."
+            />
+          </div>
+          <div className="memory-model-dropdown-list">
+            <button
+              className={`memory-model-option ${!value ? 'active' : ''}`}
+              type="button"
+              onClick={() => { onChange(null); setOpen(false); setSearch(''); }}
+            >
+              {!value && <Check size={12} />}
+              <span>Agent default</span>
+              <span className="memory-model-option-hint">inherit</span>
+            </button>
+            {enabledProviders.map((opt) => {
+              const providerModels = (modelCache[opt.provider] ?? []).filter((m) =>
+                !kw || m.slug.toLowerCase().includes(kw) || m.displayName.toLowerCase().includes(kw),
+              );
+              if (providerModels.length === 0) return null;
+              return (
+                <div key={opt.provider} className="memory-model-group">
+                  <div className="memory-model-group-head">
+                    {opt.provider === 'anthropic' ? <Sparkles size={11} /> : <Bot size={11} />}
+                    <span>{opt.label}</span>
+                  </div>
+                  {providerModels.map((m) => {
+                    const fullSlug = `${opt.provider}:${m.slug}`;
+                    const isActive = value === fullSlug || (value === m.slug && !value.includes(':'));
+                    return (
+                      <button
+                        key={m.slug}
+                        className={`memory-model-option ${isActive ? 'active' : ''}`}
+                        type="button"
+                        onClick={() => { onChange(fullSlug); setOpen(false); setSearch(''); }}
+                      >
+                        {isActive && <Check size={12} />}
+                        <span>{m.displayName || m.slug}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StoragePathInput({
+  value,
+  disabled,
+  onSave,
+}: {
+  value: string | null;
+  disabled: boolean;
+  onSave: (path: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+
+  useEffect(() => {
+    setDraft(value ?? '');
+  }, [value]);
+
+  function commit() {
+    const trimmed = draft.trim();
+    onSave(trimmed || null);
+    setEditing(false);
+  }
+
+  function cancel() {
+    setDraft(value ?? '');
+    setEditing(false);
+  }
+
+  return (
+    <div className="memory-storage-path">
+      <span className="memory-model-picker-label">Storage path</span>
+      {editing ? (
+        <div className="memory-storage-path-edit">
+          <input
+            autoFocus
+            className="memory-storage-path-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit();
+              if (e.key === 'Escape') cancel();
+            }}
+            placeholder="~/.local/share/mytradebot/memories"
+            disabled={disabled}
+          />
+          <button className="memory-browser-btn" type="button" onClick={commit} disabled={disabled}>
+            Save
+          </button>
+          <button className="memory-browser-btn" type="button" onClick={cancel}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          className="memory-storage-path-display"
+          type="button"
+          disabled={disabled}
+          onClick={() => setEditing(true)}
+        >
+          <Database size={12} />
+          <span className="memory-storage-path-value">
+            {value || '~/.local/share/mytradebot/memories'}
+          </span>
+          {!value && <span className="memory-model-option-hint">default</span>}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function MemorySettingsPanel() {
   const state = useMarketStore((s) => s.state);
@@ -206,15 +412,28 @@ export function MemorySettingsPanel() {
             </button>
           </label>
 
+          <StoragePathInput
+            value={config.storagePath}
+            disabled={saving}
+            onSave={(path) => persistConfig({ storagePath: path })}
+          />
+
+          <div className="memory-model-pickers">
+            <MemoryModelPicker
+              label="Extract model (Phase 1)"
+              value={config.extractModel}
+              disabled={saving}
+              onChange={(model) => persistConfig({ extractModel: model })}
+            />
+            <MemoryModelPicker
+              label="Consolidation model (Phase 2)"
+              value={config.consolidationModel}
+              disabled={saving}
+              onChange={(model) => persistConfig({ consolidationModel: model })}
+            />
+          </div>
+
           <div className="settings-readonly-grid" style={{ marginTop: 12 }}>
-            <div>
-              <span className="panel-label"><Cpu size={12} /> Extract model</span>
-              <strong>{config.extractModel || 'Agent default'}</strong>
-            </div>
-            <div>
-              <span className="panel-label"><Cpu size={12} /> Consolidation model</span>
-              <strong>{config.consolidationModel || 'Agent default'}</strong>
-            </div>
             <div>
               <span className="panel-label"><Database size={12} /> Max raw memories</span>
               <strong>{config.maxRawMemories}</strong>
@@ -253,15 +472,10 @@ export function MemorySettingsPanel() {
               </div>
               <div>
                 <span className="panel-label">Phase 2</span>
-                <strong>{memStatus.phase2Status}</strong>
+                <strong>{memStatus.phase2Status === 'unknown' ? (config.enabled ? 'Initializing' : 'Not active') : memStatus.phase2Status}</strong>
               </div>
             </div>
           )}
-
-          <div className="settings-hint" style={{ marginTop: 8 }}>
-            Models and numeric limits are read from watchlist.toml [memory] section. Edit and
-            restart to change.
-          </div>
           {statusMsg && <div className="provider-status-bar">{statusMsg}</div>}
         </section>
 

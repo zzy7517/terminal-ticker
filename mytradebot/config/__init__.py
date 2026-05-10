@@ -157,6 +157,7 @@ class MemoryConfig:
     enabled: bool = False
     use_memories: bool = True
     generate_memories: bool = True
+    storage_path: str | None = None
     extract_model: str | None = None
     consolidation_model: str | None = None
     max_raw_memories_for_consolidation: int = 256
@@ -476,6 +477,8 @@ def parse_memory_config(raw_memory: dict[str, Any] | None) -> MemoryConfig:
     extract_model = str(raw_extract).strip() if isinstance(raw_extract, str) and raw_extract.strip() else None
     raw_consolidation = raw_memory.get("consolidation_model")
     consolidation_model = str(raw_consolidation).strip() if isinstance(raw_consolidation, str) and raw_consolidation.strip() else None
+    raw_storage_path = raw_memory.get("storage_path")
+    storage_path = str(raw_storage_path).strip() if isinstance(raw_storage_path, str) and raw_storage_path.strip() else None
     return MemoryConfig(
         enabled=_normalize_bool(raw_memory.get("enabled"), "memory.enabled", False),
         use_memories=_normalize_bool(raw_memory.get("use_memories"), "memory.use_memories", True),
@@ -484,6 +487,7 @@ def parse_memory_config(raw_memory: dict[str, Any] | None) -> MemoryConfig:
             "memory.generate_memories",
             True,
         ),
+        storage_path=storage_path,
         extract_model=extract_model,
         consolidation_model=consolidation_model,
         max_raw_memories_for_consolidation=_coerce_min_int(

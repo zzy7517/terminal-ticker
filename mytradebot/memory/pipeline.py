@@ -52,6 +52,7 @@ class MemoryPipeline:
         agent_session_store: AgentSessionStore | None = None,
         trade_store: TradeStore | None = None,
         agent_config_provider: Callable[[], AgentConfig | None] | None = None,
+        phase2_config_provider: Callable[[], AgentConfig | None] | None = None,
         llm_provider_factory: Callable[[AgentConfig], Any] = create_llm_provider,
         policy: MemoryRuntimePolicy | None = None,
         phase2_heartbeat_interval_ms: int = DEFAULT_PHASE2_HEARTBEAT_MS,
@@ -91,7 +92,7 @@ class MemoryPipeline:
             root=self.root,
             state_store=self.state_store,
             storage=self.storage,
-            agent_config_provider=self.agent_config_provider,
+            agent_config_provider=phase2_config_provider or self.agent_config_provider,
             llm_provider_factory=self.llm_provider_factory,
             heartbeat_interval_ms=phase2_heartbeat_interval_ms,
         )

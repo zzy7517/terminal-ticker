@@ -510,6 +510,8 @@ def _format_memory_config(config: MemoryConfig) -> list[str]:
         f"min_session_idle_hours = {config.min_session_idle_hours}",
         f"extension_retention_days = {config.extension_retention_days}",
     ]
+    if config.storage_path:
+        lines.append(f"storage_path = {_toml_string(config.storage_path)}")
     if config.extract_model:
         lines.append(f"extract_model = {_toml_string(config.extract_model)}")
     if config.consolidation_model:

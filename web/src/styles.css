@@ -2761,6 +2761,222 @@ textarea:focus-visible {
   }
 }
 
+/* ── Memory Model Picker ─────────────────────────────────────────── */
+
+.memory-model-pickers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.memory-model-picker {
+  position: relative;
+}
+
+.memory-model-picker-label {
+  color: var(--text-secondary);
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.memory-model-trigger {
+  align-items: center;
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 7px;
+  padding: 8px 12px;
+  transition: border-color 120ms, box-shadow 120ms;
+  width: 100%;
+}
+
+.memory-model-trigger:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-tint);
+}
+
+.memory-model-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.memory-model-provider-icon {
+  align-items: center;
+  color: var(--accent);
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.memory-model-trigger-text {
+  flex: 1;
+  font-family: var(--mono);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-model-dropdown {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  left: 0;
+  max-height: min(320px, calc(100vh - 320px));
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 200;
+}
+
+.memory-model-dropdown-search {
+  align-items: center;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.memory-model-dropdown-search input {
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  flex: 1;
+  font-size: 13px;
+  outline: none;
+}
+
+.memory-model-dropdown-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.memory-model-dropdown-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.memory-model-group-head {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 10px;
+  font-weight: 600;
+  gap: 5px;
+  letter-spacing: 0.04em;
+  padding: 10px 12px 4px;
+  text-transform: uppercase;
+}
+
+.memory-model-option {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  padding: 6px 12px 6px 28px;
+  text-align: left;
+  transition: background 80ms;
+  width: 100%;
+}
+
+.memory-model-option:hover {
+  background: var(--accent-tint);
+}
+
+.memory-model-option.active {
+  color: var(--accent);
+  font-weight: 600;
+  padding-left: 10px;
+}
+
+.memory-model-option-hint {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+/* ── Memory Storage Path ─────────────────────────────────────────── */
+
+.memory-storage-path {
+  margin-top: 14px;
+}
+
+.memory-storage-path-display {
+  align-items: center;
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  padding: 8px 12px;
+  transition: border-color 120ms, box-shadow 120ms;
+  width: 100%;
+}
+
+.memory-storage-path-display:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-tint);
+}
+
+.memory-storage-path-display:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.memory-storage-path-value {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-storage-path-edit {
+  display: flex;
+  gap: 6px;
+}
+
+.memory-storage-path-input {
+  background: var(--canvas);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 2px var(--accent-tint);
+  color: var(--text-primary);
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12px;
+  min-width: 0;
+  outline: none;
+  padding: 8px 12px;
+}
+
+.memory-storage-path-input::placeholder {
+  color: var(--text-muted);
+}
+
 /* ── Memory Browser ──────────────────────────────────────────────── */
 
 .memory-browser {

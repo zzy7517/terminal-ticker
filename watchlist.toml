@@ -53,3 +53,14 @@ enabled = true
 recent_limit = 100
 retention_days = 30
 max_items = 2000
+
+[memory]
+enabled = false
+use_memories = true
+generate_memories = true
+max_raw_memories_for_consolidation = 256
+max_unused_days = 180
+max_source_age_days = 180
+max_rollouts_per_startup = 5000
+min_session_idle_hours = 12
+extension_retention_days = 7
