@@ -23,14 +23,10 @@ from ..provider import LLMProviderError, LLMProviderUnavailable
 
 DEFAULT_ANTHROPIC_BASE_URL = "https://claude-proxy.p1.cn/api"
 DEFAULT_ANTHROPIC_TIMEOUT_SECONDS = 45.0
-ANTHROPIC_ENV_API_KEYS = (
-    "MYTRADEBOT_ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "ANTHROPIC_API_KEY",
-)
-ANTHROPIC_ENV_BASE_URLS = ("MYTRADEBOT_ANTHROPIC_BASE_URL", "ANTHROPIC_BASE_URL")
-ANTHROPIC_ENV_MODELS = ("MYTRADEBOT_ANTHROPIC_MODELS", "ANTHROPIC_MODELS")
-ANTHROPIC_ENV_MAX_TOKENS = ("MYTRADEBOT_ANTHROPIC_MAX_TOKENS", "ANTHROPIC_MAX_TOKENS")
+ANTHROPIC_ENV_API_KEYS = ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY")
+ANTHROPIC_ENV_BASE_URLS = ("ANTHROPIC_BASE_URL",)
+ANTHROPIC_ENV_MODELS = ("ANTHROPIC_MODELS",)
+ANTHROPIC_ENV_MAX_TOKENS = ("ANTHROPIC_MAX_TOKENS",)
 
 
 class AnthropicProvider:
@@ -108,7 +104,7 @@ def _resolve_anthropic_api_key() -> str:
     if api_key:
         return api_key
     raise LLMProviderUnavailable(
-        "No Anthropic API key found. Set MYTRADEBOT_ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN."
+        "No Anthropic API key found. Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY."
     )
 
 
@@ -147,7 +143,7 @@ def _anthropic_headers(api_key: str, url: str) -> dict[str, str]:
         "x-api-key": api_key,
         "Content-Type": "application/json",
     }
-    version = _first_env(("MYTRADEBOT_ANTHROPIC_VERSION", "ANTHROPIC_VERSION"))
+    version = _first_env(("ANTHROPIC_VERSION",))
     if version:
         headers["anthropic-version"] = version
     elif "api.anthropic.com" in url:

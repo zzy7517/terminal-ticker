@@ -109,7 +109,7 @@ class WebTests(unittest.TestCase):
         async def scenario() -> None:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 tmp_path = Path(tmp_dir)
-                with patch.dict(os.environ, {"MYTRADEBOT_MEMORY_HOME": str(tmp_path / "memories")}, clear=False):
+                with patch.dict(os.environ, {"XDG_DATA_HOME": str(tmp_path)}, clear=False):
                     runtime = MarketRuntime(
                         config=AppConfig(
                             instruments=tuple(),
@@ -745,8 +745,8 @@ class WebTests(unittest.TestCase):
     def test_memory_note_endpoint_queues_manual_note(self) -> None:
         """Verify the REST path creates a manual memory source."""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir) / "memories"
-            with patch.dict(os.environ, {"MYTRADEBOT_MEMORY_HOME": str(root)}, clear=False):
+            root = Path(tmp_dir) / "mytradebot" / "memories"
+            with patch.dict(os.environ, {"XDG_DATA_HOME": str(Path(tmp_dir))}, clear=False):
                 app = create_app(
                     config=AppConfig(
                         instruments=tuple(),

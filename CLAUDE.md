@@ -48,7 +48,7 @@ npm run build
 
 ### Required environment
 
-Codex provider reads `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), or `MYTRADEBOT_CODEX_API_KEY` env var.
+Codex provider reads `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), or `CODEX_API_KEY` env var.
 
 Bitget Demo Trading uses demo-only API credentials. The backend signs v2 REST requests and always sends `paptrading: 1`:
 

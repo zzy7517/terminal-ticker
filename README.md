@@ -173,20 +173,17 @@ content-type: application/json
 ```bash
 export ANTHROPIC_AUTH_TOKEN="..."
 # 也可以用：
-export MYTRADEBOT_ANTHROPIC_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
 
 # 可选
-export MYTRADEBOT_ANTHROPIC_BASE_URL="https://claude-proxy.p1.cn/api"
 export ANTHROPIC_BASE_URL="https://claude-proxy.p1.cn/api"
-export MYTRADEBOT_ANTHROPIC_MODELS="global.anthropic.claude-opus-4-6-v1,global.anthropic.claude-sonnet-4-5-v1"
-export MYTRADEBOT_ANTHROPIC_MAX_TOKENS="1200"
+export ANTHROPIC_MODELS="global.anthropic.claude-opus-4-6-v1,global.anthropic.claude-sonnet-4-5-v1"
+export ANTHROPIC_MAX_TOKENS="1200"
 ```
 
 Codex provider 会优先读取 `CODEX_HOME/auth.json`，也支持环境变量：
 
 ```bash
-export MYTRADEBOT_CODEX_API_KEY="..."
 export CODEX_API_KEY="..."
 ```
 
@@ -211,9 +208,9 @@ Agent 不是只看一段 prompt。打开 `agent.use_tools = true` 后，它可�
 `web_search` 默认使用 Exa MCP，并在失败时退回 DuckDuckGo HTML 搜索；不需要配置 Exa API key。可以用环境变量强制后端：
 
 ```bash
-export MYTRADEBOT_WEB_SEARCH_BACKEND="auto"       # 默认：Exa MCP -> DuckDuckGo
-export MYTRADEBOT_WEB_SEARCH_BACKEND="exa_mcp"    # 只用 Exa MCP
-export MYTRADEBOT_WEB_SEARCH_BACKEND="duckduckgo" # 只用 DuckDuckGo
+export WEB_SEARCH_BACKEND="auto"       # 默认：Exa MCP -> DuckDuckGo
+export WEB_SEARCH_BACKEND="exa_mcp"    # 只用 Exa MCP
+export WEB_SEARCH_BACKEND="duckduckgo" # 只用 DuckDuckGo
 ```
 
 Agent 输出会被解析成结构化结果，核心字段包括 `summary`、`bias`、`confidence`、`key_levels`、`watch_plan`、`invalidation` 和 `risk_notes`。

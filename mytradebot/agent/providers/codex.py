@@ -3,7 +3,7 @@
 本模块负责把 agent transcript 和工具 schema 发送给 Codex 后端，并把流式文本
 和工具调用转换成通用 ``ChatResponse``。它的职责边界比较窄：
 
-- 凭证解析：优先读取 ``MYTRADEBOT_CODEX_API_KEY`` / ``CODEX_API_KEY``，
+- 凭证解析：优先读取 ``CODEX_API_KEY``，
   缺省时复用 Codex CLI 写入的 ``~/.codex/auth.json`` 登录态。
 - 分析请求：使用 Codex Responses 风格的 ``/responses`` 流式接口，发送紧凑
   JSON 上下文，且设置 ``store=False``，避免服务端持久化本次分析输入。
@@ -36,7 +36,7 @@ from ...config.agent_models import (
 from ..loop import ChatResponse, StreamDeltaHandler, ToolCall as LoopToolCall
 from ..provider import LLMProviderError, LLMProviderUnavailable
 
-CODEX_ENV_API_KEYS = ("MYTRADEBOT_CODEX_API_KEY", "CODEX_API_KEY")
+CODEX_ENV_API_KEYS = ("CODEX_API_KEY",)
 DEFAULT_CODEX_TIMEOUT_SECONDS = 45.0
 _CODEX_LOCAL_WEB_SEARCH_FUNCTION_NAMES = {"web_search"}
 
@@ -282,7 +282,7 @@ def _resolve_codex_credentials() -> dict[str, str]:
         }
 
     raise LLMProviderUnavailable(
-        "No Codex credential found. Set MYTRADEBOT_CODEX_API_KEY "
+        "No Codex credential found. Set CODEX_API_KEY "
         "or login with the Codex CLI so ~/.codex/auth.json contains valid tokens."
     )
 

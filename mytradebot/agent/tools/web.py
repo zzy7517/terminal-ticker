@@ -2,7 +2,7 @@
 
 # 后端策略
 # - web_search: 默认 auto，先走 Exa MCP（零配置 / 不需 API key），失败后退回
-#   DuckDuckGo HTML 端点。可用 MYTRADEBOT_WEB_SEARCH_BACKEND=duckduckgo/exa_mcp
+#   DuckDuckGo HTML 端点。可用 WEB_SEARCH_BACKEND=duckduckgo/exa_mcp
 #   强制指定后端。
 # - web_fetch: 用 curl_cffi 伪装 Safari 指纹拉取任意 URL，跟 Reuters
 #   sitemap provider 同样的反爬策略，一致体验。
@@ -38,7 +38,7 @@ LOGGER = logging.getLogger(__name__)
 
 DDG_HTML_URL = "https://html.duckduckgo.com/html/"
 EXA_MCP_URL = "https://mcp.exa.ai/mcp"
-WEB_SEARCH_BACKEND_ENV = "MYTRADEBOT_WEB_SEARCH_BACKEND"
+WEB_SEARCH_BACKEND_ENV = "WEB_SEARCH_BACKEND"
 _IMPERSONATE_TARGET = "safari17_0"
 _DEFAULT_TIMEOUT = 15.0
 _FETCH_BODY_LIMIT = 8000   # 单次 fetch 返回的纯文本上限（避免 LLM context 爆炸）
@@ -534,7 +534,7 @@ def build_web_tools(
         name="web_search",
         description=(
             "Search the open web. Defaults to Exa MCP with DuckDuckGo fallback; "
-            "set MYTRADEBOT_WEB_SEARCH_BACKEND to auto, exa_mcp, or duckduckgo. "
+            "set WEB_SEARCH_BACKEND to auto, exa_mcp, or duckduckgo. "
             "Returns up to N hits with {url, title, snippet}. Use this to discover "
             "sources or check facts; follow up with web_fetch to read a specific URL in full."
         ),

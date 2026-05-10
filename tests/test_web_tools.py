@@ -92,10 +92,10 @@ class WebSearchTests(unittest.TestCase):
         return asyncio.run(coro)
 
     def _duckduckgo_backend(self):
-        return patch.dict("os.environ", {"MYTRADEBOT_WEB_SEARCH_BACKEND": "duckduckgo"}, clear=False)
+        return patch.dict("os.environ", {"WEB_SEARCH_BACKEND": "duckduckgo"}, clear=False)
 
     def _auto_backend(self):
-        return patch.dict("os.environ", {"MYTRADEBOT_WEB_SEARCH_BACKEND": "auto"}, clear=False)
+        return patch.dict("os.environ", {"WEB_SEARCH_BACKEND": "auto"}, clear=False)
 
     def test_search_happy_path(self) -> None:
         sample_html = (
@@ -172,7 +172,7 @@ class WebSearchTests(unittest.TestCase):
 
         registry = build_web_tools()
         with (
-            patch.dict("os.environ", {"MYTRADEBOT_WEB_SEARCH_BACKEND": "exa_mcp"}, clear=False),
+            patch.dict("os.environ", {"WEB_SEARCH_BACKEND": "exa_mcp"}, clear=False),
             patch("mytradebot.agent.tools.web._http_post_exa_mcp", fake_exa),
             patch("mytradebot.agent.tools.web._http_post_ddg", fail_ddg),
         ):

@@ -200,7 +200,8 @@ class MemoryBackendTests(unittest.TestCase):
                 return ChatResponse(content="ok")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+            root = Path(tmp_dir) / "mytradebot" / "memories"
+            root.mkdir(parents=True)
             (root / "memory_summary.md").write_text("Remember BTCUSDT breakout reviews.")
             provider = CaptureProvider()
             runtime = TradingAgentRuntime(
@@ -217,7 +218,7 @@ class MemoryBackendTests(unittest.TestCase):
                 ),
             )
 
-            with patch.dict(os.environ, {"MYTRADEBOT_MEMORY_HOME": str(root)}, clear=False):
+            with patch.dict(os.environ, {"XDG_DATA_HOME": str(Path(tmp_dir))}, clear=False):
                 asyncio.run(runtime.run_turn(
                     session_id="session-1",
                     user_prompt="hello",
@@ -245,7 +246,8 @@ class MemoryBackendTests(unittest.TestCase):
                 return ChatResponse(content="ok")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+            root = Path(tmp_dir) / "mytradebot" / "memories"
+            root.mkdir(parents=True)
             (root / "memory_summary.md").write_text("This should not be injected.")
             provider = CaptureProvider()
             runtime = TradingAgentRuntime(
@@ -263,7 +265,7 @@ class MemoryBackendTests(unittest.TestCase):
                 ),
             )
 
-            with patch.dict(os.environ, {"MYTRADEBOT_MEMORY_HOME": str(root)}, clear=False):
+            with patch.dict(os.environ, {"XDG_DATA_HOME": str(Path(tmp_dir))}, clear=False):
                 asyncio.run(runtime.run_turn(
                     session_id="session-1",
                     user_prompt="hello",

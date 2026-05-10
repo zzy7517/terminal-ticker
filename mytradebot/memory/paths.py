@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-MEMORY_HOME_ENV = "MYTRADEBOT_MEMORY_HOME"
 DEFAULT_DATA_SUBDIR = "mytradebot"
 DEFAULT_MEMORY_DIRNAME = "memories"
 STATE_DB_FILENAME = "state.sqlite3"
@@ -30,15 +29,9 @@ def default_memory_home() -> Path:
 
 
 def memory_home(path: str | Path | None = None) -> Path:
-    """说明：解析当前使用的 memories root。
-
-    `MYTRADEBOT_MEMORY_HOME` 指向 memories root 本身，而不是上层应用目录。
-    """
+    """说明：解析当前使用的 memories root。"""
     if path is not None:
         return Path(path).expanduser()
-    configured = os.environ.get(MEMORY_HOME_ENV)
-    if configured:
-        return Path(configured).expanduser()
     return default_memory_home()
 
 
