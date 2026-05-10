@@ -6,6 +6,9 @@ import { XAuthenticationError, XCookieAuth } from "./providers/x_internal.js";
 export const DEFAULT_X_AUTH_FILENAME = "x_auth.json";
 
 export interface XAuthStatus {
+  hasSavedAuth: boolean;
+  savedAtMs: number | null;
+  envAvailable: boolean;
   configured: boolean;
   path: string;
   error: string | null;
@@ -23,17 +26,35 @@ export class XAuthStore {
   }
 
   status(): XAuthStatus {
+    const envAvailable = Boolean(process.env.TWITTER_AUTH_TOKEN?.trim() && process.env.TWITTER_CT0?.trim());
     try {
       const payload = this.readPayload();
-      return { configured: Boolean(payload.auth_token && payload.ct0), path: this.authPath, error: null };
+      const hasSavedAuth = Boolean(payload.auth_token && payload.ct0);
+      const stat = fs.statSync(this.authPath);
+      return {
+        hasSavedAuth,
+        savedAtMs: hasSavedAuth ? Math.floor(stat.mtimeMs) : null,
+        envAvailable,
+        configured: hasSavedAuth || envAvailable,
+        path: this.authPath,
+        error: null,
+      };
     } catch (error) {
-      return { configured: false, path: this.authPath, error: error instanceof Error ? error.message : String(error) };
+      return {
+        hasSavedAuth: false,
+        savedAtMs: null,
+        envAvailable,
+        configured: envAvailable,
+        path: this.authPath,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 
   save(input: { authToken: string; ct0: string }): XAuthStatus {
     fs.mkdirSync(path.dirname(this.authPath), { recursive: true });
     fs.writeFileSync(this.authPath, JSON.stringify({ auth_token: input.authToken, ct0: input.ct0 }, null, 2));
+    fs.chmodSync(this.authPath, 0o600);
     return this.status();
   }
 
@@ -47,7 +68,12 @@ export class XAuthStore {
   }
 
   load(): XCookieAuth {
-    const payload = this.readPayload();
+    let payload: Record<string, unknown>;
+    try {
+      payload = this.readPayload();
+    } catch {
+      throw new XAuthenticationError("missing saved X auth cookies; save auth_token and ct0 in Social settings", 401);
+    }
     if (!payload.auth_token || !payload.ct0) throw new XAuthenticationError("X auth store is missing auth_token/ct0", 401);
     return { authToken: String(payload.auth_token), ct0: String(payload.ct0), cookieString: typeof payload.cookie_string === "string" ? payload.cookie_string : null };
   }

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { fetch as browserFetch } from "wreq-js";
 import { ExchangeOrder, ExchangePosition, OrderResult, orderResult } from "./exchange_models.js";
 
 export const BITGET_API_BASE = "https://api.bitget.com";
@@ -30,8 +31,10 @@ async function request(method: string, requestPath: string, input: { params?: Re
   for (const [key, value] of Object.entries(input.params ?? {})) url.searchParams.set(key, value);
   const query = url.search ? url.search : "";
   const body = input.body ? JSON.stringify(input.body) : "";
-  const response = await fetch(url, {
+  const response = await browserFetch(url.toString(), {
     method,
+    profile: "chrome_133",
+    operatingSystem: "macos",
     headers: {
       "ACCESS-KEY": apiKey,
       "ACCESS-SIGN": sign(timestamp, method, requestPath, query, body, apiSecret),
@@ -42,7 +45,7 @@ async function request(method: string, requestPath: string, input: { params?: Re
       PAPTRADING: "1",
     },
     body: body || undefined,
-  });
+  } as never);
   const text = await response.text();
   if (!response.ok) throw new BitgetTradingError(`Bitget API ${method} ${requestPath} failed: ${text}`);
   return JSON.parse(text) as Record<string, unknown>;

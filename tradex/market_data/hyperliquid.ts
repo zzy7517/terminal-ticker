@@ -1,7 +1,9 @@
+import WebSocket from "ws";
 import { HYPERLIQUID_SOURCE, InstrumentConfig } from "../config/index.js";
 import { Candle } from "../domain/price_action.js";
 
 export const HYPERLIQUID_API_BASE = "https://api.hyperliquid.xyz";
+export const HYPERLIQUID_WS_PUBLIC = "wss://api.hyperliquid.xyz/ws";
 export const QUOTE_ASSET = "USDC";
 const TRADEFI_GROUPS = new Set(["stocks", "indices", "commodities", "fx", "preipo"]);
 const INTERVAL_SECONDS: Record<string, number> = {
@@ -349,6 +351,27 @@ function normalizeTickerPayload(context: Record<string, unknown>, instrument: Hy
   };
 }
 
+function normalizeMidPayload(price: number, instrument: HyperliquidInstrument): Record<string, unknown> {
+  return {
+    id: instrument.key,
+    short_name: instrument.label,
+    display_name: instrument.label,
+    price,
+    change: null,
+    change_percent: null,
+    previous_close: null,
+    day_high: null,
+    day_low: null,
+    day_volume: null,
+    volume: null,
+    currency: instrument.quoteAsset,
+    exchange: "Hyperliquid",
+    status: instrument.category || instrument.marketKind,
+    time: Date.now(),
+    mark_price: price,
+  };
+}
+
 export async function fetchSnapshotPayloads(instruments: readonly HyperliquidInstrument[]): Promise<Record<string, Record<string, unknown>>> {
   const payloads: Record<string, Record<string, unknown>> = {};
   const byDex = new Map<string | null, HyperliquidInstrument[]>();
@@ -365,4 +388,107 @@ export async function fetchSnapshotPayloads(instruments: readonly HyperliquidIns
     }
   }
   return payloads;
+}
+
+export class HyperliquidAllMidsWebSocket {
+  readonly instruments: readonly HyperliquidInstrument[];
+  private readonly byDex: Map<string, HyperliquidInstrument[]>;
+  private socket: WebSocket | null = null;
+
+  constructor(instruments: readonly HyperliquidInstrument[]) {
+    this.instruments = instruments;
+    this.byDex = new Map();
+    for (const instrument of instruments) {
+      const dex = instrument.dex || "";
+      this.byDex.set(dex, [...(this.byDex.get(dex) ?? []), instrument]);
+    }
+  }
+
+  async subscribe(): Promise<void> {
+    if (this.socket !== null) return;
+    this.socket = new WebSocket(HYPERLIQUID_WS_PUBLIC);
+    await new Promise<void>((resolve, reject) => {
+      this.socket?.once("open", () => resolve());
+      this.socket?.once("error", reject);
+    });
+    for (const dex of this.byDex.keys()) {
+      this.socket.send(JSON.stringify({
+        method: "subscribe",
+        subscription: dex ? { type: "allMids", dex } : { type: "allMids" },
+      }));
+    }
+  }
+
+  async listen(messageHandler: (payload: Record<string, unknown>) => void | Promise<void>, signal?: AbortSignal): Promise<void> {
+    await this.subscribe();
+    const socket = this.socket;
+    if (!socket) return;
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        socket.off("message", onMessage);
+        socket.off("error", onError);
+        socket.off("close", onClose);
+        signal?.removeEventListener("abort", onAbort);
+      };
+      const onClose = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const onAbort = () => {
+        void this.close().finally(() => {
+          cleanup();
+          resolve();
+        });
+      };
+      const onMessage = (rawMessage: WebSocket.RawData) => {
+        void (async () => {
+          const message = JSON.parse(rawMessage.toString()) as Record<string, unknown>;
+          if (message.channel !== "allMids") return;
+          const data = message.data && typeof message.data === "object" && !Array.isArray(message.data)
+            ? message.data as Record<string, unknown>
+            : {};
+          const mids = data.mids && typeof data.mids === "object" && !Array.isArray(data.mids)
+            ? data.mids as Record<string, unknown>
+            : {};
+          for (const instruments of this.byDex.values()) {
+            for (const instrument of instruments) {
+              const price = midForInstrument(mids, instrument);
+              if (price !== null) await messageHandler(normalizeMidPayload(price, instrument));
+            }
+          }
+        })().catch(onError);
+      };
+      socket.on("message", onMessage);
+      socket.once("error", onError);
+      socket.once("close", onClose);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  async close(): Promise<void> {
+    if (this.socket !== null) {
+      const socket = this.socket;
+      this.socket = null;
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close();
+      }
+    }
+  }
+}
+
+function midForInstrument(mids: Record<string, unknown>, instrument: HyperliquidInstrument): number | null {
+  const candidates = [
+    instrument.symbol,
+    normalizeSymbol(instrument.symbol),
+    instrument.symbol.includes(":") ? instrument.symbol.split(":", 2)[1] : instrument.symbol,
+  ];
+  for (const key of candidates) {
+    const value = asFloat(mids[key]);
+    if (value !== null) return value;
+  }
+  return null;
 }

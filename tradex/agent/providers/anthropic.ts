@@ -52,7 +52,19 @@ export class AnthropicProvider {
   }
 
   async listModels(): Promise<Array<Record<string, unknown>>> {
-    return [{ id: this.model, provider: this.name, label: this.model }];
+    const client = new Anthropic({ apiKey: this.apiKey, baseURL: this.baseURL });
+    const page = await client.models.list({ limit: 100 });
+    return page.data.map((model) => ({
+      slug: model.id,
+      displayName: model.display_name || model.id,
+      description: "",
+      visibility: "public",
+      supportedInApi: true,
+      defaultReasoningEffort: "medium",
+      supportedReasoningEfforts: ["medium"],
+      contextWindow: null,
+      preferWebsockets: false,
+    }));
   }
 }
 

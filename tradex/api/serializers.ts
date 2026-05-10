@@ -18,7 +18,7 @@ export function serializeState(input: {
 }): Record<string, unknown> {
   const groups: Record<string, string[]> = {};
   for (const instrument of input.instruments) {
-    const group = instrument.group || "other";
+    const group = instrument.source || "other";
     groups[group] = [...(groups[group] ?? []), instrument.key];
   }
   return {

@@ -2,7 +2,7 @@ import { AppConfig } from "../config/index.js";
 import { Candle } from "../domain/price_action.js";
 import { BitgetInstrument, BitgetPublicWebSocket, fetchCandles as fetchBitgetCandles, fetchSnapshotPayloads } from "../market_data/bitget.js";
 import { CandleCache, cachedFetchCandles, retentionSecondsForWindow } from "../market_data/candle_cache.js";
-import { HyperliquidInstrument, fetchCandles as fetchHyperliquidCandles, fetchSnapshotPayloads as fetchHyperliquidSnapshotPayloads } from "../market_data/hyperliquid.js";
+import { HyperliquidAllMidsWebSocket, HyperliquidInstrument, fetchCandles as fetchHyperliquidCandles, fetchSnapshotPayloads as fetchHyperliquidSnapshotPayloads } from "../market_data/hyperliquid.js";
 import { MarketInstrument } from "../market_data/router.js";
 
 export const CHART_CANDLE_LIMIT = 1000;
@@ -61,7 +61,8 @@ export class FeedWorker {
   private readonly candleCache: CandleCache | null;
   private abortController: AbortController | null = null;
   private tasks: Array<Promise<void>> = [];
-  private socket: BitgetPublicWebSocket | null = null;
+  private bitgetSocket: BitgetPublicWebSocket | null = null;
+  private hyperliquidSocket: HyperliquidAllMidsWebSocket | null = null;
 
   constructor(input: { config: AppConfig; instruments: readonly MarketInstrument[]; emit: EventHandler; candleCache?: CandleCache | null }) {
     this.config = input.config;
@@ -84,8 +85,10 @@ export class FeedWorker {
 
   async stop(): Promise<void> {
     this.abortController?.abort();
-    await this.socket?.close();
-    this.socket = null;
+    await this.bitgetSocket?.close();
+    await this.hyperliquidSocket?.close();
+    this.bitgetSocket = null;
+    this.hyperliquidSocket = null;
     await Promise.allSettled(this.tasks);
     this.tasks = [];
     this.abortController = null;
@@ -95,17 +98,17 @@ export class FeedWorker {
     while (!signal.aborted) {
       try {
         this.emit({ kind: "status", payload: "connecting" });
-        this.emit({ kind: "snapshot", payload: await fetchSnapshotPayloads(this.bitgetInstruments) });
-        this.socket = new BitgetPublicWebSocket(this.bitgetInstruments);
+        void this.emitBitgetSnapshotBestEffort();
+        this.bitgetSocket = new BitgetPublicWebSocket(this.bitgetInstruments);
         this.emit({ kind: "status", payload: "subscribed" });
-        await this.socket.listen((payload) => this.emit({ kind: "quote", payload }), signal);
+        await this.bitgetSocket.listen((payload) => this.emit({ kind: "quote", payload }), signal);
       } catch (error) {
         if (signal.aborted) break;
         this.emit({ kind: "error", payload: error instanceof Error ? error.message : String(error) });
         await sleep(this.config.display.reconnectDelaySeconds * 1000, signal).catch(() => undefined);
       } finally {
-        await this.socket?.close();
-        this.socket = null;
+        await this.bitgetSocket?.close();
+        this.bitgetSocket = null;
       }
     }
   }
@@ -113,19 +116,19 @@ export class FeedWorker {
   private async runHyperliquid(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
       try {
-        const payloads = await fetchHyperliquidSnapshotPayloads(this.hyperliquidInstruments);
-        for (const payload of Object.values(payloads)) this.emit({ kind: "quote", payload });
-        if (Object.keys(payloads).length > 0) this.emit({ kind: "status", payload: "polling" });
+        this.emit({ kind: "status", payload: "connecting" });
+        void this.emitHyperliquidSnapshotBestEffort();
+        this.hyperliquidSocket = new HyperliquidAllMidsWebSocket(this.hyperliquidInstruments);
+        this.emit({ kind: "status", payload: "subscribed" });
+        await this.hyperliquidSocket.listen((payload) => this.emit({ kind: "quote", payload }), signal);
       } catch (error) {
-        this.emit({
-          kind: "error",
-          payload: {
-            message: error instanceof Error ? error.message : String(error),
-            ids: this.hyperliquidInstruments.map((instrument) => instrument.key),
-          },
-        });
+        if (signal.aborted) break;
+        this.emit({ kind: "error", payload: error instanceof Error ? error.message : String(error) });
+        await sleep(this.config.display.reconnectDelaySeconds * 1000, signal).catch(() => undefined);
+      } finally {
+        await this.hyperliquidSocket?.close();
+        this.hyperliquidSocket = null;
       }
-      await sleep(this.config.display.stockPollIntervalSeconds * 1000, signal).catch(() => undefined);
     }
   }
 
@@ -198,5 +201,23 @@ export class FeedWorker {
     if (instrument instanceof BitgetInstrument) return fetchBitgetCandles(instrument, input);
     if (instrument instanceof HyperliquidInstrument) return fetchHyperliquidCandles(instrument, input);
     throw new Error(`unsupported candle provider: ${String(instrument)}`);
+  }
+
+  private async emitBitgetSnapshotBestEffort(): Promise<void> {
+    try {
+      const payloads = await fetchSnapshotPayloads(this.bitgetInstruments);
+      if (Object.keys(payloads).length > 0) this.emit({ kind: "snapshot", payload: payloads });
+    } catch (error) {
+      console.warn("Bitget REST snapshot unavailable; continuing with WebSocket ticker:", error);
+    }
+  }
+
+  private async emitHyperliquidSnapshotBestEffort(): Promise<void> {
+    try {
+      const payloads = await fetchHyperliquidSnapshotPayloads(this.hyperliquidInstruments);
+      for (const payload of Object.values(payloads)) this.emit({ kind: "quote", payload });
+    } catch (error) {
+      console.warn("Hyperliquid REST snapshot unavailable; continuing with allMids WebSocket:", error);
+    }
   }
 }

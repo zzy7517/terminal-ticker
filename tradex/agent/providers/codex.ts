@@ -45,8 +45,39 @@ export class CodexProvider {
   }
 
   async listModels(): Promise<Array<Record<string, unknown>>> {
-    return [{ id: this.model, provider: this.name, label: this.model }];
+    const response = await fetch(`${this.baseUrl}/models`, {
+      headers: codexHeaders(this.accessToken, this.accountId),
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error(`Codex models API ${response.status}: ${text}`);
+    const data = JSON.parse(text) as Record<string, unknown>;
+    const rawModels = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
+    return rawModels
+      .map((item) => normalizeCodexModelOption(item))
+      .filter((item): item is Record<string, unknown> => item !== null);
   }
+}
+
+function normalizeCodexModelOption(item: unknown): Record<string, unknown> | null {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+  const obj = item as Record<string, unknown>;
+  const slug = String(obj.id || obj.slug || obj.model || "");
+  if (!slug) return null;
+  return {
+    slug,
+    displayName: String(obj.display_name || obj.displayName || obj.name || slug),
+    description: String(obj.description || ""),
+    visibility: String(obj.visibility || "public"),
+    supportedInApi: obj.supported_in_api !== false && obj.supportedInApi !== false,
+    defaultReasoningEffort: String(obj.default_reasoning_effort || obj.defaultReasoningEffort || "medium"),
+    supportedReasoningEfforts: Array.isArray(obj.supported_reasoning_efforts)
+      ? obj.supported_reasoning_efforts
+      : Array.isArray(obj.supportedReasoningEfforts)
+        ? obj.supportedReasoningEfforts
+        : ["low", "medium", "high", "xhigh"],
+    contextWindow: typeof obj.context_window === "number" ? obj.context_window : typeof obj.contextWindow === "number" ? obj.contextWindow : null,
+    preferWebsockets: Boolean(obj.prefer_websockets || obj.preferWebsockets),
+  };
 }
 
 function resolveCodexCredentials(): { accessToken: string; accountId: string | null } {

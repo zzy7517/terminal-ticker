@@ -111,7 +111,6 @@ export class TickerController {
             ? Object.fromEntries(Object.entries(multiRaw as Record<string, unknown>).map(([interval, candles]) => [interval, Array.isArray(candles) ? candles : []]))
             : undefined,
       });
-      if (payload.error) quote.markError(String(payload.error));
       return true;
     }
     return false;

@@ -3,6 +3,7 @@ import { LocalMemoryBackend } from "../memory/backend.js";
 import { NewsService } from "../news/service.js";
 import { SocialFeedService } from "../social_feed/service.js";
 import { XAuthStore } from "../social_feed/auth.js";
+import { XInternalClient } from "../social_feed/providers/x_internal.js";
 import { AgentSessionStore } from "../agent/session_store.js";
 import { ExchangeRouter } from "../trading/exchange_router.js";
 import { TradeStore } from "../trading/store.js";
@@ -29,8 +30,11 @@ export class MarketRuntime {
     this.tradeStore = new TradeStore();
     this.exchangeRouter = new ExchangeRouter({ tradeStore: this.tradeStore, tradingConfig: config.trading });
     this.newsService = new NewsService({ config: config.news });
-    this.socialFeedService = new SocialFeedService({ config: config.socialFeed });
     this.xAuthStore = new XAuthStore();
+    this.socialFeedService = new SocialFeedService({
+      config: config.socialFeed,
+      clientFactory: () => new XInternalClient(this.xAuthStore.load()),
+    });
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
     this.agentSessionStore = new AgentSessionStore();
   }

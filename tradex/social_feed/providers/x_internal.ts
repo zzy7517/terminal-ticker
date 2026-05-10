@@ -1,3 +1,4 @@
+import { fetch as browserFetch } from "wreq-js";
 import { SocialFeedItem, defaultMetrics } from "../types.js";
 
 export const SOURCE_NAME = "x_following";
@@ -159,7 +160,11 @@ export class XInternalClient {
   }
 
   private async apiRequest(url: string): Promise<unknown> {
-    const response = await fetch(url, { headers: this.headers() });
+    const response = await browserFetch(url, {
+      profile: "chrome_133",
+      operatingSystem: "macos",
+      headers: this.headers(),
+    } as never);
     if (response.status === 401 || response.status === 403) throw new XAuthenticationError("X cookie expired or invalid; refresh TWITTER_AUTH_TOKEN/TWITTER_CT0", response.status);
     if (!response.ok) throw new XInternalError(`X API error ${response.status}: ${(await response.text()).slice(0, 500)}`, response.status);
     return response.json();

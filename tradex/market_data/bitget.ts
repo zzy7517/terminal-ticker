@@ -1,4 +1,5 @@
-import WebSocket from "ws";
+import { fetch as browserFetch } from "wreq-js";
+import { websocket as browserWebSocket } from "wreq-js";
 import { BITGET_SOURCE, InstrumentConfig } from "../config/index.js";
 import { Candle } from "../domain/price_action.js";
 
@@ -54,7 +55,11 @@ async function fetchJson(apiPath: string, params?: Record<string, string>): Prom
   let lastError: unknown = null;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetch(url, { headers: { "User-Agent": "tradex/0.1" } });
+      const response = await browserFetch(url.toString(), {
+        profile: "chrome_133",
+        operatingSystem: "macos",
+        headers: { "User-Agent": "tradex/0.1" },
+      } as never);
       if (!response.ok) throw new Error(`Bitget HTTP ${response.status}`);
       return (await response.json()) as Record<string, unknown>;
     } catch (error) {
@@ -272,7 +277,7 @@ export async function fetchSnapshotPayloads(instruments: readonly BitgetInstrume
 export class BitgetPublicWebSocket {
   readonly instruments: readonly BitgetInstrument[];
   private readonly lookup: Map<string, BitgetInstrument>;
-  private socket: WebSocket | null = null;
+  private socket: Awaited<ReturnType<typeof browserWebSocket>> | null = null;
   private pingTimer: NodeJS.Timeout | null = null;
 
   constructor(instruments: readonly BitgetInstrument[]) {
@@ -282,18 +287,20 @@ export class BitgetPublicWebSocket {
 
   async subscribe(): Promise<void> {
     if (this.socket !== null) return;
-    this.socket = new WebSocket(BITGET_WS_PUBLIC);
-    await new Promise<void>((resolve, reject) => {
-      this.socket?.once("open", () => resolve());
-      this.socket?.once("error", reject);
-    });
+    this.socket = await browserWebSocket(BITGET_WS_PUBLIC, {
+      browser: "chrome_133",
+      os: "macos",
+    } as never);
+    await waitForSocketOpen(this.socket);
     const args = this.instruments.map((instrument) => ({
       instType: instrument.instType,
       channel: "ticker",
       instId: instrument.symbol,
     }));
     this.socket.send(JSON.stringify({ op: "subscribe", args }));
-    this.pingTimer = setInterval(() => this.socket?.readyState === WebSocket.OPEN && this.socket.send("ping"), 25_000);
+    this.pingTimer = setInterval(() => {
+      if (this.socket?.readyState === 1) this.socket.send("ping");
+    }, 25_000);
   }
 
   async listen(messageHandler: (payload: Record<string, unknown>) => void | Promise<void>, signal?: AbortSignal): Promise<void> {
@@ -302,18 +309,18 @@ export class BitgetPublicWebSocket {
     if (!socket) return;
     await new Promise<void>((resolve, reject) => {
       const cleanup = () => {
-        socket.off("message", onMessage);
-        socket.off("error", onError);
-        socket.off("close", onClose);
+        socket.removeEventListener("message", onMessage);
+        socket.removeEventListener("error", onError);
+        socket.removeEventListener("close", onClose);
         signal?.removeEventListener("abort", onAbort);
       };
       const onClose = () => {
         cleanup();
         resolve();
       };
-      const onError = (error: Error) => {
+      const onError = (error: unknown) => {
         cleanup();
-        reject(error);
+        reject(error instanceof Error ? error : new Error(String(error)));
       };
       const onAbort = () => {
         void this.close().finally(() => {
@@ -321,9 +328,9 @@ export class BitgetPublicWebSocket {
           resolve();
         });
       };
-      const onMessage = (rawMessage: WebSocket.RawData) => {
+      const onMessage = (event: { data: unknown }) => {
         void (async () => {
-          const text = rawMessage.toString();
+          const text = String(event.data);
           if (text === "pong") return;
           const message = JSON.parse(text) as Record<string, unknown>;
           if (message.event === "error") throw new Error(String(message.msg || "Bitget websocket error"));
@@ -336,9 +343,9 @@ export class BitgetPublicWebSocket {
           }
         })().catch(onError);
       };
-      socket.on("message", onMessage);
-      socket.once("error", onError);
-      socket.once("close", onClose);
+      socket.addEventListener("message", onMessage);
+      socket.addEventListener("error", onError);
+      socket.addEventListener("close", onClose);
       signal?.addEventListener("abort", onAbort, { once: true });
     });
   }
@@ -351,9 +358,29 @@ export class BitgetPublicWebSocket {
     if (this.socket !== null) {
       const socket = this.socket;
       this.socket = null;
-      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+      if (socket.readyState === 0 || socket.readyState === 1) {
         socket.close();
       }
     }
   }
+}
+
+async function waitForSocketOpen(socket: Awaited<ReturnType<typeof browserWebSocket>>): Promise<void> {
+  if (socket.readyState === 1) return;
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      socket.removeEventListener("open", onOpen);
+      socket.removeEventListener("error", onError);
+    };
+    const onOpen = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error: unknown) => {
+      cleanup();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
+    socket.addEventListener("open", onOpen);
+    socket.addEventListener("error", onError);
+  });
 }
