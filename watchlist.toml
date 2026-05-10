@@ -13,6 +13,7 @@ symbols = [
   { symbol = "xyz:XYZ100", source = "hyperliquid", label = "XYZ100 Perp (xyz)", group = "indices", show_collapsed = true },
   { symbol = "xyz:MSTR", source = "hyperliquid", label = "MSTR Perp (xyz)", group = "stocks", show_collapsed = true },
   { symbol = "xyz:GOLD", source = "hyperliquid", label = "GOLD Perp (xyz)", group = "commodities", show_collapsed = true },
+  { symbol = "SOLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SOLUSDT", group = "crypto", show_collapsed = true },
 ]
 
 [display]
@@ -53,6 +54,10 @@ enabled = true
 recent_limit = 100
 retention_days = 30
 max_items = 2000
+
+[trading]
+hyperliquid_enabled = false
+bitget_demo_enabled = true
 
 [memory]
 enabled = false
