@@ -186,6 +186,10 @@ def serialize_market_state(
                 "retentionDays": config.social_feed.retention_days,
                 "maxItems": config.social_feed.max_items,
             },
+            "trading": {
+                "hyperliquidEnabled": config.trading.hyperliquid_enabled,
+                "bitgetDemoEnabled": config.trading.bitget_demo_enabled,
+            },
             "sourcePath": str(config.source_path) if config.source_path else None,
         },
         "instruments": [

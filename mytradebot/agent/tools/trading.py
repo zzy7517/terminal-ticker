@@ -14,7 +14,7 @@ from ...trading import (
 )
 from ...trading import bitget as bitget_trading
 from ...trading.exchange_models import OrderResult
-from ...config import HYPERLIQUID_SOURCE
+from ...config import HYPERLIQUID_SOURCE, TradingConfig
 from .registry import ToolDefinition, ToolRegistry, _json_output
 
 
@@ -24,6 +24,7 @@ def build_trading_tools(
     snapshot_provider: Callable[[str], dict[str, Any]] | None = None,
     session_id_provider: Callable[[], str | None] | None = None,
     exchange_router: Any = None,
+    trading_config: TradingConfig | None = None,
 ) -> ToolRegistry:
     """构建交易记录和 Hyperliquid 主网工具集。
 
@@ -31,6 +32,7 @@ def build_trading_tools(
     session_id_provider() 返回当前 agent 会话 ID，用于串联 trade 与对话。
     """
     registry = ToolRegistry()
+    permissions = trading_config or TradingConfig()
 
     def _resolve_session_id() -> str | None:
         """获取当前 agent 会话 ID，失败时返回 None。"""
@@ -166,62 +168,63 @@ def build_trading_tools(
             "order": result.raw,
         })
 
-    registry.register(ToolDefinition(
-        name="open_hyperliquid_trade",
-        description=(
-            "在 Hyperliquid 主网提交真实开仓订单，并把结果写入本地交易记录。"
-            "开仓必须同时设置 take_profit_price 和 stop_loss_price。"
-            "只支持 hyperliquid:* 标的。需要环境变量 "
-            "HYPERLIQUID_PRIVATE_KEY，可选 HYPERLIQUID_ACCOUNT_ADDRESS / "
-            "HYPERLIQUID_VAULT_ADDRESS。market 单通过 SDK 以 IOC aggressive limit 实现。"
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "instrument_key": {
-                    "type": "string",
-                    "description": "标的唯一标识，如 hyperliquid:BTC 或 hyperliquid:flx:NVDA",
+    if permissions.hyperliquid_enabled:
+        registry.register(ToolDefinition(
+            name="open_hyperliquid_trade",
+            description=(
+                "在 Hyperliquid 主网提交真实开仓订单，并把结果写入本地交易记录。"
+                "开仓必须同时设置 take_profit_price 和 stop_loss_price。"
+                "只支持 hyperliquid:* 标的。需要环境变量 "
+                "HYPERLIQUID_PRIVATE_KEY，可选 HYPERLIQUID_ACCOUNT_ADDRESS / "
+                "HYPERLIQUID_VAULT_ADDRESS。market 单通过 SDK 以 IOC aggressive limit 实现。"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "instrument_key": {
+                        "type": "string",
+                        "description": "标的唯一标识，如 hyperliquid:BTC 或 hyperliquid:flx:NVDA",
+                    },
+                    "direction": {"type": "string", "enum": ["long", "short"]},
+                    "size": {"type": "number", "description": "合约数量，必须 > 0"},
+                    "reasoning": {
+                        "type": "string",
+                        "description": "开仓理由，会写入本地 trade 记录",
+                    },
+                    "order_type": {
+                        "type": "string",
+                        "enum": ["market", "limit"],
+                        "default": "market",
+                    },
+                    "limit_price": {
+                        "type": ["number", "null"],
+                        "description": "limit 单必填；market 单可留空",
+                    },
+                    "slippage": {
+                        "type": "number",
+                        "description": "market 单允许滑点，默认 0.05 即 5%",
+                        "default": 0.05,
+                    },
+                    "take_profit_price": {
+                        "type": ["number", "null"],
+                        "description": "可选止盈触发价；填写后会提交 reduce-only TP trigger 单",
+                    },
+                    "stop_loss_price": {
+                        "type": ["number", "null"],
+                        "description": "可选止损触发价；填写后会提交 reduce-only SL trigger 单",
+                    },
                 },
-                "direction": {"type": "string", "enum": ["long", "short"]},
-                "size": {"type": "number", "description": "合约数量，必须 > 0"},
-                "reasoning": {
-                    "type": "string",
-                    "description": "开仓理由，会写入本地 trade 记录",
-                },
-                "order_type": {
-                    "type": "string",
-                    "enum": ["market", "limit"],
-                    "default": "market",
-                },
-                "limit_price": {
-                    "type": ["number", "null"],
-                    "description": "limit 单必填；market 单可留空",
-                },
-                "slippage": {
-                    "type": "number",
-                    "description": "market 单允许滑点，默认 0.05 即 5%",
-                    "default": 0.05,
-                },
-                "take_profit_price": {
-                    "type": ["number", "null"],
-                    "description": "可选止盈触发价；填写后会提交 reduce-only TP trigger 单",
-                },
-                "stop_loss_price": {
-                    "type": ["number", "null"],
-                    "description": "可选止损触发价；填写后会提交 reduce-only SL trigger 单",
-                },
+                "required": [
+                    "instrument_key",
+                    "direction",
+                    "size",
+                    "reasoning",
+                    "take_profit_price",
+                    "stop_loss_price",
+                ],
             },
-            "required": [
-                "instrument_key",
-                "direction",
-                "size",
-                "reasoning",
-                "take_profit_price",
-                "stop_loss_price",
-            ],
-        },
-        handler=open_hyperliquid_trade,
-    ))
+            handler=open_hyperliquid_trade,
+        ))
 
     def _record_exchange_trade(
         instrument_key: str,
@@ -324,56 +327,57 @@ def build_trading_tools(
         except ValueError as exc:
             return _json_output({"error": str(exc), "order": result.raw})
 
-    registry.register(ToolDefinition(
-        name="open_bitget_demo_trade",
-        description=(
-            "在 Bitget 模拟盘提交开仓订单，并把结果写入本地交易记录。"
-            "开仓必须同时设置 take_profit_price 和 stop_loss_price。"
-            "只支持 USDT-FUTURES:*、USDC-FUTURES:* 或 COIN-FUTURES:* 标的。需要环境变量 "
-            "BITGET_API_KEY, BITGET_API_SECRET, BITGET_API_PASSPHRASE。"
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "instrument_key": {
-                    "type": "string",
-                    "description": "标的唯一标识，如 USDT-FUTURES:BTCUSDT 或 USDC-FUTURES:BTCPERP",
+    if permissions.bitget_demo_enabled:
+        registry.register(ToolDefinition(
+            name="open_bitget_demo_trade",
+            description=(
+                "在 Bitget 模拟盘提交开仓订单，并把结果写入本地交易记录。"
+                "开仓必须同时设置 take_profit_price 和 stop_loss_price。"
+                "只支持 USDT-FUTURES:*、USDC-FUTURES:* 或 COIN-FUTURES:* 标的。需要环境变量 "
+                "BITGET_API_KEY, BITGET_API_SECRET, BITGET_API_PASSPHRASE。"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "instrument_key": {
+                        "type": "string",
+                        "description": "标的唯一标识，如 USDT-FUTURES:BTCUSDT 或 USDC-FUTURES:BTCPERP",
+                    },
+                    "direction": {"type": "string", "enum": ["long", "short"]},
+                    "size": {"type": "number", "description": "订单数量，必须 > 0"},
+                    "reasoning": {
+                        "type": "string",
+                        "description": "下单理由，会写入本地 trade 记录",
+                    },
+                    "order_type": {
+                        "type": "string",
+                        "enum": ["market", "limit"],
+                        "default": "market",
+                    },
+                    "limit_price": {
+                        "type": ["number", "null"],
+                        "description": "limit 单必填；market 单可留空",
+                    },
+                    "take_profit_price": {
+                        "type": ["number", "null"],
+                        "description": "可选止盈触发价；填写后通过 Bitget presetStopSurplusPrice 设置",
+                    },
+                    "stop_loss_price": {
+                        "type": ["number", "null"],
+                        "description": "可选止损触发价；填写后通过 Bitget presetStopLossPrice 设置",
+                    },
                 },
-                "direction": {"type": "string", "enum": ["long", "short"]},
-                "size": {"type": "number", "description": "订单数量，必须 > 0"},
-                "reasoning": {
-                    "type": "string",
-                    "description": "下单理由，会写入本地 trade 记录",
-                },
-                "order_type": {
-                    "type": "string",
-                    "enum": ["market", "limit"],
-                    "default": "market",
-                },
-                "limit_price": {
-                    "type": ["number", "null"],
-                    "description": "limit 单必填；market 单可留空",
-                },
-                "take_profit_price": {
-                    "type": ["number", "null"],
-                    "description": "可选止盈触发价；填写后通过 Bitget presetStopSurplusPrice 设置",
-                },
-                "stop_loss_price": {
-                    "type": ["number", "null"],
-                    "description": "可选止损触发价；填写后通过 Bitget presetStopLossPrice 设置",
-                },
+                "required": [
+                    "instrument_key",
+                    "direction",
+                    "size",
+                    "reasoning",
+                    "take_profit_price",
+                    "stop_loss_price",
+                ],
             },
-            "required": [
-                "instrument_key",
-                "direction",
-                "size",
-                "reasoning",
-                "take_profit_price",
-                "stop_loss_price",
-            ],
-        },
-        handler=open_bitget_demo_trade,
-    ))
+            handler=open_bitget_demo_trade,
+        ))
 
     async def get_exchange_positions(instrument_key: str | None = None) -> str:
         """查询交易所真实持仓和挂单，区别于本地 trade store 记录。"""
@@ -454,38 +458,40 @@ def build_trading_tools(
             "adjustedLocalTrades": adjusted_trades,
         })
 
-    registry.register(ToolDefinition(
-        name="modify_tpsl",
-        description=(
-            "为已有交易所仓位设置或调整止盈止损。Bitget 使用 position TPSL；"
-            "Hyperliquid 提交新的 reduce-only TP/SL trigger 单。调用前应先用 get_exchange_positions 确认仓位。"
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "instrument_key": {"type": "string", "description": "标的唯一标识"},
-                "direction": {
-                    "type": ["string", "null"],
-                    "enum": ["long", "short", None],
-                    "description": "仓位方向；不传时仅在该标的只有一个真实仓位时自动推断",
+    if permissions.hyperliquid_enabled or permissions.bitget_demo_enabled:
+        registry.register(ToolDefinition(
+            name="modify_tpsl",
+            description=(
+                "为已有交易所仓位设置或调整止盈止损。Bitget 使用 position TPSL；"
+                "Hyperliquid 提交新的 reduce-only TP/SL trigger 单。调用前应先用 get_exchange_positions 确认仓位。"
+                "仅支持配置中已开启下单权限的平台。"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "instrument_key": {"type": "string", "description": "标的唯一标识"},
+                    "direction": {
+                        "type": ["string", "null"],
+                        "enum": ["long", "short", None],
+                        "description": "仓位方向；不传时仅在该标的只有一个真实仓位时自动推断",
+                    },
+                    "take_profit_price": {
+                        "type": ["number", "null"],
+                        "description": "新的止盈触发价；不需要调整止盈时留空",
+                    },
+                    "stop_loss_price": {
+                        "type": ["number", "null"],
+                        "description": "新的止损触发价；不需要调整止损时留空",
+                    },
+                    "size": {
+                        "type": ["number", "null"],
+                        "description": "Hyperliquid trigger 单数量；不传时尝试从真实仓位推断",
+                    },
                 },
-                "take_profit_price": {
-                    "type": ["number", "null"],
-                    "description": "新的止盈触发价；不需要调整止盈时留空",
-                },
-                "stop_loss_price": {
-                    "type": ["number", "null"],
-                    "description": "新的止损触发价；不需要调整止损时留空",
-                },
-                "size": {
-                    "type": ["number", "null"],
-                    "description": "Hyperliquid trigger 单数量；不传时尝试从真实仓位推断",
-                },
+                "required": ["instrument_key"],
             },
-            "required": ["instrument_key"],
-        },
-        handler=modify_tpsl,
-    ))
+            handler=modify_tpsl,
+        ))
 
     async def close_position(
         instrument_key: str,
@@ -525,35 +531,36 @@ def build_trading_tools(
             ],
         })
 
-    registry.register(ToolDefinition(
-        name="close_position",
-        description=(
-            "市价平掉交易所真实仓位。Hyperliquid 可传 size 部分平仓，不传则全平该 coin；"
-            "Bitget 使用 flash close，按 direction/holdSide 平指定方向。调用前应先用 get_exchange_positions 确认仓位。"
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "instrument_key": {"type": "string", "description": "标的唯一标识"},
-                "direction": {
-                    "type": ["string", "null"],
-                    "enum": ["long", "short", None],
-                    "description": "要平的仓位方向；可在只有一个真实仓位时自动推断",
+        registry.register(ToolDefinition(
+            name="close_position",
+            description=(
+                "市价平掉交易所真实仓位。Hyperliquid 可传 size 部分平仓，不传则全平该 coin；"
+                "Bitget 使用 flash close，按 direction/holdSide 平指定方向。调用前应先用 get_exchange_positions 确认仓位。"
+                "仅支持配置中已开启下单权限的平台。"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "instrument_key": {"type": "string", "description": "标的唯一标识"},
+                    "direction": {
+                        "type": ["string", "null"],
+                        "enum": ["long", "short", None],
+                        "description": "要平的仓位方向；可在只有一个真实仓位时自动推断",
+                    },
+                    "size": {
+                        "type": ["number", "null"],
+                        "description": "可选平仓数量；Hyperliquid 支持部分平仓，Bitget flash close 会忽略该字段",
+                    },
+                    "slippage": {
+                        "type": "number",
+                        "description": "Hyperliquid market_close 滑点，默认 0.05 即 5%",
+                        "default": 0.05,
+                    },
                 },
-                "size": {
-                    "type": ["number", "null"],
-                    "description": "可选平仓数量；Hyperliquid 支持部分平仓，Bitget flash close 会忽略该字段",
-                },
-                "slippage": {
-                    "type": "number",
-                    "description": "Hyperliquid market_close 滑点，默认 0.05 即 5%",
-                    "default": 0.05,
-                },
+                "required": ["instrument_key"],
             },
-            "required": ["instrument_key"],
-        },
-        handler=close_position,
-    ))
+            handler=close_position,
+        ))
 
     async def list_open_trades(instrument_key: str | None = None) -> str:
         """列出 planned 或 open 状态的本地交易记录。"""

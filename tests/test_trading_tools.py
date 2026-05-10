@@ -7,13 +7,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mytradebot.agent.tools import ToolCall, build_trading_tools
-from mytradebot.trading import TradeStore, TradeStatus
+from mytradebot.config import TradingConfig
+from mytradebot.trading import ExchangeRouter, TradeStore, TradeStatus
 from mytradebot.trading.exchange_models import OrderResult
-from mytradebot.trading.hyperliquid import (
-    HyperliquidOrderResult,
-    HyperliquidTradingError,
-    open_position,
-)
+from mytradebot.trading.hyperliquid import HyperliquidOrderResult
 
 
 def _run(coro):
@@ -35,6 +32,7 @@ class TradingToolsTests(unittest.TestCase):
             store=self.store,
             snapshot_provider=snap,
             session_id_provider=lambda: "sess-1",
+            trading_config=TradingConfig(hyperliquid_enabled=True, bitget_demo_enabled=True),
         )
 
     def _exec(self, name: str, args: dict) -> dict:
@@ -51,22 +49,35 @@ class TradingToolsTests(unittest.TestCase):
         self.assertNotIn("cancel_paper_trade", names)
         self.assertNotIn("adjust_paper_trade", names)
 
-    def test_hyperliquid_mainnet_requires_explicit_enable_flag(self) -> None:
-        with patch.dict(
-            "os.environ",
-            {
-                "HYPERLIQUID_PRIVATE_KEY": "0x" + "1" * 64,
-                "MYTRADEBOT_ENABLE_HYPERLIQUID_MAINNET_TRADING": "",
-            },
-            clear=False,
-        ):
-            with self.assertRaisesRegex(HyperliquidTradingError, "mainnet trading is disabled"):
-                open_position(
-                    coin="BTC",
-                    is_buy=True,
-                    size=0.01,
-                    order_type="market",
-                )
+    def test_disabled_platforms_hide_mutation_tools(self) -> None:
+        registry = build_trading_tools(
+            store=self.store,
+            trading_config=TradingConfig(hyperliquid_enabled=False, bitget_demo_enabled=False),
+        )
+
+        names = {tool.name for tool in registry.list_tools()}
+        self.assertNotIn("open_hyperliquid_trade", names)
+        self.assertNotIn("open_bitget_demo_trade", names)
+        self.assertNotIn("modify_tpsl", names)
+        self.assertNotIn("close_position", names)
+        self.assertIn("get_exchange_positions", names)
+        self.assertIn("list_open_trades", names)
+
+    def test_exchange_router_rejects_disabled_platform_mutations(self) -> None:
+        router = ExchangeRouter(
+            trade_store=self.store,
+            trading_config=TradingConfig(hyperliquid_enabled=False, bitget_demo_enabled=False),
+        )
+
+        result = router.place_order(
+            instrument_key="hyperliquid:BTC",
+            direction="long",
+            size=0.01,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("disabled by config", result.error or "")
+        self.assertFalse(router.cancel_order(exchange="hyperliquid", order_id="1", symbol="BTC"))
 
     def test_open_hyperliquid_trade_records_real_fill_snapshot_and_session(self) -> None:
         fake_result = HyperliquidOrderResult(

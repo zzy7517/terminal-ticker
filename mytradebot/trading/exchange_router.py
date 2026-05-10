@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..config import TradingConfig
 from . import bitget as bitget_trading
 from . import hyperliquid as hl_trading
 from .exchange_models import ExchangeOrder, ExchangePosition, OrderResult, TradeSyncResult
@@ -24,8 +25,14 @@ def _has_entry_fill(trade: Trade) -> bool:
 class ExchangeRouter:
     """说明：聚合多交易所的持仓、订单和下单操作。"""
 
-    def __init__(self, *, trade_store: TradeStore | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        trade_store: TradeStore | None = None,
+        trading_config: TradingConfig | None = None,
+    ) -> None:
         self._trade_store = trade_store
+        self.trading_config = trading_config or TradingConfig()
 
     def get_all_positions(self) -> list[ExchangePosition]:
         positions: list[ExchangePosition] = []
@@ -172,6 +179,8 @@ class ExchangeRouter:
 
     def place_order(self, *, instrument_key: str, **kwargs: Any) -> OrderResult:
         exchange = self._exchange_for_key(instrument_key)
+        if not self._mutation_enabled(exchange):
+            return OrderResult(exchange=exchange, error=f"{exchange} trading is disabled by config")
         if exchange == EXCHANGE_HYPERLIQUID:
             return self._place_hyperliquid(instrument_key, **kwargs)
         if exchange == EXCHANGE_BITGET:
@@ -188,6 +197,8 @@ class ExchangeRouter:
         size: float | None = None,
     ) -> list[OrderResult]:
         exchange = self._exchange_for_key(instrument_key)
+        if not self._mutation_enabled(exchange):
+            return [OrderResult(exchange=exchange, error=f"{exchange} trading is disabled by config")]
         if exchange == EXCHANGE_HYPERLIQUID:
             return self._place_hyperliquid_tpsl(
                 instrument_key,
@@ -214,6 +225,8 @@ class ExchangeRouter:
         slippage: float = 0.05,
     ) -> OrderResult:
         exchange = self._exchange_for_key(instrument_key)
+        if not self._mutation_enabled(exchange):
+            return OrderResult(exchange=exchange, error=f"{exchange} trading is disabled by config")
         if exchange == EXCHANGE_HYPERLIQUID:
             coin = instrument_key.split(":", 1)[1]
             try:
@@ -242,6 +255,8 @@ class ExchangeRouter:
         return OrderResult(exchange="unknown", error=f"No close support for {instrument_key}")
 
     def cancel_order(self, *, exchange: str, order_id: str, symbol: str = "", **kwargs: Any) -> bool:
+        if not self._mutation_enabled(exchange):
+            return False
         if exchange == EXCHANGE_HYPERLIQUID:
             coin = symbol or order_id
             return hl_trading.cancel_order(order_id=order_id, coin=coin)
@@ -260,6 +275,11 @@ class ExchangeRouter:
         if instrument_key.startswith(BITGET_FUTURES_PREFIXES):
             return EXCHANGE_BITGET
         return "unknown"
+
+    def _mutation_enabled(self, exchange: str) -> bool:
+        if exchange == "unknown":
+            return False
+        return self.trading_config.exchange_enabled(exchange)
 
     @staticmethod
     def _split_bitget_key(instrument_key: str) -> tuple[str, str]:

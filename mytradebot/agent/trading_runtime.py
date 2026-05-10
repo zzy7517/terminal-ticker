@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from ..config import AgentConfig
+from ..config import AgentConfig, TradingConfig
 from ..memory.policy import MemoryRuntimePolicy
 from ..memory.paths import memory_store_available
 from ..memory.read.prompts import build_memory_developer_instructions
@@ -32,6 +32,7 @@ class TradingAgentRuntimeServices:
     exchange_router: Any = None
     news_service: Any = None
     social_feed_service: Any = None
+    trading_config: TradingConfig = field(default_factory=TradingConfig)
     memory_policy: MemoryRuntimePolicy = field(default_factory=MemoryRuntimePolicy.normal)
     runtime_services: AgentRuntimeServices = field(default_factory=AgentRuntimeServices)
 
@@ -128,6 +129,7 @@ class TradingAgentRuntime:
                     snapshot_provider=services.snapshot_provider,
                     session_id_provider=lambda: session_id,
                     exchange_router=services.exchange_router,
+                    trading_config=services.trading_config,
                 ),
             ),
             ToolPack("news", lambda: build_news_tools(services.news_service)),
@@ -142,12 +144,13 @@ class TradingAgentRuntime:
 
     def _build_system_prompt(self) -> str | None:
         """构建包含记忆指令的系统提示词，无记忆时返回 None。"""
+        trading_instructions = _trading_permission_instructions(self.services.trading_config)
         if not self.services.memory_policy.use_memories:
-            return None
+            return f"{DEFAULT_SYSTEM_PROMPT}\n\n{trading_instructions}"
         memory_instructions = build_memory_developer_instructions()
         if not memory_instructions:
-            return None
-        return f"{DEFAULT_SYSTEM_PROMPT}\n\n{memory_instructions}"
+            return f"{DEFAULT_SYSTEM_PROMPT}\n\n{trading_instructions}"
+        return f"{DEFAULT_SYSTEM_PROMPT}\n\n{trading_instructions}\n\n{memory_instructions}"
 
     def _build_prompt(
         self,
@@ -171,6 +174,29 @@ class TradingAgentRuntime:
             f"{candidates}\n\n"
             f"{user_prompt}"
         )
+
+
+def _trading_permission_instructions(config: TradingConfig) -> str:
+    enabled: list[str] = []
+    disabled: list[str] = []
+    if config.hyperliquid_enabled:
+        enabled.append("Hyperliquid")
+    else:
+        disabled.append("Hyperliquid")
+    if config.bitget_demo_enabled:
+        enabled.append("Bitget Demo")
+    else:
+        disabled.append("Bitget Demo")
+    if not enabled:
+        return (
+            "当前配置未开放任何平台的下单、平仓或调整止盈止损权限。"
+            "你只能给出交易计划、开单建议、风险条件和观察清单，不能声称已经执行交易。"
+        )
+    return (
+        f"当前允许执行交易 mutation 的平台：{', '.join(enabled)}。"
+        f"未开放的平台：{', '.join(disabled) if disabled else '无'}。"
+        "对于未开放的平台，只能给出开单建议和风险计划，不能尝试下单、平仓或调整止盈止损。"
+    )
 
 def _history_without_current_turn(
     history: tuple[dict[str, Any], ...],

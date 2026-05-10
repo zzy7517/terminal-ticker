@@ -5,6 +5,14 @@ symbols = [
   { symbol = "ETHUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "ETH", group = "crypto", analysis_interval = "15m" },
   { symbol = "XAUUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "XAU", group = "crypto" },
   { symbol = "MSFTUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "MSFT", group = "stocks", show_collapsed = true },
+  { symbol = "vntl:ANTHROPIC", source = "hyperliquid", label = "ANTHROPIC Perp (vntl)", group = "preipo", show_collapsed = true },
+  { symbol = "vntl:OPENAI", source = "hyperliquid", label = "OPENAI Perp (vntl)", group = "preipo", show_collapsed = true },
+  { symbol = "vntl:SPACEX", source = "hyperliquid", label = "SPACEX Perp (vntl)", group = "preipo", show_collapsed = true },
+  { symbol = "xyz:VIX", source = "hyperliquid", label = "VIX Perp (xyz)", group = "indices", show_collapsed = true },
+  { symbol = "xyz:SP500", source = "hyperliquid", label = "SP500 Perp (xyz)", group = "indices", show_collapsed = true },
+  { symbol = "xyz:XYZ100", source = "hyperliquid", label = "XYZ100 Perp (xyz)", group = "indices", show_collapsed = true },
+  { symbol = "xyz:MSTR", source = "hyperliquid", label = "MSTR Perp (xyz)", group = "stocks", show_collapsed = true },
+  { symbol = "xyz:GOLD", source = "hyperliquid", label = "GOLD Perp (xyz)", group = "commodities", show_collapsed = true },
 ]
 
 [display]

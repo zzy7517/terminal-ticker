@@ -10,6 +10,7 @@ from . import (
     AnalysisConfig,
     NewsConfig,
     SocialFeedConfig,
+    TradingConfig,
     BITGET_SOURCE,
     GROUP_ALIASES,
     HYPERLIQUID_SOURCE,
@@ -484,6 +485,26 @@ def update_social_feed_config_in_watchlist(path: str | Path, config: SocialFeedC
     source_path = Path(path).expanduser().resolve()
     text = source_path.read_text()
     rendered = _replace_top_level_table(text, "social_feed", _format_social_feed_config(config))
+    if rendered == text:
+        return False
+    source_path.write_text(rendered)
+    return True
+
+
+def _format_trading_config(config: TradingConfig) -> list[str]:
+    """说明：把 TradingConfig 渲染成顶层 TOML 表。"""
+    return [
+        "[trading]",
+        f"hyperliquid_enabled = {'true' if config.hyperliquid_enabled else 'false'}",
+        f"bitget_demo_enabled = {'true' if config.bitget_demo_enabled else 'false'}",
+    ]
+
+
+def update_trading_config_in_watchlist(path: str | Path, config: TradingConfig) -> bool:
+    """说明：在 watchlist 文件中插入或替换 trading 配置表。"""
+    source_path = Path(path).expanduser().resolve()
+    text = source_path.read_text()
+    rendered = _replace_top_level_table(text, "trading", _format_trading_config(config))
     if rendered == text:
         return False
     source_path.write_text(rendered)

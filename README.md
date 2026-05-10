@@ -2,7 +2,7 @@
 
 mytradebot 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 主网行情、React 图表、LLM Agent、Reuters 新闻和本地 SQLite 交易记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
 
-它不是生产级交易终端。显式配置凭证并打开主网交易开关后，可以向 Hyperliquid 主网提交真实订单；Bitget 仍只使用 Demo Trading。外部订单号会写回本地 SQLite。
+它不是生产级交易终端。显式配置凭证并在 `watchlist.toml` 打开平台交易权限后，可以向 Hyperliquid 主网提交真实订单；Bitget 仍只使用 Demo Trading。外部订单号会写回本地 SQLite。
 
 ## 现在它能做什么
 
@@ -11,7 +11,7 @@ mytradebot 是一个本地优先的行情监控和交易研究工作台。它把
 - **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Hyperliquid 主网标的，也可以直接编辑 `watchlist.toml`。
 - **Agent 分析**：支持 Codex Responses provider 和 Anthropic Messages provider。Agent 可以读取行情、K 线、新闻和本地交易记录，并返回结构化交易观察。
 - **会话持久化**：每个标的都有独立 Agent session，历史记录保存在本地 SQLite，可以 resume、reset 或删除。
-- **交易执行**：Agent 或 API 可以向 Hyperliquid 主网提交真实订单，或向 Bitget 模拟盘提交测试订单，并把结果同步记录到本地交易表。
+- **交易执行**：配置层允许时，Agent 或 API 可以向 Hyperliquid 主网提交真实订单，或向 Bitget 模拟盘提交测试订单；关闭时 Agent 只会给出开单建议。
 - **交易复盘**：Positions 页面可以查看 open/planned/history/fills/lessons，也可以手动触发 review。
 - **新闻流**：Reuters sitemap provider 会拉取新闻，写入本地 SQLite，并通过 Web UI 展示最新新闻。
 
@@ -237,15 +237,22 @@ Positions 页面可以看到：
 
 ## 主网 / 模拟盘下单
 
-Hyperliquid 主网使用 SDK 和主网私钥。除凭证外，还必须显式打开主网交易开关：
+Hyperliquid 主网使用 SDK 和主网私钥。是否允许下单由 `watchlist.toml` 的 `[trading]` 配置控制：
 
 ```bash
 export HYPERLIQUID_PRIVATE_KEY="..."
-export MYTRADEBOT_ENABLE_HYPERLIQUID_MAINNET_TRADING=true
 # 可选
 export HYPERLIQUID_ACCOUNT_ADDRESS="..."
 export HYPERLIQUID_VAULT_ADDRESS="..."
 ```
+
+```toml
+[trading]
+hyperliquid_enabled = false
+bitget_demo_enabled = true
+```
+
+当某个平台的开关为 `false` 时，该平台的 Agent 下单工具不会注册，API 下单也会被拒绝。
 
 Bitget Demo Trading 使用 Demo API Key。请求仍走 `https://api.bitget.com`，后端会强制加 `paptrading: 1` header：
 

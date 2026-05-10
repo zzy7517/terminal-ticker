@@ -84,6 +84,7 @@ from ..config.watchlist_store import (
     update_instrument_analysis_interval_in_watchlist,
     update_news_config_in_watchlist,
     update_social_feed_config_in_watchlist,
+    update_trading_config_in_watchlist,
 )
 from .helpers import (
     agent_config_from_payload,
@@ -242,7 +243,10 @@ class MarketRuntime:
         self.instruments = instruments
         self.controller_factory = controller_factory
         self.trade_store = trade_store or TradeStore()
-        self.exchange_router = ExchangeRouter(trade_store=self.trade_store)
+        self.exchange_router = ExchangeRouter(
+            trade_store=self.trade_store,
+            trading_config=config.trading,
+        )
         self.controller = controller_factory(
             config=config,
             instruments=instruments,
@@ -880,6 +884,8 @@ class MarketRuntime:
         instrument_key: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        if not self.config.trading.bitget_demo_enabled:
+            raise HTTPException(status_code=409, detail="Bitget demo trading is disabled by config.")
         instrument = self._instrument_by_key(instrument_key)
         if instrument.source != BITGET_SOURCE:
             raise HTTPException(
@@ -967,6 +973,8 @@ class MarketRuntime:
         instrument_key: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        if not self.config.trading.hyperliquid_enabled:
+            raise HTTPException(status_code=409, detail="Hyperliquid trading is disabled by config.")
         instrument = self._instrument_by_key(instrument_key)
         if instrument.source != HYPERLIQUID_SOURCE:
             raise HTTPException(
@@ -1135,6 +1143,7 @@ class MarketRuntime:
                 exchange_router=self.exchange_router,
                 news_service=self.news_service,
                 social_feed_service=self.social_feed_service,
+                trading_config=self.config.trading,
                 memory_policy=self.memory_pipeline.policy
                 if self.memory_pipeline is not None
                 else self.memory_policy,
@@ -1599,6 +1608,9 @@ class MarketRuntime:
             await asyncio.to_thread(
                 update_social_feed_config_in_watchlist, source_path, self.config.social_feed,
             )
+            await asyncio.to_thread(
+                update_trading_config_in_watchlist, source_path, self.config.trading,
+            )
         except Exception:
             LOGGER.warning("Config flush to disk failed", exc_info=True)
 
@@ -1610,6 +1622,7 @@ class MarketRuntime:
         previous_quotes = self.controller.quotes
         self.controller.stop()
         self.config = config
+        self.exchange_router.trading_config = config.trading
         await self._apply_memory_config(config)
         self.instruments = instruments
         self.controller = self.controller_factory(config=config, instruments=instruments)

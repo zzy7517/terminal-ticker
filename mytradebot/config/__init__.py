@@ -180,6 +180,23 @@ class SocialFeedConfig:
 
 
 @dataclass(frozen=True)
+class TradingConfig:
+    """说明：封装各平台是否允许执行下单/平仓等 mutation 操作。"""
+
+    hyperliquid_enabled: bool = False
+    bitget_demo_enabled: bool = True
+
+    def exchange_enabled(self, exchange: str) -> bool:
+        """说明：按交易所标识返回是否允许执行交易 mutation。"""
+        normalized = exchange.strip().lower().replace("-", "_")
+        if normalized == HYPERLIQUID_SOURCE:
+            return self.hyperliquid_enabled
+        if normalized in {"bitget_demo", "bitget"}:
+            return self.bitget_demo_enabled
+        return False
+
+
+@dataclass(frozen=True)
 class InstrumentConfig:
     """说明：封装 watchlist 中尚未解析到 provider 的标的配置。"""
     symbol: str
@@ -223,6 +240,7 @@ class AppConfig:
     memory: MemoryConfig = MemoryConfig()
     news: NewsConfig = NewsConfig()
     social_feed: SocialFeedConfig = SocialFeedConfig()
+    trading: TradingConfig = TradingConfig()
 
 
 def _normalize_inst_type(raw_value: Any) -> str | None:
@@ -546,6 +564,26 @@ def parse_social_feed_config(raw_social_feed: dict[str, Any] | None) -> SocialFe
     )
 
 
+def _nested_enabled(raw: dict[str, Any], section_name: str, default: bool) -> bool:
+    """说明：读取 trading 子配置，兼容 flat 和 nested TOML 写法。"""
+    raw_section = raw.get(section_name)
+    if isinstance(raw_section, dict):
+        return _normalize_bool(raw_section.get("enabled"), f"trading.{section_name}.enabled", default)
+    return _normalize_bool(raw.get(f"{section_name}_enabled"), f"trading.{section_name}_enabled", default)
+
+
+def parse_trading_config(raw_trading: dict[str, Any] | None) -> TradingConfig:
+    """说明：把原始 trading 配置解析为平台级下单权限。"""
+    if raw_trading is None:
+        raw_trading = {}
+    if not isinstance(raw_trading, dict):
+        raise ValueError("trading must be a table")
+    return TradingConfig(
+        hyperliquid_enabled=_nested_enabled(raw_trading, "hyperliquid", False),
+        bitget_demo_enabled=_nested_enabled(raw_trading, "bitget_demo", True),
+    )
+
+
 def parse_cache_config(raw_cache: dict[str, Any] | None) -> CacheConfig:
     """说明：把原始缓存配置解析为 CacheConfig。"""
     if raw_cache is None:
@@ -733,6 +771,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
     memory = parse_memory_config(data.get("memory", {}))
     news = parse_news_config(data.get("news", {}))
     social_feed = parse_social_feed_config(data.get("social_feed", {}))
+    trading = parse_trading_config(data.get("trading", {}))
 
     return AppConfig(
         instruments=instruments,
@@ -743,6 +782,7 @@ def parse_config(data: dict[str, Any], *, source_path: Path | None = None) -> Ap
         memory=memory,
         news=news,
         social_feed=social_feed,
+        trading=trading,
         source_path=source_path,
     )
 
@@ -770,6 +810,7 @@ def build_runtime_config(
         memory=MemoryConfig(),
         news=NewsConfig(),
         social_feed=SocialFeedConfig(),
+        trading=TradingConfig(),
         source_path=None,
     )
 
@@ -788,5 +829,6 @@ def build_runtime_config(
         memory=base.memory,
         news=base.news,
         social_feed=base.social_feed,
+        trading=base.trading,
         source_path=base.source_path,
     )

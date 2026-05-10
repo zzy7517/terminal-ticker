@@ -331,6 +331,10 @@ export interface MarketState {
       retentionDays: number;
     };
     socialFeed: SocialFeedConfig;
+    trading: {
+      hyperliquidEnabled: boolean;
+      bitgetDemoEnabled: boolean;
+    };
     sourcePath: string | null;
   };
   instruments: Instrument[];

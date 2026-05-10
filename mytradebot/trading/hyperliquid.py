@@ -12,8 +12,6 @@ from .exchange_models import ExchangeOrder, ExchangePosition
 
 HYPERLIQUID_API_BASE = "https://api.hyperliquid.xyz"
 HYPERLIQUID_FILL_SOURCE = "hyperliquid"
-MAINNET_TRADING_ENV = "MYTRADEBOT_ENABLE_HYPERLIQUID_MAINNET_TRADING"
-_TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 _log = logging.getLogger(__name__)
 
 
@@ -48,22 +46,8 @@ def hyperliquid_credentials_available() -> bool:
     return _optional_env("HYPERLIQUID_PRIVATE_KEY") is not None
 
 
-def hyperliquid_mainnet_trading_enabled() -> bool:
-    """说明：主网真实交易必须显式启用，避免仅配置私钥就可下单。"""
-    value = os.environ.get(MAINNET_TRADING_ENV, "")
-    return value.strip().lower() in _TRUTHY_ENV_VALUES
-
-
-def _require_mainnet_trading_enabled() -> None:
-    if not hyperliquid_mainnet_trading_enabled():
-        raise HyperliquidTradingError(
-            f"Hyperliquid mainnet trading is disabled. Set {MAINNET_TRADING_ENV}=true to enable live order mutations."
-        )
-
-
 def _load_exchange():
     """说明：延迟导入 SDK 并根据环境变量构建 Exchange。"""
-    _require_mainnet_trading_enabled()
     private_key = _optional_env("HYPERLIQUID_PRIVATE_KEY")
     if private_key is None:
         raise HyperliquidTradingError(

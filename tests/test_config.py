@@ -232,6 +232,36 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.news.retention_days, 7)
         self.assertEqual(config.news.reuters_url, "https://example/sitemap.xml")
 
+    def test_parse_config_supports_trading_permissions(self) -> None:
+        """Verify platform trading permissions default safely and honor config overrides."""
+        default_config = parse_config({"symbols": ["USDT-FUTURES:BTCUSDT"]})
+        self.assertFalse(default_config.trading.hyperliquid_enabled)
+        self.assertTrue(default_config.trading.bitget_demo_enabled)
+
+        config = parse_config({
+            "symbols": ["USDT-FUTURES:BTCUSDT"],
+            "trading": {
+                "hyperliquid_enabled": True,
+                "bitget_demo_enabled": False,
+            },
+        })
+
+        self.assertTrue(config.trading.hyperliquid_enabled)
+        self.assertFalse(config.trading.bitget_demo_enabled)
+
+    def test_parse_config_supports_nested_trading_permissions(self) -> None:
+        """Verify nested trading tables can express platform permissions."""
+        config = parse_config({
+            "symbols": ["USDT-FUTURES:BTCUSDT"],
+            "trading": {
+                "hyperliquid": {"enabled": True},
+                "bitget_demo": {"enabled": False},
+            },
+        })
+
+        self.assertTrue(config.trading.hyperliquid_enabled)
+        self.assertFalse(config.trading.bitget_demo_enabled)
+
     def test_build_runtime_requires_symbols(self) -> None:
         """Verify build runtime requires symbols."""
         with self.assertRaises(ValueError):

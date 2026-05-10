@@ -18,6 +18,7 @@ from mytradebot.config import (
     DisplayConfig,
     MemoryConfig,
     NewsConfig,
+    TradingConfig,
     load_config,
 )
 from mytradebot.runtime.controller import DrainResult
@@ -471,7 +472,11 @@ class WebTests(unittest.TestCase):
         """Verify real Hyperliquid order endpoint rejects cross-site browser calls."""
         instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
         app = create_app(
-            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            config=AppConfig(
+                instruments=tuple(),
+                display=DisplayConfig(),
+                trading=TradingConfig(hyperliquid_enabled=True),
+            ),
             instruments=(instrument,),
             controller_factory=DummyController,
             auto_start=False,
@@ -490,7 +495,11 @@ class WebTests(unittest.TestCase):
         """Verify generic exchange mutation route uses the trading local-only guard."""
         instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
         app = create_app(
-            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            config=AppConfig(
+                instruments=tuple(),
+                display=DisplayConfig(),
+                trading=TradingConfig(hyperliquid_enabled=True),
+            ),
             instruments=(instrument,),
             controller_factory=DummyController,
             auto_start=False,
@@ -527,7 +536,11 @@ class WebTests(unittest.TestCase):
         """Verify limit order validation runs before attempting a signed order."""
         instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
         app = create_app(
-            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            config=AppConfig(
+                instruments=tuple(),
+                display=DisplayConfig(),
+                trading=TradingConfig(hyperliquid_enabled=True),
+            ),
             instruments=(instrument,),
             controller_factory=DummyController,
             auto_start=False,
@@ -542,6 +555,27 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("limitPrice is required", response.json()["detail"])
+        opened.assert_not_called()
+
+    def test_hyperliquid_trade_endpoint_respects_trading_config(self) -> None:
+        """Verify platform trading config blocks manual Hyperliquid execution."""
+        instrument = HyperliquidInstrument("BTC", "BTC Perp", "BTC")
+        app = create_app(
+            config=AppConfig(instruments=tuple(), display=DisplayConfig()),
+            instruments=(instrument,),
+            controller_factory=DummyController,
+            auto_start=False,
+        )
+
+        with patch("mytradebot.api.runtime.open_hyperliquid_position") as opened:
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/hyperliquid/trades/hyperliquid%3ABTC",
+                    json={"direction": "long", "size": 0.1},
+                )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("disabled by config", response.json()["detail"])
         opened.assert_not_called()
 
     def test_hyperliquid_add_endpoint_persists_symbol(self) -> None:
