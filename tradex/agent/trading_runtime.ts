@@ -60,7 +60,7 @@ export class TradingAgentRuntime {
   }): Promise<TradingAgentTurnResult> {
     const provider = this.registry.createProvider(this.config);
     const tools = mergeRegistries(
-      ...(this.services.quotes ? [buildMarketTools({ quotes: this.services.quotes })] : []),
+      ...(this.services.quotes ? [buildMarketTools({ quotes: this.services.quotes, maxCandles: this.config.maxCandles })] : []),
       buildNewsTools(this.services.newsService ?? null),
       buildSocialFeedTools(this.services.socialFeedService ?? null),
       ...(this.services.memoryStoragePath ? [buildMemoryTools(this.services.memoryStoragePath)] : []),

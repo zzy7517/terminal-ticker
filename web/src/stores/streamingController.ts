@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentStreamEvent } from '../types';
+import type { AgentMessage, AgentStreamEvent, AgentToolCall } from '../types';
 
 export const STREAM_COMMIT_TICK_MS = 8;
 const STREAM_CATCH_UP_QUEUE_DEPTH = 8;
@@ -52,6 +52,19 @@ export class StreamingMessageController {
     this.error = raw.error ?? this.error;
     this.runId = envelope.runId;
     this.lastSeq = envelope.seq;
+  }
+
+  addToolCall(toolCall: AgentToolCall, envelope: Pick<AgentStreamEvent, 'runId' | 'seq'>): AgentMessage {
+    const metadata = { ...(this.metadata ?? {}) };
+    const existing = Array.isArray(metadata.toolCalls) ? metadata.toolCalls : [];
+    const alreadyPresent = existing.some((item) => item.id === toolCall.id);
+    this.metadata = {
+      ...metadata,
+      toolCalls: alreadyPresent ? existing : [...existing, toolCall],
+    };
+    this.runId = envelope.runId;
+    this.lastSeq = envelope.seq;
+    return this.toMessage();
   }
 
   pushDelta(delta: string | undefined, rawContent: string | undefined): boolean {

@@ -1,6 +1,7 @@
 import { TradingConfig } from "../../config/index.js";
 import { ExchangeRouter } from "../../trading/exchange_router.js";
 import { FillKind, TradeDirection, TradeStatus, tradeToPayload, snapshotToPayload } from "../../trading/models.js";
+import type { Fill } from "../../trading/models.js";
 import { TradeStore } from "../../trading/store.js";
 import { orderToPayload, positionToPayload, syncResultToPayload } from "../../trading/exchange_models.js";
 import { ToolRegistry, jsonOutput } from "./registry.js";
@@ -116,7 +117,7 @@ export function buildTradingTools(input: {
           externalOrderId: result.orderId,
         });
 
-        let fill = null;
+        let fill: Fill | null = null;
         if (result.filledSize && result.averagePrice != null) {
           fill = input.tradeStore.recordFill({
             tradeId: trade.id,
@@ -254,7 +255,7 @@ export function buildTradeReviewTools(input: {
 
   registry.register({
     name: "get_exchange_fills",
-    description: "从交易所拉取该笔交易相关的真实历史成交记录。",
+    description: "Fetch the actual historical fills for this trade from the exchange.",
     parameters: { type: "object", properties: { limit: { type: "integer" } } },
     handler: async ({ limit }) => {
       if (!router) return jsonOutput({ error: "exchange router unavailable" });

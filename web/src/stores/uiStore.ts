@@ -6,14 +6,15 @@ import { readInitialTheme, readRouteFromHash, navigateToRoute, nextTheme } from 
 interface UiState {
   route: AppRoute;
   theme: ThemeName;
-  sidebarCollapsed: boolean;
+  watchlistOpen: boolean;
   selectedKey: string | null;
   activeGroup: string | null;
 
   setRoute: (route: AppRoute) => void;
   toggleTheme: () => void;
   setTheme: (theme: ThemeName) => void;
-  setSidebarCollapsed: (value: boolean) => void;
+  toggleWatchlist: () => void;
+  setWatchlistOpen: (open: boolean) => void;
   setSelectedKey: (key: string | null) => void;
   setActiveGroup: (group: string | null) => void;
   openSettings: (section?: string) => void;
@@ -23,7 +24,7 @@ interface UiState {
 export const useUiStore = create<UiState>((set, get) => ({
   route: readRouteFromHash(),
   theme: readInitialTheme(),
-  sidebarCollapsed: false,
+  watchlistOpen: false,
   selectedKey: null,
   activeGroup: null,
 
@@ -39,7 +40,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     try { window.localStorage.setItem(THEME_STORAGE_KEY, theme); } catch {}
     set({ theme });
   },
-  setSidebarCollapsed: (value) => set({ sidebarCollapsed: value }),
+  toggleWatchlist: () => set((s) => ({ watchlistOpen: !s.watchlistOpen })),
+  setWatchlistOpen: (open) => set({ watchlistOpen: open }),
   setSelectedKey: (key) => set({ selectedKey: key }),
   setActiveGroup: (group) => set({ activeGroup: group }),
   openSettings: (section = 'providers') => {

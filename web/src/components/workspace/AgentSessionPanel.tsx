@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
   Check,
-  ChartNoAxesCombined,
   ChevronDown,
   CircleDot,
   History,
@@ -15,6 +14,19 @@ import type { AgentMessage, AgentToolCall } from '../../types';
 import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useAgentStore } from '../../stores/agentStore';
 import { useMarketStore } from '../../stores/marketStore';
+
+type InstrumentMentionOption = {
+  key: string;
+  label: string;
+  symbol: string;
+};
+
+type MentionPickerState = {
+  start: number;
+  end: number;
+  query: string;
+  activeIndex: number;
+};
 
 function AgentToolCalls({
   pendingToolCalls,
@@ -78,7 +90,6 @@ function AgentTranscriptMessage({
         <span>{label}</span>
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
       </div>
-      {content && <p className="session-message-text">{content}</p>}
       {toolCalls.length > 0 && (
         <AgentToolCalls
           pendingToolCalls={pendingToolCalls}
@@ -86,6 +97,7 @@ function AgentTranscriptMessage({
           toolResultsById={toolResultsById}
         />
       )}
+      {content && <p className="session-message-text">{content}</p>}
     </div>
   );
 }
@@ -101,7 +113,6 @@ export function AgentSessionPanel({
   const agentPrompt = useAgentStore((s) => s.agentPrompt);
   const agentProvider = useAgentStore((s) => s.agentProvider);
   const agentModel = useAgentStore((s) => s.agentModel);
-  const agentCandidateKeys = useAgentStore((s) => s.agentCandidateKeys);
   const agentBusyKey = useAgentStore((s) => s.agentBusyKey);
   const agentSessionActionKey = useAgentStore((s) => s.agentSessionActionKey);
   const agentSessionLoadingKey = useAgentStore((s) => s.agentSessionLoadingKey);
@@ -111,8 +122,6 @@ export function AgentSessionPanel({
 
   const setAgentPrompt = useAgentStore((s) => s.setAgentPrompt);
   const changeProviderModel = useAgentStore((s) => s.changeProviderModel);
-  const toggleAgentCandidate = useAgentStore((s) => s.toggleAgentCandidate);
-  const clearAgentCandidates = useAgentStore((s) => s.clearAgentCandidates);
   const runAgentAnalysis = useAgentStore((s) => s.runAgentAnalysis);
 
   const instruments = useMarketStore((s) => s.state?.instruments) ?? [];
@@ -123,9 +132,9 @@ export function AgentSessionPanel({
 
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerSearch, setModelPickerSearch] = useState('');
-  const [contextPickerOpen, setContextPickerOpen] = useState(false);
+  const [mentionPicker, setMentionPicker] = useState<MentionPickerState | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
-  const contextPickerRef = useRef<HTMLDivElement>(null);
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const transcriptScrollBySessionRef = useRef<Map<string, number>>(new Map());
   const shouldFollowTranscriptRef = useRef(true);
@@ -148,19 +157,39 @@ export function AgentSessionPanel({
     ? new Date(agentSession.session.updatedAt).toLocaleTimeString()
     : 'No session';
 
+  const mentionOptions = useMemo<InstrumentMentionOption[]>(() => {
+    if (!mentionPicker) return [];
+    const query = mentionPicker.query.trim().toLowerCase();
+    return instruments
+      .filter((instrument) => {
+        if (!query) return true;
+        return instrument.key.toLowerCase().includes(query)
+          || instrument.label.toLowerCase().includes(query)
+          || instrument.symbol.toLowerCase().includes(query);
+      })
+      .slice(0, 20)
+      .map((instrument) => ({
+        key: instrument.key,
+        label: instrument.label,
+        symbol: instrument.symbol,
+      }));
+  }, [instruments, mentionPicker]);
+
   useEffect(() => {
-    if (!modelPickerOpen && !contextPickerOpen) return;
+    if (!modelPickerOpen) return;
     function handleClick(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
         setModelPickerOpen(false);
       }
-      if (contextPickerRef.current && !contextPickerRef.current.contains(e.target as Node)) {
-        setContextPickerOpen(false);
-      }
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [contextPickerOpen, modelPickerOpen]);
+  }, [modelPickerOpen]);
+
+  useEffect(() => {
+    if (!mentionPicker || mentionOptions.length === 0 || mentionPicker.activeIndex < mentionOptions.length) return;
+    setMentionPicker({ ...mentionPicker, activeIndex: 0 });
+  }, [mentionOptions.length, mentionPicker]);
 
   useLayoutEffect(() => {
     const transcript = transcriptRef.current;
@@ -196,9 +225,45 @@ export function AgentSessionPanel({
   }
 
   const currentProviderOption = AGENT_PROVIDER_OPTIONS.find((o) => o.provider === agentProvider);
-  const candidateLabels = agentCandidateKeys
-    .map((key) => instruments.find((instrument) => instrument.key === key)?.label ?? key)
-    .join(', ');
+
+  function updateMentionPicker(value: string, cursor: number | null) {
+    if (cursor === null || cursor === undefined) {
+      setMentionPicker(null);
+      return;
+    }
+    const beforeCursor = value.slice(0, cursor);
+    const match = beforeCursor.match(/(^|\s)@([^\s@]*)$/);
+    if (!match) {
+      setMentionPicker(null);
+      return;
+    }
+    const query = match[2] ?? '';
+    setMentionPicker({
+      start: cursor - query.length - 1,
+      end: cursor,
+      query,
+      activeIndex: 0,
+    });
+  }
+
+  function insertInstrumentMention(instrument: InstrumentMentionOption) {
+    if (!mentionPicker) return;
+    const mention = `@${instrument.key} `;
+    const nextPrompt = `${agentPrompt.slice(0, mentionPicker.start)}${mention}${agentPrompt.slice(mentionPicker.end)}`;
+    const nextCursor = mentionPicker.start + mention.length;
+    setAgentPrompt(nextPrompt);
+    setMentionPicker(null);
+    window.setTimeout(() => {
+      promptTextareaRef.current?.focus();
+      promptTextareaRef.current?.setSelectionRange(nextCursor, nextCursor);
+    }, 0);
+  }
+
+  function moveMentionSelection(delta: number) {
+    if (!mentionPicker || mentionOptions.length === 0) return;
+    const nextIndex = (mentionPicker.activeIndex + delta + mentionOptions.length) % mentionOptions.length;
+    setMentionPicker({ ...mentionPicker, activeIndex: nextIndex });
+  }
 
   const contextProvider = agentSession?.session?.provider ?? agentProvider;
   const contextModel = agentSession?.session?.model ?? agentModel;
@@ -231,118 +296,77 @@ export function AgentSessionPanel({
         <small>{sessionLoading ? 'Loading' : sessionTime}</small>
       </div>
       <div className="session-pickers-row">
-      <div className="session-model-picker" ref={pickerRef}>
-        <button
-          className="session-model-trigger"
-          type="button"
-          disabled={busy}
-          onClick={() => setModelPickerOpen(!modelPickerOpen)}
-        >
-          {currentProviderOption && (
-            <span className="session-model-provider-icon">
-              {currentProviderOption.provider === 'anthropic' ? <Sparkles size={12} /> : <Bot size={12} />}
-            </span>
-          )}
-          <span>{agentModel}</span>
-          <ChevronDown size={14} />
-        </button>
-        {modelPickerOpen && (
-          <div className="session-model-dropdown">
-            <div className="session-model-dropdown-search">
-              <Search size={14} />
-              <input
-                autoFocus
-                value={modelPickerSearch}
-                onChange={(e) => setModelPickerSearch(e.target.value)}
-                placeholder="Search models..."
-              />
-            </div>
-            <div className="session-model-dropdown-list">
-              {enabledProviders.map((opt) => {
-                const profile = providerProfiles[opt.provider];
-                const providerModels = (profile?.models ?? []).filter((m) =>
-                  !kw || m.toLowerCase().includes(kw) || opt.label.toLowerCase().includes(kw),
-                );
-                if (providerModels.length === 0) return null;
-                return (
-                  <div key={opt.provider} className="session-model-group">
-                    <div className="session-model-group-head">
-                      {opt.provider === 'anthropic' ? <Sparkles size={13} /> : <Bot size={13} />}
-                      <span>{opt.label}</span>
+        <div className="session-model-picker" ref={pickerRef}>
+          <button
+            className="session-model-trigger"
+            type="button"
+            disabled={busy}
+            onClick={() => setModelPickerOpen(!modelPickerOpen)}
+          >
+            {currentProviderOption && (
+              <span className="session-model-provider-icon">
+                {currentProviderOption.provider === 'anthropic' ? <Sparkles size={12} /> : <Bot size={12} />}
+              </span>
+            )}
+            <span>{agentModel}</span>
+            <ChevronDown size={14} />
+          </button>
+          {modelPickerOpen && (
+            <div className="session-model-dropdown">
+              <div className="session-model-dropdown-search">
+                <Search size={14} />
+                <input
+                  autoFocus
+                  value={modelPickerSearch}
+                  onChange={(e) => setModelPickerSearch(e.target.value)}
+                  placeholder="Search models..."
+                />
+              </div>
+              <div className="session-model-dropdown-list">
+                {enabledProviders.map((opt) => {
+                  const profile = providerProfiles[opt.provider];
+                  const providerModels = (profile?.models ?? []).filter((m) =>
+                    !kw || m.toLowerCase().includes(kw) || opt.label.toLowerCase().includes(kw),
+                  );
+                  if (providerModels.length === 0) return null;
+                  return (
+                    <div key={opt.provider} className="session-model-group">
+                      <div className="session-model-group-head">
+                        {opt.provider === 'anthropic' ? <Sparkles size={13} /> : <Bot size={13} />}
+                        <span>{opt.label}</span>
+                      </div>
+                      {providerModels.map((m) => {
+                        const active = agentProvider === opt.provider && agentModel === m;
+                        return (
+                          <button
+                            key={`${opt.provider}:${m}`}
+                            className={`session-model-option ${active ? 'active' : ''}`}
+                            type="button"
+                            onClick={() => selectPickerModel(opt.provider, m)}
+                          >
+                            {active && <Check size={14} />}
+                            <span>{m}</span>
+                            {profile?.modelEfforts?.[m] && (
+                              <span className="session-model-effort">{profile.modelEfforts[m]}</span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
-                    {providerModels.map((m) => {
-                      const active = agentProvider === opt.provider && agentModel === m;
-                      return (
-                        <button
-                          key={`${opt.provider}:${m}`}
-                          className={`session-model-option ${active ? 'active' : ''}`}
-                          type="button"
-                          onClick={() => selectPickerModel(opt.provider, m)}
-                        >
-                          {active && <Check size={14} />}
-                          <span>{m}</span>
-                          {profile?.modelEfforts?.[m] && (
-                            <span className="session-model-effort">{profile.modelEfforts[m]}</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-              {enabledProviders.every((opt) => {
-                const profile = providerProfiles[opt.provider];
-                return (profile?.models ?? []).filter((m) =>
-                  !kw || m.toLowerCase().includes(kw) || opt.label.toLowerCase().includes(kw),
-                ).length === 0;
-              }) && (
-                <div className="empty-state sm">无匹配模型</div>
-              )}
+                  );
+                })}
+                {enabledProviders.every((opt) => {
+                  const profile = providerProfiles[opt.provider];
+                  return (profile?.models ?? []).filter((m) =>
+                    !kw || m.toLowerCase().includes(kw) || opt.label.toLowerCase().includes(kw),
+                  ).length === 0;
+                }) && (
+                  <div className="empty-state sm">无匹配模型</div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-      <div className="session-context-picker" ref={contextPickerRef}>
-        <button
-          className="session-model-trigger"
-          type="button"
-          disabled={busy || instruments.length === 0}
-          onClick={() => setContextPickerOpen(!contextPickerOpen)}
-        >
-          <ChartNoAxesCombined size={13} />
-          <span>{agentCandidateKeys.length ? candidateLabels : 'All instruments available'}</span>
-          <ChevronDown size={14} />
-        </button>
-        {contextPickerOpen && (
-          <div className="session-model-dropdown session-context-dropdown">
-            <div className="session-model-group-head">
-              <span>Tool candidates only</span>
-              {agentCandidateKeys.length > 0 && (
-                <button className="context-clear-button" type="button" onClick={clearAgentCandidates}>
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="session-model-dropdown-list">
-              {instruments.map((instrument) => {
-                const active = agentCandidateKeys.includes(instrument.key);
-                return (
-                  <button
-                    key={instrument.key}
-                    className={`session-model-option ${active ? 'active' : ''}`}
-                    type="button"
-                    onClick={() => toggleAgentCandidate(instrument.key)}
-                  >
-                    {active && <Check size={14} />}
-                    <span>{instrument.label}</span>
-                    <span className="session-model-effort">{instrument.symbol}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
       </div>
       <div
         className="session-transcript"
@@ -377,18 +401,75 @@ export function AgentSessionPanel({
       </div>
       <div className="session-compose">
         <textarea
+          ref={promptTextareaRef}
           disabled={disabled || busy || sessionLoading}
-          onChange={(event) => setAgentPrompt(event.target.value)}
+          onChange={(event) => {
+            setAgentPrompt(event.target.value);
+            updateMentionPicker(event.target.value, event.target.selectionStart);
+          }}
+          onClick={(event) => updateMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart)}
           onKeyDown={(event) => {
+            if (mentionPicker) {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                moveMentionSelection(1);
+                return;
+              }
+              if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveMentionSelection(-1);
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setMentionPicker(null);
+                return;
+              }
+              if ((event.key === 'Enter' || event.key === 'Tab') && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                const selected = mentionOptions[mentionPicker.activeIndex];
+                if (selected) insertInstrumentMention(selected);
+                return;
+              }
+            }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
               if (canSend) void runAgentAnalysis();
             }
           }}
-          placeholder="Ask the agent. Use the instrument picker only when you want to narrow tool calls."
+          onKeyUp={(event) => {
+            if (['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) return;
+            updateMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart);
+          }}
+          placeholder="Ask the agent. Type @ to mention a configured instrument."
           rows={3}
           value={agentPrompt}
         />
+        {mentionPicker && (
+          <div className="instrument-mention-picker">
+            <div className="instrument-mention-head">Configured instruments</div>
+            <div className="instrument-mention-list">
+              {mentionOptions.map((instrument, index) => (
+                <button
+                  key={instrument.key}
+                  className={`instrument-mention-option ${index === mentionPicker.activeIndex ? 'active' : ''}`}
+                  type="button"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    insertInstrumentMention(instrument);
+                  }}
+                >
+                  <span>{instrument.label}</span>
+                  <small>{instrument.symbol}</small>
+                  <code>{instrument.key}</code>
+                </button>
+              ))}
+              {mentionOptions.length === 0 && (
+                <div className="instrument-mention-empty">No matching instruments</div>
+              )}
+            </div>
+          </div>
+        )}
         <button
           className="shell-button primary lg full-width"
           type="button"

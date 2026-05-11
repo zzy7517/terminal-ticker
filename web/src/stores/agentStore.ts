@@ -6,6 +6,7 @@ import type {
   AgentSessionResponse,
   AgentSessionRun,
   AgentSessionSummary,
+  AgentToolCall,
 } from '../types';
 import {
   createAgentSession,
@@ -41,7 +42,6 @@ interface AgentState {
   agentPrompt: string;
   agentProvider: string;
   agentModel: string;
-  agentCandidateKeys: string[];
   pendingToolCalls: Set<string>;
   modelCache: Record<string, AgentModelOption[]>;
   contextUsage: ContextUsage;
@@ -55,9 +55,6 @@ interface AgentState {
   setAgentPrompt: (prompt: string) => void;
   setAgentProvider: (provider: string) => void;
   setAgentModel: (model: string) => void;
-  toggleAgentCandidate: (key: string) => void;
-  clearAgentCandidates: () => void;
-  filterCandidateKeys: (validKeys: string[]) => void;
   setModelCache: (updater: (prev: Record<string, AgentModelOption[]>) => Record<string, AgentModelOption[]>) => void;
   changeProviderModel: (provider: string, defaultModel: string) => void;
 
@@ -183,12 +180,45 @@ function setSessionMessage(
   };
 }
 
+function upsertOptimisticSessionSummary(
+  history: AgentSessionSummary[],
+  payload: AgentSessionResponse,
+  prompt: string,
+  updatedAt: string,
+  run: SessionRunProjection,
+): AgentSessionSummary[] {
+  if (!payload.session) return history;
+  const existing = history.find((item) => item.id === payload.session?.id);
+  const preview = (existing?.preview || prompt.replace(/[\n\r]+/g, ' ').trim()).slice(0, 120);
+  const messageCount = Math.max(existing?.messageCount ?? 0, payload.messages.length, 1);
+  const summary: AgentSessionSummary = existing
+    ? { ...existing, updatedAt, messageCount, run }
+    : {
+        ...payload.session,
+        active: false,
+        updatedAt,
+        messageCount,
+        preview,
+        contextUsage: payload.contextUsage ?? null,
+        run,
+      };
+  return [summary, ...history.filter((item) => item.id !== summary.id)];
+}
+
 function replaceRunState(
   map: Record<string, SessionRunProjection>,
   sessionId: string,
   run: SessionRunProjection,
 ): Record<string, SessionRunProjection> {
   return { ...map, [sessionId]: run };
+}
+
+function latestAssistantController(
+  controllers: Map<string, StreamingMessageController>,
+  sessionId: string,
+): StreamingMessageController | null {
+  const values = Array.from(controllers.values()).reverse();
+  return values.find((controller) => controller.sessionId === sessionId && controller.role === 'assistant') ?? null;
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -201,7 +231,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentPrompt: '',
   agentProvider: AGENT_PROVIDER_OPTIONS[0].provider,
   agentModel: AGENT_PROVIDER_OPTIONS[0].defaultModel,
-  agentCandidateKeys: [],
   pendingToolCalls: new Set(),
   modelCache: {},
   contextUsage: null,
@@ -239,15 +268,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   })),
   setAgentProvider: (provider) => set({ agentProvider: provider }),
   setAgentModel: (model) => set({ agentModel: model }),
-  toggleAgentCandidate: (key) => set((s) => ({
-    agentCandidateKeys: s.agentCandidateKeys.includes(key)
-      ? s.agentCandidateKeys.filter((k) => k !== key)
-      : [...s.agentCandidateKeys, key],
-  })),
-  clearAgentCandidates: () => set({ agentCandidateKeys: [] }),
-  filterCandidateKeys: (validKeys) => set((s) => ({
-    agentCandidateKeys: s.agentCandidateKeys.filter((k) => validKeys.includes(k)),
-  })),
   setModelCache: (updater) => set((s) => ({ modelCache: updater(s.modelCache) })),
   changeProviderModel: (provider, defaultModel) => set({ agentProvider: provider, agentModel: defaultModel }),
 
@@ -349,7 +369,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   runAgentAnalysis: async () => {
-    const { agentSession, agentPrompt, agentProvider, agentModel, agentCandidateKeys } = get();
+    const { agentSession, agentPrompt, agentProvider, agentModel } = get();
     let targetSessionId = agentSession?.session?.id ?? null;
     const messageIds = new Map<string, number>();
     const streamControllers = new Map<string, StreamingMessageController>();
@@ -443,32 +463,41 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       if (get().runStateBySessionId[runSessionId]?.status === 'running') return;
       const prompt = agentPrompt;
       set((s) => {
+        const createdAt = new Date().toISOString();
         const optimisticUserMessage: AgentMessage = {
           id: -Date.now(),
           sessionId: runSessionId,
           role: 'user',
           content: prompt,
-          createdAt: new Date().toISOString(),
+          createdAt,
           metadata: null,
           error: null,
         };
         const agentSessionById = setSessionMessage(s, runSessionId, optimisticUserMessage);
+        const runningRun = {
+          ...idleRun(runSessionId),
+          status: 'running' as const,
+          pendingToolCalls: new Set<string>(),
+        };
         const runStateBySessionId = {
           ...s.runStateBySessionId,
-          [runSessionId]: {
-            ...idleRun(runSessionId),
-            status: 'running' as const,
-            pendingToolCalls: new Set<string>(),
-          },
+          [runSessionId]: runningRun,
         };
         const draftBySessionId = { ...s.draftBySessionId, [runSessionId]: '' };
-        const next = { ...s, agentSessionById, runStateBySessionId, draftBySessionId };
-        return { agentSessionById, runStateBySessionId, draftBySessionId, ...activeFields(next) };
+        const agentSessionHistory = upsertOptimisticSessionSummary(
+          s.agentSessionHistory,
+          agentSessionById[runSessionId],
+          prompt,
+          createdAt,
+          runningRun,
+        );
+        const next = { ...s, agentSessionById, runStateBySessionId, draftBySessionId, agentSessionHistory };
+        return { agentSessionById, runStateBySessionId, draftBySessionId, agentSessionHistory, ...activeFields(next) };
       });
       await streamAgentMessage(
         runSessionId,
         prompt,
-        { provider: agentProvider, model: agentModel, candidateInstrumentKeys: agentCandidateKeys },
+        { provider: agentProvider, model: agentModel },
         (envelope) => {
           const sessionId = envelope.sessionId || runSessionId;
           const event = envelope.event;
@@ -478,13 +507,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
               const pendingToolCalls = new Set(previous.pendingToolCalls);
               pendingToolCalls.add(event.toolCall.id);
+              const controller = latestAssistantController(streamControllers, sessionId);
+              const agentSessionById = controller
+                ? setSessionMessage(
+                    s,
+                    sessionId,
+                    controller.addToolCall(event.toolCall as AgentToolCall, { runId: envelope.runId, seq: envelope.seq }),
+                  )
+                : s.agentSessionById;
               const runStateBySessionId = replaceRunState(
                 s.runStateBySessionId,
                 sessionId,
                 { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq, pendingToolCalls },
               );
-              const next = { ...s, runStateBySessionId };
-              return { runStateBySessionId, ...activeFields(next) };
+              const next = { ...s, agentSessionById, runStateBySessionId };
+              return { agentSessionById, runStateBySessionId, ...activeFields(next) };
             });
             return;
           }

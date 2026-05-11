@@ -1,19 +1,18 @@
 import { useState } from 'react';
 import {
-  ChevronsLeft,
-  ChevronsRight,
+  BarChart3,
   Moon,
   Settings,
   Sun,
   Zap,
 } from 'lucide-react';
-import { useMarketStore, useGroups } from '../../stores/marketStore';
+import { useMarketStore } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
-import { GROUP_LABELS, THEME_LABELS } from '../../constants';
+import { THEME_LABELS } from '../../constants';
 import type { ThemeName } from '../../constants';
-import { changeClass, nextTheme } from '../../utils';
+import { nextTheme } from '../../utils';
 import { ConnectionBadge } from './ConnectionBadge';
-import { WatchlistRow } from './WatchlistRow';
+import { WatchlistDrawer } from './WatchlistDrawer';
 import { AgentSessionHistoryList } from './AgentSessionHistoryList';
 import { AgentSessionPanel } from './AgentSessionPanel';
 import { NewsPanel } from './NewsPanel';
@@ -25,19 +24,10 @@ export function WorkspaceView() {
   const socketStatus = useMarketStore((s) => s.socketStatus);
 
   const theme = useUiStore((s) => s.theme);
-  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
-  const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
-  const selectedKey = useUiStore((s) => s.selectedKey);
-  const setSelectedKey = useUiStore((s) => s.setSelectedKey);
-  const activeGroup = useUiStore((s) => s.activeGroup);
-  const setActiveGroup = useUiStore((s) => s.setActiveGroup);
+  const toggleWatchlist = useUiStore((s) => s.toggleWatchlist);
   const openSettings = useUiStore((s) => s.openSettings);
 
-  const groups = useGroups();
   const nextThemeName: ThemeName = nextTheme(theme);
-
-  const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
-  const collapsedKeys = state?.instruments.map((instrument) => instrument.key) ?? [];
 
   const [activeTab, setActiveTab] = useState<'agent' | 'news' | 'social' | 'positions'>('agent');
 
@@ -46,13 +36,13 @@ export function WorkspaceView() {
       <header className="topbar">
         <div className="topbar-left">
           <button
-            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="sidebar-toggle-button"
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label="Toggle watchlist"
+            className="shell-button icon"
+            onClick={toggleWatchlist}
+            title="Watchlist (⌘B)"
             type="button"
           >
-            {sidebarCollapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+            <BarChart3 size={18} />
           </button>
           <div className="brand-lockup">
             <div className="brand-mark" aria-hidden="true">
@@ -99,94 +89,9 @@ export function WorkspaceView() {
         ))}
       </div>
 
-      <section className={`workspace ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-        <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
-          {!sidebarCollapsed && (
-            <>
-              <div className="sidebar-head">
-                <span className="sidebar-title">自选列表</span>
-                <button
-                  aria-label="Manage watchlist"
-                  className="sidebar-manage-button"
-                  onClick={() => useUiStore.getState().openSettings('watchlist')}
-                  type="button"
-                >
-                  <Settings size={14} />
-                </button>
-              </div>
-              <div className="group-tabs">
-                {groups.map((group) => (
-                  <button
-                    className={group === activeGroup ? 'active' : ''}
-                    key={group}
-                    type="button"
-                    onClick={() => setActiveGroup(group)}
-                  >
-                    {GROUP_LABELS[group] ?? group}
-                  </button>
-                ))}
-              </div>
-              <div className="watchlist-header">
-                <span>名称/代码</span>
-                <span>最新价</span>
-                <span>涨跌幅</span>
-              </div>
-              <div className="watchlist">
-                {state &&
-                  activeKeys.map((key) => {
-                    const instrument = state.instruments.find((item) => item.key === key);
-                    if (!instrument) return null;
-                    return (
-                      <WatchlistRow
-                        key={key}
-                        instrument={instrument}
-                        quote={state.quotes[key]}
-                        selected={selectedKey === key}
-                        onSelect={() => setSelectedKey(key)}
-                      />
-                    );
-                  })}
-              </div>
-            </>
-          )}
-          {sidebarCollapsed && (
-            <div className="sidebar-collapsed-content">
-              <div className="sidebar-collapsed-icons">
-                <button
-                  aria-label="Manage watchlist"
-                  className="sidebar-manage-button"
-                  onClick={() => useUiStore.getState().openSettings('watchlist')}
-                  type="button"
-                  title="Manage watchlist"
-                >
-                  <Settings size={16} />
-                </button>
-              </div>
-              <div className="sidebar-collapsed-symbols">
-                {state &&
-                  collapsedKeys.map((key) => {
-                    const instrument = state.instruments.find((item) => item.key === key);
-                    if (!instrument) return null;
-                    return (
-                      <button
-                        key={key}
-                        className={`sidebar-collapsed-symbol ${selectedKey === key ? 'selected' : ''}`}
-                        onClick={() => setSelectedKey(key)}
-                        type="button"
-                        title={`${instrument.label} (${instrument.symbol})`}
-                      >
-                        <span className="collapsed-symbol-label">{instrument.label}</span>
-                        <span className={`collapsed-symbol-price ${changeClass(state.quotes[key])}`}>
-                          {state.quotes[key]?.percentLabel ?? '-'}
-                        </span>
-                      </button>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-        </aside>
+      <WatchlistDrawer />
 
+      <section className="workspace">
         <section className="main-content">
           {activeTab === 'agent' && (
             <div className="agent-tab-layout">

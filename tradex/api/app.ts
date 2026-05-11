@@ -11,6 +11,7 @@ import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildWebTools } from "../agent/tools/web.js";
 import { mergeRegistries } from "../agent/tools/registry.js";
 import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type SocialFeedConfig } from "../config/index.js";
+import { normalizeApiMode } from "../config/agent_models.js";
 import { loadInstrumentCatalog as loadBitgetInstrumentCatalog } from "../market_data/bitget.js";
 import { loadInstrumentCatalog as loadHyperliquidInstrumentCatalog } from "../market_data/hyperliquid.js";
 import {
@@ -121,6 +122,7 @@ export function createApp(options: CreateAppOptions): Hono {
       model: String(body.model || runtime.config.agent.model),
       index: runtime.sessionIndex,
     });
+    runtime.pendingSessionManagers.set(mgr.getSessionId(), mgr);
     const payload = mgr.sessionPayload();
     const sessionResp = { ...payload, run: idleRun(mgr.getSessionId()) };
     return c.json({
@@ -132,7 +134,9 @@ export function createApp(options: CreateAppOptions): Hono {
     return c.json(sessionResponse(runtime, c.req.param("id")));
   });
   app.delete("/api/agent/sessions/:id", async (c) => {
-    SessionManager.deleteSession(c.req.param("id"), runtime.sessionIndex);
+    const sessionId = c.req.param("id");
+    runtime.pendingSessionManagers.delete(sessionId);
+    SessionManager.deleteSession(sessionId, runtime.sessionIndex);
     return c.json({ session: { session: null, messages: [] }, history: sessionHistory(runtime), state: await runtime.state() });
   });
   app.post("/api/agent/sessions/:id/messages/stream", async (c) => {
@@ -158,23 +162,40 @@ export function createApp(options: CreateAppOptions): Hono {
     const stream = new ReadableStream({
       async start(controller) {
         sendFrame(controller, { type: "agent_start" });
+        let assistantEntryId: string | null = null;
         try {
+          const conversationHistory = mgr.historyForContext({ limit: 12 });
           mgr.appendMessage({ role: "user", content: message });
+          assistantEntryId = mgr.appendMessage({
+            role: "assistant",
+            content: "",
+            metadata: { toolCalls: [] },
+            error: null,
+          });
+          runtime.pendingSessionManagers.delete(sessionId);
+          const currentAssistantEntryId = assistantEntryId;
+          const assistantEntry = mgr.getEntry(currentAssistantEntryId);
           sendFrame(controller, {
             type: "message_start",
             message: {
+              id: currentAssistantEntryId,
               clientId: assistantClientId,
+              sessionId,
               role: "assistant",
               content: "",
-              metadata: null,
+              createdAt: assistantEntry?.timestamp ?? new Date().toISOString(),
+              metadata: { toolCalls: [] },
               error: null,
+              entryId: currentAssistantEntryId,
+              parentId: assistantEntry?.parentId ?? null,
+              entryType: "message",
             },
           });
           const agentRuntime = new AgentRuntime({
             config: agentConfigForRequest(runtime.config.agent, body),
           });
           const tools = mergeRegistries(
-            buildMarketTools({ quotes: runtime.controller.quotes }),
+            buildMarketTools({ quotes: runtime.controller.quotes, maxCandles: runtime.config.agent.maxCandles }),
             buildNewsTools({
               recent: (limit, sinceMinutes) => runtime.newsService.recent(limit ?? undefined).filter((item) => {
                 if (sinceMinutes == null) return true;
@@ -204,7 +225,7 @@ export function createApp(options: CreateAppOptions): Hono {
           const result = await agentRuntime.run({
             message,
             tools,
-            history: mgr.historyForContext({ limit: 12 }),
+            history: conversationHistory,
             eventHandler: async (event) => {
               const type = String(event.type || "");
               if (type === "message_update") {
@@ -226,6 +247,11 @@ export function createApp(options: CreateAppOptions): Hono {
                   ? event.toolCall as Record<string, unknown>
                   : {};
                 if (typeof toolCall.id === "string") toolCallsById.set(toolCall.id, toolCall);
+                mgr.updateMessage(currentAssistantEntryId, {
+                  metadata: {
+                    toolCalls: Array.from(toolCallsById.values()),
+                  },
+                });
                 sendFrame(controller, {
                   type: "tool_execution_start",
                   toolCall,
@@ -282,26 +308,24 @@ export function createApp(options: CreateAppOptions): Hono {
               timestamp: step.timestamp,
             })),
           };
-          const assistantEntryId = mgr.appendMessage({
-            role: "assistant",
+          const finalizedAssistantEntry = mgr.updateMessage(currentAssistantEntryId, {
             content: result.content,
             metadata,
             error: result.error,
           });
-          const assistantEntry = mgr.getEntry(assistantEntryId);
           sendFrame(controller, {
             type: "message_end",
             message: {
-              id: assistantEntryId,
+              id: currentAssistantEntryId,
               clientId: assistantClientId,
               sessionId,
               role: "assistant",
               content: result.content,
-              createdAt: assistantEntry?.timestamp ?? new Date().toISOString(),
+              createdAt: finalizedAssistantEntry.timestamp,
               metadata,
               error: result.error,
-              entryId: assistantEntryId,
-              parentId: assistantEntry?.parentId ?? null,
+              entryId: currentAssistantEntryId,
+              parentId: finalizedAssistantEntry.parentId ?? null,
               entryType: "message",
             },
           });
@@ -319,6 +343,13 @@ export function createApp(options: CreateAppOptions): Hono {
           });
         } catch (error) {
           const errorText = error instanceof Error ? error.message : String(error);
+          if (assistantEntryId) {
+            try {
+              mgr.updateMessage(assistantEntryId, { content: errorText, error: errorText });
+            } catch {
+              // Best-effort persistence for failed runs.
+            }
+          }
           sendFrame(controller, { type: "error", error: errorText });
           sendFrame(controller, {
             type: "agent_end",
@@ -491,6 +522,8 @@ function idleRun(sessionId: string): Record<string, unknown> {
 }
 
 function openSessionManager(sessionId: string, runtime?: MarketRuntime): SessionManager | null {
+  const pending = runtime?.pendingSessionManagers.get(sessionId);
+  if (pending) return pending;
   const indexed = runtime?.sessionIndex.get(sessionId);
   if (indexed) return SessionManager.open(indexed.filePath, runtime?.sessionIndex);
   const allSessions = SessionManager.listAll();
@@ -507,7 +540,7 @@ function sessionResponse(_runtime: MarketRuntime, sessionId: string): Record<str
 }
 
 function sessionHistory(_runtime: MarketRuntime): Record<string, unknown> {
-  const indexed = _runtime.sessionIndex.listAllSessions({ limit: 200 });
+  const indexed = _runtime.sessionIndex.listAllSessions({ limit: 200 }).filter((row) => row.messageCount > 0);
   const summaries = indexed.map((row) => ({
     id: row.id,
     instrumentKey: row.instrumentKey,
@@ -549,6 +582,7 @@ function agentConfigForRequest(config: AgentConfig, body: Record<string, unknown
   return {
     ...config,
     provider,
+    apiMode: normalizeApiMode(provider),
     model,
     providerProfiles: {
       ...config.providerProfiles,

@@ -152,13 +152,12 @@ export async function deleteAgentSessionById(sessionId: string): Promise<AgentSe
 export async function streamAgentMessage(
   key: string,
   message: string,
-  options: { provider?: string; model?: string; candidateInstrumentKeys?: string[]; afterSeq?: number } | undefined,
+  options: { provider?: string; model?: string; afterSeq?: number } | undefined,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<void> {
   const body: Record<string, string | string[] | number> = { message };
   if (options?.provider) body.provider = options.provider;
   if (options?.model) body.model = options.model;
-  if (options?.candidateInstrumentKeys) body.candidateInstrumentKeys = options.candidateInstrumentKeys;
   if (typeof options?.afterSeq === 'number') body.afterSeq = options.afterSeq;
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages/stream`, {
     method: 'POST',

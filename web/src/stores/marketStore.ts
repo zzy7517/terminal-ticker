@@ -7,7 +7,6 @@ import {
   fetchState,
 } from '../api';
 import { orderedGroups } from '../utils';
-import { useUiStore } from './uiStore';
 
 interface MarketStoreState {
   state: MarketState | null;
@@ -90,14 +89,3 @@ export function useGroups() {
   return useMarketStore(useShallow((s) => orderedGroups(s.state)));
 }
 
-export function useSelectedInstrument() {
-  const instruments = useMarketStore((s) => s.state?.instruments);
-  const selectedKey = useUiStore((s) => s.selectedKey);
-  return instruments?.find((i) => i.key === selectedKey);
-}
-
-export function useSelectedQuote() {
-  const quotes = useMarketStore((s) => s.state?.quotes);
-  const selectedKey = useUiStore((s) => s.selectedKey);
-  return selectedKey && quotes ? quotes[selectedKey] : undefined;
-}

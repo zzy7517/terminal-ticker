@@ -2,9 +2,21 @@ import { QuoteState } from "../../domain/quotes.js";
 import { ToolRegistry, jsonOutput } from "./registry.js";
 import { shortCandle } from "./market_context.js";
 
-export function buildMarketTools(input: { quotes: Record<string, QuoteState> }): ToolRegistry {
+const INTERVAL_ALIASES: Record<string, string> = {
+  "1h": "1H",
+  "4h": "4H",
+  "6h": "6H",
+  "12h": "12H",
+  "1d": "1D",
+  "3d": "3D",
+  "1w": "1W",
+  "1mo": "1M",
+};
+
+export function buildMarketTools(input: { quotes: Record<string, QuoteState>; maxCandles?: number }): ToolRegistry {
   const registry = new ToolRegistry();
   const resolveKey = (instrumentKey: string) => instrumentKey || Object.keys(input.quotes)[0] || "";
+  const maxCandles = Math.max(1, Math.floor(input.maxCandles ?? 80));
 
   registry.register({
     name: "get_quote",
@@ -29,13 +41,24 @@ export function buildMarketTools(input: { quotes: Record<string, QuoteState> }):
 
   registry.register({
     name: "get_candles",
-    description: "Get cached OHLCV candles for an instrument.",
-    parameters: { type: "object", properties: { instrument_key: { type: "string" }, interval: { type: "string" }, limit: { type: "integer" } }, required: ["instrument_key"] },
+    description: `Get cached OHLCV candles for an instrument. Limit is capped at ${maxCandles}.`,
+    parameters: {
+      type: "object",
+      properties: {
+        instrument_key: { type: "string" },
+        interval: { type: "string", description: "Interval such as 1m, 5m, 15m, 1H, 4H, 1D. Lowercase aliases like 4h are accepted." },
+        limit: { type: "integer", minimum: 1, maximum: maxCandles },
+      },
+      required: ["instrument_key"],
+    },
     handler: ({ instrument_key, interval, limit }) => {
       const quote = input.quotes[resolveKey(String(instrument_key || ""))];
       if (!quote) return jsonOutput({ error: "unknown instrument" });
-      const candles = interval ? quote.multiTimeframeCandles[String(interval)] ?? [] : quote.candles;
-      return jsonOutput({ candles: candles.slice(-(Number(limit) || 80)).map(shortCandle) });
+      const intervalKey = resolveIntervalKey(quote.multiTimeframeCandles, interval);
+      const candles = intervalKey ? quote.multiTimeframeCandles[intervalKey] ?? [] : quote.candles;
+      const requestedLimit = Math.floor(Number(limit));
+      const effectiveLimit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, maxCandles) : maxCandles;
+      return jsonOutput({ candles: candles.slice(-effectiveLimit).map(shortCandle), interval: intervalKey ?? null, limit: effectiveLimit });
     },
   });
 
@@ -47,4 +70,14 @@ export function buildMarketTools(input: { quotes: Record<string, QuoteState> }):
   });
 
   return registry;
+}
+
+function resolveIntervalKey(candlesByInterval: Record<string, unknown>, rawInterval: unknown): string | null {
+  if (rawInterval === undefined || rawInterval === null || rawInterval === "") return null;
+  const value = String(rawInterval).trim();
+  const direct = candlesByInterval[value] !== undefined ? value : null;
+  if (direct) return direct;
+  const alias = INTERVAL_ALIASES[value] ?? INTERVAL_ALIASES[value.toLowerCase()];
+  if (alias && candlesByInterval[alias] !== undefined) return alias;
+  return Object.keys(candlesByInterval).find((key) => key.toLowerCase() === value.toLowerCase()) ?? value;
 }

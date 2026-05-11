@@ -201,7 +201,7 @@ export class SessionManager {
   }
 
   private syncIndexActivity(): void {
-    if (!this.index) return;
+    if (!this.index || !this.flushed) return;
     const messageCount = this.fileEntries.filter((e) => e.type === "message").length;
     this.index.updateActivity(this.sessionId, new Date(), messageCount);
   }
@@ -232,7 +232,7 @@ export class SessionManager {
   }
 
   private rewriteFile(): void {
-    if (!this.sessionFile) return;
+    if (!this.sessionFile || !this.flushed) return;
     const content = this.fileEntries.map((e) => JSON.stringify(e)).join("\n") + "\n";
     fs.writeFileSync(this.sessionFile, content);
   }
@@ -252,6 +252,7 @@ export class SessionManager {
       const content = this.fileEntries.map((e) => JSON.stringify(e)).join("\n") + "\n";
       fs.writeFileSync(this.sessionFile, content);
       this.flushed = true;
+      this.syncIndex();
     } else {
       fs.appendFileSync(this.sessionFile, JSON.stringify(entry) + "\n");
     }
@@ -388,9 +389,7 @@ export class SessionManager {
 
     const fileTimestamp = timestamp.replace(/[:.]/g, "-");
     this.sessionFile = path.join(this.sessionDirPath, `${fileTimestamp}_${this.sessionId}.jsonl`);
-    fs.writeFileSync(this.sessionFile, JSON.stringify(header) + "\n");
-    this.flushed = true;
-    this.syncIndex();
+    this.flushed = false;
     return this.sessionFile;
   }
 
@@ -411,6 +410,18 @@ export class SessionManager {
     };
     this.appendEntry(entry);
     return entry.id;
+  }
+
+  updateMessage(entryId: string, patch: { content?: string; metadata?: Record<string, unknown> | null; error?: string | null }): MessageEntry {
+    const entry = this.byId.get(entryId);
+    if (!entry || entry.type !== "message") throw new Error(`message entry not found: ${entryId}`);
+    const message = entry as MessageEntry;
+    if (patch.content !== undefined) message.content = patch.content;
+    if (patch.metadata !== undefined) message.metadata = patch.metadata;
+    if (patch.error !== undefined) message.error = patch.error;
+    this.rewriteFile();
+    this.syncIndex();
+    return message;
   }
 
   appendModelChange(provider: string, modelId: string): string {

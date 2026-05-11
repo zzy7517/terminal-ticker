@@ -24,7 +24,7 @@ export class MarketRuntime {
   readonly xAuthStore: XAuthStore;
   readonly memoryBackend: LocalMemoryBackend;
   readonly sessionIndex: SessionIndex;
-  readonly sessionManager: SessionManager;
+  readonly pendingSessionManagers = new Map<string, SessionManager>();
   private running = false;
 
   private constructor(config: AppConfig, instruments: MarketInstrument[]) {
@@ -42,11 +42,6 @@ export class MarketRuntime {
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
     this.sessionIndex = new SessionIndex();
     SessionManager.reconcileIndex(this.sessionIndex);
-    this.sessionManager = SessionManager.create(null, {
-      provider: config.agent.provider,
-      model: config.agent.model,
-      index: this.sessionIndex,
-    });
   }
 
   static async create(config: AppConfig): Promise<MarketRuntime> {

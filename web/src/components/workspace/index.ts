@@ -1,6 +1,7 @@
 export { ConnectionBadge } from './ConnectionBadge';
 export { StatTile } from './StatTile';
 export { WatchlistRow } from './WatchlistRow';
+export { WatchlistDrawer } from './WatchlistDrawer';
 export { NewsPanel } from './NewsPanel';
 export { SocialFeedPanel } from './SocialFeedPanel';
 export { PositionsPanel } from './PositionsPanel';

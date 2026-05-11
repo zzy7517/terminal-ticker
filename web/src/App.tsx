@@ -59,13 +59,6 @@ export default function App() {
     }
   }, [instrumentsSig]);
 
-  // Filter agent candidate keys when instruments change.
-  useEffect(() => {
-    if (!state) return;
-    const validKeys = state.instruments.map((i) => i.key);
-    useAgentStore.getState().filterCandidateKeys(validKeys);
-  }, [instrumentsSig]);
-
   // Sync agent provider/model with profile changes.
   const profilesSig = state?.config.agent.providerProfiles
     ? JSON.stringify(state.config.agent.providerProfiles)
