@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { WebSocketServer } from "ws";
 import { buildRuntimeConfig, loadConfig } from "./config/index.js";
 import { createApp } from "./api/app.js";
-import { MarketRuntime } from "./api/runtime.js";
+import { AppRuntime } from "./api/runtime.js";
 
 interface CliOptions {
   configPath: string;
@@ -60,7 +60,7 @@ async function resolveConfig(options: CliOptions) {
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const config = await resolveConfig(options);
-  const runtime = await MarketRuntime.create(config);
+  const runtime = await AppRuntime.create(config);
   await runtime.start();
   const app = createApp({ runtime });
   const server = serve({ fetch: app.fetch, hostname: options.host, port: options.port });

@@ -13,7 +13,7 @@ import { resolveInstruments, MarketInstrument } from "../market_data/router.js";
 import { TradeStatus } from "../trading/models.js";
 import { serializeState } from "./serializers.js";
 
-export class MarketRuntime {
+export class AppRuntime {
   config: AppConfig;
   instruments: MarketInstrument[];
   controller: TickerController;
@@ -27,6 +27,8 @@ export class MarketRuntime {
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   private running = false;
 
+  // Private to enforce async construction via `create`; wires all subsystems
+  // together but does not start any background tasks.
   private constructor(config: AppConfig, instruments: MarketInstrument[]) {
     this.config = config;
     this.instruments = instruments;
@@ -44,10 +46,15 @@ export class MarketRuntime {
     SessionManager.reconcileIndex(this.sessionIndex);
   }
 
-  static async create(config: AppConfig): Promise<MarketRuntime> {
-    return new MarketRuntime(config, await resolveInstruments(config.instruments));
+  // Resolves the instrument list asynchronously before constructing the runtime,
+  // since instrument resolution may involve network calls to provider catalogs.
+  static async create(config: AppConfig): Promise<AppRuntime> {
+    return new AppRuntime(config, await resolveInstruments(config.instruments));
   }
 
+  // Hot-reloads config after a watchlist TOML change. Stops the controller and
+  // news service, rebuilds all stateful subsystems with the new config, then
+  // restarts them only if the runtime was already running.
   async reloadConfig(config: AppConfig): Promise<void> {
     const shouldRestart = this.running;
     await this.controller.stop();
@@ -67,18 +74,23 @@ export class MarketRuntime {
     }
   }
 
+  // Starts background market data streaming and the news polling loop.
   async start(): Promise<void> {
     this.running = true;
     this.controller.start();
     await this.newsService.start();
   }
 
+  // Gracefully stops all background tasks; called on process shutdown or before reload.
   async stop(): Promise<void> {
     this.running = false;
     await this.controller.stop();
     await this.newsService.stop();
   }
 
+  // Drains pending controller events, fetches live exchange positions/orders,
+  // and serializes the full market snapshot consumed by the WebSocket broadcast
+  // and the REST /api/state endpoint.
   async state(): Promise<Record<string, unknown>> {
     this.controller.drainEvents();
     const [positions, orders] = await Promise.all([this.exchangeRouter.getAllPositions(), this.exchangeRouter.getAllOrders()]);

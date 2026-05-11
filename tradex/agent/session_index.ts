@@ -8,7 +8,6 @@ export const DEFAULT_SESSION_INDEX_FILENAME = "session_index.sqlite3";
 export interface SessionIndexRow {
   id: string;
   filePath: string;
-  instrumentKey: string | null;
   title: string;
   provider: string;
   model: string;
@@ -42,7 +41,6 @@ export class SessionIndex extends BaseStore {
         first_message TEXT NOT NULL DEFAULT ''
       );
       CREATE INDEX IF NOT EXISTS idx_session_index_updated ON session_index (updated_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_session_index_instrument ON session_index (instrument_key, updated_at DESC);
     `);
   }
 
@@ -64,7 +62,7 @@ export class SessionIndex extends BaseStore {
       .run(
         info.id,
         info.path,
-        info.instrumentKey,
+        null,
         info.title,
         info.provider,
         info.model,
@@ -86,14 +84,8 @@ export class SessionIndex extends BaseStore {
     return row ? rowToIndex(row) : null;
   }
 
-  listSessions(input: { instrumentKey?: string | null; limit?: number } = {}): SessionIndexRow[] {
+  listSessions(input: { limit?: number } = {}): SessionIndexRow[] {
     const limit = input.limit ?? 200;
-    if (input.instrumentKey !== undefined && input.instrumentKey !== null) {
-      const rows = this.getConn()
-        .prepare("SELECT * FROM session_index WHERE instrument_key = ? ORDER BY updated_at DESC LIMIT ?")
-        .all(input.instrumentKey, limit) as RawRow[];
-      return rows.map(rowToIndex);
-    }
     const rows = this.getConn()
       .prepare("SELECT * FROM session_index ORDER BY updated_at DESC LIMIT ?")
       .all(limit) as RawRow[];
@@ -135,7 +127,7 @@ export class SessionIndex extends BaseStore {
         upsertStmt.run(
           info.id,
           info.path,
-          info.instrumentKey,
+          null,
           info.title,
           info.provider,
           info.model,
@@ -156,7 +148,6 @@ export class SessionIndex extends BaseStore {
 interface RawRow {
   id: string;
   file_path: string;
-  instrument_key: string | null;
   title: string | null;
   provider: string;
   model: string;
@@ -170,7 +161,6 @@ function rowToIndex(row: RawRow): SessionIndexRow {
   return {
     id: row.id,
     filePath: row.file_path,
-    instrumentKey: row.instrument_key,
     title: row.title ?? "",
     provider: row.provider,
     model: row.model,

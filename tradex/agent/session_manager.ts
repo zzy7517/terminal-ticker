@@ -13,7 +13,6 @@ export interface SessionHeader {
   version: number;
   id: string;
   timestamp: string;
-  instrumentKey: string | null;
   title: string | null;
   provider: string;
   model: string;
@@ -81,7 +80,6 @@ export interface SessionTreeNode {
 export interface SessionInfo {
   path: string;
   id: string;
-  instrumentKey: string | null;
   title: string | null;
   provider: string;
   model: string;
@@ -91,10 +89,13 @@ export interface SessionInfo {
   firstMessage: string;
 }
 
+// Returns the directory where all session JSONL files are stored.
 function sessionsDir(): string {
   return path.join(defaultCacheDir(), SESSIONS_SUBDIR);
 }
 
+// Generates a short random hex ID that does not collide with any existing key
+// in `existing`. Falls back to a UUID prefix after 100 attempts.
 function generateId(existing: { has(id: string): boolean }): string {
   for (let i = 0; i < 100; i++) {
     const id = crypto.randomBytes(4).toString("hex");
@@ -103,6 +104,8 @@ function generateId(existing: { has(id: string): boolean }): string {
   return crypto.randomUUID().slice(0, 8);
 }
 
+// Reads a JSONL session file and returns all parsed entries. Returns an empty
+// array if the file is missing, empty, or has an invalid header on line 1.
 function loadEntriesFromFile(filePath: string): FileEntry[] {
   if (!fs.existsSync(filePath)) return [];
   const content = fs.readFileSync(filePath, "utf8");
@@ -121,6 +124,8 @@ function loadEntriesFromFile(filePath: string): FileEntry[] {
   return entries;
 }
 
+// Reads a session file and builds the lightweight SessionInfo summary used by
+// the index and the sessions list UI. Returns null for unreadable or malformed files.
 function buildSessionInfoFromFile(filePath: string): SessionInfo | null {
   try {
     const entries = loadEntriesFromFile(filePath);
@@ -143,6 +148,8 @@ function buildSessionInfoFromFile(filePath: string): SessionInfo | null {
       }
     }
 
+    // Prefer the timestamp on the last entry over the filesystem mtime so the
+    // modified time stays accurate even after a file copy or backup restore.
     let modified = stats.mtime;
     for (let i = entries.length - 1; i >= 1; i--) {
       const e = entries[i] as SessionEntry;
@@ -155,7 +162,6 @@ function buildSessionInfoFromFile(filePath: string): SessionInfo | null {
     return {
       path: filePath,
       id: header.id,
-      instrumentKey: header.instrumentKey,
       title,
       provider: header.provider,
       model: header.model,
@@ -179,6 +185,8 @@ export class SessionManager {
   private leafId: string | null = null;
   private index: SessionIndex | null = null;
 
+  // Private to enforce use of the static factory methods, which handle async
+  // file/directory setup before the instance is usable.
   private constructor(dir: string, sessionFile: string | undefined, index?: SessionIndex | null) {
     this.sessionDirPath = dir;
     this.index = index ?? null;
@@ -190,22 +198,28 @@ export class SessionManager {
     }
   }
 
+  // Attaches or replaces the SessionIndex used for fast lookups without disk scans.
   setIndex(index: SessionIndex | null): void {
     this.index = index;
   }
 
+  // Rebuilds the full index row for this session from the current file on disk.
   private syncIndex(): void {
     if (!this.index || !this.sessionFile) return;
     const info = buildSessionInfoFromFile(this.sessionFile);
     if (info) this.index.upsert(info);
   }
 
+  // Updates only the activity timestamp and message count without re-reading the file.
+  // Skipped before the first flush because the file may not exist yet.
   private syncIndexActivity(): void {
     if (!this.index || !this.flushed) return;
     const messageCount = this.fileEntries.filter((e) => e.type === "message").length;
     this.index.updateActivity(this.sessionId, new Date(), messageCount);
   }
 
+  // Reads an existing JSONL file into memory and sets flushed=true so
+  // subsequent appends can use appendFileSync instead of a full rewrite.
   private loadSessionFile(filePath: string): void {
     this.sessionFile = path.resolve(filePath);
     if (fs.existsSync(this.sessionFile)) {
@@ -221,6 +235,8 @@ export class SessionManager {
     }
   }
 
+  // Rebuilds the in-memory byId map and advances leafId to the last entry.
+  // Called after loading a file or after a branch rewrite.
   private buildIndex(): void {
     this.byId.clear();
     this.leafId = null;
@@ -231,12 +247,18 @@ export class SessionManager {
     }
   }
 
+  // Serializes all in-memory entries back to disk as JSONL. Used after an
+  // in-place mutation (updateMessage) where appendFileSync is not safe.
   private rewriteFile(): void {
     if (!this.sessionFile || !this.flushed) return;
     const content = this.fileEntries.map((e) => JSON.stringify(e)).join("\n") + "\n";
     fs.writeFileSync(this.sessionFile, content);
   }
 
+  // Writes a single entry to disk. Defers the first write until an assistant
+  // message is present so we don't create files for user-only interactions
+  // that the agent never responded to. On the first real flush, writes all
+  // buffered entries at once; subsequent appends use appendFileSync.
   private persist(entry: SessionEntry): void {
     if (!this.sessionFile) return;
 
@@ -258,6 +280,8 @@ export class SessionManager {
     }
   }
 
+  // Adds an entry to the in-memory structures, advances the leaf pointer,
+  // persists to disk, and notifies the index.
   private appendEntry(entry: SessionEntry): void {
     this.fileEntries.push(entry);
     this.byId.set(entry.id, entry);
@@ -270,52 +294,23 @@ export class SessionManager {
   // Static factory methods
   // =========================================================================
 
-  static create(instrumentKey: string | null, options?: { title?: string; provider?: string; model?: string; index?: SessionIndex | null }): SessionManager {
+  // Creates a brand-new session with a generated UUID and an empty JSONL file
+  // path (the file is not written until the first assistant message is persisted).
+  static create(options?: { title?: string; provider?: string; model?: string; index?: SessionIndex | null }): SessionManager {
     const dir = sessionsDir();
     const mgr = new SessionManager(dir, undefined, options?.index);
-    mgr.newSession({ instrumentKey, title: options?.title, provider: options?.provider, model: options?.model });
+    mgr.newSession({ title: options?.title, provider: options?.provider, model: options?.model });
     return mgr;
   }
 
+  // Opens an existing session JSONL file and loads it into memory.
   static open(filePath: string, index?: SessionIndex | null): SessionManager {
     const dir = path.dirname(path.resolve(filePath));
     return new SessionManager(dir, filePath, index);
   }
 
-  static continueRecent(instrumentKey?: string | null, index?: SessionIndex | null): SessionManager {
-    const dir = sessionsDir();
-    if (!fs.existsSync(dir)) {
-      const mgr = new SessionManager(dir, undefined, index);
-      mgr.newSession({ instrumentKey: instrumentKey ?? null });
-      return mgr;
-    }
-    const files = fs.readdirSync(dir)
-      .filter((f) => f.endsWith(".jsonl"))
-      .map((f) => path.join(dir, f));
-
-    let best: { path: string; mtime: number } | null = null;
-    for (const file of files) {
-      if (instrumentKey !== undefined && instrumentKey !== null) {
-        const entries = loadEntriesFromFile(file);
-        if (entries.length === 0) continue;
-        const header = entries[0] as SessionHeader;
-        if (header.instrumentKey !== instrumentKey) continue;
-      }
-      try {
-        const st = fs.statSync(file);
-        if (!best || st.mtime.getTime() > best.mtime) {
-          best = { path: file, mtime: st.mtime.getTime() };
-        }
-      } catch { /* skip */ }
-    }
-
-    if (best) return new SessionManager(dir, best.path, index);
-    const mgr = new SessionManager(dir, undefined, index);
-    mgr.newSession({ instrumentKey: instrumentKey ?? null });
-    return mgr;
-  }
-
-  static list(instrumentKey?: string | null): SessionInfo[] {
+  // Lists all sessions on disk, sorted by most recently modified.
+  static list(): SessionInfo[] {
     const dir = sessionsDir();
     if (!fs.existsSync(dir)) return [];
     const files = fs.readdirSync(dir).filter((f) => f.endsWith(".jsonl")).map((f) => path.join(dir, f));
@@ -323,22 +318,26 @@ export class SessionManager {
     for (const file of files) {
       const info = buildSessionInfoFromFile(file);
       if (!info) continue;
-      if (instrumentKey !== undefined && instrumentKey !== null && info.instrumentKey !== instrumentKey) continue;
       results.push(info);
     }
     results.sort((a, b) => b.modified.getTime() - a.modified.getTime());
     return results;
   }
 
+  // Convenience wrapper over `list`.
   static listAll(): SessionInfo[] {
-    return SessionManager.list(undefined);
+    return SessionManager.list();
   }
 
+  // Syncs the full disk session list into the in-memory index on startup,
+  // so subsequent lookups can avoid repeated directory scans.
   static reconcileIndex(index: SessionIndex): void {
     const sessions = SessionManager.listAll();
     index.reconcile(sessions);
   }
 
+  // Deletes a session file by sessionId. First tries a fast filename-substring
+  // match, then falls back to loading each file's header to find the right one.
   static deleteSession(sessionId: string, index?: SessionIndex | null): boolean {
     const dir = sessionsDir();
     if (!fs.existsSync(dir)) return false;
@@ -370,7 +369,9 @@ export class SessionManager {
   // Instance methods - Session lifecycle
   // =========================================================================
 
-  newSession(options?: { instrumentKey?: string | null; title?: string; provider?: string; model?: string }): string | undefined {
+  // Resets the manager to a fresh session state and computes the target file
+  // path. The file is not written until the first assistant message is appended.
+  newSession(options?: { title?: string; provider?: string; model?: string }): string | undefined {
     this.sessionId = crypto.randomUUID();
     const timestamp = new Date().toISOString();
     const header: SessionHeader = {
@@ -378,7 +379,6 @@ export class SessionManager {
       version: CURRENT_SESSION_VERSION,
       id: this.sessionId,
       timestamp,
-      instrumentKey: options?.instrumentKey ?? null,
       title: options?.title ?? null,
       provider: options?.provider ?? "codex",
       model: options?.model ?? "codex-mini",
@@ -397,6 +397,8 @@ export class SessionManager {
   // Append methods
   // =========================================================================
 
+  // Appends a chat message (user, assistant, or toolResult) as a new leaf entry.
+  // Returns the generated entry ID so callers can later patch or reference it.
   appendMessage(message: { role: string; content: string; metadata?: Record<string, unknown> | null; error?: string | null }): string {
     const entry: MessageEntry = {
       type: "message",
@@ -412,6 +414,8 @@ export class SessionManager {
     return entry.id;
   }
 
+  // Mutates an existing message entry in-place and rewrites the whole file.
+  // Used to backfill the assistant placeholder created before the agent run.
   updateMessage(entryId: string, patch: { content?: string; metadata?: Record<string, unknown> | null; error?: string | null }): MessageEntry {
     const entry = this.byId.get(entryId);
     if (!entry || entry.type !== "message") throw new Error(`message entry not found: ${entryId}`);
@@ -424,6 +428,7 @@ export class SessionManager {
     return message;
   }
 
+  // Records a provider/model switch event in the session history.
   appendModelChange(provider: string, modelId: string): string {
     const entry: ModelChangeEntry = {
       type: "model_change",
@@ -437,6 +442,8 @@ export class SessionManager {
     return entry.id;
   }
 
+  // Records a branch point, storing the condensed summary that replaces the
+  // truncated history when LLM context is rebuilt from this branch.
   appendBranchSummary(fromId: string, summary: string): string {
     const entry: BranchSummaryEntry = {
       type: "branch_summary",
@@ -450,6 +457,7 @@ export class SessionManager {
     return entry.id;
   }
 
+  // Appends an arbitrary typed payload for extensibility without schema changes.
   appendCustomEntry(customType: string, data?: unknown): string {
     const entry: CustomEntry = {
       type: "custom",
@@ -463,6 +471,8 @@ export class SessionManager {
     return entry.id;
   }
 
+  // Appends a session title update. The most recent session_info entry wins
+  // over the original header title when the session name is resolved.
   appendSessionInfo(title: string): string {
     const entry: SessionInfoEntry = {
       type: "session_info",
@@ -475,6 +485,7 @@ export class SessionManager {
     return entry.id;
   }
 
+  // Attaches or removes a human-readable label from a specific entry.
   appendLabelChange(targetId: string, label: string | undefined): string {
     if (!this.byId.has(targetId)) {
       throw new Error(`Entry ${targetId} not found`);
@@ -495,6 +506,8 @@ export class SessionManager {
   // Branching
   // =========================================================================
 
+  // Resets the leaf pointer to an earlier entry, causing subsequent appends
+  // to fork off from that point rather than extending the current tail.
   branch(entryId: string): void {
     if (!this.byId.has(entryId)) {
       throw new Error(`Entry ${entryId} not found`);
@@ -502,6 +515,8 @@ export class SessionManager {
     this.leafId = entryId;
   }
 
+  // Branches at entryId and immediately records a summary of the truncated
+  // history so the LLM context can be reconstructed without the full prior thread.
   branchWithSummary(entryId: string, summary: string): string {
     this.branch(entryId);
     return this.appendBranchSummary(entryId, summary);
@@ -511,22 +526,28 @@ export class SessionManager {
   // Tree traversal / queries
   // =========================================================================
 
+  // Returns the ID of the current leaf (most recently appended or branched-to entry).
   getLeafId(): string | null {
     return this.leafId;
   }
 
+  // Returns the leaf entry object, or undefined if the session is empty.
   getLeafEntry(): SessionEntry | undefined {
     return this.leafId ? this.byId.get(this.leafId) : undefined;
   }
 
+  // Looks up a single entry by ID.
   getEntry(id: string): SessionEntry | undefined {
     return this.byId.get(id);
   }
 
+  // Returns all non-header entries in file order.
   getEntries(): SessionEntry[] {
     return this.fileEntries.filter((e): e is SessionEntry => e.type !== "session");
   }
 
+  // Returns the parsed session header, or null for a newly created session
+  // whose header has not yet been flushed.
   getHeader(): SessionHeader | null {
     const h = this.fileEntries.find((e) => e.type === "session");
     return h ? (h as SessionHeader) : null;
@@ -540,6 +561,8 @@ export class SessionManager {
     return this.sessionFile;
   }
 
+  // Resolves the display name by scanning entries in reverse for the latest
+  // session_info record, falling back to the original header title.
   getSessionName(): string | null {
     const entries = this.getEntries();
     for (let i = entries.length - 1; i >= 0; i--) {
@@ -551,6 +574,9 @@ export class SessionManager {
     return header?.title ?? null;
   }
 
+  // Walks the parentId chain from fromId (or the current leaf) back to the
+  // root, returning the entries in chronological order. This is the active
+  // branch of the conversation tree — entries on other branches are excluded.
   getBranch(fromId?: string): SessionEntry[] {
     const result: SessionEntry[] = [];
     const startId = fromId ?? this.leafId;
@@ -562,6 +588,8 @@ export class SessionManager {
     return result;
   }
 
+  // Builds the full entry tree as a forest of SessionTreeNode objects.
+  // Entries whose parentId points to an unknown node are treated as roots.
   getTree(): SessionTreeNode[] {
     const entries = this.getEntries();
     const nodeMap = new Map<string, SessionTreeNode>();
@@ -583,6 +611,9 @@ export class SessionManager {
     return roots;
   }
 
+  // Converts the active branch into the message array format expected by LLM
+  // provider APIs. branch_summary entries are injected as system messages so
+  // condensed history from prior branches is preserved in context.
   buildSessionContext(): Array<Record<string, unknown>> {
     const branch = this.getBranch();
     if (branch.length === 0) return [];
@@ -608,6 +639,8 @@ export class SessionManager {
     return messages;
   }
 
+  // Returns the most recent `limit` messages from the active branch context.
+  // Older messages are dropped to stay within the LLM context window.
   historyForContext(options?: { limit?: number }): Array<Record<string, unknown>> {
     const context = this.buildSessionContext();
     const limit = options?.limit ?? 8;
@@ -619,6 +652,8 @@ export class SessionManager {
   // Payload helpers (API compatibility)
   // =========================================================================
 
+  // Serializes the session header and all message entries into the REST API
+  // shape consumed by the frontend session panel.
   sessionPayload(): Record<string, unknown> {
     const header = this.getHeader();
     if (!header) return { session: null, messages: [] };
@@ -627,7 +662,6 @@ export class SessionManager {
     return {
       session: {
         id: header.id,
-        instrumentKey: header.instrumentKey,
         title: this.getSessionName() || header.title || "New Agent Session",
         provider: header.provider,
         model: header.model,
@@ -654,11 +688,12 @@ export class SessionManager {
     };
   }
 
+  // Returns a flat list of summary objects for every session on disk.
+  // Used by the sidebar session list that does not need full message content.
   listSessionSummaries(): Array<Record<string, unknown>> {
     const all = SessionManager.listAll();
     return all.map((info) => ({
       id: info.id,
-      instrumentKey: info.instrumentKey,
       title: info.title || info.firstMessage.slice(0, 60),
       provider: info.provider,
       model: info.model,

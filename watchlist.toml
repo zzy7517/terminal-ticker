@@ -28,8 +28,8 @@ max_candles = 40
 
 [agent.providers.codex]
 enabled = true
-models = ["gpt-5.4-mini", "gpt-5.5"]
-model_efforts = {"gpt-5.5" = "high", "gpt-5.4-mini" = "medium"}
+models = ["gpt-5.4-mini", "gpt-5.4"]
+model_efforts = {"gpt-5.5" = "high", "gpt-5.4-mini" = "medium", "gpt-5.4" = "high"}
 
 [agent.providers.anthropic]
 enabled = true

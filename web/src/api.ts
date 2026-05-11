@@ -129,7 +129,7 @@ export async function createAgentSession(options?: {
   return response.json();
 }
 
-// Loads an agent session by id, or a legacy active instrument-scoped session by instrument key.
+// Loads an agent session by id.
 export async function fetchAgentSession(key: string): Promise<AgentSessionResponse> {
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}`);
   if (!response.ok) {
