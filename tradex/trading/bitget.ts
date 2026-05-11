@@ -192,6 +192,33 @@ export async function getOrderFills(input: { symbol: string; productType?: strin
   }
 }
 
+export async function modifyPositionTpsl(input: {
+  symbol: string;
+  productType?: string;
+  marginCoin?: string;
+  holdSide: string;
+  takeProfitPrice?: number | null;
+  stopLossPrice?: number | null;
+  size?: number | null;
+}): Promise<OrderResult> {
+  const body: Record<string, unknown> = {
+    symbol: input.symbol,
+    productType: input.productType ?? "USDT-FUTURES",
+    marginCoin: input.marginCoin ?? "USDT",
+    holdSide: input.holdSide,
+  };
+  if (input.takeProfitPrice != null) body.presetStopSurplusPrice = String(input.takeProfitPrice);
+  if (input.stopLossPrice != null) body.presetStopLossPrice = String(input.stopLossPrice);
+  if (input.size != null) body.size = String(input.size);
+  try {
+    const resp = await request("POST", "/api/v2/mix/position/set-tpsl", { body });
+    if (resp.code !== "00000") return orderResult({ exchange: BITGET_DEMO_FILL_SOURCE, error: String(resp.msg || "modify tpsl failed"), raw: resp });
+    return orderResult({ exchange: BITGET_DEMO_FILL_SOURCE, raw: resp });
+  } catch (error) {
+    return orderResult({ exchange: BITGET_DEMO_FILL_SOURCE, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 export async function cancelOrder(input: { orderId: string; symbol: string; productType?: string }): Promise<boolean> {
   try {
     const resp = await request("POST", "/api/v2/mix/order/cancel-order", {

@@ -110,6 +110,52 @@ export class ExchangeRouter {
     return orderResult({ exchange: "unknown", error: `No close support for ${input.instrumentKey}` });
   }
 
+  async modifyTpsl(input: {
+    instrumentKey: string;
+    isBuy: boolean;
+    size: number;
+    takeProfitPrice?: number | null;
+    stopLossPrice?: number | null;
+  }): Promise<OrderResult> {
+    const exchange = this.exchangeForKey(input.instrumentKey);
+    if (!this.mutationEnabled(exchange)) return orderResult({ exchange, error: `${exchange} trading is disabled by config` });
+    if (exchange === EXCHANGE_HYPERLIQUID) {
+      const coin = hyperliquidCoinFromKey(input.instrumentKey);
+      const results: OrderResult[] = [];
+      if (input.takeProfitPrice != null) {
+        try {
+          const r = await hyperliquid.placeTriggerOrder({ coin, isBuy: !input.isBuy, size: input.size, triggerPrice: input.takeProfitPrice, tpsl: "tp" });
+          results.push(orderResult({ exchange, orderId: r.externalOrderId, raw: r.raw }));
+        } catch (error) {
+          results.push(orderResult({ exchange, error: error instanceof Error ? error.message : String(error) }));
+        }
+      }
+      if (input.stopLossPrice != null) {
+        try {
+          const r = await hyperliquid.placeTriggerOrder({ coin, isBuy: !input.isBuy, size: input.size, triggerPrice: input.stopLossPrice, tpsl: "sl" });
+          results.push(orderResult({ exchange, orderId: r.externalOrderId, raw: r.raw }));
+        } catch (error) {
+          results.push(orderResult({ exchange, error: error instanceof Error ? error.message : String(error) }));
+        }
+      }
+      const firstError = results.find((r) => r.error);
+      if (firstError) return firstError;
+      return results[0] ?? orderResult({ exchange, error: "no TP or SL specified" });
+    }
+    if (exchange === EXCHANGE_BITGET) {
+      const [productType, symbol] = this.splitBitgetKey(input.instrumentKey);
+      return bitget.modifyPositionTpsl({
+        symbol,
+        productType,
+        holdSide: input.isBuy ? "long" : "short",
+        takeProfitPrice: input.takeProfitPrice,
+        stopLossPrice: input.stopLossPrice,
+        size: input.size,
+      });
+    }
+    return orderResult({ exchange: "unknown", error: `No TPSL support for ${input.instrumentKey}` });
+  }
+
   async cancelOrder(input: { exchange: string; orderId: string; symbol?: string; coin?: string; productType?: string }): Promise<boolean> {
     if (!this.mutationEnabled(input.exchange)) return false;
     if (input.exchange === EXCHANGE_HYPERLIQUID) return hyperliquid.cancelOrder({ orderId: input.orderId, coin: input.coin || input.symbol || "" });
