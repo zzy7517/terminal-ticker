@@ -262,13 +262,6 @@ export function createApp(options: CreateAppOptions): Hono {
               timestamp: step.timestamp,
             })),
           };
-          const assistantMessage = runtime.agentSessionStore.appendMessage({
-            sessionId,
-            role: "assistant",
-            content: result.content,
-            metadata,
-            error: result.error,
-          });
           const toolResultMessages = result.steps
             .filter((step) => step.stepType === "tool_result" && step.toolResult)
             .map((step) => step.toolResult!);
@@ -294,9 +287,19 @@ export function createApp(options: CreateAppOptions): Hono {
                 createdAt: toolMessage.createdAt,
                 metadata: toolMessage.metadata,
                 error: toolMessage.error,
+                entryId: toolMessage.entryId,
+                parentId: toolMessage.parentId,
+                entryType: toolMessage.entryType,
               },
             });
           }
+          const assistantMessage = runtime.agentSessionStore.appendMessage({
+            sessionId,
+            role: "assistant",
+            content: result.content,
+            metadata,
+            error: result.error,
+          });
           sendFrame(controller, {
             type: "message_end",
             message: {
@@ -308,6 +311,9 @@ export function createApp(options: CreateAppOptions): Hono {
               createdAt: assistantMessage.createdAt,
               metadata,
               error: result.error,
+              entryId: assistantMessage.entryId,
+              parentId: assistantMessage.parentId,
+              entryType: assistantMessage.entryType,
             },
           });
           sendFrame(controller, {
