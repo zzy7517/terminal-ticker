@@ -385,10 +385,11 @@ export class SessionManager {
     this.fileEntries = [header];
     this.byId.clear();
     this.leafId = null;
-    this.flushed = false;
 
     const fileTimestamp = timestamp.replace(/[:.]/g, "-");
     this.sessionFile = path.join(this.sessionDirPath, `${fileTimestamp}_${this.sessionId}.jsonl`);
+    fs.writeFileSync(this.sessionFile, JSON.stringify(header) + "\n");
+    this.flushed = true;
     this.syncIndex();
     return this.sessionFile;
   }
