@@ -62,13 +62,8 @@ export class StreamingMessageController {
     if (!incoming) return false;
 
     this.source += incoming;
-    if (!incoming.includes('\n')) return false;
-
-    const commitEnd = this.source.lastIndexOf('\n') + 1;
-    if (commitEnd <= this.committedIndex) return false;
-
-    this.enqueueSource(this.source.slice(this.committedIndex, commitEnd));
-    this.committedIndex = commitEnd;
+    this.enqueueSource(incoming);
+    this.committedIndex = this.source.length;
     return this.queuedChunks.length > 0;
   }
 
@@ -115,14 +110,6 @@ export class StreamingMessageController {
 
   private enqueueSource(source: string) {
     const now = Date.now();
-    let start = 0;
-    for (let i = 0; i < source.length; i += 1) {
-      if (source[i] !== '\n') continue;
-      this.queuedChunks.push({ text: source.slice(start, i + 1), enqueuedAt: now });
-      start = i + 1;
-    }
-    if (start < source.length) {
-      this.queuedChunks.push({ text: source.slice(start), enqueuedAt: now });
-    }
+    if (source) this.queuedChunks.push({ text: source, enqueuedAt: now });
   }
 }

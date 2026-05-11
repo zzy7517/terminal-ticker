@@ -10,6 +10,8 @@ import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildWebTools } from "../agent/tools/web.js";
 import { mergeRegistries } from "../agent/tools/registry.js";
 import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type SocialFeedConfig } from "../config/index.js";
+import { loadInstrumentCatalog as loadBitgetInstrumentCatalog } from "../market_data/bitget.js";
+import { loadInstrumentCatalog as loadHyperliquidInstrumentCatalog } from "../market_data/hyperliquid.js";
 import {
   appendBitgetSymbolToWatchlist,
   appendHyperliquidSymbolToWatchlist,
@@ -42,24 +44,36 @@ export function createApp(options: CreateAppOptions): Hono {
 
   app.get("/api/state", async (c) => c.json(await runtime.state()));
 
-  app.get("/api/instruments/catalog", (c) =>
-    c.json({
+  app.get("/api/instruments/catalog", async (c) => {
+    const activeKeys = new Set(runtime.instruments.map((instrument) => instrument.key));
+    const errors: Record<string, string> = {};
+    const items: Array<Record<string, unknown>> = [];
+    try {
+      for (const instrument of (await loadBitgetInstrumentCatalog()).values()) {
+        items.push(catalogItem(instrument, activeKeys));
+      }
+    } catch (error) {
+      errors.bitget = error instanceof Error ? error.message : String(error);
+      for (const instrument of runtime.instruments.filter((instrument) => instrument.source === "bitget")) {
+        items.push(catalogItem(instrument, activeKeys));
+      }
+    }
+    try {
+      for (const instrument of (await loadHyperliquidInstrumentCatalog()).values()) {
+        items.push(catalogItem(instrument, activeKeys));
+      }
+    } catch (error) {
+      errors.hyperliquid = error instanceof Error ? error.message : String(error);
+      for (const instrument of runtime.instruments.filter((instrument) => instrument.source === "hyperliquid")) {
+        items.push(catalogItem(instrument, activeKeys));
+      }
+    }
+    return c.json({
       loadedAt: new Date().toISOString(),
-      errors: {},
-      items: runtime.instruments.map((instrument) => ({
-        source: instrument.source,
-        symbol: instrument.symbol,
-        label: instrument.label,
-        instType: "instType" in instrument ? instrument.instType : null,
-        group: instrument.group,
-        category: "category" in instrument ? instrument.category : null,
-        dex: "dex" in instrument ? instrument.dex : null,
-        key: instrument.key,
-        displayText: `${instrument.label} (${instrument.key})`,
-        exists: true,
-      })),
-    }),
-  );
+      errors,
+      items,
+    });
+  });
 
   app.post("/api/watchlist/bitget", async (c) => {
     const body = (await c.req.json()) as Record<string, unknown>;
@@ -137,6 +151,7 @@ export function createApp(options: CreateAppOptions): Hono {
     const encoder = new TextEncoder();
     const runId = crypto.randomUUID();
     const assistantClientId = `assistant:${crypto.randomUUID()}`;
+    const toolCallsById = new Map<string, Record<string, unknown>>();
     let seq = 0;
     const sendFrame = (controller: ReadableStreamDefaultController<Uint8Array>, event: Record<string, unknown>) => {
       seq += 1;
@@ -196,10 +211,50 @@ export function createApp(options: CreateAppOptions): Hono {
             message,
             tools,
             history: runtime.agentSessionStore.historyForContext(sessionId, { limit: 12 }),
+            eventHandler: async (event) => {
+              const type = String(event.type || "");
+              if (type === "message_update") {
+                const delta = String(event.delta || "");
+                if (!delta) return;
+                sendFrame(controller, {
+                  type: "message_update",
+                  message: {
+                    clientId: assistantClientId,
+                    role: "assistant",
+                    content: "",
+                    metadata: null,
+                    error: null,
+                  },
+                  delta,
+                });
+              } else if (type === "tool_call") {
+                const toolCall = event.toolCall && typeof event.toolCall === "object" && !Array.isArray(event.toolCall)
+                  ? event.toolCall as Record<string, unknown>
+                  : {};
+                if (typeof toolCall.id === "string") toolCallsById.set(toolCall.id, toolCall);
+                sendFrame(controller, {
+                  type: "tool_execution_start",
+                  toolCall,
+                });
+              } else if (type === "tool_result") {
+                const toolResult = event.toolResult && typeof event.toolResult === "object" && !Array.isArray(event.toolResult)
+                  ? event.toolResult as Record<string, unknown>
+                  : {};
+                const callId = String(toolResult.callId || "");
+                sendFrame(controller, {
+                  type: "tool_execution_end",
+                  toolCall: toolCallsById.get(callId) ?? { id: callId, name: toolResult.name, arguments: {} },
+                  toolResult,
+                });
+              }
+            },
           });
           const metadata = {
             totalTokens: result.totalTokens,
             promptTokens: result.promptTokens,
+            toolCalls: result.steps
+              .filter((step) => step.stepType === "tool_call" && step.toolCall)
+              .map((step) => step.toolCall),
             steps: result.steps.map((step) => ({
               stepType: step.stepType,
               toolCall: step.toolCall ?? null,
@@ -207,19 +262,6 @@ export function createApp(options: CreateAppOptions): Hono {
               timestamp: step.timestamp,
             })),
           };
-          if (result.content) {
-            sendFrame(controller, {
-              type: "message_update",
-              message: {
-                clientId: assistantClientId,
-                role: "assistant",
-                content: result.content,
-                metadata,
-                error: result.error,
-              },
-              delta: result.content,
-            });
-          }
           const assistantMessage = runtime.agentSessionStore.appendMessage({
             sessionId,
             role: "assistant",
@@ -227,6 +269,34 @@ export function createApp(options: CreateAppOptions): Hono {
             metadata,
             error: result.error,
           });
+          const toolResultMessages = result.steps
+            .filter((step) => step.stepType === "tool_result" && step.toolResult)
+            .map((step) => step.toolResult!);
+          for (const toolResult of toolResultMessages) {
+            const toolMessage = runtime.agentSessionStore.appendMessage({
+              sessionId,
+              role: "toolResult",
+              content: toolResult.output,
+              metadata: {
+                toolCallId: toolResult.callId,
+                toolName: toolResult.name,
+                error: toolResult.error,
+              },
+              error: toolResult.error ? toolResult.output : null,
+            });
+            sendFrame(controller, {
+              type: "message_end",
+              message: {
+                id: toolMessage.id,
+                sessionId,
+                role: "toolResult",
+                content: toolResult.output,
+                createdAt: toolMessage.createdAt,
+                metadata: toolMessage.metadata,
+                error: toolMessage.error,
+              },
+            });
+          }
           sendFrame(controller, {
             type: "message_end",
             message: {
@@ -281,20 +351,7 @@ export function createApp(options: CreateAppOptions): Hono {
         models: models.map(normalizeModelOption),
       });
     } catch (error) {
-      const configured = profile?.models ?? [];
-      return c.json({
-        provider,
-        apiMode: apiModeForProvider(provider),
-        activeModel: configured[0] ?? runtime.config.agent.model,
-        models: configured.map((model) => normalizeModelOption({
-          id: model,
-          slug: model,
-          displayName: model,
-          description: error instanceof Error ? `Using configured model; refresh failed: ${error.message}` : "Using configured model; refresh failed.",
-          visibility: "configured",
-        })),
-        error: error instanceof Error ? error.message : String(error),
-      });
+      return c.json({ detail: error instanceof Error ? error.message : String(error) }, 502);
     }
   });
 
@@ -316,28 +373,40 @@ export function createApp(options: CreateAppOptions): Hono {
     return c.json({ state: await reloadAndState(runtime, watchlistPath) });
   });
   app.post("/api/news/config", async (c) => {
-    const body = (await c.req.json()) as Record<string, unknown>;
-    const watchlistPath = requireConfigPath(runtime);
-    await updateNewsConfigInWatchlist(watchlistPath, mergeNewsConfig(runtime.config.news, body));
-    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      const watchlistPath = requireConfigPath(runtime);
+      await updateNewsConfigInWatchlist(watchlistPath, mergeNewsConfig(runtime.config.news, body));
+      return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : String(error) }, 400);
+    }
   });
   app.post("/api/social/config", async (c) => {
-    const body = (await c.req.json()) as Record<string, unknown>;
-    const watchlistPath = requireConfigPath(runtime);
-    await updateSocialFeedConfigInWatchlist(watchlistPath, mergeSocialFeedConfig(runtime.config.socialFeed, body));
-    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      const watchlistPath = requireConfigPath(runtime);
+      await updateSocialFeedConfigInWatchlist(watchlistPath, mergeSocialFeedConfig(runtime.config.socialFeed, body));
+      return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : String(error) }, 400);
+    }
   });
   app.post("/api/memory/config", async (c) => {
-    const body = (await c.req.json()) as Record<string, unknown>;
-    const watchlistPath = requireConfigPath(runtime);
-    await updateMemoryConfigInWatchlist(watchlistPath, mergeMemoryConfig(runtime.config.memory, body));
-    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      const watchlistPath = requireConfigPath(runtime);
+      await updateMemoryConfigInWatchlist(watchlistPath, mergeMemoryConfig(runtime.config.memory, body));
+      return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : String(error) }, 400);
+    }
   });
 
   app.post("/api/news/refresh", async (c) => {
     const outcome = await runtime.newsService.refreshNow();
     const news = runtime.newsService.recent();
-    return c.json({ ...outcome, totalRecent: news.length, stale: false, news: news.map(newsItemToPayload) });
+    return c.json({ ...outcome, totalRecent: news.length, stale: outcome.status !== "ok", news: news.map(newsItemToPayload) });
   });
 
   app.get("/api/social/auth", (c) => c.json(runtime.xAuthStore.status()));
@@ -436,6 +505,21 @@ function sessionHistory(runtime: MarketRuntime): Record<string, unknown> {
   return { sessions, preloadedSessions: sessions.slice(0, 5).map((item) => sessionResponse(runtime, String(item.id))) };
 }
 
+function catalogItem(instrument: { key: string; source: string; symbol: string; label: string; group: string; analysisInterval?: string | null }, activeKeys: Set<string>): Record<string, unknown> {
+  return {
+    source: instrument.source,
+    symbol: instrument.symbol,
+    label: instrument.label,
+    instType: "instType" in instrument ? instrument.instType : null,
+    group: instrument.group,
+    category: "category" in instrument ? instrument.category : null,
+    dex: "dex" in instrument ? instrument.dex : null,
+    key: instrument.key,
+    displayText: `${instrument.label} (${instrument.key})`,
+    exists: activeKeys.has(instrument.key),
+  };
+}
+
 function agentConfigForRequest(config: AgentConfig, body: Record<string, unknown>): AgentConfig {
   const provider = typeof body.provider === "string" && body.provider.trim() ? body.provider.trim() : config.provider;
   const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : config.model;
@@ -452,6 +536,7 @@ function agentConfigForRequest(config: AgentConfig, body: Record<string, unknown
           modelEfforts: [],
           apiKey: "",
           baseUrl: "",
+          customModels: [],
         }),
         enabled: true,
         models: [model],
@@ -477,6 +562,7 @@ function mergeProviderProfile(config: AgentConfig, provider: string, body: Recor
     modelEfforts: [],
     apiKey: "",
     baseUrl: "",
+    customModels: [],
   };
   let models = [...current.models];
   if (Array.isArray(body.models)) models = body.models.map(String).filter(Boolean);
@@ -492,6 +578,17 @@ function mergeProviderProfile(config: AgentConfig, provider: string, body: Recor
     modelEfforts = modelEfforts.filter(([model]) => model !== effortUpdate.model);
     modelEfforts.push([effortUpdate.model, effortUpdate.effort]);
   }
+  let customModels = [...(current.customModels ?? [])];
+  if (typeof body.addCustomModel === "string" && body.addCustomModel.trim()) {
+    const slug = body.addCustomModel.trim();
+    if (!customModels.includes(slug)) customModels.push(slug);
+  }
+  if (typeof body.removeCustomModel === "string" && body.removeCustomModel.trim()) {
+    const slug = body.removeCustomModel.trim();
+    customModels = customModels.filter((item) => item !== slug);
+    models = models.filter((item) => item !== slug);
+    modelEfforts = modelEfforts.filter(([item]) => item !== slug);
+  }
   const nextProfile: ProviderProfile = {
     ...current,
     enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
@@ -499,6 +596,7 @@ function mergeProviderProfile(config: AgentConfig, provider: string, body: Recor
     modelEfforts,
     apiKey: body.clearApiKey === true ? "" : typeof body.apiKey === "string" && body.apiKey ? body.apiKey : current.apiKey,
     baseUrl: typeof body.baseUrl === "string" ? body.baseUrl.trim() : current.baseUrl,
+    customModels,
   };
   const providerProfiles = { ...config.providerProfiles, [provider]: nextProfile };
   const firstEnabled = Object.entries(providerProfiles).find(([, profile]) => profile.enabled && profile.models.length > 0);
@@ -518,12 +616,12 @@ function mergeNewsConfig(config: NewsConfig, body: Record<string, unknown>): New
   return {
     ...config,
     enabled: typeof body.enabled === "boolean" ? body.enabled : config.enabled,
-    pollIntervalSeconds: numberField(body.pollIntervalSeconds, config.pollIntervalSeconds),
-    maxIntervalSeconds: numberField(body.maxIntervalSeconds, config.maxIntervalSeconds),
+    pollIntervalSeconds: minNumberField(body.pollIntervalSeconds, config.pollIntervalSeconds, 5),
+    maxIntervalSeconds: minNumberField(body.maxIntervalSeconds, config.maxIntervalSeconds, 30),
     reutersUrl: typeof body.reutersUrl === "string" && body.reutersUrl.trim() ? body.reutersUrl.trim() : config.reutersUrl,
-    requestTimeoutSeconds: numberField(body.requestTimeoutSeconds, config.requestTimeoutSeconds),
-    retentionDays: numberField(body.retentionDays, config.retentionDays),
-    recentLimit: numberField(body.recentLimit, config.recentLimit),
+    requestTimeoutSeconds: minNumberField(body.requestTimeoutSeconds, config.requestTimeoutSeconds, 0.1),
+    retentionDays: minNumberField(body.retentionDays, config.retentionDays, 1),
+    recentLimit: minNumberField(body.recentLimit, config.recentLimit, 1),
   };
 }
 
@@ -531,9 +629,9 @@ function mergeSocialFeedConfig(config: SocialFeedConfig, body: Record<string, un
   return {
     ...config,
     enabled: typeof body.enabled === "boolean" ? body.enabled : config.enabled,
-    recentLimit: numberField(body.recentLimit, config.recentLimit),
-    retentionDays: numberField(body.retentionDays, config.retentionDays),
-    maxItems: numberField(body.maxItems, config.maxItems),
+    recentLimit: minNumberField(body.recentLimit, config.recentLimit, 1),
+    retentionDays: minNumberField(body.retentionDays, config.retentionDays, 1),
+    maxItems: minNumberField(body.maxItems, config.maxItems, 100),
   };
 }
 
@@ -546,18 +644,22 @@ function mergeMemoryConfig(config: MemoryConfig, body: Record<string, unknown>):
     storagePath: typeof body.storagePath === "string" ? body.storagePath || null : config.storagePath,
     extractModel: typeof body.extractModel === "string" ? body.extractModel || null : config.extractModel,
     consolidationModel: typeof body.consolidationModel === "string" ? body.consolidationModel || null : config.consolidationModel,
-    maxRawMemoriesForConsolidation: numberField(body.maxRawMemories, config.maxRawMemoriesForConsolidation),
-    maxUnusedDays: numberField(body.maxUnusedDays, config.maxUnusedDays),
-    maxSourceAgeDays: numberField(body.maxSourceAgeDays, config.maxSourceAgeDays),
-    maxRolloutsPerStartup: numberField(body.maxRolloutsPerStartup, config.maxRolloutsPerStartup),
-    minSessionIdleHours: numberField(body.minSessionIdleHours, config.minSessionIdleHours),
-    extensionRetentionDays: numberField(body.extensionRetentionDays, config.extensionRetentionDays),
+    maxRawMemoriesForConsolidation: minNumberField(body.maxRawMemories, config.maxRawMemoriesForConsolidation, 1),
+    maxUnusedDays: minNumberField(body.maxUnusedDays, config.maxUnusedDays, 1),
+    maxSourceAgeDays: minNumberField(body.maxSourceAgeDays, config.maxSourceAgeDays, 1),
+    maxRolloutsPerStartup: minNumberField(body.maxRolloutsPerStartup, config.maxRolloutsPerStartup, 1),
+    minSessionIdleHours: minNumberField(body.minSessionIdleHours, config.minSessionIdleHours, 0),
+    extensionRetentionDays: minNumberField(body.extensionRetentionDays, config.extensionRetentionDays, 1),
   };
 }
 
-function numberField(value: unknown, fallback: number): number {
+function minNumberField(value: unknown, fallback: number, minimum: number): number {
+  if (value === undefined || value === null || value === "") return fallback;
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  if (!Number.isFinite(parsed) || parsed < minimum) {
+    throw new Error(`value must be at least ${minimum}`);
+  }
+  return parsed;
 }
 
 function apiModeForProvider(provider: string): string {

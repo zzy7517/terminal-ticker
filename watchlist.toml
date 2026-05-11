@@ -33,6 +33,8 @@ model_efforts = {"gpt-5.3-codex" = "medium", "gpt-5.5" = "xhigh"}
 
 [agent.providers.anthropic]
 enabled = true
+api_key = "cr_c3c6f8df78d89b1378a65e496db6db630d457c6cffa9ae1a560d49423adfcaaf"
+base_url = "https://claude-proxy.p1.cn/api"
 models = ["global.anthropic.claude-opus-4-6-v1"]
 model_efforts = {"global.anthropic.claude-opus-4-6-v1" = "medium"}
 [analysis]

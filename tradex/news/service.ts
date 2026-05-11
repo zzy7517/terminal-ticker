@@ -13,6 +13,9 @@ export class NewsService {
   readonly store: NewsStore;
   readonly provider: ReutersSitemapProvider;
   readonly config: NewsConfig;
+  lastStatus = "idle";
+  lastError: string | null = null;
+  lastFetchedAtMs: number | null = null;
   private timer: NodeJS.Timeout | null = null;
 
   constructor(input: { config: NewsConfig; store?: NewsStore; provider?: ReutersSitemapProvider }) {
@@ -39,8 +42,13 @@ export class NewsService {
       const inserted = this.store.upsertItems(result.items).length;
       this.store.setCursor(this.provider.sourceName, result.etag, result.lastModified);
       this.pruneOldItems();
+      this.lastStatus = "ok";
+      this.lastError = null;
+      this.lastFetchedAtMs = Date.now();
       return { status: "ok", inserted, error: null };
     }
+    this.lastStatus = result.status;
+    this.lastError = result.error;
     return { status: result.status, inserted: 0, error: result.error };
   }
 

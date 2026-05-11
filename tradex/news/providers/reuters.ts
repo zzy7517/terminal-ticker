@@ -1,3 +1,4 @@
+import { fetch as browserFetch } from "wreq-js";
 import { NewsItem } from "../types.js";
 
 export const REUTERS_SOURCE = "reuters";
@@ -34,7 +35,12 @@ export class ReutersSitemapProvider {
       };
       if (input.etag) headers["If-None-Match"] = input.etag;
       if (input.lastModified) headers["If-Modified-Since"] = input.lastModified;
-      const response = await fetch(this.url, { headers, signal: controller.signal });
+      const response = await browserFetch(this.url, {
+        profile: "safari_17_0",
+        operatingSystem: "macos",
+        headers,
+        signal: controller.signal,
+      } as never);
       if (response.status === 304) return { status: "not_modified", items: [], etag: input.etag ?? null, lastModified: input.lastModified ?? null, error: null, httpStatus: 304 };
       if ([401, 403, 429].includes(response.status)) return { status: "rate_limited", items: [], etag: null, lastModified: null, error: `HTTP ${response.status}`, httpStatus: response.status };
       if (!response.ok) return { status: "error", items: [], etag: null, lastModified: null, error: `HTTP ${response.status}`, httpStatus: response.status };
@@ -78,7 +84,9 @@ function findText(block: string, tag: string): string | null {
 }
 
 function decodeXml(value: string): string {
-  return value.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  const cdata = value.match(/^<!\[CDATA\[([\s\S]*)\]\]>$/);
+  const text = cdata ? cdata[1] : value;
+  return text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 }
 
 function extractKeywords(raw: string, url: string): string[] {

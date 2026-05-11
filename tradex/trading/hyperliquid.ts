@@ -255,17 +255,30 @@ export async function openPosition(input: {
   if (!coin) throw new HyperliquidTradingError("coin is required");
   const client = exchangeClient() as never as { order: (params: Record<string, unknown>) => Promise<Record<string, unknown>> };
   const normalizedType = (input.orderType || "market").trim().toLowerCase();
-  const price = input.limitPrice ?? 0;
+  const limitPx = normalizedType === "limit"
+    ? input.limitPrice
+    : await marketOrderLimitPx(coin, input.isBuy, input.slippage ?? 0.05);
   if (normalizedType === "limit" && input.limitPrice === undefined) throw new HyperliquidTradingError("limit order requires limit_price");
+  if (limitPx === undefined || limitPx === null || limitPx <= 0) throw new HyperliquidTradingError("cannot resolve Hyperliquid order price");
   const order = {
     coin,
     is_buy: input.isBuy,
     sz: input.size,
-    limit_px: price,
+    limit_px: limitPx,
     order_type: normalizedType === "limit" ? { limit: { tif: "Gtc" } } : { limit: { tif: "Ioc" } },
     reduce_only: false,
   };
-  const payload = await client.order({ orders: [order], grouping: "na" });
+  const orders = [
+    order,
+    ...tpslOrderSpecs({
+      coin,
+      isBuy: input.isBuy,
+      size: input.size,
+      takeProfitPrice: input.takeProfitPrice,
+      stopLossPrice: input.stopLossPrice,
+    }),
+  ];
+  const payload = await client.order({ orders, grouping: orders.length > 1 ? "normalTpsl" : "na" });
   return parseOrderResult(payload);
 }
 
@@ -300,13 +313,69 @@ export async function placeTriggerOrder(input: {
 export async function closePosition(input: { coin: string; size?: number | null; slippage?: number }): Promise<HyperliquidOrderResult> {
   const position = (await getPositions()).find((item) => item.symbol === normalizeCoinForApi(input.coin));
   if (!position) throw new HyperliquidTradingError("no matching position to close");
-  return openPosition({
-    coin: input.coin,
-    isBuy: position.side === "short",
-    size: input.size ?? position.size,
-    orderType: "market",
-    slippage: input.slippage ?? 0.05,
+  const coin = normalizeCoinForApi(input.coin);
+  const isBuy = position.side === "short";
+  const size = input.size ?? position.size;
+  const client = exchangeClient() as never as { order: (params: Record<string, unknown>) => Promise<Record<string, unknown>> };
+  const limitPx = await marketOrderLimitPx(coin, isBuy, input.slippage ?? 0.05);
+  const payload = await client.order({
+    orders: [{
+      coin,
+      is_buy: isBuy,
+      sz: size,
+      limit_px: limitPx,
+      order_type: { limit: { tif: "Ioc" } },
+      reduce_only: true,
+    }],
+    grouping: "na",
   });
+  return parseOrderResult(payload);
+}
+
+async function marketOrderLimitPx(coin: string, isBuy: boolean, slippage: number): Promise<number> {
+  const contexts = await postInfo({ type: "metaAndAssetCtxs", ...(coin.includes(":") ? { dex: coin.split(":", 2)[0] } : {}) });
+  if (!Array.isArray(contexts) || contexts.length < 2 || !Array.isArray(contexts[0]?.universe) || !Array.isArray(contexts[1])) {
+    throw new HyperliquidTradingError("Hyperliquid asset contexts returned unexpected payload");
+  }
+  const apiCoin = coin.includes(":") ? coin.split(":", 2)[1] : coin;
+  const index = contexts[0].universe.findIndex((item: unknown) => item && typeof item === "object" && !Array.isArray(item) && String((item as Record<string, unknown>).name || "").toUpperCase() === apiCoin.toUpperCase());
+  const ctx = index >= 0 ? contexts[1][index] as Record<string, unknown> : null;
+  const mid = ctx ? toFloat(ctx.midPx || ctx.markPx || ctx.oraclePx) : null;
+  if (mid === null || mid <= 0) throw new HyperliquidTradingError("cannot resolve Hyperliquid market price");
+  const boundedSlippage = Math.max(0, Math.min(slippage, 0.5));
+  return isBuy ? mid * (1 + boundedSlippage) : mid * (1 - boundedSlippage);
+}
+
+function tpslOrderSpecs(input: {
+  coin: string;
+  isBuy: boolean;
+  size: number;
+  takeProfitPrice?: number | null;
+  stopLossPrice?: number | null;
+}): Array<Record<string, unknown>> {
+  const closeIsBuy = !input.isBuy;
+  const orders: Array<Record<string, unknown>> = [];
+  if (input.takeProfitPrice !== undefined && input.takeProfitPrice !== null) {
+    orders.push({
+      coin: input.coin,
+      is_buy: closeIsBuy,
+      sz: input.size,
+      limit_px: input.takeProfitPrice,
+      order_type: { trigger: { triggerPx: input.takeProfitPrice, isMarket: true, tpsl: "tp" } },
+      reduce_only: true,
+    });
+  }
+  if (input.stopLossPrice !== undefined && input.stopLossPrice !== null) {
+    orders.push({
+      coin: input.coin,
+      is_buy: closeIsBuy,
+      sz: input.size,
+      limit_px: input.stopLossPrice,
+      order_type: { trigger: { triggerPx: input.stopLossPrice, isMarket: true, tpsl: "sl" } },
+      reduce_only: true,
+    });
+  }
+  return orders;
 }
 
 function parseOrderResult(payload: Record<string, unknown>): HyperliquidOrderResult {

@@ -154,7 +154,21 @@ export async function closePosition(input: { symbol: string; productType?: strin
   try {
     const resp = await request("POST", "/api/v2/mix/order/close-positions", { body });
     if (resp.code !== "00000") return orderResult({ exchange: BITGET_DEMO_FILL_SOURCE, error: String(resp.msg || "unknown error"), raw: resp });
-    return orderResult({ exchange: BITGET_DEMO_FILL_SOURCE, raw: resp });
+    const data = resp.data && typeof resp.data === "object" && !Array.isArray(resp.data) ? (resp.data as Record<string, unknown>) : {};
+    const successList = Array.isArray(data.successList) ? data.successList : [];
+    const failureList = Array.isArray(data.failureList) ? data.failureList : [];
+    if (successList.length === 0 && failureList.length > 0) {
+      const firstFailure = failureList[0];
+      const error = firstFailure && typeof firstFailure === "object" && !Array.isArray(firstFailure)
+        ? String((firstFailure as Record<string, unknown>).errorMsg || "close position failed")
+        : "close position failed";
+      return orderResult({ exchange: BITGET_DEMO_FILL_SOURCE, error, raw: resp });
+    }
+    const firstSuccess = successList[0];
+    const orderId = firstSuccess && typeof firstSuccess === "object" && !Array.isArray(firstSuccess)
+      ? String((firstSuccess as Record<string, unknown>).orderId || "")
+      : null;
+    return orderResult({ exchange: BITGET_DEMO_FILL_SOURCE, orderId: orderId || null, raw: resp });
   } catch (error) {
     return orderResult({ exchange: BITGET_DEMO_FILL_SOURCE, error: error instanceof Error ? error.message : String(error) });
   }

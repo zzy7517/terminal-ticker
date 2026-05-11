@@ -72,6 +72,7 @@ export class AgentSessionStore extends BaseStore {
       CREATE INDEX IF NOT EXISTS idx_agent_sessions_active ON agent_sessions (instrument_key, active, updated_at);
       CREATE INDEX IF NOT EXISTS idx_agent_messages_session ON agent_messages (session_id, created_at, id);
     `);
+    ensureAgentSessionColumns(conn);
   }
 
   getActiveSession(instrumentKey: string): AgentSession | null {
@@ -147,7 +148,11 @@ export class AgentSessionStore extends BaseStore {
   sessionPayload(sessionId: string): Record<string, unknown> | null {
     const session = this.getSession(sessionId);
     if (!session) return null;
-    return { ...session, messages: this.listMessages(sessionId).map((message) => messageToPayload(message, true)) };
+    return {
+      session,
+      messages: this.listMessages(sessionId).map((message) => messageToPayload(message, true)),
+      contextUsage: null,
+    };
   }
 
   activeSessionPayload(instrumentKey: string): Record<string, unknown> | null {
@@ -291,4 +296,11 @@ function storedInstrumentKey(instrumentKey: string | null | undefined): string {
 
 function isoFromTimestamp(value: number): string {
   return new Date(value * 1000).toISOString();
+}
+
+function ensureAgentSessionColumns(conn: Database.Database): void {
+  const rows = conn.prepare("PRAGMA table_info(agent_sessions)").all() as Array<{ name: string }>;
+  const columns = new Set(rows.map((row) => row.name));
+  if (!columns.has("api_mode")) conn.exec("ALTER TABLE agent_sessions ADD COLUMN api_mode TEXT");
+  if (!columns.has("reasoning_effort")) conn.exec("ALTER TABLE agent_sessions ADD COLUMN reasoning_effort TEXT");
 }

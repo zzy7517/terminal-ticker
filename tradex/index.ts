@@ -1,11 +1,12 @@
 import { serve } from "@hono/node-server";
 import { WebSocketServer } from "ws";
-import { loadConfig } from "./config/index.js";
+import { buildRuntimeConfig, loadConfig } from "./config/index.js";
 import { createApp } from "./api/app.js";
 import { MarketRuntime } from "./api/runtime.js";
 
 interface CliOptions {
   configPath: string;
+  symbols?: string[];
   host: string;
   port: number;
 }
@@ -22,6 +23,14 @@ function parseArgs(argv: string[]): CliOptions {
     if (arg === "--config" && next) {
       options.configPath = next;
       index += 1;
+    } else if (arg === "--symbols") {
+      const symbols: string[] = [];
+      while (argv[index + 1] && !argv[index + 1].startsWith("--")) {
+        symbols.push(argv[index + 1]);
+        index += 1;
+      }
+      if (symbols.length === 0) throw new Error("--symbols requires at least one symbol");
+      options.symbols = symbols;
     } else if (arg === "--host" && next) {
       options.host = next;
       index += 1;
@@ -36,9 +45,21 @@ function parseArgs(argv: string[]): CliOptions {
   return options;
 }
 
+async function resolveConfig(options: CliOptions) {
+  try {
+    return buildRuntimeConfig(await loadConfig(options.configPath), options.symbols);
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : null;
+    if (code === "ENOENT" && options.symbols && options.symbols.length > 0) {
+      return buildRuntimeConfig(null, options.symbols);
+    }
+    throw error;
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  const config = await loadConfig(options.configPath);
+  const config = await resolveConfig(options);
   const runtime = await MarketRuntime.create(config);
   await runtime.start();
   const app = createApp({ runtime });

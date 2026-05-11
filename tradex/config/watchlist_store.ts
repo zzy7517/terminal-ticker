@@ -12,6 +12,7 @@ import {
   SocialFeedConfig,
   SUPPORTED_INST_TYPES,
   TradingConfig,
+  expandUserPath,
   loadConfig,
   normalizeSymbolForSource,
 } from "./index.js";
@@ -136,7 +137,7 @@ export async function appendBitgetSymbolToWatchlist(
   watchlistPath: string,
   input: { symbol: string; instType: string; label?: string | null; group?: string; showCollapsed?: boolean },
 ): Promise<boolean> {
-  const sourcePath = path.resolve(watchlistPath);
+  const sourcePath = path.resolve(expandUserPath(watchlistPath));
   const symbol = normalizeBitgetSymbol(input.symbol);
   const instType = normalizeBitgetInstType(input.instType);
   const group = normalizeGroup(input.group ?? "crypto");
@@ -161,7 +162,7 @@ export async function appendHyperliquidSymbolToWatchlist(
   watchlistPath: string,
   input: { symbol: string; label?: string | null; group?: string; showCollapsed?: boolean },
 ): Promise<boolean> {
-  const sourcePath = path.resolve(watchlistPath);
+  const sourcePath = path.resolve(expandUserPath(watchlistPath));
   const symbol = normalizeHyperliquidSymbol(input.symbol);
   const group = normalizeGroup(input.group ?? "crypto");
   const config = await loadConfig(sourcePath);
@@ -184,7 +185,7 @@ export async function removeSymbolFromWatchlist(
   watchlistPath: string,
   input: { source: string; symbol: string; instType?: string | null },
 ): Promise<boolean> {
-  const sourcePath = path.resolve(watchlistPath);
+  const sourcePath = path.resolve(expandUserPath(watchlistPath));
   const source = input.source.trim().toLowerCase();
   const symbol = normalizeSymbolForSourceStrict(source, input.symbol);
   const instType = input.instType ? input.instType.trim().toUpperCase() : null;
@@ -224,7 +225,7 @@ export async function updateInstrumentAnalysisIntervalInWatchlist(
   watchlistPath: string,
   input: { source: string; symbol: string; instType?: string | null; interval: string },
 ): Promise<boolean> {
-  const sourcePath = path.resolve(watchlistPath);
+  const sourcePath = path.resolve(expandUserPath(watchlistPath));
   const source = input.source.trim().toLowerCase();
   const symbol = normalizeSymbolForSource(source, input.symbol);
   const instType = input.instType ? input.instType.trim().toUpperCase() : null;
@@ -269,6 +270,9 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
     lines.push(`models = [${profile.models.map(tomlString).join(", ")}]`);
     if (profile.modelEfforts.length > 0) {
       lines.push(`model_efforts = {${profile.modelEfforts.map(([slug, effort]) => `${tomlString(slug)} = ${tomlString(effort)}`).join(", ")}}`);
+    }
+    if (profile.customModels.length > 0) {
+      lines.push(`custom_models = [${profile.customModels.map(tomlString).join(", ")}]`);
     }
   }
   return replaceTable(watchlistPath, "agent", lines);
@@ -340,7 +344,7 @@ export async function updateTradingConfigInWatchlist(watchlistPath: string, conf
 }
 
 async function replaceTable(watchlistPath: string, tableName: string, lines: string[]): Promise<boolean> {
-  const sourcePath = path.resolve(watchlistPath);
+  const sourcePath = path.resolve(expandUserPath(watchlistPath));
   const text = await readFile(sourcePath, "utf8");
   const rendered = replaceTopLevelTable(text, tableName, lines);
   if (rendered === text) return false;

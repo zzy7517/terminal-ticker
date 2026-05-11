@@ -9,12 +9,14 @@ export class AnthropicProvider {
   readonly model: string;
   private readonly apiKey: string;
   private readonly baseURL: string | undefined;
+  private readonly customModels: string[];
 
   constructor(config: AgentConfig, profile: AgentModelProfile) {
     this.model = profile.model;
     const providerProfile = config.providerProfiles.anthropic as ProviderProfile | undefined;
     this.apiKey = providerProfile?.apiKey || process.env.ANTHROPIC_API_KEY || "";
     this.baseURL = providerProfile?.baseUrl || process.env.ANTHROPIC_BASE_URL || undefined;
+    this.customModels = [...(providerProfile?.customModels ?? [])];
     if (!this.apiKey) throw new Error("ANTHROPIC_API_KEY is required");
   }
 
@@ -53,18 +55,44 @@ export class AnthropicProvider {
 
   async listModels(): Promise<Array<Record<string, unknown>>> {
     const client = new Anthropic({ apiKey: this.apiKey, baseURL: this.baseURL });
-    const page = await client.models.list({ limit: 100 });
-    return page.data.map((model) => ({
-      slug: model.id,
-      displayName: model.display_name || model.id,
-      description: "",
+    const customOptions = this.customModels.map((slug) => ({
+      slug,
+      displayName: slug,
+      description: "Custom model",
       visibility: "public",
       supportedInApi: true,
       defaultReasoningEffort: "medium",
       supportedReasoningEfforts: ["medium"],
       contextWindow: null,
       preferWebsockets: false,
+      custom: true,
     }));
+    let officialOptions: Array<Record<string, unknown>> = [];
+    try {
+      const page = await client.models.list({ limit: 100 });
+      officialOptions = page.data.map((model) => ({
+        slug: model.id,
+        displayName: model.display_name || model.id,
+        description: "",
+        visibility: "public",
+        supportedInApi: true,
+        defaultReasoningEffort: "medium",
+        supportedReasoningEfforts: ["medium"],
+        contextWindow: null,
+        preferWebsockets: false,
+        custom: false,
+      }));
+    } catch (error) {
+      if (customOptions.length === 0) throw error;
+    }
+    const seen = new Set(customOptions.map((option) => option.slug));
+    const merged: Array<Record<string, unknown>> = [...customOptions];
+    for (const option of officialOptions) {
+      if (seen.has(option.slug as string)) continue;
+      seen.add(option.slug as string);
+      merged.push(option);
+    }
+    return merged;
   }
 }
 

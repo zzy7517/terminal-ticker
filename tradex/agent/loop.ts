@@ -75,7 +75,7 @@ export class AgentLoop {
         });
         totalTokens += response.usage.total_tokens ?? response.usage.totalTokens ?? 0;
         promptTokens += response.usage.prompt_tokens ?? response.usage.promptTokens ?? 0;
-        if (response.content) {
+        if (response.content && response.toolCalls.length === 0) {
           messages.push({ role: "assistant", content: response.content });
           transcript.push({ role: "assistant", content: response.content, metadata: usageMetadata(response.usage) });
         }

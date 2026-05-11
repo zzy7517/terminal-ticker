@@ -45,7 +45,7 @@ export class ExchangeRouter {
   async getTradeFillsFromExchange(trade: Trade, limit = 50): Promise<Array<Record<string, unknown>>> {
     const exchange = this.exchangeForKey(trade.instrumentKey);
     if (exchange === EXCHANGE_HYPERLIQUID) {
-      const coin = trade.instrumentKey.split(":", 2)[1] ?? "";
+      const coin = hyperliquidCoinFromKey(trade.instrumentKey);
       return hyperliquid.getUserFills({ coin, startTimeMs: trade.openedAtMs ?? trade.createdAtMs, limit });
     }
     if (exchange === EXCHANGE_BITGET) {
@@ -97,7 +97,7 @@ export class ExchangeRouter {
     if (!this.mutationEnabled(exchange)) return orderResult({ exchange, error: `${exchange} trading is disabled by config` });
     if (exchange === EXCHANGE_HYPERLIQUID) {
       try {
-        const result = await hyperliquid.closePosition({ coin: input.instrumentKey.split(":", 2)[1] ?? "", size: input.size, slippage: input.slippage });
+        const result = await hyperliquid.closePosition({ coin: hyperliquidCoinFromKey(input.instrumentKey), size: input.size, slippage: input.slippage });
         return orderResult({ exchange, orderId: result.externalOrderId, averagePrice: result.averagePrice, filledSize: result.filledSize, resting: result.resting, raw: result.raw });
       } catch (error) {
         return orderResult({ exchange, error: error instanceof Error ? error.message : String(error) });
@@ -120,7 +120,7 @@ export class ExchangeRouter {
   private async placeHyperliquid(input: { instrumentKey: string; [key: string]: unknown }): Promise<OrderResult> {
     try {
       const result = await hyperliquid.openPosition({
-        coin: input.instrumentKey.split(":", 2)[1] ?? "",
+        coin: hyperliquidCoinFromKey(input.instrumentKey),
         isBuy: Boolean(input.isBuy ?? input.is_buy),
         size: Number(input.size),
         orderType: String(input.orderType ?? input.order_type ?? "market"),
@@ -163,4 +163,9 @@ export class ExchangeRouter {
     if (exchange === EXCHANGE_BITGET) return this.tradingConfig.bitgetDemoEnabled;
     return false;
   }
+}
+
+function hyperliquidCoinFromKey(instrumentKey: string): string {
+  const prefix = "hyperliquid:";
+  return instrumentKey.startsWith(prefix) ? instrumentKey.slice(prefix.length) : instrumentKey;
 }

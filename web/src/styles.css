@@ -1561,6 +1561,20 @@ textarea:focus-visible {
   padding: 8px 14px;
 }
 
+.model-group-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 10px 14px 4px;
+  text-transform: uppercase;
+}
+
+.custom-model-form {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 12px 14px;
+}
+
 .model-meta-row {
   align-items: center;
   color: var(--text-muted);

@@ -9,6 +9,7 @@ import { ExchangeRouter } from "../trading/exchange_router.js";
 import { TradeStore } from "../trading/store.js";
 import { TickerController } from "../runtime/controller.js";
 import { resolveInstruments, MarketInstrument } from "../market_data/router.js";
+import { TradeStatus } from "../trading/models.js";
 import { serializeState } from "./serializers.js";
 
 export class MarketRuntime {
@@ -17,11 +18,12 @@ export class MarketRuntime {
   controller: TickerController;
   readonly tradeStore: TradeStore;
   readonly exchangeRouter: ExchangeRouter;
-  readonly newsService: NewsService;
-  readonly socialFeedService: SocialFeedService;
+  newsService: NewsService;
+  socialFeedService: SocialFeedService;
   readonly xAuthStore: XAuthStore;
   readonly memoryBackend: LocalMemoryBackend;
   readonly agentSessionStore: AgentSessionStore;
+  private running = false;
 
   private constructor(config: AppConfig, instruments: MarketInstrument[]) {
     this.config = config;
@@ -44,22 +46,32 @@ export class MarketRuntime {
   }
 
   async reloadConfig(config: AppConfig): Promise<void> {
+    const shouldRestart = this.running;
     await this.controller.stop();
+    await this.newsService.stop();
     this.config = config;
     this.instruments = await resolveInstruments(config.instruments);
     this.controller = new TickerController({ config, instruments: this.instruments });
     this.exchangeRouter.tradingConfig = config.trading;
-    Object.assign(this.newsService.config, config.news);
-    Object.assign(this.socialFeedService.config, config.socialFeed);
-    this.controller.start();
+    this.newsService = new NewsService({ config: config.news });
+    this.socialFeedService = new SocialFeedService({
+      config: config.socialFeed,
+      clientFactory: () => new XInternalClient(this.xAuthStore.load()),
+    });
+    if (shouldRestart) {
+      this.controller.start();
+      await this.newsService.start();
+    }
   }
 
   async start(): Promise<void> {
+    this.running = true;
     this.controller.start();
     await this.newsService.start();
   }
 
   async stop(): Promise<void> {
+    this.running = false;
     await this.controller.stop();
     await this.newsService.stop();
   }
@@ -72,11 +84,16 @@ export class MarketRuntime {
       instruments: this.instruments,
       quotes: this.controller.quotes,
       streamStatus: this.controller.streamStatus,
-      openTrades: this.tradeStore.listTrades({ statuses: ["open" as never] }),
+      openTrades: this.tradeStore.listTrades({ statuses: [TradeStatus.OPEN] }),
       exchangePositions: positions,
       exchangeOrders: orders,
       recentNews: this.newsService.recent(),
-      newsStatus: { enabled: this.config.news.enabled },
+      newsStatus: {
+        enabled: this.config.news.enabled,
+        lastStatus: this.newsService.lastStatus,
+        lastError: this.newsService.lastError,
+        lastFetchedAtMs: this.newsService.lastFetchedAtMs,
+      },
     });
   }
 }

@@ -65,6 +65,7 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
             modelEfforts: Object.fromEntries(profile.modelEfforts),
             baseUrl: profile.baseUrl || undefined,
             apiKeyConfigured: Boolean(profile.apiKey),
+            customModels: profile.customModels,
           },
         ]),
       ),

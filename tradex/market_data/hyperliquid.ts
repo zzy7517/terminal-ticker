@@ -393,7 +393,7 @@ export async function fetchSnapshotPayloads(instruments: readonly HyperliquidIns
 export class HyperliquidAllMidsWebSocket {
   readonly instruments: readonly HyperliquidInstrument[];
   private readonly byDex: Map<string, HyperliquidInstrument[]>;
-  private socket: WebSocket | null = null;
+  private sockets: WebSocket[] = [];
 
   constructor(instruments: readonly HyperliquidInstrument[]) {
     this.instruments = instruments;
@@ -405,25 +405,39 @@ export class HyperliquidAllMidsWebSocket {
   }
 
   async subscribe(): Promise<void> {
-    if (this.socket !== null) return;
-    this.socket = new WebSocket(HYPERLIQUID_WS_PUBLIC);
-    await new Promise<void>((resolve, reject) => {
-      this.socket?.once("open", () => resolve());
-      this.socket?.once("error", reject);
-    });
+    if (this.sockets.length > 0) return;
     for (const dex of this.byDex.keys()) {
-      this.socket.send(JSON.stringify({
+      const socket = new WebSocket(HYPERLIQUID_WS_PUBLIC);
+      await new Promise<void>((resolve, reject) => {
+        socket.once("open", () => resolve());
+        socket.once("error", reject);
+      });
+      socket.send(JSON.stringify({
         method: "subscribe",
         subscription: dex ? { type: "allMids", dex } : { type: "allMids" },
       }));
+      this.sockets.push(socket);
     }
   }
 
   async listen(messageHandler: (payload: Record<string, unknown>) => void | Promise<void>, signal?: AbortSignal): Promise<void> {
     await this.subscribe();
-    const socket = this.socket;
+    await Promise.all([...this.byDex.entries()].map(([dex, instruments], index) => this.listenSocket(
+      this.sockets[index],
+      instruments,
+      messageHandler,
+      signal,
+    )));
+  }
+
+  private async listenSocket(
+    socket: WebSocket | undefined,
+    instruments: HyperliquidInstrument[],
+    messageHandler: (payload: Record<string, unknown>) => void | Promise<void>,
+    signal?: AbortSignal,
+  ): Promise<void> {
     if (!socket) return;
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const cleanup = () => {
         socket.off("message", onMessage);
         socket.off("error", onError);
@@ -454,11 +468,9 @@ export class HyperliquidAllMidsWebSocket {
           const mids = data.mids && typeof data.mids === "object" && !Array.isArray(data.mids)
             ? data.mids as Record<string, unknown>
             : {};
-          for (const instruments of this.byDex.values()) {
-            for (const instrument of instruments) {
-              const price = midForInstrument(mids, instrument);
-              if (price !== null) await messageHandler(normalizeMidPayload(price, instrument));
-            }
+          for (const instrument of instruments) {
+            const price = midForInstrument(mids, instrument);
+            if (price !== null) await messageHandler(normalizeMidPayload(price, instrument));
           }
         })().catch(onError);
       };
@@ -470,9 +482,9 @@ export class HyperliquidAllMidsWebSocket {
   }
 
   async close(): Promise<void> {
-    if (this.socket !== null) {
-      const socket = this.socket;
-      this.socket = null;
+    const sockets = this.sockets;
+    this.sockets = [];
+    for (const socket of sockets) {
       if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
         socket.close();
       }

@@ -144,6 +144,7 @@ export interface ProviderProfileState {
   modelEfforts: Record<string, string>;
   baseUrl?: string;
   apiKeyConfigured?: boolean;
+  customModels?: string[];
 }
 
 export interface AgentConfig {
@@ -170,6 +171,8 @@ export interface ProviderProfileUpdate {
   apiKey?: string;
   baseUrl?: string;
   clearApiKey?: boolean;
+  addCustomModel?: string;
+  removeCustomModel?: string;
 }
 
 export interface AnalysisConfigUpdate {
@@ -310,6 +313,7 @@ export interface AgentModelOption {
   supportedReasoningEfforts: string[];
   contextWindow: number | null;
   preferWebsockets: boolean;
+  custom?: boolean;
 }
 
 export interface AgentModelsResponse {

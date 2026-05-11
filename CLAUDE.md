@@ -4,46 +4,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-All commands assume the repo's virtualenv at `.venv` (already present). Python code lives under `tradex/`; the frontend lives under `web/`.
+The backend and frontend are TypeScript. Backend code lives under `tradex/`; the frontend lives under `web/`.
 
 ### Running the app
 
-Dev mode needs two terminals:
+Dev mode can run both processes together:
 
 ```bash
-# Terminal 1 — backend (FastAPI + uvicorn on :8765)
-.venv/bin/python -m tradex --host 127.0.0.1 --port 8765
+npm run dev:all
+```
 
-# Terminal 2 — Vite dev server on :5173 (proxies /api and /ws to :8765)
+Or run them separately:
+
+# Terminal 1 — Hono backend on :8765
+npm run dev:backend
+
+# Terminal 2 — Vite dev server on :5173
 npm run dev
 ```
 
-Single-process mode (backend serves the built frontend on :8765):
+Production-style local run:
 
 ```bash
 npm run build
-.venv/bin/python -m tradex --host 127.0.0.1 --port 8765
+npm run build:backend
+npm run start:backend -- --config watchlist.toml --host 127.0.0.1 --port 8765
 ```
 
-CLI overrides: `--config my.toml`, `--symbols USDT-FUTURES:BTCUSDT ...`, `--log-level DEBUG`.
+CLI overrides: `--config my.toml`, `--host 127.0.0.1`, `--port 8765`.
 
 ### Tests
 
 ```bash
-# Full Python suite (uses pytest config in pytest.ini: pythonpath=.)
-.venv/bin/python -m pytest
+# Type-check backend and frontend
+npm run typecheck
 
-# Single test file
-.venv/bin/python -m pytest tests/test_feed.py
-
-# Single test
-.venv/bin/python -m pytest tests/test_feed.py::test_name
-
-# Unittest runner also works (tests use unittest.TestCase)
-.venv/bin/python -m unittest discover -s tests
-
-# Frontend type-check + build (no separate lint task)
+# Frontend production build
 npm run build
+
+# Backend production build
+npm run build:backend
+
+# Vitest suite (currently no dedicated tests)
+npm test
 ```
 
 ### Required environment
@@ -60,30 +63,30 @@ export BITGET_DEMO_PASSPHRASE=...
 
 ## Architecture
 
-This is a local-first market monitoring and LLM research tool. One Python process runs a FastAPI server that owns all market state; a React/Vite frontend talks to it over REST + a single WebSocket.
+This is a local-first market monitoring and LLM research tool. One TypeScript process runs a Hono server that owns all market state; a React/Vite frontend talks to it over REST + a single WebSocket.
 
 ### Layering (read in this order if new to the codebase)
 
-The Python package `tradex/` is organized as strict layers. Upper layers import lower layers, never the reverse:
+The TypeScript backend `tradex/` is organized as strict layers. Upper layers import lower layers, never the reverse:
 
-1. **`domain/`** — pure dataclasses. `Candle` (OHLCV, self-validating), `QuoteState`, `merge_candles`. No I/O.
-2. **`config/`** — parses `watchlist.toml` → `AppConfig`. Also holds agent model normalization (`agent_models.py`) and `watchlist_store.py` which round-trips the TOML on add/remove from the UI.
-3. **`market_data/`** — per-provider adapters (`bitget.py`, `hyperliquid.py`) plus `router.py` which dispatches `InstrumentConfig` to the right provider and preserves watchlist order. `candle_cache.py` provides the local OHLCV cache that agent tools read from.
-4. **`runtime/`** — `feed.py` runs a background worker that streams quotes/candles from providers into a `queue.Queue` of `FeedEvent`s. `controller.py` (`TickerController`) drains that queue into an in-memory `QuoteState` map and tracks flash directions.
-5. **`trading/`** — local trade records and external live/demo execution. `store.py` is a SQLite-backed `TradeStore` at `~/.cache/tradex/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.py` submits signed Hyperliquid mainnet orders when `[trading].hyperliquid_enabled` is true; `bitget_demo.py` signs Bitget Demo Trading orders when `[trading].bitget_demo_enabled` is true. `review.py` orchestrates LLM post-trade reviews that produce lesson rows.
-6. **`agent/`** — LLM layer. `provider.py` builds the multi-timeframe context and normalizes model output to a fixed JSON schema. `providers/codex.py` and `providers/anthropic.py` implement the transport. `loop.py` is a tool-calling agent loop (OpenAI-style function calling internally, converted by each provider); `tools.py` defines the `ToolRegistry` plus two tool factories: `build_market_tools` (read-only data access) and `build_trading_tools` (Hyperliquid mainnet and Bitget demo order entry plus local trade history). `session_store.py` is a SQLite-backed per-instrument chat history at `~/.cache/tradex/agent_sessions.sqlite3`.
-7. **`api/app.py`** — the only place where async FastAPI meets the sync `TickerController`. It owns the `WebSocket` client set, broadcasts state snapshots (now including `openTrades`), runs a periodic review loop, and exposes all routes under `/api/*` plus `/ws`. This file is large (~1200 lines) because it's the integration seam.
+1. **`domain/`** — pure classes/types. `Candle`, `QuoteState`, `mergeCandles`. No I/O.
+2. **`config/`** — parses `watchlist.toml` → `AppConfig`. Also holds agent model normalization (`agent_models.ts`) and `watchlist_store.ts` which round-trips the TOML on add/remove from the UI.
+3. **`market_data/`** — per-provider adapters (`bitget.ts`, `hyperliquid.ts`) plus `router.ts` which dispatches `InstrumentConfig` to the right provider and preserves watchlist order. `candle_cache.ts` provides the local OHLCV cache that agent tools read from.
+4. **`runtime/`** — `feed.ts` runs background async tasks that stream quotes/candles from providers into controller events. `controller.ts` (`TickerController`) drains those events into an in-memory `QuoteState` map and tracks flash directions.
+5. **`trading/`** — local trade records and external live/demo execution. `store.ts` is a SQLite-backed `TradeStore` at `~/.cache/tradex/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.ts` submits signed Hyperliquid mainnet orders when `[trading].hyperliquid_enabled` is true; `bitget.ts` signs Bitget Demo Trading orders when `[trading].bitget_demo_enabled` is true. `review.ts` orchestrates LLM post-trade reviews that produce lesson rows.
+6. **`agent/`** — LLM layer. `providers/codex.ts` and `providers/anthropic.ts` implement the transport. `loop.ts` is a tool-calling agent loop; `tools/` defines `ToolRegistry` and tool packs.
+7. **`api/app.ts`** — Hono API and SSE routes. `api/runtime.ts` owns the `TickerController`, local stores, provider services, and state serialization.
 
 ### The one seam that matters
 
-`api/app.py` runs a background task that periodically drains `controller.event_queue` and pushes a JSON snapshot to every connected WebSocket client. Frontend state is a pure projection of these snapshots — there is no client-owned state for quotes/candles. When adding a new data field, add it to the snapshot payload and let the frontend read it; don't introduce a separate REST poll.
+`index.ts` serves `/ws` and periodically sends serialized state from `api/runtime.ts`. Frontend state is a pure projection of these snapshots — there is no client-owned state for quotes/candles. When adding a new data field, add it to the snapshot payload and let the frontend read it; don't introduce a separate REST poll.
 
 ### Trade record and external execution pipeline
 
 The agent can submit Hyperliquid mainnet orders via `open_hyperliquid_trade`, or Bitget demo orders via `open_bitget_demo_trade`, during a chat turn only when the matching `[trading]` platform switch is enabled. Disabled platforms do not expose their Agent order-entry tools, so the model should provide trade plans instead of executing orders. Flow:
 1. Tool handler submits a signed order to the external test/demo environment and freezes a snapshot (multi-timeframe context + current analysis) into the `snapshots` table.
 2. The order result is inserted into `trades`; immediate Hyperliquid fills are inserted into `fills`. Local code no longer simulates fills from 1m candles.
-3. Closed trades periodically get reviewed by `trading/review.py` (every 15 min in background, or on-demand via `POST /api/trades/review`). The reviewer calls the configured LLM and writes structured lessons into the `lessons` table.
+3. Closed trades can be reviewed through `trading/review.ts`. The reviewer calls the configured LLM and writes structured lessons into the `lessons` table.
 4. When the agent opens a new trade on the same instrument, the top 5 most recent lessons are injected into the prompt so past mistakes inform new decisions.
 
 Resting orders and later fills require exchange order-state sync; they are not advanced by local candle simulation.
@@ -92,8 +95,7 @@ Resting orders and later fills require exchange order-state sync; they are not a
 
 Two modes live side by side:
 
-- **Legacy single-shot**: `provider.py` builds a prompt from the current quote + multi-timeframe OHLCV + recent session turns, calls the LLM once, and parses a strict JSON response (`summary / bias / confidence / key_levels / watch_plan / invalidation / risk_notes`).
-- **Tool-calling loop**: `agent/loop.py` runs iterative chat with `ToolRegistry` (market tools, news tools, local trade-history tools, Hyperliquid mainnet entry, and Bitget demo entry). Same output schema. Bounded by `DEFAULT_MAX_ITERATIONS`.
+- **Tool-calling loop**: `agent/loop.ts` runs iterative chat with `ToolRegistry` (market tools, news tools, local trade-history tools, Hyperliquid mainnet entry, and Bitget demo entry). Bounded by `DEFAULT_MAX_ITERATIONS`.
 
 Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionStore`. The `api_mode` in config selects transport shape — Codex uses Responses API shapes, Anthropic uses Messages API shapes.
 
@@ -101,15 +103,15 @@ Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionS
 
 `instrument_key` (e.g. `USDT-FUTURES:BTCUSDT`, `USDC-FUTURES:BTCPERP`, `hyperliquid:BTC`, `hyperliquid:flx:NVDA`) is the canonical identifier used everywhere: queue events, WebSocket payloads, session storage, agent tool arguments. When adding a new data source, define a new `MarketInstrument` variant and extend `router.resolve_instruments` — keep the string format stable because session history and cached candles key on it.
 
-`[analysis]` config (interval, lookback, poll interval) controls the OHLCV fetch loop in `feed.py`. `agent.max_candles` controls how many of those bars get shipped to the LLM. These are independent — the feed can cache more than the agent sees.
+`[analysis]` config (interval, lookback, poll interval) controls the OHLCV fetch loop in `feed.ts`. `agent.max_candles` controls how many of those bars get shipped to the LLM. These are independent — the feed can cache more than the agent sees.
 
 ### Frontend
 
-`web/src/App.tsx` is the single React root. `api.ts` wraps REST, `types.ts` mirrors backend payload shapes, `chartDrawings.ts` handles Lightweight Charts overlays. The dev server proxies `/api` and `/ws` to the backend (see `vite.config.ts`).
+`web/src/App.tsx` is the single React root. `api.ts` wraps REST, `types.ts` mirrors backend payload shapes. The dev server proxies `/api` and `/ws` to the backend (see `vite.config.ts`).
 
 ### Tests
 
-`tests/` uses `unittest.TestCase` classes run via pytest. Test files map 1:1 to modules (e.g. `test_feed.py` → `runtime/feed.py`). Feed and controller tests use a fake `worker_factory` to avoid real network. When touching `api/app.py`, run `test_web.py` — it exercises the WebSocket snapshot shape, which the frontend depends on.
+There is currently no dedicated test suite after the TypeScript migration. Use `npm run typecheck`, `npm run build`, and targeted smoke checks for touched API/provider paths.
 
 ## Non-obvious constraints from README
 

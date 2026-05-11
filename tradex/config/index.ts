@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import {
@@ -89,6 +90,7 @@ export interface ProviderProfile {
   modelEfforts: Array<[string, string]>;
   apiKey: string;
   baseUrl: string;
+  customModels: string[];
 }
 
 export interface AgentConfig {
@@ -161,6 +163,14 @@ export interface AppConfig {
   trading: TradingConfig;
 }
 
+export function expandUserPath(inputPath: string): string {
+  if (inputPath === "~") return os.homedir();
+  if (inputPath.startsWith("~/") || inputPath.startsWith("~\\")) {
+    return path.join(os.homedir(), inputPath.slice(2));
+  }
+  return inputPath;
+}
+
 function providerProfilesDefault(): Record<string, ProviderProfile> {
   return {
     [CODEX_PROVIDER]: {
@@ -169,6 +179,7 @@ function providerProfilesDefault(): Record<string, ProviderProfile> {
       modelEfforts: [],
       apiKey: "",
       baseUrl: "",
+      customModels: [],
     },
     [ANTHROPIC_PROVIDER]: {
       enabled: false,
@@ -176,6 +187,7 @@ function providerProfilesDefault(): Record<string, ProviderProfile> {
       modelEfforts: [],
       apiKey: "",
       baseUrl: "",
+      customModels: [],
     },
   };
 }
@@ -344,8 +356,17 @@ function normalizeInstruments(symbols: unknown[]): InstrumentConfig[] {
 
 function coerceInt(rawValue: unknown, fieldName: string, defaultValue: number): number {
   if (rawValue === null || rawValue === undefined) return defaultValue;
-  const value = Number.parseInt(String(rawValue), 10);
-  if (!Number.isFinite(value)) throw new Error(`${fieldName} must be an integer`);
+  let value: number;
+  if (typeof rawValue === "string") {
+    const trimmed = rawValue.trim();
+    if (!/^[+-]?\d+$/.test(trimmed)) throw new Error(`${fieldName} must be an integer`);
+    value = Number.parseInt(trimmed, 10);
+  } else if (typeof rawValue === "number") {
+    if (!Number.isInteger(rawValue)) throw new Error(`${fieldName} must be an integer`);
+    value = rawValue;
+  } else {
+    throw new Error(`${fieldName} must be an integer`);
+  }
   if (value <= 0) throw new Error(`${fieldName} must be positive`);
   return value;
 }
@@ -375,6 +396,20 @@ function parseModelsField(name: string, raw: Record<string, unknown>): string[] 
   return [normalizeModel(name, null)];
 }
 
+function parseCustomModelsField(raw: Record<string, unknown>): string[] {
+  if (!Array.isArray(raw.custom_models)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of raw.custom_models) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
 function parseModelEfforts(name: string, raw: Record<string, unknown>): Array<[string, string]> {
   if (raw.model_efforts && typeof raw.model_efforts === "object" && !Array.isArray(raw.model_efforts)) {
     return Object.entries(raw.model_efforts as Record<string, unknown>)
@@ -401,6 +436,7 @@ function parseProviderProfiles(rawAgent: Record<string, unknown>): Record<string
         modelEfforts: parseModelEfforts(name, raw),
         apiKey: parseProviderSecret(raw, "api_key"),
         baseUrl: parseProviderSecret(raw, "base_url"),
+        customModels: parseCustomModelsField(raw),
       };
     }
     return profiles;
@@ -413,8 +449,8 @@ function parseProviderProfiles(rawAgent: Record<string, unknown>): Record<string
     for (const name of Object.keys(defaults)) {
       defaults[name] =
         name === provider
-          ? { enabled: true, models: [model], modelEfforts: [[model, effort]], apiKey: "", baseUrl: "" }
-          : { enabled: false, models: [normalizeModel(name, null)], modelEfforts: [], apiKey: "", baseUrl: "" };
+          ? { enabled: true, models: [model], modelEfforts: [[model, effort]], apiKey: "", baseUrl: "", customModels: [] }
+          : { enabled: false, models: [normalizeModel(name, null)], modelEfforts: [], apiKey: "", baseUrl: "", customModels: [] };
     }
   }
   return defaults;
@@ -528,7 +564,7 @@ export function parseCacheConfig(rawCacheValue: unknown): CacheConfig {
   }
   return {
     enabled: normalizeBool(raw.enabled, "cache.enabled", true),
-    path: typeof raw.path === "string" && raw.path.trim() ? raw.path.trim() : null,
+    path: typeof raw.path === "string" && raw.path.trim() ? expandUserPath(raw.path.trim()) : null,
     candleRetentionSeconds: coerceInt(raw.candle_retention_seconds, "cache.candle_retention_seconds", 86_400),
   };
 }
@@ -557,7 +593,7 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
 }
 
 export async function loadConfig(configPath: string): Promise<AppConfig> {
-  const sourcePath = path.resolve(configPath);
+  const sourcePath = path.resolve(expandUserPath(configPath));
   const text = await readFile(sourcePath, "utf8");
   return parseConfig(parseToml(text) as Record<string, unknown>, sourcePath);
 }

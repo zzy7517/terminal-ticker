@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bot, Eye, EyeOff, KeyRound, Loader2, RefreshCw, Save, Search, Sparkles } from 'lucide-react';
+import { Bot, Eye, EyeOff, KeyRound, Loader2, Plus, RefreshCw, Save, Search, Sparkles, X } from 'lucide-react';
 import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -20,6 +20,7 @@ export function ProviderSettingsPanel() {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [baseUrlInput, setBaseUrlInput] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [customInput, setCustomInput] = useState('');
 
   const models = modelCache[activeProvider] ?? [];
 
@@ -101,6 +102,57 @@ export function ProviderSettingsPanel() {
       setStatus('连接设置已保存。');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Connection settings save failed.');
+    }
+  }
+
+  async function addCustomModel() {
+    const slug = customInput.trim();
+    if (!slug) return;
+    setStatus('添加自定义模型...');
+    try {
+      const nextState = await saveProviderProfile(activeProvider, { addCustomModel: slug });
+      useMarketStore.getState().setState(nextState);
+      useAgentStore.getState().setModelCache((prev) => {
+        const list = prev[activeProvider] ?? [];
+        if (list.some((m) => m.slug === slug)) return prev;
+        const option = {
+          slug,
+          displayName: slug,
+          description: 'Custom model',
+          visibility: 'public',
+          supportedInApi: true,
+          defaultReasoningEffort: 'medium',
+          supportedReasoningEfforts: ['medium'],
+          contextWindow: null,
+          preferWebsockets: false,
+          custom: true,
+        };
+        return { ...prev, [activeProvider]: [option, ...list] };
+      });
+      if (!selectedModels.has(slug)) {
+        const after = await saveProviderProfile(activeProvider, { toggleModel: slug });
+        useMarketStore.getState().setState(after);
+      }
+      setCustomInput('');
+      setStatus('已添加并启用。');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Add failed.');
+    }
+  }
+
+  async function removeCustomModel(slug: string) {
+    setStatus('删除自定义模型...');
+    try {
+      const nextState = await saveProviderProfile(activeProvider, { removeCustomModel: slug });
+      useMarketStore.getState().setState(nextState);
+      useAgentStore.getState().setModelCache((prev) => {
+        const list = prev[activeProvider];
+        if (!list) return prev;
+        return { ...prev, [activeProvider]: list.filter((m) => m.slug !== slug) };
+      });
+      setStatus('已删除。');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Remove failed.');
     }
   }
 
@@ -268,15 +320,69 @@ export function ProviderSettingsPanel() {
                   />
                 </div>
 
-                {models.length > 0 && (
-                  <div className="models-showing">
-                    Showing {visibleModels.length} model{visibleModels.length !== 1 ? 's' : ''}
+                {isAnthropic && (
+                  <div className="provider-field custom-model-form">
+                    <span className="provider-field-label">自定义模型 ID</span>
+                    <div className="provider-secret-row">
+                      <input
+                        className="input mono"
+                        type="text"
+                        value={customInput}
+                        onChange={(e) => setCustomInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void addCustomModel();
+                          }
+                        }}
+                        placeholder="global.anthropic.claude-opus-4-6-v1"
+                        spellCheck={false}
+                        autoComplete="off"
+                      />
+                      <button
+                        className="shell-button icon"
+                        type="button"
+                        title="添加自定义模型"
+                        onClick={() => void addCustomModel()}
+                        disabled={!customInput.trim()}
+                      >
+                        <Plus size={15} />
+                      </button>
+                    </div>
+                    <span className="provider-field-hint">
+                      支持任意 Anthropic Messages API 兼容的 model ID（含 Bedrock inference profile）。
+                    </span>
                   </div>
                 )}
 
-                <div className="model-list">
-                  {visibleModels.map((m) => {
+                {(() => {
+                  const customSlugs = new Set(profile?.customModels ?? []);
+                  const cachedSlugs = new Set(models.map((m) => m.slug));
+                  const orphanCustomOptions = (profile?.customModels ?? [])
+                    .filter((slug) => !cachedSlugs.has(slug))
+                    .map((slug) => ({
+                      slug,
+                      displayName: slug,
+                      description: 'Custom model',
+                      visibility: 'public',
+                      supportedInApi: true,
+                      defaultReasoningEffort: 'medium',
+                      supportedReasoningEfforts: ['medium'],
+                      contextWindow: null,
+                      preferWebsockets: false,
+                      custom: true,
+                    }));
+                  const allVisible = [...orphanCustomOptions, ...visibleModels].filter((m) => {
+                    const kw = modelSearch.trim().toLowerCase();
+                    if (!kw) return true;
+                    return `${m.displayName} ${m.slug} ${m.description}`.toLowerCase().includes(kw);
+                  });
+                  const customGroup = allVisible.filter((m) => m.custom || customSlugs.has(m.slug));
+                  const officialGroup = allVisible.filter((m) => !(m.custom || customSlugs.has(m.slug)));
+
+                  const renderRow = (m: (typeof allVisible)[number]) => {
                     const isSelected = selectedModels.has(m.slug);
+                    const isCustom = Boolean(m.custom) || customSlugs.has(m.slug);
                     const modelEffortOptions = m.supportedReasoningEfforts?.length
                       ? m.supportedReasoningEfforts
                       : [];
@@ -311,6 +417,16 @@ export function ProviderSettingsPanel() {
                             </div>
                           )}
                         </div>
+                        {isCustom && (
+                          <button
+                            className="shell-button icon muted"
+                            type="button"
+                            title="删除自定义模型"
+                            onClick={(e) => { e.stopPropagation(); void removeCustomModel(m.slug); }}
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
                         <label className="switch-row model-toggle" onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
@@ -321,14 +437,38 @@ export function ProviderSettingsPanel() {
                         </label>
                       </div>
                     );
-                  })}
-                  {models.length > 0 && visibleModels.length === 0 && (
-                    <div className="empty-state">No models match this search.</div>
-                  )}
-                  {models.length === 0 && !loading && (
-                    <div className="empty-state">点击 Fetch 拉取模型列表。</div>
-                  )}
-                </div>
+                  };
+
+                  return (
+                    <>
+                      {(models.length > 0 || customGroup.length > 0) && (
+                        <div className="models-showing">
+                          Showing {customGroup.length + officialGroup.length} model{customGroup.length + officialGroup.length !== 1 ? 's' : ''}
+                        </div>
+                      )}
+                      <div className="model-list">
+                        {customGroup.length > 0 && (
+                          <>
+                            <div className="model-group-label">自定义</div>
+                            {customGroup.map(renderRow)}
+                          </>
+                        )}
+                        {officialGroup.length > 0 && (
+                          <>
+                            <div className="model-group-label">来自 /v1/models</div>
+                            {officialGroup.map(renderRow)}
+                          </>
+                        )}
+                        {models.length > 0 && customGroup.length + officialGroup.length === 0 && (
+                          <div className="empty-state">No models match this search.</div>
+                        )}
+                        {models.length === 0 && customGroup.length === 0 && !loading && (
+                          <div className="empty-state">点击 Fetch 拉取模型列表。</div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </>
             );

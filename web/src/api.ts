@@ -23,7 +23,7 @@ import type {
   SocialFeedConfigUpdate,
 } from './types';
 
-// Builds a user-facing error while preserving FastAPI's structured detail when available.
+// Builds a user-facing error while preserving structured backend detail when available.
 async function responseError(response: Response, prefix: string): Promise<Error> {
   try {
     const payload = await response.json();
