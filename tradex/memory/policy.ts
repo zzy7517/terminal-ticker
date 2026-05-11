@@ -1,17 +1,25 @@
-export interface MemoryRuntimePolicy {
-  enabled: boolean;
-  runExtraction: boolean;
-  runConsolidation: boolean;
-}
+export class MemoryRuntimePolicy {
+  readonly enabled: boolean;
+  readonly generateMemories: boolean;
+  readonly useMemories: boolean;
+  readonly ephemeral: boolean;
 
-export const MemoryPolicies = {
-  normal(): MemoryRuntimePolicy {
-    return { enabled: true, runExtraction: true, runConsolidation: true };
-  },
-  consolidation(): MemoryRuntimePolicy {
-    return { enabled: true, runExtraction: false, runConsolidation: true };
-  },
-  disabled(): MemoryRuntimePolicy {
-    return { enabled: false, runExtraction: false, runConsolidation: false };
-  },
-};
+  private constructor(input: { enabled: boolean; generateMemories: boolean; useMemories: boolean; ephemeral: boolean }) {
+    this.enabled = input.enabled;
+    this.generateMemories = input.generateMemories;
+    this.useMemories = input.useMemories;
+    this.ephemeral = input.ephemeral;
+  }
+
+  static normal(): MemoryRuntimePolicy {
+    return new MemoryRuntimePolicy({ enabled: true, generateMemories: true, useMemories: true, ephemeral: false });
+  }
+
+  static consolidation(): MemoryRuntimePolicy {
+    return new MemoryRuntimePolicy({ enabled: true, generateMemories: false, useMemories: false, ephemeral: true });
+  }
+
+  static disabled(): MemoryRuntimePolicy {
+    return new MemoryRuntimePolicy({ enabled: false, generateMemories: false, useMemories: false, ephemeral: false });
+  }
+}
