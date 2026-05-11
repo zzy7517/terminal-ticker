@@ -1,5 +1,4 @@
 import type { AgentConfig, MemoryConfig } from "../config/index.js";
-import type { AgentSessionStore } from "../agent/session_store.js";
 import type { AgentLLMProvider } from "../agent/loop.js";
 import type { TradeStore } from "../trading/store.js";
 import { ensureMemoryLayout } from "./paths.js";
@@ -12,7 +11,7 @@ import {
   SOURCE_TRADE_EVENT,
 } from "./state.js";
 import { MemoryFileStorage } from "./write/storage.js";
-import { Phase1Processor, normalizePhase1Output, type Phase1Extraction, type LLMProviderFactory } from "./write/phase1.js";
+import { Phase1Processor, normalizePhase1Output, type Phase1Extraction, type LLMProviderFactory, type SessionSource } from "./write/phase1.js";
 import { Phase2Runner } from "./write/phase2.js";
 
 const STAGE1_CONCURRENCY = 4;
@@ -35,7 +34,7 @@ export class MemoryPipeline {
   constructor(input: {
     config: MemoryConfig;
     state?: MemoryStateStore;
-    agentSessionStore?: AgentSessionStore;
+    sessionSource?: SessionSource;
     tradeStore?: TradeStore;
     agentConfigProvider?: (() => AgentConfig | null) | null;
     phase2ConfigProvider?: (() => AgentConfig | null) | null;
@@ -48,7 +47,7 @@ export class MemoryPipeline {
     this.state = input.state ?? new MemoryStateStore();
 
     const tradeStore = input.tradeStore;
-    const agentSessionStore = input.agentSessionStore;
+    const sessionSource: SessionSource = input.sessionSource ?? { listSessions: () => [], sessionPayload: () => null };
     const agentConfigProvider = input.agentConfigProvider ?? null;
     const llmProviderFactory = input.llmProviderFactory ?? (() => { throw new Error("no LLM provider factory configured"); }) as unknown as LLMProviderFactory;
 
@@ -61,7 +60,7 @@ export class MemoryPipeline {
     this.phase1 = new Phase1Processor({
       root: this.root,
       stateStore: this.state,
-      agentSessionStore: agentSessionStore ?? ({ listAllSessions: () => [], sessionPayload: () => null } as unknown as AgentSessionStore),
+      sessionSource,
       tradeStore: tradeStore ?? ({ listTrades: () => [], getTrade: () => null, getSnapshot: () => null } as unknown as TradeStore),
       agentConfigProvider,
       llmProviderFactory,

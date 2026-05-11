@@ -1,6 +1,5 @@
 import type { AgentConfig } from "../../config/index.js";
 import { nowMs } from "../../db.js";
-import type { AgentSessionStore, AgentSessionSummary } from "../../agent/session_store.js";
 import type { AgentLLMProvider } from "../../agent/loop.js";
 import { TradeStatus, FillKind, type Trade, type Fill, fillToPayload, tradeToPayload, snapshotToPayload } from "../../trading/models.js";
 import type { TradeStore } from "../../trading/store.js";
@@ -91,10 +90,15 @@ export function normalizePhase1Output(payload: string | Record<string, unknown>)
 
 export type LLMProviderFactory = (config: AgentConfig) => AgentLLMProvider;
 
+export interface SessionSource {
+  listSessions(input: { limit?: number }): Array<{ id: string; updatedAt: string; messageCount: number }>;
+  sessionPayload(sessionId: string): Record<string, unknown> | null;
+}
+
 export class Phase1Processor {
   readonly root: string;
   readonly stateStore: MemoryStateStore;
-  readonly agentSessionStore: AgentSessionStore;
+  readonly sessionSource: SessionSource;
   readonly tradeStore: TradeStore;
   readonly agentConfigProvider: (() => AgentConfig | null) | null;
   readonly llmProviderFactory: LLMProviderFactory;
@@ -105,7 +109,7 @@ export class Phase1Processor {
   constructor(input: {
     root: string;
     stateStore: MemoryStateStore;
-    agentSessionStore: AgentSessionStore;
+    sessionSource: SessionSource;
     tradeStore: TradeStore;
     agentConfigProvider: (() => AgentConfig | null) | null;
     llmProviderFactory: LLMProviderFactory;
@@ -115,7 +119,7 @@ export class Phase1Processor {
   }) {
     this.root = input.root;
     this.stateStore = input.stateStore;
-    this.agentSessionStore = input.agentSessionStore;
+    this.sessionSource = input.sessionSource;
     this.tradeStore = input.tradeStore;
     this.agentConfigProvider = input.agentConfigProvider;
     this.llmProviderFactory = input.llmProviderFactory;
@@ -130,7 +134,7 @@ export class Phase1Processor {
     const cutoff = maxAgeMs ? at - maxAgeMs : null;
     const minSessionIdleMs = this.minAgentSessionIdleHours * 3_600_000;
 
-    const sessions = this.agentSessionStore.listAllSessions({ limit: this.startupScanLimit });
+    const sessions = this.sessionSource.listSessions({ limit: this.startupScanLimit });
     for (const summary of sessions) {
       const updatedAt = isoToMs(summary.updatedAt);
       if (cutoff != null && updatedAt < cutoff) continue;
@@ -228,7 +232,7 @@ export class Phase1Processor {
   }
 
   private _agentSessionLlmPayload(sessionId: string): Record<string, unknown> {
-    const payload = this.agentSessionStore.sessionPayload(sessionId);
+    const payload = this.sessionSource.sessionPayload(sessionId);
     if (!payload) throw new Error(`agent session not found: ${sessionId}`);
     const messages = (payload as Record<string, unknown>).messages as Array<Record<string, unknown>> | undefined;
     const filtered = (messages ?? [])
@@ -260,7 +264,7 @@ export class Phase1Processor {
   }
 
   private _extractAgentSession(sessionId: string): Record<string, unknown> {
-    const payload = this.agentSessionStore.sessionPayload(sessionId);
+    const payload = this.sessionSource.sessionPayload(sessionId);
     if (!payload) throw new Error(`agent session not found: ${sessionId}`);
     const messages = ((payload as Record<string, unknown>).messages ?? []) as Array<Record<string, unknown>>;
     const userMessages = messages

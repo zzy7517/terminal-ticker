@@ -119,54 +119,21 @@ export function createApp(options: CreateAppOptions): Hono {
       title: String(body.title || "New Agent Session"),
       provider: String(body.provider || runtime.config.agent.provider),
       model: String(body.model || runtime.config.agent.model),
+      index: runtime.sessionIndex,
     });
     const payload = mgr.sessionPayload();
     const sessionResp = { ...payload, run: idleRun(mgr.getSessionId()) };
-    const summaries = SessionManager.listAll().map((info) => ({
-      id: info.id,
-      instrumentKey: info.instrumentKey,
-      title: info.title || info.firstMessage.slice(0, 60),
-      provider: info.provider,
-      model: info.model,
-      createdAt: info.created.toISOString(),
-      updatedAt: info.modified.toISOString(),
-      active: false,
-      apiMode: null,
-      reasoningEffort: null,
-      leafId: null,
-      messageCount: info.messageCount,
-      preview: info.firstMessage,
-      contextUsage: null,
-      run: idleRun(info.id),
-    }));
     return c.json({
       ...sessionResp,
-      history: { sessions: summaries, preloadedSessions: [sessionResp] },
+      history: sessionHistory(runtime),
     });
   });
   app.get("/api/agent/sessions/:id", (c) => {
     return c.json(sessionResponse(runtime, c.req.param("id")));
   });
   app.delete("/api/agent/sessions/:id", async (c) => {
-    SessionManager.deleteSession(c.req.param("id"));
-    const summaries = SessionManager.listAll().map((info) => ({
-      id: info.id,
-      instrumentKey: info.instrumentKey,
-      title: info.title || info.firstMessage.slice(0, 60),
-      provider: info.provider,
-      model: info.model,
-      createdAt: info.created.toISOString(),
-      updatedAt: info.modified.toISOString(),
-      active: false,
-      apiMode: null,
-      reasoningEffort: null,
-      leafId: null,
-      messageCount: info.messageCount,
-      preview: info.firstMessage,
-      contextUsage: null,
-      run: idleRun(info.id),
-    }));
-    return c.json({ session: { session: null, messages: [] }, history: { sessions: summaries }, state: await runtime.state() });
+    SessionManager.deleteSession(c.req.param("id"), runtime.sessionIndex);
+    return c.json({ session: { session: null, messages: [] }, history: sessionHistory(runtime), state: await runtime.state() });
   });
   app.post("/api/agent/sessions/:id/messages/stream", async (c) => {
     const sessionId = c.req.param("id");
@@ -175,7 +142,7 @@ export function createApp(options: CreateAppOptions): Hono {
     if (!message) {
       return c.json({ detail: "message is required" }, 400);
     }
-    const mgr = openSessionManager(sessionId);
+    const mgr = openSessionManager(sessionId, runtime);
     if (!mgr) {
       return c.json({ detail: "agent session not found" }, 404);
     }
@@ -528,37 +495,40 @@ function idleRun(sessionId: string): Record<string, unknown> {
   };
 }
 
-function openSessionManager(sessionId: string): SessionManager | null {
+function openSessionManager(sessionId: string, runtime?: MarketRuntime): SessionManager | null {
+  const indexed = runtime?.sessionIndex.get(sessionId);
+  if (indexed) return SessionManager.open(indexed.filePath, runtime?.sessionIndex);
   const allSessions = SessionManager.listAll();
   const info = allSessions.find((s) => s.id === sessionId);
   if (!info) return null;
-  return SessionManager.open(info.path);
+  return SessionManager.open(info.path, runtime?.sessionIndex);
 }
 
 function sessionResponse(_runtime: MarketRuntime, sessionId: string): Record<string, unknown> {
-  const mgr = openSessionManager(sessionId);
+  const mgr = openSessionManager(sessionId, _runtime);
   if (!mgr) return { session: null, messages: [], run: idleRun(sessionId) };
   const payload = mgr.sessionPayload();
   return { ...payload, run: idleRun(sessionId) };
 }
 
 function sessionHistory(_runtime: MarketRuntime): Record<string, unknown> {
-  const summaries = SessionManager.listAll().map((info) => ({
-    id: info.id,
-    instrumentKey: info.instrumentKey,
-    title: info.title || info.firstMessage.slice(0, 60),
-    provider: info.provider,
-    model: info.model,
-    createdAt: info.created.toISOString(),
-    updatedAt: info.modified.toISOString(),
+  const indexed = _runtime.sessionIndex.listAllSessions({ limit: 200 });
+  const summaries = indexed.map((row) => ({
+    id: row.id,
+    instrumentKey: row.instrumentKey,
+    title: row.title || row.firstMessage.slice(0, 60),
+    provider: row.provider,
+    model: row.model,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
     active: false,
     apiMode: null,
     reasoningEffort: null,
     leafId: null,
-    messageCount: info.messageCount,
-    preview: info.firstMessage,
+    messageCount: row.messageCount,
+    preview: row.firstMessage,
     contextUsage: null,
-    run: idleRun(info.id),
+    run: idleRun(row.id),
   }));
   return { sessions: summaries, preloadedSessions: summaries.slice(0, 5).map((item) => sessionResponse(_runtime, String(item.id))) };
 }

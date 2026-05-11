@@ -4,7 +4,7 @@ import { NewsService } from "../news/service.js";
 import { SocialFeedService } from "../social_feed/service.js";
 import { XAuthStore } from "../social_feed/auth.js";
 import { XInternalClient } from "../social_feed/providers/x_internal.js";
-import { AgentSessionStore } from "../agent/session_store.js";
+import { SessionIndex } from "../agent/session_index.js";
 import { SessionManager } from "../agent/session_manager.js";
 import { ExchangeRouter } from "../trading/exchange_router.js";
 import { TradeStore } from "../trading/store.js";
@@ -23,7 +23,7 @@ export class MarketRuntime {
   socialFeedService: SocialFeedService;
   readonly xAuthStore: XAuthStore;
   readonly memoryBackend: LocalMemoryBackend;
-  readonly agentSessionStore: AgentSessionStore;
+  readonly sessionIndex: SessionIndex;
   readonly sessionManager: SessionManager;
   private running = false;
 
@@ -40,10 +40,12 @@ export class MarketRuntime {
       clientFactory: () => new XInternalClient(this.xAuthStore.load()),
     });
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
-    this.agentSessionStore = new AgentSessionStore();
+    this.sessionIndex = new SessionIndex();
+    SessionManager.reconcileIndex(this.sessionIndex);
     this.sessionManager = SessionManager.create(null, {
       provider: config.agent.provider,
       model: config.agent.model,
+      index: this.sessionIndex,
     });
   }
 

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { defaultCacheDir } from "../db.js";
+import type { SessionIndex } from "./session_index.js";
 
 export const CURRENT_SESSION_VERSION = 1;
 
@@ -176,15 +177,33 @@ export class SessionManager {
   private fileEntries: FileEntry[] = [];
   private byId: Map<string, SessionEntry> = new Map();
   private leafId: string | null = null;
+  private index: SessionIndex | null = null;
 
-  private constructor(dir: string, sessionFile: string | undefined) {
+  private constructor(dir: string, sessionFile: string | undefined, index?: SessionIndex | null) {
     this.sessionDirPath = dir;
+    this.index = index ?? null;
     if (dir && !fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     if (sessionFile) {
       this.loadSessionFile(sessionFile);
     }
+  }
+
+  setIndex(index: SessionIndex | null): void {
+    this.index = index;
+  }
+
+  private syncIndex(): void {
+    if (!this.index || !this.sessionFile) return;
+    const info = buildSessionInfoFromFile(this.sessionFile);
+    if (info) this.index.upsert(info);
+  }
+
+  private syncIndexActivity(): void {
+    if (!this.index) return;
+    const messageCount = this.fileEntries.filter((e) => e.type === "message").length;
+    this.index.updateActivity(this.sessionId, new Date(), messageCount);
   }
 
   private loadSessionFile(filePath: string): void {
@@ -243,28 +262,29 @@ export class SessionManager {
     this.byId.set(entry.id, entry);
     this.leafId = entry.id;
     this.persist(entry);
+    this.syncIndexActivity();
   }
 
   // =========================================================================
   // Static factory methods
   // =========================================================================
 
-  static create(instrumentKey: string | null, options?: { title?: string; provider?: string; model?: string }): SessionManager {
+  static create(instrumentKey: string | null, options?: { title?: string; provider?: string; model?: string; index?: SessionIndex | null }): SessionManager {
     const dir = sessionsDir();
-    const mgr = new SessionManager(dir, undefined);
-    mgr.newSession({ instrumentKey, ...options });
+    const mgr = new SessionManager(dir, undefined, options?.index);
+    mgr.newSession({ instrumentKey, title: options?.title, provider: options?.provider, model: options?.model });
     return mgr;
   }
 
-  static open(filePath: string): SessionManager {
+  static open(filePath: string, index?: SessionIndex | null): SessionManager {
     const dir = path.dirname(path.resolve(filePath));
-    return new SessionManager(dir, filePath);
+    return new SessionManager(dir, filePath, index);
   }
 
-  static continueRecent(instrumentKey?: string | null): SessionManager {
+  static continueRecent(instrumentKey?: string | null, index?: SessionIndex | null): SessionManager {
     const dir = sessionsDir();
     if (!fs.existsSync(dir)) {
-      const mgr = new SessionManager(dir, undefined);
+      const mgr = new SessionManager(dir, undefined, index);
       mgr.newSession({ instrumentKey: instrumentKey ?? null });
       return mgr;
     }
@@ -288,8 +308,8 @@ export class SessionManager {
       } catch { /* skip */ }
     }
 
-    if (best) return new SessionManager(dir, best.path);
-    const mgr = new SessionManager(dir, undefined);
+    if (best) return new SessionManager(dir, best.path, index);
+    const mgr = new SessionManager(dir, undefined, index);
     mgr.newSession({ instrumentKey: instrumentKey ?? null });
     return mgr;
   }
@@ -313,25 +333,36 @@ export class SessionManager {
     return SessionManager.list(undefined);
   }
 
-  static deleteSession(sessionId: string): boolean {
+  static reconcileIndex(index: SessionIndex): void {
+    const sessions = SessionManager.listAll();
+    index.reconcile(sessions);
+  }
+
+  static deleteSession(sessionId: string, index?: SessionIndex | null): boolean {
     const dir = sessionsDir();
     if (!fs.existsSync(dir)) return false;
+    let deleted = false;
     const files = fs.readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
     for (const file of files) {
       if (file.includes(sessionId)) {
         fs.unlinkSync(path.join(dir, file));
-        return true;
+        deleted = true;
+        break;
       }
     }
-    const allFiles = files.map((f) => path.join(dir, f));
-    for (const file of allFiles) {
-      const entries = loadEntriesFromFile(file);
-      if (entries.length > 0 && (entries[0] as SessionHeader).id === sessionId) {
-        fs.unlinkSync(file);
-        return true;
+    if (!deleted) {
+      const allFiles = files.map((f) => path.join(dir, f));
+      for (const file of allFiles) {
+        const entries = loadEntriesFromFile(file);
+        if (entries.length > 0 && (entries[0] as SessionHeader).id === sessionId) {
+          fs.unlinkSync(file);
+          deleted = true;
+          break;
+        }
       }
     }
-    return false;
+    if (deleted) index?.deleteSession(sessionId);
+    return deleted;
   }
 
   // =========================================================================
@@ -358,6 +389,7 @@ export class SessionManager {
 
     const fileTimestamp = timestamp.replace(/[:.]/g, "-");
     this.sessionFile = path.join(this.sessionDirPath, `${fileTimestamp}_${this.sessionId}.jsonl`);
+    this.syncIndex();
     return this.sessionFile;
   }
 
