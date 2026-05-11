@@ -29,14 +29,15 @@ max_candles = 40
 [agent.providers.codex]
 enabled = true
 models = ["gpt-5.3-codex", "gpt-5.5"]
-model_efforts = {"gpt-5.3-codex" = "medium", "gpt-5.5" = "xhigh"}
+model_efforts = {"gpt-5.3-codex" = "medium", "gpt-5.5" = "xhigh", "gpt-5.2" = "medium"}
 
 [agent.providers.anthropic]
 enabled = true
 api_key = "cr_c3c6f8df78d89b1378a65e496db6db630d457c6cffa9ae1a560d49423adfcaaf"
 base_url = "https://claude-proxy.p1.cn/api"
-models = ["global.anthropic.claude-opus-4-6-v1"]
-model_efforts = {"global.anthropic.claude-opus-4-6-v1" = "medium"}
+models = ["global.anthropic.claude-opus-4-6-v1", "claude-opus-4-5-20251101"]
+model_efforts = {"global.anthropic.claude-opus-4-6-v1" = "medium", "claude-3-5-haiku-20241022" = "medium", "claude-haiku-4-5-20251001" = "medium", "claude-opus-4-5-20251101" = "medium"}
+custom_models = ["global.anthropic.claude-opus-4-6-v1"]
 [analysis]
 enabled = true
 interval = "5m"
