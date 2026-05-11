@@ -65,6 +65,7 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
             modelEfforts: Object.fromEntries(profile.modelEfforts),
             baseUrl: profile.baseUrl || undefined,
             apiKeyConfigured: Boolean(profile.apiKey),
+            apiKeyFromEnv: providerApiKeyFromEnv(name),
             customModels: profile.customModels,
           },
         ]),
@@ -90,6 +91,11 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
     trading: config.trading,
     sourcePath: config.sourcePath,
   };
+}
+
+function providerApiKeyFromEnv(provider: string): boolean {
+  if (provider === "anthropic") return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  return false;
 }
 
 function serializeQuote(quote: QuoteState, staleAfterSeconds: number): Record<string, unknown> {

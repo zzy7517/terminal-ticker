@@ -144,6 +144,7 @@ export interface ProviderProfileState {
   modelEfforts: Record<string, string>;
   baseUrl?: string;
   apiKeyConfigured?: boolean;
+  apiKeyFromEnv?: boolean;
   customModels?: string[];
 }
 

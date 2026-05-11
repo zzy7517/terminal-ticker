@@ -22,15 +22,24 @@ export class AnthropicProvider {
   constructor(config: AgentConfig, profile: AgentModelProfile) {
     this.model = profile.model;
     const providerProfile = config.providerProfiles.anthropic as ProviderProfile | undefined;
-    this.apiKey = providerProfile?.apiKey || process.env.ANTHROPIC_API_KEY || "";
+    this.apiKey = providerProfile?.apiKey || "";
     this.baseURL = providerProfile?.baseUrl || process.env.ANTHROPIC_BASE_URL || undefined;
     this.customModels = [...(providerProfile?.customModels ?? [])];
     this.effort = coerceAnthropicEffort(profile.reasoningEffort);
-    if (!this.apiKey) throw new Error("ANTHROPIC_API_KEY is required");
+    if (!this.apiKey && !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
+      throw new Error("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is required");
+    }
+  }
+
+  private createClient(): Anthropic {
+    return new Anthropic({
+      ...(this.apiKey ? { apiKey: this.apiKey } : {}),
+      baseURL: this.baseURL,
+    });
   }
 
   async chat(input: { messages: Array<Record<string, unknown>>; tools?: Array<Record<string, unknown>> | null; onDelta?: ((delta: string) => void | Promise<void>) | null }): Promise<ChatResponse> {
-    const client = new Anthropic({ apiKey: this.apiKey, baseURL: this.baseURL });
+    const client = this.createClient();
     const { system, messages } = messagesToAnthropic(input.messages);
     const stream = client.messages.stream({
       model: this.model,
@@ -64,7 +73,7 @@ export class AnthropicProvider {
   }
 
   async listModels(): Promise<Array<Record<string, unknown>>> {
-    const client = new Anthropic({ apiKey: this.apiKey, baseURL: this.baseURL });
+    const client = this.createClient();
     const customOptions = this.customModels.map((slug) => ({
       slug,
       displayName: slug,

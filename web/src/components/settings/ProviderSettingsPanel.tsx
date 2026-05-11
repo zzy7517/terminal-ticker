@@ -239,7 +239,13 @@ export function ProviderSettingsPanel() {
                     type={showApiKey ? 'text' : 'password'}
                     value={apiKeyInput}
                     onChange={(e) => setApiKeyInput(e.target.value)}
-                    placeholder={profile?.apiKeyConfigured ? 'Saved. Enter a new key to replace it.' : 'Enter your API key'}
+                    placeholder={
+                      profile?.apiKeyConfigured
+                        ? 'Saved. Enter a new key to replace it.'
+                        : profile?.apiKeyFromEnv
+                          ? 'Using ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY environment variable.'
+                          : 'Enter your API key'
+                    }
                     autoComplete="off"
                     spellCheck={false}
                   />
@@ -253,11 +259,17 @@ export function ProviderSettingsPanel() {
                   </button>
                 </div>
                 <span className="provider-field-hint">
-                  {profile?.apiKeyConfigured ? 'API key saved locally.' : 'Get your API key from '}
-                  {!profile?.apiKeyConfigured && (
-                    <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
-                      Anthropic Console
-                    </a>
+                  {profile?.apiKeyConfigured ? (
+                    'API key saved locally.'
+                  ) : profile?.apiKeyFromEnv ? (
+                    'Using shell env (ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY). Saving a key here overrides it.'
+                  ) : (
+                    <>
+                      Get your API key from{' '}
+                      <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
+                        Anthropic Console
+                      </a>
+                    </>
                   )}
                 </span>
               </label>
