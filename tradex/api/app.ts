@@ -240,6 +240,32 @@ export function createApp(options: CreateAppOptions): Hono {
                   toolCall: toolCallsById.get(callId) ?? { id: callId, name: toolResult.name, arguments: {} },
                   toolResult,
                 });
+                const entryId = mgr.appendMessage({
+                  role: "toolResult",
+                  content: String(toolResult.output ?? ""),
+                  metadata: {
+                    toolCallId: callId,
+                    toolName: toolResult.name,
+                    error: toolResult.error,
+                  },
+                  error: toolResult.error ? String(toolResult.output ?? "") : null,
+                });
+                const toolEntry = mgr.getEntry(entryId);
+                sendFrame(controller, {
+                  type: "message_end",
+                  message: {
+                    id: entryId,
+                    sessionId,
+                    role: "toolResult",
+                    content: String(toolResult.output ?? ""),
+                    createdAt: toolEntry?.timestamp ?? new Date().toISOString(),
+                    metadata: { toolCallId: callId, toolName: toolResult.name, error: toolResult.error },
+                    error: toolResult.error ? String(toolResult.output ?? "") : null,
+                    entryId,
+                    parentId: toolEntry?.parentId ?? null,
+                    entryType: "message",
+                  },
+                });
               }
             },
           });
@@ -256,37 +282,6 @@ export function createApp(options: CreateAppOptions): Hono {
               timestamp: step.timestamp,
             })),
           };
-          const toolResultMessages = result.steps
-            .filter((step) => step.stepType === "tool_result" && step.toolResult)
-            .map((step) => step.toolResult!);
-          for (const toolResult of toolResultMessages) {
-            const entryId = mgr.appendMessage({
-              role: "toolResult",
-              content: toolResult.output,
-              metadata: {
-                toolCallId: toolResult.callId,
-                toolName: toolResult.name,
-                error: toolResult.error,
-              },
-              error: toolResult.error ? toolResult.output : null,
-            });
-            const toolEntry = mgr.getEntry(entryId);
-            sendFrame(controller, {
-              type: "message_end",
-              message: {
-                id: entryId,
-                sessionId,
-                role: "toolResult",
-                content: toolResult.output,
-                createdAt: toolEntry?.timestamp ?? new Date().toISOString(),
-                metadata: { toolCallId: toolResult.callId, toolName: toolResult.name, error: toolResult.error },
-                error: toolResult.error ? toolResult.output : null,
-                entryId,
-                parentId: toolEntry?.parentId ?? null,
-                entryType: "message",
-              },
-            });
-          }
           const assistantEntryId = mgr.appendMessage({
             role: "assistant",
             content: result.content,
