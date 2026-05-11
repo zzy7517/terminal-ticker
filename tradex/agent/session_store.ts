@@ -1,3 +1,9 @@
+/**
+ * @deprecated Use SessionManager from ./session_manager.ts instead.
+ * This SQLite-based session store is retained for backward compatibility
+ * but is no longer used by the API layer.
+ */
+
 import Database from "better-sqlite3";
 import crypto from "node:crypto";
 import path from "node:path";
@@ -90,9 +96,9 @@ export class AgentSessionStore extends BaseStore {
       );
       CREATE INDEX IF NOT EXISTS idx_agent_sessions_active ON agent_sessions (instrument_key, active, updated_at);
       CREATE INDEX IF NOT EXISTS idx_agent_messages_session ON agent_messages (session_id, created_at, id);
-      CREATE INDEX IF NOT EXISTS idx_agent_messages_entry_id ON agent_messages (session_id, entry_id);
     `);
     ensureAgentSessionColumns(conn);
+    conn.exec("CREATE INDEX IF NOT EXISTS idx_agent_messages_entry_id ON agent_messages (session_id, entry_id)");
   }
 
   getActiveSession(instrumentKey: string): AgentSession | null {

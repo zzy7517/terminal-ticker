@@ -5,6 +5,7 @@ import { SocialFeedService } from "../social_feed/service.js";
 import { XAuthStore } from "../social_feed/auth.js";
 import { XInternalClient } from "../social_feed/providers/x_internal.js";
 import { AgentSessionStore } from "../agent/session_store.js";
+import { SessionManager } from "../agent/session_manager.js";
 import { ExchangeRouter } from "../trading/exchange_router.js";
 import { TradeStore } from "../trading/store.js";
 import { TickerController } from "../runtime/controller.js";
@@ -23,6 +24,7 @@ export class MarketRuntime {
   readonly xAuthStore: XAuthStore;
   readonly memoryBackend: LocalMemoryBackend;
   readonly agentSessionStore: AgentSessionStore;
+  readonly sessionManager: SessionManager;
   private running = false;
 
   private constructor(config: AppConfig, instruments: MarketInstrument[]) {
@@ -39,6 +41,10 @@ export class MarketRuntime {
     });
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
     this.agentSessionStore = new AgentSessionStore();
+    this.sessionManager = SessionManager.create(null, {
+      provider: config.agent.provider,
+      model: config.agent.model,
+    });
   }
 
   static async create(config: AppConfig): Promise<MarketRuntime> {

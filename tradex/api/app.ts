@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import crypto from "node:crypto";
 import { AgentRuntime } from "../agent/runtime.js";
+import { SessionManager } from "../agent/session_manager.js";
 import { DEFAULT_AGENT_MODEL_REGISTRY } from "../agent/model_registry.js";
 import { buildMarketTools } from "../agent/tools/market.js";
 import { buildMemoryTools } from "../memory/tools.js";
@@ -114,39 +115,69 @@ export function createApp(options: CreateAppOptions): Hono {
   app.get("/api/agent/sessions", (c) => c.json(sessionHistory(runtime)));
   app.post("/api/agent/sessions", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const session = runtime.agentSessionStore.createGlobalSession({
+    const mgr = SessionManager.create(null, {
       title: String(body.title || "New Agent Session"),
       provider: String(body.provider || runtime.config.agent.provider),
       model: String(body.model || runtime.config.agent.model),
-      apiMode: runtime.config.agent.apiMode,
-      reasoningEffort: runtime.config.agent.reasoningEffort,
     });
-    const sessionResponse = { session, messages: [], run: idleRun(session.id) };
+    const payload = mgr.sessionPayload();
+    const sessionResp = { ...payload, run: idleRun(mgr.getSessionId()) };
+    const summaries = SessionManager.listAll().map((info) => ({
+      id: info.id,
+      instrumentKey: info.instrumentKey,
+      title: info.title || info.firstMessage.slice(0, 60),
+      provider: info.provider,
+      model: info.model,
+      createdAt: info.created.toISOString(),
+      updatedAt: info.modified.toISOString(),
+      active: false,
+      apiMode: null,
+      reasoningEffort: null,
+      leafId: null,
+      messageCount: info.messageCount,
+      preview: info.firstMessage,
+      contextUsage: null,
+      run: idleRun(info.id),
+    }));
     return c.json({
-      ...sessionResponse,
-      history: {
-        sessions: runtime.agentSessionStore.listAllSessions().map((item) => ({ ...item, run: idleRun(item.id) })),
-        preloadedSessions: [sessionResponse],
-      },
+      ...sessionResp,
+      history: { sessions: summaries, preloadedSessions: [sessionResp] },
     });
   });
   app.get("/api/agent/sessions/:id", (c) => {
     return c.json(sessionResponse(runtime, c.req.param("id")));
   });
   app.delete("/api/agent/sessions/:id", async (c) => {
-    runtime.agentSessionStore.deleteSessionById(c.req.param("id"));
-    return c.json({ session: { session: null, messages: [] }, history: { sessions: runtime.agentSessionStore.listAllSessions().map((item) => ({ ...item, run: idleRun(item.id) })) }, state: await runtime.state() });
+    SessionManager.deleteSession(c.req.param("id"));
+    const summaries = SessionManager.listAll().map((info) => ({
+      id: info.id,
+      instrumentKey: info.instrumentKey,
+      title: info.title || info.firstMessage.slice(0, 60),
+      provider: info.provider,
+      model: info.model,
+      createdAt: info.created.toISOString(),
+      updatedAt: info.modified.toISOString(),
+      active: false,
+      apiMode: null,
+      reasoningEffort: null,
+      leafId: null,
+      messageCount: info.messageCount,
+      preview: info.firstMessage,
+      contextUsage: null,
+      run: idleRun(info.id),
+    }));
+    return c.json({ session: { session: null, messages: [] }, history: { sessions: summaries }, state: await runtime.state() });
   });
   app.post("/api/agent/sessions/:id/messages/stream", async (c) => {
     const sessionId = c.req.param("id");
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const message = String(body.message || "").trim();
-    const session = runtime.agentSessionStore.getSession(sessionId);
-    if (!session) {
-      return c.json({ detail: "agent session not found" }, 404);
-    }
     if (!message) {
       return c.json({ detail: "message is required" }, 400);
+    }
+    const mgr = openSessionManager(sessionId);
+    if (!mgr) {
+      return c.json({ detail: "agent session not found" }, 404);
     }
     const encoder = new TextEncoder();
     const runId = crypto.randomUUID();
@@ -161,11 +192,7 @@ export function createApp(options: CreateAppOptions): Hono {
       async start(controller) {
         sendFrame(controller, { type: "agent_start" });
         try {
-          runtime.agentSessionStore.appendMessage({
-            sessionId,
-            role: "user",
-            content: message,
-          });
+          mgr.appendMessage({ role: "user", content: message });
           sendFrame(controller, {
             type: "message_start",
             message: {
@@ -210,7 +237,7 @@ export function createApp(options: CreateAppOptions): Hono {
           const result = await agentRuntime.run({
             message,
             tools,
-            history: runtime.agentSessionStore.historyForContext(sessionId, { limit: 12 }),
+            history: mgr.historyForContext({ limit: 12 }),
             eventHandler: async (event) => {
               const type = String(event.type || "");
               if (type === "message_update") {
@@ -266,8 +293,7 @@ export function createApp(options: CreateAppOptions): Hono {
             .filter((step) => step.stepType === "tool_result" && step.toolResult)
             .map((step) => step.toolResult!);
           for (const toolResult of toolResultMessages) {
-            const toolMessage = runtime.agentSessionStore.appendMessage({
-              sessionId,
+            const entryId = mgr.appendMessage({
               role: "toolResult",
               content: toolResult.output,
               metadata: {
@@ -277,43 +303,44 @@ export function createApp(options: CreateAppOptions): Hono {
               },
               error: toolResult.error ? toolResult.output : null,
             });
+            const toolEntry = mgr.getEntry(entryId);
             sendFrame(controller, {
               type: "message_end",
               message: {
-                id: toolMessage.id,
+                id: entryId,
                 sessionId,
                 role: "toolResult",
                 content: toolResult.output,
-                createdAt: toolMessage.createdAt,
-                metadata: toolMessage.metadata,
-                error: toolMessage.error,
-                entryId: toolMessage.entryId,
-                parentId: toolMessage.parentId,
-                entryType: toolMessage.entryType,
+                createdAt: toolEntry?.timestamp ?? new Date().toISOString(),
+                metadata: { toolCallId: toolResult.callId, toolName: toolResult.name, error: toolResult.error },
+                error: toolResult.error ? toolResult.output : null,
+                entryId,
+                parentId: toolEntry?.parentId ?? null,
+                entryType: "message",
               },
             });
           }
-          const assistantMessage = runtime.agentSessionStore.appendMessage({
-            sessionId,
+          const assistantEntryId = mgr.appendMessage({
             role: "assistant",
             content: result.content,
             metadata,
             error: result.error,
           });
+          const assistantEntry = mgr.getEntry(assistantEntryId);
           sendFrame(controller, {
             type: "message_end",
             message: {
-              id: assistantMessage.id,
+              id: assistantEntryId,
               clientId: assistantClientId,
               sessionId,
               role: "assistant",
               content: result.content,
-              createdAt: assistantMessage.createdAt,
+              createdAt: assistantEntry?.timestamp ?? new Date().toISOString(),
               metadata,
               error: result.error,
-              entryId: assistantMessage.entryId,
-              parentId: assistantMessage.parentId,
-              entryType: assistantMessage.entryType,
+              entryId: assistantEntryId,
+              parentId: assistantEntry?.parentId ?? null,
+              entryType: "message",
             },
           });
           sendFrame(controller, {
@@ -501,14 +528,39 @@ function idleRun(sessionId: string): Record<string, unknown> {
   };
 }
 
-function sessionResponse(runtime: MarketRuntime, sessionId: string): Record<string, unknown> {
-  const payload = runtime.agentSessionStore.sessionPayload(sessionId) ?? { session: null, messages: [] };
+function openSessionManager(sessionId: string): SessionManager | null {
+  const allSessions = SessionManager.listAll();
+  const info = allSessions.find((s) => s.id === sessionId);
+  if (!info) return null;
+  return SessionManager.open(info.path);
+}
+
+function sessionResponse(_runtime: MarketRuntime, sessionId: string): Record<string, unknown> {
+  const mgr = openSessionManager(sessionId);
+  if (!mgr) return { session: null, messages: [], run: idleRun(sessionId) };
+  const payload = mgr.sessionPayload();
   return { ...payload, run: idleRun(sessionId) };
 }
 
-function sessionHistory(runtime: MarketRuntime): Record<string, unknown> {
-  const sessions = runtime.agentSessionStore.listAllSessions().map((item) => ({ ...item, run: idleRun(item.id) }));
-  return { sessions, preloadedSessions: sessions.slice(0, 5).map((item) => sessionResponse(runtime, String(item.id))) };
+function sessionHistory(_runtime: MarketRuntime): Record<string, unknown> {
+  const summaries = SessionManager.listAll().map((info) => ({
+    id: info.id,
+    instrumentKey: info.instrumentKey,
+    title: info.title || info.firstMessage.slice(0, 60),
+    provider: info.provider,
+    model: info.model,
+    createdAt: info.created.toISOString(),
+    updatedAt: info.modified.toISOString(),
+    active: false,
+    apiMode: null,
+    reasoningEffort: null,
+    leafId: null,
+    messageCount: info.messageCount,
+    preview: info.firstMessage,
+    contextUsage: null,
+    run: idleRun(info.id),
+  }));
+  return { sessions: summaries, preloadedSessions: summaries.slice(0, 5).map((item) => sessionResponse(_runtime, String(item.id))) };
 }
 
 function catalogItem(instrument: { key: string; source: string; symbol: string; label: string; group: string; analysisInterval?: string | null }, activeKeys: Set<string>): Record<string, unknown> {
