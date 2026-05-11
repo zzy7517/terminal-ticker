@@ -4,12 +4,20 @@ import { AgentModelProfile } from "../../config/agent_models.js";
 import { ChatResponse } from "../loop.js";
 import { ToolCall } from "../tools/registry.js";
 
+type AnthropicEffort = "low" | "medium" | "high" | "xhigh" | "max";
+const ANTHROPIC_EFFORT_LEVELS: AnthropicEffort[] = ["low", "medium", "high", "xhigh", "max"];
+
+function coerceAnthropicEffort(value: string): AnthropicEffort {
+  return (ANTHROPIC_EFFORT_LEVELS as string[]).includes(value) ? (value as AnthropicEffort) : "high";
+}
+
 export class AnthropicProvider {
   readonly name = "anthropic";
   readonly model: string;
   private readonly apiKey: string;
   private readonly baseURL: string | undefined;
   private readonly customModels: string[];
+  private readonly effort: AnthropicEffort;
 
   constructor(config: AgentConfig, profile: AgentModelProfile) {
     this.model = profile.model;
@@ -17,6 +25,7 @@ export class AnthropicProvider {
     this.apiKey = providerProfile?.apiKey || process.env.ANTHROPIC_API_KEY || "";
     this.baseURL = providerProfile?.baseUrl || process.env.ANTHROPIC_BASE_URL || undefined;
     this.customModels = [...(providerProfile?.customModels ?? [])];
+    this.effort = coerceAnthropicEffort(profile.reasoningEffort);
     if (!this.apiKey) throw new Error("ANTHROPIC_API_KEY is required");
   }
 
@@ -32,6 +41,7 @@ export class AnthropicProvider {
         const fn = (tool.function || {}) as Record<string, unknown>;
         return { name: String(fn.name), description: String(fn.description || ""), input_schema: (fn.parameters || {}) as never };
       }),
+      output_config: { effort: this.effort },
     } as never);
     let content = "";
     for await (const event of stream) {
@@ -61,8 +71,8 @@ export class AnthropicProvider {
       description: "Custom model",
       visibility: "public",
       supportedInApi: true,
-      defaultReasoningEffort: "medium",
-      supportedReasoningEfforts: ["medium"],
+      defaultReasoningEffort: "high",
+      supportedReasoningEfforts: [...ANTHROPIC_EFFORT_LEVELS],
       contextWindow: null,
       preferWebsockets: false,
       custom: true,
@@ -76,8 +86,8 @@ export class AnthropicProvider {
         description: "",
         visibility: "public",
         supportedInApi: true,
-        defaultReasoningEffort: "medium",
-        supportedReasoningEfforts: ["medium"],
+        defaultReasoningEffort: "high",
+        supportedReasoningEfforts: [...ANTHROPIC_EFFORT_LEVELS],
         contextWindow: null,
         preferWebsockets: false,
         custom: false,

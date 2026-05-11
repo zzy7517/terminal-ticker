@@ -8,7 +8,7 @@ export const DEFAULT_ANTHROPIC_MODEL = "global.anthropic.claude-opus-4-6-v1";
 
 const SUPPORTED_AGENT_PROVIDERS = new Set([CODEX_PROVIDER, ANTHROPIC_PROVIDER]);
 const SUPPORTED_API_MODES = new Set([CODEX_API_MODE, ANTHROPIC_MESSAGES_API_MODE]);
-const SUPPORTED_REASONING_EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
+const SUPPORTED_REASONING_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const CODEX_MODEL_ALIASES = new Map([
   ["default", DEFAULT_CODEX_MODEL],
   ["codex", DEFAULT_CODEX_MODEL],
@@ -100,7 +100,7 @@ export function resolveAgentModel(config: {
     return { provider, apiMode, model, reasoningEffort, supportsReasoning: true, requiresAccountId: true };
   }
   if (provider === ANTHROPIC_PROVIDER) {
-    return { provider, apiMode, model, reasoningEffort, supportsReasoning: false, requiresAccountId: false };
+    return { provider, apiMode, model, reasoningEffort, supportsReasoning: true, requiresAccountId: false };
   }
   throw new Error(`Unsupported agent provider: ${provider}`);
 }

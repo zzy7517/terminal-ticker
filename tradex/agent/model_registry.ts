@@ -40,7 +40,7 @@ export class AgentModelRegistry {
           apiMode: normalizeApiMode(providerOverride),
           model: normalizeModel(providerOverride, null),
           reasoningEffort: normalizeReasoningEffort(null),
-          supportsReasoning: providerOverride !== ANTHROPIC_PROVIDER,
+          supportsReasoning: true,
           requiresAccountId: providerOverride === CODEX_PROVIDER,
         }
       : this.resolve(config);
