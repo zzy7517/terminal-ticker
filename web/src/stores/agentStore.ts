@@ -508,13 +508,33 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               const pendingToolCalls = new Set(previous.pendingToolCalls);
               pendingToolCalls.add(event.toolCall.id);
               const controller = latestAssistantController(streamControllers, sessionId);
-              const agentSessionById = controller
-                ? setSessionMessage(
-                    s,
-                    sessionId,
-                    controller.addToolCall(event.toolCall as AgentToolCall, { runId: envelope.runId, seq: envelope.seq }),
-                  )
-                : s.agentSessionById;
+              let agentSessionById: typeof s.agentSessionById;
+              if (controller) {
+                agentSessionById = setSessionMessage(
+                  s,
+                  sessionId,
+                  controller.addToolCall(event.toolCall as AgentToolCall, { runId: envelope.runId, seq: envelope.seq }),
+                );
+              } else {
+                const session = s.agentSessionById[sessionId];
+                const msgs = session?.messages ?? [];
+                const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
+                if (lastAssistant) {
+                  const existing: AgentToolCall[] = lastAssistant.metadata?.toolCalls ?? [];
+                  const tc = event.toolCall as AgentToolCall;
+                  if (!existing.some((item) => item.id === tc.id)) {
+                    const updated: AgentMessage = {
+                      ...lastAssistant,
+                      metadata: { ...lastAssistant.metadata, toolCalls: [...existing, tc] },
+                    };
+                    agentSessionById = setSessionMessage(s, sessionId, updated);
+                  } else {
+                    agentSessionById = s.agentSessionById;
+                  }
+                } else {
+                  agentSessionById = s.agentSessionById;
+                }
+              }
               const runStateBySessionId = replaceRunState(
                 s.runStateBySessionId,
                 sessionId,

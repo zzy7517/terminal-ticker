@@ -1187,6 +1187,16 @@ textarea:focus-visible {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
   overflow: hidden;
+  animation: toolStepIn 0.18s ease-out;
+}
+
+@keyframes toolStepIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tool-done-icon {
+  color: var(--up);
 }
 
 .tool-step-summary {

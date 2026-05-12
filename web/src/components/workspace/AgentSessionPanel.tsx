@@ -42,28 +42,32 @@ function AgentToolCalls({
       {toolCalls.map((call) => {
         const result = toolResultsById.get(call.id);
         const isPending = pendingToolCalls.has(call.id) && !result;
+        const hasArgs = Object.keys(call.arguments ?? {}).length > 0;
+        const showDetail = hasArgs || !!result;
         return (
           <div key={call.id} className="agent-tool-step">
             <div className="tool-step-summary">
-              <Zap size={12} />
-              <span className="tool-name">call {call.name}</span>
-              {isPending && <span className="badge sm accent">running</span>}
+              {isPending ? <Loader2 className="spin" size={12} /> : <Zap size={12} />}
+              <span className="tool-name">{call.name}</span>
+              {!isPending && result && !result.metadata?.error && <Check size={12} className="tool-done-icon" />}
               {result?.metadata?.error && <span className="badge sm danger">error</span>}
             </div>
-            <div className="tool-step-detail">
-              {Object.keys(call.arguments ?? {}).length > 0 && (
-                <div className="tool-args">
-                  <small>Arguments</small>
-                  <pre>{JSON.stringify(call.arguments, null, 2)}</pre>
-                </div>
-              )}
-              {result && (
-                <div className={`tool-output ${result.metadata?.error ? 'error' : ''}`}>
-                  <small>Output</small>
-                  <pre>{result.content}</pre>
-                </div>
-              )}
-            </div>
+            {showDetail && (
+              <div className="tool-step-detail">
+                {hasArgs && (
+                  <div className="tool-args">
+                    <small>Arguments</small>
+                    <pre>{JSON.stringify(call.arguments, null, 2)}</pre>
+                  </div>
+                )}
+                {result && (
+                  <div className={`tool-output ${result.metadata?.error ? 'error' : ''}`}>
+                    <small>Output</small>
+                    <pre>{result.content}</pre>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
@@ -90,6 +94,7 @@ function AgentTranscriptMessage({
         <span>{label}</span>
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
       </div>
+      {content && <p className="session-message-text">{content}</p>}
       {toolCalls.length > 0 && (
         <AgentToolCalls
           pendingToolCalls={pendingToolCalls}
@@ -97,7 +102,6 @@ function AgentTranscriptMessage({
           toolResultsById={toolResultsById}
         />
       )}
-      {content && <p className="session-message-text">{content}</p>}
     </div>
   );
 }
@@ -141,6 +145,7 @@ export function AgentSessionPanel({
   const messages = agentSession?.messages ?? [];
   const sessionId = agentSession?.session?.id ?? null;
   const lastMessage = messages[messages.length - 1] ?? null;
+  const lastMessageToolCallCount = (lastMessage?.metadata?.toolCalls as AgentToolCall[] | undefined)?.length ?? 0;
   const toolResultsById = useMemo(() => {
     const results = new Map<string, AgentMessage>();
     for (const message of messages) {
@@ -210,6 +215,7 @@ export function AgentSessionPanel({
     lastMessage?.id,
     lastMessage?.content,
     lastMessage?.error,
+    lastMessageToolCallCount,
     pendingToolCalls.size,
   ]);
 
