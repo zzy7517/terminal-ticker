@@ -23,12 +23,24 @@ export class ExchangeRouter {
   }
 
   async getAllPositions(): Promise<ExchangePosition[]> {
+    const labels = ["hyperliquid", "bitget"];
     const results = await Promise.allSettled([hyperliquid.getPositions(), bitget.getPositions()]);
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === "rejected") {
+        console.warn(`[ExchangeRouter] getPositions failed for ${labels[i]}:`, (results[i] as PromiseRejectedResult).reason);
+      }
+    }
     return results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
   }
 
   async getAllOrders(): Promise<ExchangeOrder[]> {
+    const labels = ["hyperliquid", "bitget"];
     const results = await Promise.allSettled([hyperliquid.getOpenOrders(), bitget.getOpenOrders()]);
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === "rejected") {
+        console.warn(`[ExchangeRouter] getOpenOrders failed for ${labels[i]}:`, (results[i] as PromiseRejectedResult).reason);
+      }
+    }
     return results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
   }
 
