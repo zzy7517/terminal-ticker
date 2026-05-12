@@ -606,3 +606,13 @@ export interface CronJobUpdate {
   socialEnabled?: boolean;
   timezone?: string | null;
 }
+
+export interface CronStoragePaths {
+  db: string;
+  sessions: string;
+}
+
+export interface CronJobsResponse {
+  jobs: CronJobStatus[];
+  storagePaths: CronStoragePaths;
+}

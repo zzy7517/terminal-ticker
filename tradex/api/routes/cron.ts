@@ -1,24 +1,26 @@
 import { Hono } from "hono";
 import type { AppRuntime } from "../runtime.js";
-import { findRunBySessionId, readSessionEntries } from "../../cron/store.js";
-import { loadConfig, type CronJobConfig } from "../../config/index.js";
-import { updateCronJobsInWatchlist } from "../../config/watchlist_store.js";
-import { requireConfigPath } from "../helpers.js";
+import type { CronJobConfig } from "../../config/index.js";
+import { findRunBySessionId, readSessionEntries, cronSessionsDir } from "../../cron/store.js";
 
 export function cronRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
 
   // Lists all configured cron jobs with their current status, next fire time, etc.
   app.get("/api/cron/jobs", (c) => {
-    const scheduler = runtime.cronScheduler;
-    return c.json({ jobs: scheduler.listJobs() });
+    return c.json({
+      jobs: runtime.cronScheduler.listJobs(),
+      storagePaths: {
+        db: runtime.cronJobStore.dbPath,
+        sessions: cronSessionsDir(),
+      },
+    });
   });
 
   // Returns run history for a specific job.
   app.get("/api/cron/jobs/:name/sessions", (c) => {
     const name = decodeURIComponent(c.req.param("name"));
-    const scheduler = runtime.cronScheduler;
-    const runs = scheduler.jobHistory(name);
+    const runs = runtime.cronScheduler.jobHistory(name);
     return c.json({ jobName: name, runs });
   });
 
@@ -43,7 +45,7 @@ export function cronRoutes(runtime: AppRuntime): Hono {
     }
   });
 
-  // Enables or disables a cron job at runtime (does not persist to TOML).
+  // Enables or disables a cron job (persisted to SQLite).
   app.patch("/api/cron/jobs/:name", async (c) => {
     const name = decodeURIComponent(c.req.param("name"));
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -67,18 +69,14 @@ export function cronRoutes(runtime: AppRuntime): Hono {
     return c.json({ runs });
   });
 
-  // Creates a new cron job. Persists to TOML and reloads the scheduler.
+  // Creates a new cron job. Persisted to SQLite.
   app.post("/api/cron/jobs", async (c) => {
-    const watchlistPath = requireConfigPath(runtime);
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const cron = typeof body.cron === "string" ? body.cron.trim() : "";
     if (!name) return c.json({ ok: false, detail: "name is required" }, 400);
     if (!cron) return c.json({ ok: false, detail: "cron expression is required" }, 400);
-    const existing = runtime.config.cronJobs;
-    if (existing.some((j) => j.name === name)) {
-      return c.json({ ok: false, detail: `job "${name}" already exists` }, 409);
-    }
+
     const job: CronJobConfig = {
       name,
       cron,
@@ -93,26 +91,25 @@ export function cronRoutes(runtime: AppRuntime): Hono {
       socialEnabled: body.socialEnabled === true,
       timezone: typeof body.timezone === "string" && body.timezone.trim() ? body.timezone.trim() : null,
     };
-    const nextJobs = [...existing, job];
+
     try {
-      await updateCronJobsInWatchlist(watchlistPath, nextJobs);
-      await runtime.reloadConfig(await loadConfig(watchlistPath));
+      runtime.cronScheduler.addJob(job);
       return c.json({ ok: true, jobs: runtime.cronScheduler.listJobs() });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return c.json({ ok: false, detail: message }, 500);
+      const status = message.includes("already exists") ? 409 : 500;
+      return c.json({ ok: false, detail: message }, status);
     }
   });
 
-  // Updates an existing cron job by name. Persists to TOML and reloads.
+  // Updates an existing cron job by name. Persisted to SQLite.
   app.put("/api/cron/jobs/:name", async (c) => {
-    const watchlistPath = requireConfigPath(runtime);
     const jobName = decodeURIComponent(c.req.param("name"));
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const existing = runtime.config.cronJobs;
-    const index = existing.findIndex((j) => j.name === jobName);
-    if (index < 0) return c.json({ ok: false, detail: `job "${jobName}" not found` }, 404);
-    const current = existing[index];
+
+    const current = runtime.cronJobStore.get(jobName);
+    if (!current) return c.json({ ok: false, detail: `job "${jobName}" not found` }, 404);
+
     const updated: CronJobConfig = {
       name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : current.name,
       cron: typeof body.cron === "string" && body.cron.trim() ? body.cron.trim() : current.cron,
@@ -127,37 +124,26 @@ export function cronRoutes(runtime: AppRuntime): Hono {
       socialEnabled: typeof body.socialEnabled === "boolean" ? body.socialEnabled : current.socialEnabled,
       timezone: body.timezone === null ? null : typeof body.timezone === "string" ? (body.timezone.trim() || null) : current.timezone,
     };
-    if (updated.name !== jobName && existing.some((j) => j.name === updated.name)) {
-      return c.json({ ok: false, detail: `job "${updated.name}" already exists` }, 409);
-    }
-    const nextJobs = [...existing];
-    nextJobs[index] = updated;
+
     try {
-      await updateCronJobsInWatchlist(watchlistPath, nextJobs);
-      await runtime.reloadConfig(await loadConfig(watchlistPath));
+      runtime.cronScheduler.updateJob(jobName, updated);
       return c.json({ ok: true, jobs: runtime.cronScheduler.listJobs() });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return c.json({ ok: false, detail: message }, 500);
+      const status = message.includes("already exists") ? 409 : 500;
+      return c.json({ ok: false, detail: message }, status);
     }
   });
 
-  // Deletes a cron job by name. Persists to TOML and reloads.
+  // Deletes a cron job by name. Persisted to SQLite.
   app.delete("/api/cron/jobs/:name", async (c) => {
-    const watchlistPath = requireConfigPath(runtime);
     const jobName = decodeURIComponent(c.req.param("name"));
-    const existing = runtime.config.cronJobs;
-    const nextJobs = existing.filter((j) => j.name !== jobName);
-    if (nextJobs.length === existing.length) {
-      return c.json({ ok: false, detail: `job "${jobName}" not found` }, 404);
-    }
     try {
-      await updateCronJobsInWatchlist(watchlistPath, nextJobs);
-      await runtime.reloadConfig(await loadConfig(watchlistPath));
+      runtime.cronScheduler.removeJob(jobName);
       return c.json({ ok: true, jobs: runtime.cronScheduler.listJobs() });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return c.json({ ok: false, detail: message }, 500);
+      return c.json({ ok: false, detail: message }, 404);
     }
   });
 

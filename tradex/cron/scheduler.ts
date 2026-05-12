@@ -1,8 +1,8 @@
 /**
  * Cron job scheduler.
  *
- * Uses `croner` to manage per-job timers. Each CronJobConfig from watchlist.toml
- * maps to one Cron instance. The scheduler owns the lifecycle: start/stop/reload.
+ * Uses `croner` to manage per-job timers. Each CronJobConfig from the SQLite
+ * store maps to one Cron instance. The scheduler owns the lifecycle: start/stop/reload.
  *
  * Concurrency: a running job is tracked in `runningJobs`. If a job's cron fires
  * while a previous run is still in progress, the new fire is skipped with a warning.
@@ -15,6 +15,7 @@ import { Cron } from "croner";
 import type { CronJobConfig } from "../config/index.js";
 import { executeCronJob, type CronRunResult } from "./runner.js";
 import { listJobRuns, listAllRuns, type CronRunRecord } from "./store.js";
+import type { CronJobStore } from "./job_store.js";
 import type { AppRuntime } from "../api/runtime.js";
 
 export interface CronJobStatus {
@@ -38,6 +39,7 @@ export interface CronJobStatus {
 
 export class CronScheduler {
   private runtime: AppRuntime;
+  private store: CronJobStore;
   private jobs: Map<string, Cron> = new Map();
   private configs: Map<string, CronJobConfig> = new Map();
   private runningJobs: Set<string> = new Set();
@@ -46,15 +48,16 @@ export class CronScheduler {
   private lastError: Map<string, string | null> = new Map();
   private started = false;
 
-  constructor(runtime: AppRuntime) {
+  constructor(runtime: AppRuntime, store: CronJobStore) {
     this.runtime = runtime;
+    this.store = store;
   }
 
-  /** Starts all enabled cron jobs from the current config. */
+  /** Starts all enabled cron jobs from the SQLite store. */
   start(): void {
     if (this.started) return;
     this.started = true;
-    this.scheduleAll(this.runtime.config.cronJobs);
+    this.scheduleAll(this.store.listAll());
   }
 
   /** Stops all running cron timers. Does NOT abort in-flight job executions. */
@@ -67,9 +70,8 @@ export class CronScheduler {
     this.configs.clear();
   }
 
-  /** Tears down and recreates all cron timers. Called on config hot-reload. */
-  reload(cronJobs: CronJobConfig[]): void {
-    // Stop existing timers
+  /** Tears down and recreates all cron timers from the SQLite store. */
+  reload(): void {
     for (const [, cron] of this.jobs) {
       cron.stop();
     }
@@ -77,7 +79,7 @@ export class CronScheduler {
     this.configs.clear();
 
     if (this.started) {
-      this.scheduleAll(cronJobs);
+      this.scheduleAll(this.store.listAll());
     }
   }
 
@@ -126,8 +128,10 @@ export class CronScheduler {
     return this.executeJob(config);
   }
 
-  /** Enables or disables a job at runtime (does not persist to TOML). */
+  /** Enables or disables a job — persists to SQLite and updates timers. */
   setEnabled(jobName: string, enabled: boolean): void {
+    this.store.setEnabled(jobName, enabled);
+
     const config = this.configs.get(jobName);
     if (!config) throw new Error(`Cron job not found: ${jobName}`);
 
@@ -135,13 +139,60 @@ export class CronScheduler {
     const existing = this.jobs.get(jobName);
 
     if (enabled && !existing) {
-      // Schedule the job
       this.scheduleOne(config);
     } else if (!enabled && existing) {
-      // Stop the timer
       existing.stop();
       this.jobs.delete(jobName);
     }
+  }
+
+  /** Adds a new job — persists to SQLite and schedules if enabled. */
+  addJob(job: CronJobConfig): void {
+    if (this.configs.has(job.name)) throw new Error(`Job "${job.name}" already exists`);
+    this.store.upsert(job);
+    this.configs.set(job.name, job);
+    if (job.enabled && this.started) {
+      this.scheduleOne(job);
+    }
+  }
+
+  /** Updates an existing job — persists to SQLite and reschedules. */
+  updateJob(oldName: string, job: CronJobConfig): void {
+    const existing = this.configs.get(oldName);
+    if (!existing) throw new Error(`Job "${oldName}" not found`);
+
+    if (oldName !== job.name) {
+      if (this.configs.has(job.name)) throw new Error(`Job "${job.name}" already exists`);
+      this.store.rename(oldName, job.name);
+    }
+    this.store.upsert(job);
+
+    // Tear down old timer
+    const oldCron = this.jobs.get(oldName);
+    if (oldCron) {
+      oldCron.stop();
+      this.jobs.delete(oldName);
+    }
+    this.configs.delete(oldName);
+
+    // Set up new
+    this.configs.set(job.name, job);
+    if (job.enabled && this.started) {
+      this.scheduleOne(job);
+    }
+  }
+
+  /** Removes a job — persists to SQLite and stops its timer. */
+  removeJob(jobName: string): void {
+    const removed = this.store.remove(jobName);
+    if (!removed) throw new Error(`Job "${jobName}" not found`);
+
+    const cron = this.jobs.get(jobName);
+    if (cron) {
+      cron.stop();
+      this.jobs.delete(jobName);
+    }
+    this.configs.delete(jobName);
   }
 
   // ---------------------------------------------------------------------------

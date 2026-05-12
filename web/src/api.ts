@@ -8,6 +8,7 @@ import type {
   AgentSessionMutationResponse,
   AgentSessionResponse,
   CronJobCreate,
+  CronJobsResponse,
   CronJobStatus,
   CronJobUpdate,
   CronRunRecord,
@@ -502,11 +503,10 @@ export async function triggerNewsRefresh(): Promise<NewsRefreshResponse> {
 // ── Cron Job API ──────────────────────────────────────────────────────────
 
 // Lists all configured cron jobs with their runtime status.
-export async function fetchCronJobs(): Promise<CronJobStatus[]> {
+export async function fetchCronJobs(): Promise<CronJobsResponse> {
   const response = await fetch('/api/cron/jobs');
   if (!response.ok) throw await responseError(response, 'cron jobs fetch failed');
-  const payload = await response.json();
-  return payload.jobs;
+  return await response.json();
 }
 
 // Lists run history for a specific job.

@@ -94,7 +94,6 @@ function AgentTranscriptMessage({
         <span>{label}</span>
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
       </div>
-      {content && <p className="session-message-text">{content}</p>}
       {toolCalls.length > 0 && (
         <AgentToolCalls
           pendingToolCalls={pendingToolCalls}
@@ -102,6 +101,7 @@ function AgentTranscriptMessage({
           toolResultsById={toolResultsById}
         />
       )}
+      {content && <p className="session-message-text">{content}</p>}
     </div>
   );
 }

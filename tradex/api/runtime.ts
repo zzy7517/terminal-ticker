@@ -13,6 +13,7 @@ import { resolveInstruments, MarketInstrument } from "../market_data/router.js";
 import { TradeStatus } from "../trading/models.js";
 import { serializeState } from "./serializers.js";
 import { CronScheduler } from "../cron/scheduler.js";
+import { CronJobStore } from "../cron/job_store.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -25,6 +26,7 @@ export class AppRuntime {
   readonly xAuthStore: XAuthStore;
   readonly memoryBackend: LocalMemoryBackend;
   readonly sessionIndex: SessionIndex;
+  readonly cronJobStore: CronJobStore;
   readonly cronScheduler: CronScheduler;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   private running = false;
@@ -45,7 +47,12 @@ export class AppRuntime {
     });
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
     this.sessionIndex = new SessionIndex();
-    this.cronScheduler = new CronScheduler(this);
+    this.cronJobStore = new CronJobStore();
+    if (this.cronJobStore.isEmpty() && config.cronJobs.length > 0) {
+      const count = this.cronJobStore.importFromToml(config.cronJobs);
+      if (count > 0) console.log(`[cron] Migrated ${count} job(s) from watchlist.toml → ${this.cronJobStore.dbPath}`);
+    }
+    this.cronScheduler = new CronScheduler(this, this.cronJobStore);
     SessionManager.reconcileIndex(this.sessionIndex);
   }
 
@@ -75,8 +82,7 @@ export class AppRuntime {
       this.controller.start();
       await this.newsService.start();
     }
-    // Reload cron timers regardless of running state so they pick up config changes
-    this.cronScheduler.reload(config.cronJobs);
+    this.cronScheduler.reload();
   }
 
   // Starts background market data streaming, news polling, and cron scheduler.

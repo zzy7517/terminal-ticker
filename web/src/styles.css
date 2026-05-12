@@ -1187,16 +1187,29 @@ textarea:focus-visible {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  animation: toolStepIn 0.18s ease-out;
+  animation: toolStepIn 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.agent-tool-step:last-child {
+  border-color: var(--accent-tint-strong);
+  box-shadow: 0 0 0 1px var(--accent-tint);
 }
 
 @keyframes toolStepIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  40% { opacity: 1; }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .tool-done-icon {
   color: var(--up);
+  animation: toolCheckIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes toolCheckIn {
+  from { opacity: 0; transform: scale(0); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .tool-step-summary {
@@ -3282,6 +3295,20 @@ textarea:focus-visible {
   background: var(--canvas);
   border-radius: var(--radius-sm);
   border-left: 2px solid var(--accent-ring);
+}
+
+.cron-storage-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--canvas);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  word-break: break-all;
 }
 
 /* ── History list ── */

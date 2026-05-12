@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Clock, Play, Pause, ChevronRight, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
-import type { CronJobStatus, CronRunRecord, CronSessionEntry } from '../../types';
+import type { CronJobStatus, CronRunRecord, CronSessionEntry, CronStoragePaths } from '../../types';
 import {
   fetchCronJobs,
   fetchCronJobRuns,
@@ -13,6 +13,7 @@ type PanelView = 'jobs' | 'history' | 'detail';
 
 export function CronPanel() {
   const [jobs, setJobs] = useState<CronJobStatus[]>([]);
+  const [storagePaths, setStoragePaths] = useState<CronStoragePaths | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<PanelView>('jobs');
   const [selectedJob, setSelectedJob] = useState<string | null>(null);
@@ -30,7 +31,8 @@ export function CronPanel() {
     try {
       setLoading(true);
       const data = await fetchCronJobs();
-      setJobs(data);
+      setJobs(data.jobs);
+      setStoragePaths(data.storagePaths);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load cron jobs');
@@ -114,7 +116,7 @@ export function CronPanel() {
         </div>
       )}
 
-      {view === 'jobs' && <JobsList jobs={jobs} triggering={triggering} onToggle={handleToggle} onTrigger={handleTrigger} onViewHistory={openHistory} />}
+      {view === 'jobs' && <JobsList jobs={jobs} storagePaths={storagePaths} triggering={triggering} onToggle={handleToggle} onTrigger={handleTrigger} onViewHistory={openHistory} />}
       {view === 'history' && <HistoryList jobName={selectedJob!} runs={runs} onBack={goBack} onViewDetail={openDetail} />}
       {view === 'detail' && <SessionDetail jobName={detailJobName} entries={sessionEntries} onBack={goBack} />}
     </div>
@@ -125,12 +127,13 @@ export function CronPanel() {
 
 function JobsList(props: {
   jobs: CronJobStatus[];
+  storagePaths: CronStoragePaths | null;
   triggering: string | null;
   onToggle: (name: string, enabled: boolean) => void;
   onTrigger: (name: string) => void;
   onViewHistory: (name: string) => void;
 }) {
-  const { jobs, triggering, onToggle, onTrigger, onViewHistory } = props;
+  const { jobs, storagePaths, triggering, onToggle, onTrigger, onViewHistory } = props;
 
   if (jobs.length === 0) {
     return (
@@ -138,7 +141,7 @@ function JobsList(props: {
         <Clock size={32} strokeWidth={1.2} />
         <p>No cron jobs configured</p>
         <p className="cron-empty-hint">
-          Add <code>[[cron_jobs]]</code> entries to your <code>watchlist.toml</code>
+          Create a new job from the settings panel or add <code>[[cron_jobs]]</code> to <code>watchlist.toml</code>
         </p>
       </div>
     );
@@ -217,6 +220,12 @@ function JobsList(props: {
           )}
         </div>
       ))}
+      {storagePaths && (
+        <div className="cron-storage-paths">
+          <span>DB: {storagePaths.db}</span>
+          <span>Sessions: {storagePaths.sessions}</span>
+        </div>
+      )}
     </div>
   );
 }

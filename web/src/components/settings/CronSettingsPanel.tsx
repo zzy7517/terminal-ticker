@@ -165,7 +165,7 @@ export function CronSettingsPanel() {
     try {
       setLoading(true);
       const data = await fetchCronJobs();
-      setJobs(data);
+      setJobs(data.jobs);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
