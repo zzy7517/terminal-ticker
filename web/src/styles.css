@@ -3412,3 +3412,92 @@ textarea:focus-visible {
   color: var(--down);
   font-family: var(--mono);
 }
+
+/* ── Cron Settings ─────────────────────────────────────────────────────── */
+
+.cron-preset-dropdown {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.18);
+  display: flex;
+  flex-direction: column;
+  left: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 0;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 200;
+}
+
+.cron-preset-option {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 8px 14px;
+  text-align: left;
+  transition: background 80ms;
+  width: 100%;
+}
+
+.cron-preset-option:hover {
+  background: var(--accent-tint);
+}
+
+.cron-preset-option.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cron-preset-option code {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.cron-preset-group-head {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 8px 14px 4px;
+  text-transform: uppercase;
+}
+
+.cron-visual-fields {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.cron-visual-field {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 2px;
+}
+
+.cron-visual-field label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.cron-visual-field select {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 4px 2px;
+  text-align: center;
+}

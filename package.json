@@ -18,6 +18,7 @@
     "@hono/node-server": "^2.0.2",
     "@nktkas/hyperliquid": "^0.32.2",
     "better-sqlite3": "^12.9.0",
+    "croner": "^10.0.1",
     "hono": "^4.12.18",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",

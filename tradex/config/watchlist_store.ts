@@ -5,6 +5,7 @@ import {
   AgentConfig,
   AnalysisConfig,
   BITGET_SOURCE,
+  CronJobConfig,
   GROUP_ALIASES,
   HYPERLIQUID_SOURCE,
   MemoryConfig,
@@ -349,5 +350,77 @@ async function replaceTable(watchlistPath: string, tableName: string, lines: str
   const rendered = replaceTopLevelTable(text, tableName, lines);
   if (rendered === text) return false;
   await writeFile(sourcePath, rendered);
+  return true;
+}
+
+function formatCronJobBlock(job: CronJobConfig): string[] {
+  const lines: string[] = ["[[cron_jobs]]"];
+  lines.push(`name = ${tomlString(job.name)}`);
+  lines.push(`cron = ${tomlString(job.cron)}`);
+  if (job.systemPrompt) lines.push(`system_prompt = ${tomlString(job.systemPrompt)}`);
+  lines.push(`enabled = ${job.enabled ? "true" : "false"}`);
+  if (job.symbols.length > 0) {
+    lines.push(`symbols = [${job.symbols.map(tomlString).join(", ")}]`);
+  }
+  if (job.model) lines.push(`model = ${tomlString(job.model)}`);
+  lines.push(`user_message = ${tomlString(job.userMessage)}`);
+  if (job.maxIterations != null) lines.push(`max_iterations = ${job.maxIterations}`);
+  if (job.maxCandles != null) lines.push(`max_candles = ${job.maxCandles}`);
+  if (job.tradingEnabled) lines.push(`trading_enabled = true`);
+  if (job.socialEnabled) lines.push(`social_enabled = true`);
+  if (job.timezone) lines.push(`timezone = ${tomlString(job.timezone)}`);
+  return lines;
+}
+
+export async function updateCronJobsInWatchlist(watchlistPath: string, jobs: CronJobConfig[]): Promise<boolean> {
+  const sourcePath = path.resolve(expandUserPath(watchlistPath));
+  const text = await readFile(sourcePath, "utf8");
+  const lines = text.split(/\r?\n/);
+
+  // Remove all existing [[cron_jobs]] blocks (header + body until next header or EOF)
+  const cleaned: string[] = [];
+  let inCronBlock = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === "[[cron_jobs]]") {
+      inCronBlock = true;
+      continue;
+    }
+    if (inCronBlock) {
+      if (trimmed.startsWith("[") || trimmed.startsWith("[[")) {
+        inCronBlock = false;
+        cleaned.push(line);
+      }
+      continue;
+    }
+    cleaned.push(line);
+  }
+
+  // Remove trailing blank lines before appending
+  while (cleaned.length > 0 && cleaned[cleaned.length - 1].trim() === "") {
+    cleaned.pop();
+  }
+
+  // Also strip any orphaned cron comment lines that precede the old blocks
+  while (cleaned.length > 0 && /^#.*[Cc]ron/.test(cleaned[cleaned.length - 1].trim())) {
+    cleaned.pop();
+  }
+  while (cleaned.length > 0 && cleaned[cleaned.length - 1].trim() === "") {
+    cleaned.pop();
+  }
+
+  // Append new cron blocks
+  if (jobs.length > 0) {
+    cleaned.push("");
+    cleaned.push("# -- Cron Jobs ---------------------------------------------------------------");
+    for (const job of jobs) {
+      cleaned.push("");
+      cleaned.push(...formatCronJobBlock(job));
+    }
+  }
+
+  const result = `${cleaned.join("\n").replace(/\n*$/, "")}\n`;
+  if (result === text) return false;
+  await writeFile(sourcePath, result);
   return true;
 }

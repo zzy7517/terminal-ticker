@@ -546,6 +546,11 @@ export interface CronJobStatus {
   systemPrompt: string;
   model: string | null;
   userMessage: string;
+  maxIterations: number | null;
+  maxCandles: number | null;
+  tradingEnabled: boolean;
+  socialEnabled: boolean;
+  timezone: string | null;
 }
 
 export interface CronRunRecord {
@@ -570,4 +575,34 @@ export interface CronSessionEntry {
   customType?: string;
   data?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+export interface CronJobCreate {
+  name: string;
+  cron: string;
+  systemPrompt?: string;
+  userMessage?: string;
+  model?: string | null;
+  symbols?: string[];
+  enabled?: boolean;
+  maxIterations?: number | null;
+  maxCandles?: number | null;
+  tradingEnabled?: boolean;
+  socialEnabled?: boolean;
+  timezone?: string | null;
+}
+
+export interface CronJobUpdate {
+  name?: string;
+  cron?: string;
+  systemPrompt?: string;
+  userMessage?: string;
+  model?: string | null;
+  symbols?: string[];
+  enabled?: boolean;
+  maxIterations?: number | null;
+  maxCandles?: number | null;
+  tradingEnabled?: boolean;
+  socialEnabled?: boolean;
+  timezone?: string | null;
 }

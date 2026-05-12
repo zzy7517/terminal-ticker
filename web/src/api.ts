@@ -7,7 +7,9 @@ import type {
   AgentSessionHistoryResponse,
   AgentSessionMutationResponse,
   AgentSessionResponse,
+  CronJobCreate,
   CronJobStatus,
+  CronJobUpdate,
   CronRunRecord,
   CronSessionEntry,
   InstrumentCatalogResponse,
@@ -25,6 +27,17 @@ import type {
   SocialFeedItem,
   SocialFeedConfigUpdate,
 } from './types';
+
+const DEFAULT_DEV_BACKEND_ORIGIN = 'http://127.0.0.1:8765';
+
+function stateSocketUrl(): string {
+  const origin = import.meta.env.DEV
+    ? import.meta.env.VITE_BACKEND_ORIGIN || DEFAULT_DEV_BACKEND_ORIGIN
+    : window.location.origin;
+  const url = new URL('/ws', origin);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
+}
 
 // Builds a user-facing error while preserving structured backend detail when available.
 async function responseError(response: Response, prefix: string): Promise<Error> {
@@ -426,8 +439,7 @@ export async function memorySearch(queries: string[], path?: string): Promise<Me
 
 // Opens the live state WebSocket and normalizes connection-status callbacks.
 export function connectStateSocket(onState: (state: MarketState) => void, onStatus: (status: string) => void) {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+  const socket = new WebSocket(stateSocketUrl());
   socket.addEventListener('open', () => onStatus('connected'));
   socket.addEventListener('close', () => onStatus('disconnected'));
   socket.addEventListener('error', () => onStatus('error'));
@@ -535,6 +547,40 @@ export async function setCronJobEnabled(jobName: string, enabled: boolean): Prom
     body: JSON.stringify({ enabled }),
   });
   if (!response.ok) throw await responseError(response, 'cron job toggle failed');
+  const payload = await response.json();
+  return payload.jobs;
+}
+
+// Creates a new cron job. Persists to TOML and reloads the scheduler.
+export async function createCronJob(job: CronJobCreate): Promise<CronJobStatus[]> {
+  const response = await fetch('/api/cron/jobs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(job),
+  });
+  if (!response.ok) throw await responseError(response, 'cron job create failed');
+  const payload = await response.json();
+  return payload.jobs;
+}
+
+// Updates an existing cron job. Persists to TOML and reloads the scheduler.
+export async function updateCronJob(name: string, job: CronJobUpdate): Promise<CronJobStatus[]> {
+  const response = await fetch(`/api/cron/jobs/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(job),
+  });
+  if (!response.ok) throw await responseError(response, 'cron job update failed');
+  const payload = await response.json();
+  return payload.jobs;
+}
+
+// Deletes a cron job. Persists to TOML and reloads the scheduler.
+export async function deleteCronJob(name: string): Promise<CronJobStatus[]> {
+  const response = await fetch(`/api/cron/jobs/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw await responseError(response, 'cron job delete failed');
   const payload = await response.json();
   return payload.jobs;
 }

@@ -16,7 +16,9 @@ import { buildMarketTools } from "../agent/tools/market.js";
 import { buildNewsTools } from "../agent/tools/news.js";
 import { buildMemoryTools } from "../memory/tools.js";
 import { buildWebTools } from "../agent/tools/web.js";
-import { mergeRegistries } from "../agent/tools/registry.js";
+import { buildTradingTools } from "../agent/tools/trading.js";
+import { buildSocialFeedTools } from "../agent/tools/social.js";
+import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
 import { newCronSessionPath } from "./store.js";
 import type { AppRuntime } from "../api/runtime.js";
 
@@ -72,9 +74,11 @@ export async function executeCronJob(input: {
   const agentConfig = buildAgentConfigForJob(job, runtime.config.agent);
   const agentRuntime = new AgentRuntime({ config: agentConfig });
 
-  // Assemble tools — market + news + memory + web (no trading tools for cron)
-  const tools = mergeRegistries(
-    buildMarketTools({ quotes: runtime.controller.quotes, maxCandles: runtime.config.agent.maxCandles }),
+  const maxCandles = job.maxCandles ?? runtime.config.agent.maxCandles;
+
+  // Assemble tools — always include market + news + memory + web
+  const registries: ToolRegistry[] = [
+    buildMarketTools({ quotes: runtime.controller.quotes, maxCandles }),
     buildNewsTools({
       recent: (limit, sinceMinutes) =>
         runtime.newsService.recent(limit ?? undefined).filter((item) => {
@@ -85,7 +89,37 @@ export async function executeCronJob(input: {
     }),
     buildMemoryTools(runtime.config.memory.storagePath),
     buildWebTools(),
-  );
+  ];
+
+  if (job.tradingEnabled) {
+    registries.push(
+      buildTradingTools({
+        tradeStore: runtime.tradeStore,
+        exchangeRouter: runtime.exchangeRouter,
+        tradingConfig: runtime.config.trading,
+        resolveSessionId: () => sessionId,
+        captureSnapshot: null,
+      }),
+    );
+  }
+
+  if (job.socialEnabled) {
+    registries.push(
+      buildSocialFeedTools({
+        refreshFollowing: (count) => runtime.socialFeedService.refreshXFollowing({ count }),
+        recent: async (args) => runtime.socialFeedService.recentItems({
+          limit: Number(args.limit) || runtime.config.socialFeed.recentLimit,
+        }),
+        search: async (args) => (await runtime.socialFeedService.searchXTweets({
+          query: String(args.query || ""),
+          count: Number(args.count) || 20,
+          product: typeof args.product === "string" ? args.product : undefined,
+        })).items,
+      }),
+    );
+  }
+
+  const tools = mergeRegistries(...registries);
 
   let content = "";
   let error: string | null = null;
@@ -99,6 +133,7 @@ export async function executeCronJob(input: {
       history: [],
       systemPrompt: job.systemPrompt || null,
       eventHandler: null,
+      maxIterations: job.maxIterations ?? undefined,
     });
 
     content = result.content || "";

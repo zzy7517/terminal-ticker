@@ -12,9 +12,9 @@ export class AgentRuntime {
     this.registry = input.registry ?? DEFAULT_AGENT_MODEL_REGISTRY;
   }
 
-  async run(input: { message: string; tools: ToolRegistry; history?: Array<Record<string, unknown>>; systemPrompt?: string | null; eventHandler?: AgentEventHandler | null }): Promise<LoopResult> {
+  async run(input: { message: string; tools: ToolRegistry; history?: Array<Record<string, unknown>>; systemPrompt?: string | null; eventHandler?: AgentEventHandler | null; maxIterations?: number }): Promise<LoopResult> {
     const provider = this.registry.createProvider(this.config);
-    return new AgentLoop({ provider, tools: input.tools, systemPrompt: input.systemPrompt }).run({
+    return new AgentLoop({ provider, tools: input.tools, systemPrompt: input.systemPrompt, maxIterations: input.maxIterations }).run({
       userMessage: input.message,
       conversationHistory: input.history ?? [],
       eventHandler: input.eventHandler ?? null,

@@ -8,6 +8,7 @@ import type {
 } from './types';
 import {
   AGENT_CONTEXT_HASH,
+  CRON_HASH,
   GROUP_LABELS,
   MEMORY_HASH,
   NEWS_HASH,
@@ -36,6 +37,9 @@ export function nextTheme(theme: ThemeName): ThemeName {
 }
 
 export function readRouteFromHash(): AppRoute {
+  if (window.location.hash.startsWith(CRON_HASH)) {
+    return { view: 'settings', section: 'cron' };
+  }
   if (window.location.hash.startsWith(SOCIAL_HASH)) {
     return { view: 'settings', section: 'social' };
   }
@@ -60,7 +64,9 @@ export function readRouteFromHash(): AppRoute {
 export function navigateToRoute(route: AppRoute) {
   if (route.view === 'settings') {
     const hash =
-      route.section === 'social'
+      route.section === 'cron'
+        ? CRON_HASH
+        : route.section === 'social'
         ? SOCIAL_HASH
         : route.section === 'memory'
         ? MEMORY_HASH

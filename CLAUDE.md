@@ -107,7 +107,7 @@ Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionS
 
 ### Frontend
 
-`web/src/App.tsx` is the single React root. `api.ts` wraps REST, `types.ts` mirrors backend payload shapes. The dev server proxies `/api` and `/ws` to the backend (see `vite.config.ts`).
+`web/src/App.tsx` is the single React root. `api.ts` wraps REST, the live-state WebSocket, and backend payload shapes are mirrored in `types.ts`. The dev server proxies REST `/api` calls to the backend, while the frontend opens `/ws` directly against the local backend in dev to avoid noisy proxy disconnects.
 
 ### Tests
 

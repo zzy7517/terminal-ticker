@@ -29,6 +29,11 @@ export interface CronJobStatus {
   systemPrompt: string;
   model: string | null;
   userMessage: string;
+  maxIterations: number | null;
+  maxCandles: number | null;
+  tradingEnabled: boolean;
+  socialEnabled: boolean;
+  timezone: string | null;
 }
 
 export class CronScheduler {
@@ -94,6 +99,11 @@ export class CronScheduler {
         systemPrompt: config.systemPrompt,
         model: config.model,
         userMessage: config.userMessage,
+        maxIterations: config.maxIterations,
+        maxCandles: config.maxCandles,
+        tradingEnabled: config.tradingEnabled,
+        socialEnabled: config.socialEnabled,
+        timezone: config.timezone,
       });
     }
     return statuses;
@@ -152,7 +162,7 @@ export class CronScheduler {
 
   private scheduleOne(job: CronJobConfig): void {
     try {
-      const cron = new Cron(job.cron, () => {
+      const cron = new Cron(job.cron, { timezone: job.timezone ?? undefined }, () => {
         void this.onTick(job);
       });
       this.jobs.set(job.name, cron);

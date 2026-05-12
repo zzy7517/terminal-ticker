@@ -4,6 +4,7 @@ import {
   Bot,
   Brain,
   CircleDot,
+  Clock,
   KeyRound,
   Newspaper,
   Settings,
@@ -80,6 +81,14 @@ export function SettingsFrame({
             >
               <Brain size={18} />
               <span>Memory</span>
+            </button>
+            <button
+              className={`settings-nav-item ${section === 'cron' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('cron')}
+            >
+              <Clock size={18} />
+              <span>Cron</span>
             </button>
             <button
               className={`settings-nav-item ${section === 'social' ? 'active' : ''}`}

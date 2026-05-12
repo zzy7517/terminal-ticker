@@ -158,6 +158,11 @@ export interface CronJobConfig {
   symbols: string[];
   model: string | null;
   userMessage: string;
+  maxIterations: number | null;
+  maxCandles: number | null;
+  tradingEnabled: boolean;
+  socialEnabled: boolean;
+  timezone: string | null;
 }
 
 export interface AppConfig {
@@ -583,7 +588,12 @@ export function parseCronJobsConfig(rawCronJobs: unknown): CronJobConfig[] {
     const symbols = Array.isArray(entry.symbols) ? entry.symbols.filter((s): s is string => typeof s === "string") : [];
     const model = typeof entry.model === "string" && entry.model.trim() ? entry.model.trim() : null;
     const userMessage = typeof entry.user_message === "string" ? entry.user_message : "开始定时看盘分析";
-    return { name, cron, systemPrompt, enabled, symbols, model, userMessage };
+    const maxIterations = typeof entry.max_iterations === "number" && entry.max_iterations > 0 ? entry.max_iterations : null;
+    const maxCandles = typeof entry.max_candles === "number" && entry.max_candles > 0 ? entry.max_candles : null;
+    const tradingEnabled = entry.trading_enabled !== undefined ? normalizeBool(entry.trading_enabled, `cron_jobs[${i}].trading_enabled`, false) : false;
+    const socialEnabled = entry.social_enabled !== undefined ? normalizeBool(entry.social_enabled, `cron_jobs[${i}].social_enabled`, false) : false;
+    const timezone = typeof entry.timezone === "string" && entry.timezone.trim() ? entry.timezone.trim() : null;
+    return { name, cron, systemPrompt, enabled, symbols, model, userMessage, maxIterations, maxCandles, tradingEnabled, socialEnabled, timezone };
   });
 }
 

@@ -12,6 +12,7 @@ import {
   NewsSettingsPanel,
   MemorySettingsPanel,
   SocialSettingsPanel,
+  CronSettingsPanel,
   WatchlistSettingsPanel,
 } from './components/settings';
 
@@ -85,6 +86,8 @@ export default function App() {
           <NewsSettingsPanel />
         ) : route.section === 'memory' ? (
           <MemorySettingsPanel />
+        ) : route.section === 'cron' ? (
+          <CronSettingsPanel />
         ) : route.section === 'social' ? (
           <SocialSettingsPanel />
         ) : (
