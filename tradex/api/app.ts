@@ -6,6 +6,7 @@ import { newsRoutes } from "./routes/news.js";
 import { socialRoutes } from "./routes/social.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { tradingRoutes } from "./routes/trading.js";
+import { cronRoutes } from "./routes/cron.js";
 
 export interface CreateAppOptions {
   runtime: AppRuntime;
@@ -21,6 +22,7 @@ export function createApp(options: CreateAppOptions): Hono {
   app.route("", socialRoutes(runtime));
   app.route("", memoryRoutes(runtime));
   app.route("", tradingRoutes(runtime));
+  app.route("", cronRoutes(runtime));
 
   return app;
 }

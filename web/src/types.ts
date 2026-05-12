@@ -531,3 +531,43 @@ export interface ExchangeOrder {
   status: string;
   createdAtMs: number;
 }
+
+// ── Cron Jobs ─────────────────────────────────────────────────────────────
+
+export interface CronJobStatus {
+  name: string;
+  cron: string;
+  enabled: boolean;
+  running: boolean;
+  nextRun: string | null;
+  lastRunAt: string | null;
+  lastStatus: 'ok' | 'error' | null;
+  lastError: string | null;
+  systemPrompt: string;
+  model: string | null;
+  userMessage: string;
+}
+
+export interface CronRunRecord {
+  jobName: string;
+  sessionId: string;
+  filePath: string;
+  startedAt: string;
+  finishedAt: string | null;
+  status: 'running' | 'ok' | 'error';
+  error: string | null;
+  preview: string;
+}
+
+export interface CronSessionEntry {
+  type: string;
+  id?: string;
+  timestamp?: string;
+  role?: string;
+  content?: string;
+  metadata?: Record<string, unknown> | null;
+  error?: string | null;
+  customType?: string;
+  data?: Record<string, unknown>;
+  [key: string]: unknown;
+}

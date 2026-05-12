@@ -150,6 +150,16 @@ export interface InstrumentConfig {
   analysisInterval: string | null;
 }
 
+export interface CronJobConfig {
+  name: string;
+  cron: string;
+  systemPrompt: string;
+  enabled: boolean;
+  symbols: string[];
+  model: string | null;
+  userMessage: string;
+}
+
 export interface AppConfig {
   instruments: InstrumentConfig[];
   display: DisplayConfig;
@@ -161,6 +171,7 @@ export interface AppConfig {
   news: NewsConfig;
   socialFeed: SocialFeedConfig;
   trading: TradingConfig;
+  cronJobs: CronJobConfig[];
 }
 
 export function expandUserPath(inputPath: string): string {
@@ -557,6 +568,25 @@ export function parseTradingConfig(rawTradingValue: unknown): TradingConfig {
   };
 }
 
+export function parseCronJobsConfig(rawCronJobs: unknown): CronJobConfig[] {
+  if (rawCronJobs === undefined || rawCronJobs === null) return [];
+  if (!Array.isArray(rawCronJobs)) throw new Error("cron_jobs must be an array of job entries");
+  return rawCronJobs.map((raw, i) => {
+    if (typeof raw !== "object" || raw === null) throw new Error(`cron_jobs[${i}] must be an object`);
+    const entry = raw as Record<string, unknown>;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    if (!name) throw new Error(`cron_jobs[${i}].name is required`);
+    const cron = typeof entry.cron === "string" ? entry.cron.trim() : "";
+    if (!cron) throw new Error(`cron_jobs[${i}].cron is required`);
+    const systemPrompt = typeof entry.system_prompt === "string" ? entry.system_prompt : "";
+    const enabled = entry.enabled !== undefined ? normalizeBool(entry.enabled, `cron_jobs[${i}].enabled`, true) : true;
+    const symbols = Array.isArray(entry.symbols) ? entry.symbols.filter((s): s is string => typeof s === "string") : [];
+    const model = typeof entry.model === "string" && entry.model.trim() ? entry.model.trim() : null;
+    const userMessage = typeof entry.user_message === "string" ? entry.user_message : "开始定时看盘分析";
+    return { name, cron, systemPrompt, enabled, symbols, model, userMessage };
+  });
+}
+
 export function parseCacheConfig(rawCacheValue: unknown): CacheConfig {
   const raw = asRecord(rawCacheValue, "cache");
   if (raw.path !== undefined && raw.path !== null && raw.path !== "" && typeof raw.path !== "string") {
@@ -588,6 +618,7 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     news: parseNewsConfig(data.news),
     socialFeed: parseSocialFeedConfig(data.social_feed),
     trading: parseTradingConfig(data.trading),
+    cronJobs: parseCronJobsConfig(data.cron_jobs),
     sourcePath,
   };
 }
@@ -616,6 +647,7 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       news: parseNewsConfig({}),
       socialFeed: parseSocialFeedConfig({}),
       trading: parseTradingConfig({}),
+      cronJobs: [],
       sourcePath: null,
     } satisfies AppConfig);
   const instruments = cliSymbols && cliSymbols.length > 0 ? normalizeInstruments(cliSymbols) : base.instruments;

@@ -7,6 +7,9 @@ import type {
   AgentSessionHistoryResponse,
   AgentSessionMutationResponse,
   AgentSessionResponse,
+  CronJobStatus,
+  CronRunRecord,
+  CronSessionEntry,
   InstrumentCatalogResponse,
   InstrumentSearchResult,
   Lesson,
@@ -482,4 +485,56 @@ export async function triggerNewsRefresh(): Promise<NewsRefreshResponse> {
     throw await responseError(response, 'news refresh failed');
   }
   return response.json();
+}
+
+// ── Cron Job API ──────────────────────────────────────────────────────────
+
+// Lists all configured cron jobs with their runtime status.
+export async function fetchCronJobs(): Promise<CronJobStatus[]> {
+  const response = await fetch('/api/cron/jobs');
+  if (!response.ok) throw await responseError(response, 'cron jobs fetch failed');
+  const payload = await response.json();
+  return payload.jobs;
+}
+
+// Lists run history for a specific job.
+export async function fetchCronJobRuns(jobName: string): Promise<CronRunRecord[]> {
+  const response = await fetch(`/api/cron/jobs/${encodeURIComponent(jobName)}/sessions`);
+  if (!response.ok) throw await responseError(response, 'cron job runs fetch failed');
+  const payload = await response.json();
+  return payload.runs;
+}
+
+// Lists recent runs across all jobs.
+export async function fetchCronRecentRuns(limit = 50): Promise<CronRunRecord[]> {
+  const response = await fetch(`/api/cron/runs?limit=${limit}`);
+  if (!response.ok) throw await responseError(response, 'cron recent runs fetch failed');
+  const payload = await response.json();
+  return payload.runs;
+}
+
+// Returns the full session entries for a single cron run.
+export async function fetchCronSession(sessionId: string): Promise<{ jobName: string; entries: CronSessionEntry[] }> {
+  const response = await fetch(`/api/cron/sessions/${encodeURIComponent(sessionId)}`);
+  if (!response.ok) throw await responseError(response, 'cron session fetch failed');
+  return response.json();
+}
+
+// Manually triggers a cron job.
+export async function triggerCronJob(jobName: string): Promise<{ ok: boolean; result?: unknown; detail?: string }> {
+  const response = await fetch(`/api/cron/jobs/${encodeURIComponent(jobName)}/trigger`, { method: 'POST' });
+  if (!response.ok) throw await responseError(response, 'cron trigger failed');
+  return response.json();
+}
+
+// Enables or disables a cron job at runtime.
+export async function setCronJobEnabled(jobName: string, enabled: boolean): Promise<CronJobStatus[]> {
+  const response = await fetch(`/api/cron/jobs/${encodeURIComponent(jobName)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) throw await responseError(response, 'cron job toggle failed');
+  const payload = await response.json();
+  return payload.jobs;
 }

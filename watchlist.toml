@@ -73,3 +73,22 @@ min_session_idle_hours = 12
 extension_retention_days = 7
 extract_model = "codex:gpt-5.5"
 consolidation_model = "codex:gpt-5.5"
+
+# -- Cron Jobs ---------------------------------------------------------------
+# Each [[cron_jobs]] defines a scheduled agent task. Cron expressions are
+# evaluated in local time.
+
+[[cron_jobs]]
+name = "BTC 盘前扫描"
+cron = "0 8 * * 1-5"
+system_prompt = "你是一名加密货币职业 trader。重点分析 BTC 的日线结构和隔夜资金流向，给出今日关键价位和操作建议。"
+enabled = true
+symbols = ["BTCUSDT", "ETHUSDT"]
+user_message = "开始今日 BTC 盘前分析"
+
+[[cron_jobs]]
+name = "收盘复盘"
+cron = "0 16 * * 1-5"
+system_prompt = "对今日所有持仓做复盘总结，标记需要调整的仓位，总结今日盈亏和教训。"
+enabled = true
+user_message = "开始今日收盘复盘"

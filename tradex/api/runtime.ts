@@ -12,6 +12,7 @@ import { TickerController } from "../runtime/controller.js";
 import { resolveInstruments, MarketInstrument } from "../market_data/router.js";
 import { TradeStatus } from "../trading/models.js";
 import { serializeState } from "./serializers.js";
+import { CronScheduler } from "../cron/scheduler.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -24,6 +25,7 @@ export class AppRuntime {
   readonly xAuthStore: XAuthStore;
   readonly memoryBackend: LocalMemoryBackend;
   readonly sessionIndex: SessionIndex;
+  readonly cronScheduler: CronScheduler;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   private running = false;
 
@@ -43,6 +45,7 @@ export class AppRuntime {
     });
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
     this.sessionIndex = new SessionIndex();
+    this.cronScheduler = new CronScheduler(this);
     SessionManager.reconcileIndex(this.sessionIndex);
   }
 
@@ -72,13 +75,16 @@ export class AppRuntime {
       this.controller.start();
       await this.newsService.start();
     }
+    // Reload cron timers regardless of running state so they pick up config changes
+    this.cronScheduler.reload(config.cronJobs);
   }
 
-  // Starts background market data streaming and the news polling loop.
+  // Starts background market data streaming, news polling, and cron scheduler.
   async start(): Promise<void> {
     this.running = true;
     this.controller.start();
     await this.newsService.start();
+    this.cronScheduler.start();
   }
 
   // Gracefully stops all background tasks; called on process shutdown or before reload.
@@ -86,6 +92,7 @@ export class AppRuntime {
     this.running = false;
     await this.controller.stop();
     await this.newsService.stop();
+    await this.cronScheduler.stop();
   }
 
   // Drains pending controller events, fetches live exchange positions/orders,
