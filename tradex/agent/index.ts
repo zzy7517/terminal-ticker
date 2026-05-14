@@ -1,3 +1,5 @@
+export * from "./models.js";
+export * from "./api_registry.js";
 export * from "./loop.js";
 export * from "./model_registry.js";
 export * from "./provider.js";
@@ -7,3 +9,4 @@ export * from "./session_manager.js";
 export * from "./session_index.js";
 export * from "./trading_runtime.js";
 export * from "./tools/index.js";
+import "./providers/register.js";

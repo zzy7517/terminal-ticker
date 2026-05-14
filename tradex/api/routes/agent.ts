@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import crypto from "node:crypto";
 import { AgentRuntime } from "../../agent/runtime.js";
+import { resolveAgentModelFromConfig } from "../../agent/models.js";
 import { SessionManager } from "../../agent/session_manager.js";
 import { DEFAULT_AGENT_MODEL_REGISTRY } from "../../agent/model_registry.js";
 import { buildMarketTools } from "../../agent/tools/market.js";
@@ -116,8 +117,10 @@ export function agentRoutes(runtime: AppRuntime): Hono {
               entryType: "message",
             },
           });
+          const requestConfig = agentConfigForRequest(runtime.config.agent, body);
           const agentRuntime = new AgentRuntime({
-            config: agentConfigForRequest(runtime.config.agent, body),
+            config: requestConfig,
+            model: resolveAgentModelFromConfig(requestConfig),
           });
           const tools = mergeRegistries(
             buildMarketTools({ quotes: runtime.controller.quotes, maxCandles: runtime.config.agent.maxCandles }),

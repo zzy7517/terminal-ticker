@@ -1,73 +1,56 @@
-import fs from "node:fs";
 import crypto from "node:crypto";
-import os from "node:os";
-import path from "node:path";
 import { fetch as browserFetch } from "wreq-js";
-import { AgentConfig, ProviderProfile } from "../../config/index.js";
-import { DEFAULT_CODEX_BASE_URL, AgentModelProfile } from "../../config/agent_models.js";
-import { ChatResponse } from "../loop.js";
-import { ToolCall } from "../tools/registry.js";
+import type { AgentModel } from "../models.js";
+import type { ChatInput, ApiStreamFunction, ApiListModelsFunction } from "../api_registry.js";
+import type { ChatResponse } from "../loop.js";
+import type { ToolCall } from "../tools/registry.js";
 
-export class CodexProvider {
-  readonly name = "codex";
-  readonly model: string;
-  private readonly baseUrl: string;
-  private readonly accessToken: string;
-  private readonly accountId: string | null;
-  private readonly profile: AgentModelProfile;
+// ---- Stateless stream function (the new primary API) ----
 
-  constructor(config: AgentConfig, profile: AgentModelProfile) {
-    this.profile = profile;
-    this.model = profile.model;
-    const providerProfile = config.providerProfiles.codex as ProviderProfile | undefined;
-    const credentials = resolveCodexCredentials();
-    this.accessToken = providerProfile?.apiKey || process.env.CODEX_API_KEY || credentials.accessToken;
-    this.accountId = credentials.accountId;
-    this.baseUrl = providerProfile?.baseUrl || DEFAULT_CODEX_BASE_URL;
-    if (!this.accessToken) throw new Error("CODEX_API_KEY or Codex CLI auth is required");
-  }
+export const streamCodex: ApiStreamFunction = async (model: AgentModel, input: ChatInput): Promise<ChatResponse> => {
+  if (!model.apiKey) throw new Error("CODEX_API_KEY or Codex CLI auth is required");
+  const instructions = input.messages
+    .filter((message) => message.role === "system")
+    .map((message) => String(message.content || ""))
+    .join("\n\n");
+  const payload = {
+    model: model.id,
+    input: messagesToCodexInput(input.messages),
+    instructions,
+    store: false,
+    stream: true,
+    reasoning: {
+      effort: model.reasoningEffort,
+      summary: "auto",
+    },
+    tools: codexToolsPayload(input.tools),
+  };
+  const response = await codexFetch(`${model.baseUrl}/responses`, {
+    method: "POST",
+    headers: codexHeaders(model.apiKey, model.accountId ?? null),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`Codex API ${response.status}: ${await response.text()}`);
+  return collectCodexResponse(response, input.onDelta);
+};
 
-  async chat(input: { messages: Array<Record<string, unknown>>; tools?: Array<Record<string, unknown>> | null; onDelta?: ((delta: string) => void | Promise<void>) | null }): Promise<ChatResponse> {
-    const instructions = input.messages
-      .filter((message) => message.role === "system")
-      .map((message) => String(message.content || ""))
-      .join("\n\n");
-    const payload = {
-      model: this.model,
-      input: messagesToCodexInput(input.messages),
-      instructions,
-      store: false,
-      stream: true,
-      reasoning: {
-        effort: this.profile.reasoningEffort,
-        summary: "auto",
-      },
-      tools: codexToolsPayload(input.tools),
-    };
-    const response = await codexFetch(`${this.baseUrl}/responses`, {
-      method: "POST",
-      headers: codexHeaders(this.accessToken, this.accountId),
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) throw new Error(`Codex API ${response.status}: ${await response.text()}`);
-    return collectCodexResponse(response, input.onDelta);
-  }
+export const listCodexModels: ApiListModelsFunction = async (model: AgentModel): Promise<Array<Record<string, unknown>>> => {
+  if (!model.apiKey) throw new Error("CODEX_API_KEY or Codex CLI auth is required");
+  const url = new URL(`${model.baseUrl}/models`);
+  url.searchParams.set("client_version", "1.0.0");
+  const response = await codexFetch(url.toString(), {
+    headers: codexHeaders(model.apiKey, model.accountId ?? null),
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`Codex models API ${response.status}: ${text}`);
+  const data = JSON.parse(text) as Record<string, unknown>;
+  const rawModels = Array.isArray(data.models) ? data.models : Array.isArray(data.data) ? data.data : [];
+  return rawModels
+    .map((item) => normalizeCodexModelOption(item))
+    .filter((item): item is Record<string, unknown> => item !== null);
+};
 
-  async listModels(): Promise<Array<Record<string, unknown>>> {
-    const url = new URL(`${this.baseUrl}/models`);
-    url.searchParams.set("client_version", "1.0.0");
-    const response = await codexFetch(url.toString(), {
-      headers: codexHeaders(this.accessToken, this.accountId),
-    });
-    const text = await response.text();
-    if (!response.ok) throw new Error(`Codex models API ${response.status}: ${text}`);
-    const data = JSON.parse(text) as Record<string, unknown>;
-    const rawModels = Array.isArray(data.models) ? data.models : Array.isArray(data.data) ? data.data : [];
-    return rawModels
-      .map((item) => normalizeCodexModelOption(item))
-      .filter((item): item is Record<string, unknown> => item !== null);
-  }
-}
+// ---- Internal helpers ----
 
 async function codexFetch(url: string, init: Record<string, unknown>): Promise<Response> {
   return browserFetch(url, {
@@ -103,27 +86,6 @@ function normalizeCodexModelOption(item: unknown): Record<string, unknown> | nul
   };
 }
 
-function resolveCodexCredentials(): { accessToken: string; accountId: string | null } {
-  if (process.env.CODEX_API_KEY) return { accessToken: process.env.CODEX_API_KEY, accountId: process.env.CODEX_ACCOUNT_ID || null };
-  const authPath = process.env.CODEX_HOME ? path.join(process.env.CODEX_HOME, "auth.json") : path.join(os.homedir(), ".codex", "auth.json");
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(fs.readFileSync(authPath, "utf8")) as Record<string, unknown>;
-  } catch {
-    return { accessToken: "", accountId: null };
-  }
-  const tokens = parsed.tokens && typeof parsed.tokens === "object" && !Array.isArray(parsed.tokens)
-    ? parsed.tokens as Record<string, unknown>
-    : {};
-  const accessToken = String(tokens.access_token || parsed.access_token || parsed.accessToken || "").trim();
-  if (!accessToken) return { accessToken: "", accountId: null };
-  if (accessTokenIsExpired(accessToken)) {
-    throw new Error("Codex CLI access token is expired. Run `codex` once to refresh the login.");
-  }
-  const accountId = tokens.account_id || parsed.account_id || parsed.accountId || jwtClaims(accessToken).chatgpt_account_id;
-  return { accessToken, accountId: typeof accountId === "string" && accountId.trim() ? accountId.trim() : null };
-}
-
 function codexHeaders(accessToken: string, accountId: string | null): Record<string, string> {
   const resolvedAccountId = accountId || accountIdFromToken(accessToken);
   return {
@@ -133,11 +95,6 @@ function codexHeaders(accessToken: string, accountId: string | null): Record<str
     "originator": "codex_cli_rs",
     ...(resolvedAccountId ? { "ChatGPT-Account-ID": resolvedAccountId } : {}),
   };
-}
-
-function accessTokenIsExpired(accessToken: string): boolean {
-  const exp = jwtClaims(accessToken).exp;
-  return typeof exp === "number" && exp <= Date.now() / 1000;
 }
 
 function accountIdFromToken(accessToken: string): string | null {
@@ -279,11 +236,11 @@ async function collectCodexResponse(response: Response, onDelta?: ((delta: strin
       if (typeof item.arguments === "string") current.arguments = item.arguments;
       toolCalls.set(key, current);
     } else if (type === "response.completed") {
-      const response = event.response && typeof event.response === "object" && !Array.isArray(event.response)
+      const resp = event.response && typeof event.response === "object" && !Array.isArray(event.response)
         ? event.response as Record<string, unknown>
         : null;
-      const rawUsage = response?.usage && typeof response.usage === "object" && !Array.isArray(response.usage)
-        ? response.usage as Record<string, unknown>
+      const rawUsage = resp?.usage && typeof resp.usage === "object" && !Array.isArray(resp.usage)
+        ? resp.usage as Record<string, unknown>
         : null;
       const inputTokens = Number(rawUsage?.input_tokens ?? rawUsage?.prompt_tokens ?? 0);
       const outputTokens = Number(rawUsage?.output_tokens ?? rawUsage?.completion_tokens ?? 0);
@@ -346,42 +303,6 @@ function codexEventErrorMessage(event: Record<string, unknown>): string {
   return String(rawError || event.type || "Codex stream failed");
 }
 
-function extractText(data: Record<string, unknown>): string {
-  if (typeof data.output_text === "string") return data.output_text;
-  const output = Array.isArray(data.output) ? data.output : [];
-  const parts: string[] = [];
-  for (const item of output) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const content = (item as Record<string, unknown>).content;
-    if (Array.isArray(content)) {
-      for (const block of content) {
-        if (block && typeof block === "object" && !Array.isArray(block)) {
-          const text = (block as Record<string, unknown>).text;
-          if (typeof text === "string") parts.push(text);
-        }
-      }
-    }
-  }
-  return parts.join("");
-}
-
-function extractToolCalls(data: Record<string, unknown>): ToolCall[] {
-  const output = Array.isArray(data.output) ? data.output : [];
-  const calls: ToolCall[] = [];
-  for (const item of output) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const obj = item as Record<string, unknown>;
-    if (obj.type === "function_call" || obj.type === "tool_call") {
-      calls.push({
-        id: String(obj.call_id || obj.id || crypto.randomUUID()),
-        name: String(obj.name || ""),
-        arguments: parseArgs(obj.arguments),
-      });
-    }
-  }
-  return calls.filter((call) => call.name);
-}
-
 function parseArgs(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
   if (typeof value === "string" && value.trim()) {
@@ -393,11 +314,4 @@ function parseArgs(value: unknown): Record<string, unknown> {
     }
   }
   return {};
-}
-
-function extractUsage(data: Record<string, unknown>): Record<string, number> {
-  const usage = data.usage && typeof data.usage === "object" && !Array.isArray(data.usage) ? (data.usage as Record<string, unknown>) : {};
-  const prompt = Number(usage.input_tokens || usage.prompt_tokens || 0);
-  const completion = Number(usage.output_tokens || usage.completion_tokens || 0);
-  return { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion };
 }

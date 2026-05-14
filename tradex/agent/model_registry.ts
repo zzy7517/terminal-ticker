@@ -1,68 +1,84 @@
+/**
+ * model_registry.ts — Backward-compatible registry that bridges the old
+ * factory-based interface with the new AgentModel + API Registry pattern.
+ *
+ * The AgentModelRegistry is still used by:
+ *  - api/routes/agent.ts for listAvailableModels()
+ *  - memory pipeline (via LLMProviderFactory)
+ *
+ * Internally it now delegates to resolveAgentModelFromConfig + getApiStream/getApiListModels.
+ */
+
 import { AgentConfig } from "../config/index.js";
-import { ANTHROPIC_PROVIDER, CODEX_PROVIDER, AgentModelProfile, normalizeApiMode, normalizeModel, normalizeProvider, normalizeReasoningEffort, resolveAgentModel } from "../config/agent_models.js";
-import { AgentLLMProvider } from "./loop.js";
-import { AnthropicProvider } from "./providers/anthropic.js";
-import { CodexProvider } from "./providers/codex.js";
+import { ANTHROPIC_PROVIDER, CODEX_PROVIDER, normalizeApiMode, normalizeModel, normalizeProvider, normalizeReasoningEffort } from "../config/agent_models.js";
+import type { AgentLLMProvider } from "./loop.js";
+import type { AgentModel } from "./models.js";
+import { resolveAgentModelFromConfig } from "./models.js";
+import { getApiStream, getApiListModels } from "./api_registry.js";
+
+// Ensure built-in providers are registered
+import "./providers/register.js";
 
 export class LLMProviderUnavailable extends Error {}
 
-export type ProviderFactory = (config: AgentConfig, profile: AgentModelProfile) => AgentLLMProvider;
-export type ModelLister = (config: AgentConfig, profile: AgentModelProfile) => Promise<Array<Record<string, unknown>>>;
-
-export interface AgentModelProvider {
-  name: string;
-  factory: ProviderFactory;
-  listModels: ModelLister;
-}
-
+/**
+ * AgentModelRegistry — resolves config into AgentModel and provides
+ * backward-compatible createProvider() for the memory pipeline.
+ */
 export class AgentModelRegistry {
-  private readonly providers = new Map<string, AgentModelProvider>();
-
-  register(provider: AgentModelProvider): void {
-    this.providers.set(provider.name, provider);
+  /**
+   * Resolve config into an AgentModel value object.
+   */
+  resolve(config: AgentConfig): AgentModel {
+    return resolveAgentModelFromConfig(config);
   }
 
-  resolve(config: AgentConfig): AgentModelProfile {
-    return resolveAgentModel(config);
-  }
-
+  /**
+   * Create a legacy AgentLLMProvider from config.
+   * This wraps the new registry-based dispatch into the old interface
+   * so existing consumers (memory pipeline) don't need changes.
+   */
   createProvider(config: AgentConfig): AgentLLMProvider {
-    const profile = this.resolve(config);
-    const provider = this.providers.get(profile.provider);
-    if (!provider) throw new LLMProviderUnavailable(`Unsupported agent provider: ${profile.provider}`);
-    return provider.factory(config, profile);
+    const model = this.resolve(config);
+    const streamFn = getApiStream(model.api);
+    return {
+      name: model.provider,
+      model: model.id,
+      async chat(input) {
+        return streamFn(model, input);
+      },
+    };
   }
 
+  /**
+   * List available models for a provider.
+   */
   async listAvailableModels(config: AgentConfig, providerOverride?: string | null): Promise<Array<Record<string, unknown>>> {
-    const profile = providerOverride
-      ? {
-          provider: normalizeProvider(providerOverride),
-          apiMode: normalizeApiMode(providerOverride),
-          model: normalizeModel(providerOverride, null),
-          reasoningEffort: normalizeReasoningEffort(null),
-          supportsReasoning: true,
-          requiresAccountId: providerOverride === CODEX_PROVIDER,
-        }
-      : this.resolve(config);
-    const provider = this.providers.get(profile.provider);
-    if (!provider) throw new LLMProviderUnavailable(`Unsupported agent provider: ${profile.provider}`);
-    return provider.listModels(config, profile);
+    let model: AgentModel;
+    if (providerOverride) {
+      const provider = normalizeProvider(providerOverride);
+      const apiMode = normalizeApiMode(provider);
+      model = {
+        id: normalizeModel(provider, null),
+        provider,
+        api: apiMode,
+        baseUrl: "",
+        reasoningEffort: normalizeReasoningEffort(null),
+        apiKey: "",
+      };
+      // Fill in credentials from the config profiles
+      const fullConfig: AgentConfig = { ...config, provider, apiMode, model: model.id };
+      model = resolveAgentModelFromConfig(fullConfig);
+    } else {
+      model = this.resolve(config);
+    }
+    const listFn = getApiListModels(model.api);
+    return listFn(model);
   }
 }
 
 export function defaultAgentModelRegistry(): AgentModelRegistry {
-  const registry = new AgentModelRegistry();
-  registry.register({
-    name: CODEX_PROVIDER,
-    factory: (config, profile) => new CodexProvider(config, profile),
-    listModels: (config, profile) => new CodexProvider(config, profile).listModels(),
-  });
-  registry.register({
-    name: ANTHROPIC_PROVIDER,
-    factory: (config, profile) => new AnthropicProvider(config, profile),
-    listModels: (config, profile) => new AnthropicProvider(config, profile).listModels(),
-  });
-  return registry;
+  return new AgentModelRegistry();
 }
 
 export const DEFAULT_AGENT_MODEL_REGISTRY = defaultAgentModelRegistry();

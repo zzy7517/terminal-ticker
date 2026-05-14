@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { AgentConfig, ProviderProfile } from "../../config/index.js";
-import { AgentModelProfile } from "../../config/agent_models.js";
-import { ChatResponse } from "../loop.js";
-import { ToolCall } from "../tools/registry.js";
+import type { AgentModel } from "../models.js";
+import type { ChatInput, ApiStreamFunction, ApiListModelsFunction } from "../api_registry.js";
+import type { ChatResponse } from "../loop.js";
+import type { ToolCall } from "../tools/registry.js";
 
 type AnthropicEffort = "low" | "medium" | "high" | "xhigh" | "max";
 const ANTHROPIC_EFFORT_LEVELS: AnthropicEffort[] = ["low", "medium", "high", "xhigh", "max"];
@@ -11,109 +11,77 @@ function coerceAnthropicEffort(value: string): AnthropicEffort {
   return (ANTHROPIC_EFFORT_LEVELS as string[]).includes(value) ? (value as AnthropicEffort) : "high";
 }
 
-export class AnthropicProvider {
-  readonly name = "anthropic";
-  readonly model: string;
-  private readonly apiKey: string;
-  private readonly baseURL: string | undefined;
-  private readonly customModels: string[];
-  private readonly effort: AnthropicEffort;
+function createClient(model: AgentModel): Anthropic {
+  return new Anthropic({
+    ...(model.apiKey ? { apiKey: model.apiKey } : {}),
+    baseURL: model.baseUrl || undefined,
+  });
+}
 
-  constructor(config: AgentConfig, profile: AgentModelProfile) {
-    this.model = profile.model;
-    const providerProfile = config.providerProfiles.anthropic as ProviderProfile | undefined;
-    this.apiKey = providerProfile?.apiKey || "";
-    this.baseURL = providerProfile?.baseUrl || process.env.ANTHROPIC_BASE_URL || undefined;
-    this.customModels = [...(providerProfile?.customModels ?? [])];
-    this.effort = coerceAnthropicEffort(profile.reasoningEffort);
-    if (!this.apiKey && !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-      throw new Error("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is required");
+// ---- Stateless stream function (the new primary API) ----
+
+export const streamAnthropic: ApiStreamFunction = async (model: AgentModel, input: ChatInput): Promise<ChatResponse> => {
+  if (!model.apiKey && !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
+    throw new Error("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is required");
+  }
+  const client = createClient(model);
+  const effort = coerceAnthropicEffort(model.reasoningEffort);
+  const { system, messages } = messagesToAnthropic(input.messages);
+  const stream = client.messages.stream({
+    model: model.id,
+    max_tokens: Number(process.env.ANTHROPIC_MAX_TOKENS || 4096),
+    system,
+    messages,
+    tools: (input.tools ?? []).map((tool) => {
+      const fn = (tool.function || {}) as Record<string, unknown>;
+      return { name: String(fn.name), description: String(fn.description || ""), input_schema: (fn.parameters || {}) as never };
+    }),
+    output_config: { effort },
+  } as never);
+  let content = "";
+  for await (const event of stream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      content += event.delta.text;
+      await input.onDelta?.(event.delta.text);
     }
   }
-
-  private createClient(): Anthropic {
-    return new Anthropic({
-      ...(this.apiKey ? { apiKey: this.apiKey } : {}),
-      baseURL: this.baseURL,
-    });
+  const final = await stream.finalMessage();
+  const toolCalls: ToolCall[] = [];
+  for (const block of final.content) {
+    if (block.type === "tool_use") toolCalls.push({ id: block.id, name: block.name, arguments: (block.input || {}) as Record<string, unknown> });
   }
+  return {
+    content: content || final.content.filter((b) => b.type === "text").map((b) => b.text).join(""),
+    toolCalls,
+    finishReason: final.stop_reason || "stop",
+    usage: { prompt_tokens: final.usage.input_tokens, completion_tokens: final.usage.output_tokens, total_tokens: final.usage.input_tokens + final.usage.output_tokens },
+  };
+};
 
-  async chat(input: { messages: Array<Record<string, unknown>>; tools?: Array<Record<string, unknown>> | null; onDelta?: ((delta: string) => void | Promise<void>) | null }): Promise<ChatResponse> {
-    const client = this.createClient();
-    const { system, messages } = messagesToAnthropic(input.messages);
-    const stream = client.messages.stream({
-      model: this.model,
-      max_tokens: Number(process.env.ANTHROPIC_MAX_TOKENS || 4096),
-      system,
-      messages,
-      tools: (input.tools ?? []).map((tool) => {
-        const fn = (tool.function || {}) as Record<string, unknown>;
-        return { name: String(fn.name), description: String(fn.description || ""), input_schema: (fn.parameters || {}) as never };
-      }),
-      output_config: { effort: this.effort },
-    } as never);
-    let content = "";
-    for await (const event of stream) {
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        content += event.delta.text;
-        await input.onDelta?.(event.delta.text);
-      }
-    }
-    const final = await stream.finalMessage();
-    const toolCalls: ToolCall[] = [];
-    for (const block of final.content) {
-      if (block.type === "tool_use") toolCalls.push({ id: block.id, name: block.name, arguments: (block.input || {}) as Record<string, unknown> });
-    }
-    return {
-      content: content || final.content.filter((b) => b.type === "text").map((b) => b.text).join(""),
-      toolCalls,
-      finishReason: final.stop_reason || "stop",
-      usage: { prompt_tokens: final.usage.input_tokens, completion_tokens: final.usage.output_tokens, total_tokens: final.usage.input_tokens + final.usage.output_tokens },
-    };
-  }
-
-  async listModels(): Promise<Array<Record<string, unknown>>> {
-    const client = this.createClient();
-    const customOptions = this.customModels.map((slug) => ({
-      slug,
-      displayName: slug,
-      description: "Custom model",
+export const listAnthropicModels: ApiListModelsFunction = async (model: AgentModel): Promise<Array<Record<string, unknown>>> => {
+  const client = createClient(model);
+  let officialOptions: Array<Record<string, unknown>> = [];
+  try {
+    const page = await client.models.list({ limit: 100 });
+    officialOptions = page.data.map((m) => ({
+      slug: m.id,
+      displayName: m.display_name || m.id,
+      description: "",
       visibility: "public",
       supportedInApi: true,
       defaultReasoningEffort: "high",
       supportedReasoningEfforts: [...ANTHROPIC_EFFORT_LEVELS],
       contextWindow: null,
       preferWebsockets: false,
-      custom: true,
+      custom: false,
     }));
-    let officialOptions: Array<Record<string, unknown>> = [];
-    try {
-      const page = await client.models.list({ limit: 100 });
-      officialOptions = page.data.map((model) => ({
-        slug: model.id,
-        displayName: model.display_name || model.id,
-        description: "",
-        visibility: "public",
-        supportedInApi: true,
-        defaultReasoningEffort: "high",
-        supportedReasoningEfforts: [...ANTHROPIC_EFFORT_LEVELS],
-        contextWindow: null,
-        preferWebsockets: false,
-        custom: false,
-      }));
-    } catch (error) {
-      if (customOptions.length === 0) throw error;
-    }
-    const seen = new Set(customOptions.map((option) => option.slug));
-    const merged: Array<Record<string, unknown>> = [...customOptions];
-    for (const option of officialOptions) {
-      if (seen.has(option.slug as string)) continue;
-      seen.add(option.slug as string);
-      merged.push(option);
-    }
-    return merged;
+  } catch (error) {
+    throw error;
   }
-}
+  return officialOptions;
+};
+
+// ---- Helper ----
 
 function messagesToAnthropic(messages: Array<Record<string, unknown>>): { system: string; messages: Array<Record<string, unknown>> } {
   const systemParts: string[] = [];
