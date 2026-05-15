@@ -6,3 +6,6 @@ web/dist/
 dist/
 *.tsbuildinfo
 docs/
+CLAUDE.md
+.cursor
+.claude
