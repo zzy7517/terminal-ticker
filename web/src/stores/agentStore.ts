@@ -9,11 +9,13 @@ import type {
   AgentToolCall,
 } from '../types';
 import {
+  abortAgentSession,
   createAgentSession,
   deleteAgentSessionById,
   fetchAgentSession,
   fetchAgentSessions,
   fetchProviderModels,
+  steerAgentSession,
   streamAgentMessage,
 } from '../api';
 import { AGENT_PROVIDER_OPTIONS } from '../constants';
@@ -50,6 +52,8 @@ interface AgentState {
   runStateBySessionId: Record<string, SessionRunProjection>;
   draftBySessionId: Record<string, string>;
   streamFlushTick: number;
+  /** Number of steering messages queued and not yet processed by the agent. */
+  steeringQueueCount: number;
 
   setAgentSession: (session: AgentSessionResponse | null) => void;
   setAgentSessionHistory: (history: AgentSessionSummary[]) => void;
@@ -63,6 +67,8 @@ interface AgentState {
   syncProviderModel: (profiles: Record<string, { enabled: boolean; models: string[]; modelEfforts: Record<string, string> }>) => void;
   fetchModelsForEnabledProviders: (profiles: Record<string, { enabled: boolean; models: string[]; modelEfforts: Record<string, string> }>) => void;
   runAgentAnalysis: () => Promise<void>;
+  steerAgent: () => Promise<void>;
+  abortAgent: () => Promise<void>;
   resetAgentConversation: () => Promise<void>;
   resumeAgentConversation: (sessionId: string) => Promise<void>;
   deleteAgentConversation: (sessionId: string) => Promise<void>;
@@ -165,10 +171,10 @@ function setSessionMessage(
   message: AgentMessage,
 ): Record<string, AgentSessionResponse> {
   const session = responseForSession(state, sessionId);
-  const messages = message.role === 'user' && message.id > 0
+  const messages = message.role === 'user'
     ? session.messages.filter((item) => !(
-        item.id < 0 &&
         item.role === 'user' &&
+        item.metadata?.queued === true &&
         item.content === message.content
       ))
     : session.messages;
@@ -240,6 +246,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   runStateBySessionId: {},
   draftBySessionId: {},
   streamFlushTick: 0,
+  steeringQueueCount: 0,
 
   setAgentSession: (session) => set((s) => {
     const activeAgentSessionId = session?.session?.id ?? null;
@@ -702,6 +709,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               return;
             }
             const isToolResultMessage = raw.role === 'toolResult';
+            const isUserMessage = raw.role === 'user';
             const applyNonAssistantMessage = () => {
               set((s) => {
                 const message = streamMessageToAgentMessage(raw, { id: fallbackId, sessionId, createdAt });
@@ -713,7 +721,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                   { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
                 );
                 const next = { ...s, agentSessionById, runStateBySessionId };
-                return { agentSessionById, runStateBySessionId, ...activeFields(next) };
+                // Decrement steering queue when a steered user message is confirmed by backend
+                const steeringQueueCount = isUserMessage
+                  ? Math.max(0, s.steeringQueueCount - 1)
+                  : s.steeringQueueCount;
+                return { agentSessionById, runStateBySessionId, steeringQueueCount, ...activeFields(next) };
               });
             };
             if (isToolResultMessage) {
@@ -741,8 +753,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                   },
                 );
                 const next = { ...s, runStateBySessionId };
-                return { runStateBySessionId, ...activeFields(next) };
+                return { runStateBySessionId, steeringQueueCount: 0, ...activeFields(next) };
               });
+            } else {
+              set({ steeringQueueCount: 0 });
             }
             return;
           }
@@ -829,6 +843,56 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           return { runStateBySessionId, ...activeFields(next) };
         });
       }
+    }
+  },
+
+  steerAgent: async () => {
+    const { activeAgentSessionId, agentPrompt, runStateBySessionId } = get();
+    if (!activeAgentSessionId) return;
+    const run = runStateBySessionId[activeAgentSessionId];
+    if (run?.status !== 'running') return;
+    const prompt = agentPrompt.trim();
+    if (!prompt) return;
+    // Clear input and increment queue count immediately
+    set((s) => ({
+      agentPrompt: '',
+      draftBySessionId: { ...s.draftBySessionId, [activeAgentSessionId]: '' },
+      steeringQueueCount: s.steeringQueueCount + 1,
+    }));
+    // Add optimistic user message to transcript (shown greyed out as "queued")
+    const createdAt = new Date().toISOString();
+    const optimisticMessage: AgentMessage = {
+      id: -Date.now(),
+      sessionId: activeAgentSessionId,
+      role: 'user',
+      content: prompt,
+      createdAt,
+      metadata: { queued: true },
+      error: null,
+    };
+    set((s) => {
+      const agentSessionById = setSessionMessage(s, activeAgentSessionId, optimisticMessage);
+      const next = { ...s, agentSessionById };
+      return { agentSessionById, ...activeFields(next) };
+    });
+    try {
+      await steerAgentSession(activeAgentSessionId, prompt);
+    } catch (error) {
+      console.error('steer failed:', error);
+      // Decrement on failure
+      set((s) => ({ steeringQueueCount: Math.max(0, s.steeringQueueCount - 1) }));
+    }
+  },
+
+  abortAgent: async () => {
+    const { activeAgentSessionId, runStateBySessionId } = get();
+    if (!activeAgentSessionId) return;
+    const run = runStateBySessionId[activeAgentSessionId];
+    if (run?.status !== 'running') return;
+    try {
+      await abortAgentSession(activeAgentSessionId);
+    } catch (error) {
+      console.error('abort failed:', error);
     }
   },
 

@@ -166,6 +166,28 @@ export async function deleteAgentSessionById(sessionId: string): Promise<AgentSe
   return response.json();
 }
 
+// Injects a steering message into an actively-running agent session.
+export async function steerAgentSession(sessionId: string, message: string): Promise<void> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/steer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'agent steer failed');
+  }
+}
+
+// Aborts the currently-running agent for a session.
+export async function abortAgentSession(sessionId: string): Promise<void> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/abort`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'agent abort failed');
+  }
+}
+
 export async function streamAgentMessage(
   key: string,
   message: string,

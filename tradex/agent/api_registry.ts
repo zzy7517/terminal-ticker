@@ -19,6 +19,7 @@ export interface ChatInput {
   messages: Array<Record<string, unknown>>;
   tools?: Array<Record<string, unknown>> | null;
   onDelta?: ((delta: string) => void | Promise<void>) | null;
+  signal?: AbortSignal;
 }
 
 /**

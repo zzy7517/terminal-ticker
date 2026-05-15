@@ -49,6 +49,7 @@ export function createStreamFnFromRegistry(): StreamFn {
       messages,
       tools: tools.length > 0 ? tools : null,
       onDelta: options.onDelta,
+      signal: options.signal,
     };
 
     const response = await streamFn(legacyModel, chatInput);

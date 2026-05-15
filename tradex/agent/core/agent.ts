@@ -5,15 +5,6 @@
  *
  * The Agent owns the conversation transcript, emits lifecycle events, executes
  * tools, and exposes queueing APIs for steering and follow-up messages.
- *
- * Key design:
- * - Agent is long-lived (survives across multiple prompt() calls)
- * - Messages persist in state across turns
- * - Steering and follow-up queues are built-in with configurable drain modes
- * - createContextSnapshot() copies messages — the loop works on its own copy
- * - processEvents() is the ONLY path that mutates authoritative state
- * - AbortSignal is fully integrated
- * - Event subscription via subscribe()
  */
 
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.js";
@@ -27,6 +18,7 @@ import type {
   AgentModelDescriptor,
   AgentState,
   AgentTool,
+  AgentToolResult,
   AssistantMessage,
   BeforeToolCallResult,
   ImageContent,
@@ -36,12 +28,35 @@ import type {
   ThinkingLevel,
   ToolCallContent,
   ToolExecutionMode,
-  AgentToolResult,
   Usage,
 } from "./types.js";
 
 // ============================================================================
-// Queue Mode
+// Default convertToLlm
+// ============================================================================
+
+function defaultConvertToLlm(messages: AgentMessage[]): AgentMessage[] {
+  return messages.filter(
+    (msg) => msg.role === "user" || msg.role === "assistant" || msg.role === "toolResult",
+  );
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const EMPTY_USAGE: Usage = { input: 0, output: 0, totalTokens: 0 };
+
+const DEFAULT_MODEL: AgentModelDescriptor = {
+  id: "unknown",
+  provider: "unknown",
+  api: "unknown",
+  baseUrl: "",
+  reasoningEffort: "medium",
+};
+
+// ============================================================================
+// Queue
 // ============================================================================
 
 export type QueueMode = "all" | "one-at-a-time";
@@ -83,20 +98,20 @@ class PendingMessageQueue {
 // Internal State
 // ============================================================================
 
-const EMPTY_USAGE: Usage = { input: 0, output: 0, totalTokens: 0 };
-
 type ActiveRun = {
   promise: Promise<void>;
   resolve: () => void;
   abortController: AbortController;
 };
 
-type MutableAgentState = {
-  systemPrompt: string;
-  model: AgentModelDescriptor;
-  thinkingLevel: ThinkingLevel;
-  tools: AgentTool[];
-  messages: AgentMessage[];
+/**
+ * MutableAgentState — internal writable version of AgentState.
+ *
+ * Derived from AgentState: the shared fields (systemPrompt, model, thinkingLevel,
+ * tools, messages) come from AgentState; runtime-only fields (isStreaming, etc.)
+ * are made writable here.
+ */
+type MutableAgentState = Omit<AgentState, "isStreaming" | "streamingMessage" | "pendingToolCalls" | "errorMessage"> & {
   isStreaming: boolean;
   streamingMessage?: AgentMessage;
   pendingToolCalls: Set<string>;
@@ -104,14 +119,27 @@ type MutableAgentState = {
 };
 
 function createMutableAgentState(
-  initialState?: Partial<Pick<AgentState, "systemPrompt" | "model" | "thinkingLevel" | "tools" | "messages">>,
+  initialState?: Partial<Omit<AgentState, "isStreaming" | "streamingMessage" | "pendingToolCalls" | "errorMessage">>,
 ): MutableAgentState {
+  let tools = initialState?.tools?.slice() ?? [];
+  let messages = initialState?.messages?.slice() ?? [];
+
   return {
     systemPrompt: initialState?.systemPrompt ?? "",
-    model: initialState?.model ?? { id: "unknown", provider: "unknown", api: "unknown", baseUrl: "", reasoningEffort: "medium" },
+    model: initialState?.model ?? DEFAULT_MODEL,
     thinkingLevel: initialState?.thinkingLevel ?? "off",
-    tools: initialState?.tools?.slice() ?? [],
-    messages: initialState?.messages?.slice() ?? [],
+    get tools() {
+      return tools;
+    },
+    set tools(nextTools: AgentTool[]) {
+      tools = nextTools.slice();
+    },
+    get messages() {
+      return messages;
+    },
+    set messages(nextMessages: AgentMessage[]) {
+      messages = nextMessages.slice();
+    },
     isStreaming: false,
     streamingMessage: undefined,
     pendingToolCalls: new Set<string>(),
@@ -123,14 +151,10 @@ function createMutableAgentState(
 // Agent Options
 // ============================================================================
 
+/** Options for constructing an {@link Agent}. */
 export interface AgentOptions {
-  initialState?: {
-    systemPrompt?: string;
-    model?: AgentModelDescriptor;
-    thinkingLevel?: ThinkingLevel;
-    tools?: AgentTool[];
-    messages?: AgentMessage[];
-  };
+  /** Initial state seed. Fields from AgentState minus runtime-only fields. */
+  initialState?: Partial<Omit<AgentState, "isStreaming" | "streamingMessage" | "pendingToolCalls" | "errorMessage">>;
 
   /** The stream function that makes LLM calls. Required. */
   streamFn: StreamFn;
@@ -201,17 +225,29 @@ export class Agent {
   private readonly followUpQueue: PendingMessageQueue;
 
   // ---- Configuration ----
-  readonly streamFn: StreamFn;
-  convertToLlm: (messages: AgentMessage[]) => AgentMessage[];
-  transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
-  getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
-  apiKey: string;
-  beforeToolCall?: AgentOptions["beforeToolCall"];
-  afterToolCall?: AgentOptions["afterToolCall"];
-  prepareNextTurn?: AgentOptions["prepareNextTurn"];
-  shouldStopAfterTurn?: AgentOptions["shouldStopAfterTurn"];
-  toolExecution: ToolExecutionMode;
-  onDelta?: (delta: string) => void | Promise<void>;
+  public readonly streamFn: StreamFn;
+  public convertToLlm: (messages: AgentMessage[]) => AgentMessage[];
+  public transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+  public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+  public apiKey: string;
+  public beforeToolCall?: (context: {
+    assistantMessage: AssistantMessage;
+    toolCall: ToolCallContent;
+    args: Record<string, unknown>;
+    context: AgentContext;
+  }, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>;
+  public afterToolCall?: (context: {
+    assistantMessage: AssistantMessage;
+    toolCall: ToolCallContent;
+    args: Record<string, unknown>;
+    result: AgentToolResult;
+    isError: boolean;
+    context: AgentContext;
+  }, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
+  public prepareNextTurn?: (context: ShouldStopContext) => AgentLoopTurnUpdate | undefined | Promise<AgentLoopTurnUpdate | undefined>;
+  public shouldStopAfterTurn?: (context: ShouldStopContext) => boolean | Promise<boolean>;
+  public toolExecution: ToolExecutionMode;
+  public onDelta?: (delta: string) => void | Promise<void>;
 
   // ---- Lifecycle ----
   private activeRun?: ActiveRun;
@@ -236,9 +272,14 @@ export class Agent {
   }
 
   // ==========================================================================
-  // Public State (AgentState interface)
+  // Public State
   // ==========================================================================
 
+  /**
+   * Current agent state.
+   *
+   * Assigning `state.tools` or `state.messages` copies the provided top-level array.
+   */
   get state(): AgentState {
     return this._state;
   }
@@ -483,6 +524,8 @@ export class Agent {
     let skipInitialSteeringPoll = options.skipInitialSteeringPoll === true;
     return {
       model: this._state.model,
+      // NOTE: thinkingLevel is currently unused — reasoning effort is controlled
+      // at the model layer via model.reasoningEffort, which providers read directly.
       reasoning: this._state.thinkingLevel === "off" ? undefined : this._state.thinkingLevel,
       apiKey: this.apiKey,
       getApiKey: this.getApiKey,
@@ -619,14 +662,4 @@ export class Agent {
       await listener(event, signal);
     }
   }
-}
-
-// ============================================================================
-// Default convertToLlm
-// ============================================================================
-
-function defaultConvertToLlm(messages: AgentMessage[]): AgentMessage[] {
-  return messages.filter(
-    (msg) => msg.role === "user" || msg.role === "assistant" || msg.role === "toolResult",
-  );
 }

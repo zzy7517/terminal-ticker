@@ -8,6 +8,7 @@ import {
   Loader2,
   Search,
   Sparkles,
+  Square,
   Zap,
 } from 'lucide-react';
 import type { AgentMessage, AgentToolCall } from '../../types';
@@ -88,10 +89,12 @@ function AgentTranscriptMessage({
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
   const content = message.error || message.content || (message.role === 'assistant' ? '' : 'No content.');
   const toolCalls = message.role === 'assistant' ? message.metadata?.toolCalls ?? [] : [];
+  const isQueued = message.role === 'user' && message.metadata?.queued === true;
   return (
-    <div className={`session-message ${message.role}`}>
+    <div className={`session-message ${message.role}${isQueued ? ' queued' : ''}`}>
       <div className="session-message-head">
         <span>{label}</span>
+        {isQueued && <span className="badge sm warning">queued</span>}
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
       </div>
       {toolCalls.length > 0 && (
@@ -125,9 +128,13 @@ export function AgentSessionPanel({
   const contextUsage = useAgentStore((s) => s.contextUsage);
   const streamFlushTick = useAgentStore((s) => s.streamFlushTick);
 
+  const steeringQueueCount = useAgentStore((s) => s.steeringQueueCount);
+
   const setAgentPrompt = useAgentStore((s) => s.setAgentPrompt);
   const changeProviderModel = useAgentStore((s) => s.changeProviderModel);
   const runAgentAnalysis = useAgentStore((s) => s.runAgentAnalysis);
+  const steerAgent = useAgentStore((s) => s.steerAgent);
+  const abortAgent = useAgentStore((s) => s.abortAgent);
 
   const instruments = useMarketStore((s) => s.state?.instruments) ?? [];
 
@@ -160,6 +167,7 @@ export function AgentSessionPanel({
     return results;
   }, [messages]);
   const canSend = !disabled && !busy && !sessionLoading && !sessionActionKey;
+  const canSteer = !disabled && busy && !!agentPrompt.trim();
   const sessionTime = agentSession?.session
     ? new Date(agentSession.session.updatedAt).toLocaleTimeString()
     : 'No session';
@@ -295,6 +303,21 @@ export function AgentSessionPanel({
           <Sparkles size={14} /> Agent Session
         </span>
         {busy && <span className="agent-bias neutral">running</span>}
+        {busy && steeringQueueCount > 0 && (
+          <span className="badge mono warning">
+            <Zap size={10} /> {steeringQueueCount} queued
+          </span>
+        )}
+        {busy && (
+          <button
+            className="shell-button ghost sm"
+            type="button"
+            onClick={() => void abortAgent()}
+            title="Abort (Esc)"
+          >
+            <Square size={12} />
+          </button>
+        )}
         {contextPercentLabel !== null && (
           <span className={`badge mono${contextPercentLevel > 90 ? ' danger' : contextPercentLevel > 70 ? ' warning' : ''}`}>
             <CircleDot size={10} /> {contextPercentLabel}% context
@@ -411,7 +434,7 @@ export function AgentSessionPanel({
       <div className="session-compose">
         <textarea
           ref={promptTextareaRef}
-          disabled={disabled || busy || sessionLoading}
+          disabled={disabled || sessionLoading}
           onChange={(event) => {
             setAgentPrompt(event.target.value);
             updateMentionPicker(event.target.value, event.target.selectionStart);
@@ -441,16 +464,22 @@ export function AgentSessionPanel({
                 return;
               }
             }
+            if (event.key === 'Escape' && busy) {
+              event.preventDefault();
+              void abortAgent();
+              return;
+            }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
-              if (canSend) void runAgentAnalysis();
+              if (canSteer) void steerAgent();
+              else if (canSend) void runAgentAnalysis();
             }
           }}
           onKeyUp={(event) => {
             if (['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) return;
             updateMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart);
           }}
-          placeholder="Ask the agent. Type @ to mention a configured instrument."
+          placeholder={busy ? "Type to steer agent. Esc to abort." : "Ask the agent. Type @ to mention a configured instrument."}
           rows={3}
           value={agentPrompt}
         />
@@ -482,11 +511,14 @@ export function AgentSessionPanel({
         <button
           className="shell-button primary lg full-width"
           type="button"
-          onClick={() => void runAgentAnalysis()}
-          disabled={!canSend}
+          onClick={() => {
+            if (canSteer) void steerAgent();
+            else void runAgentAnalysis();
+          }}
+          disabled={!canSend && !canSteer}
         >
-          {busy ? <Loader2 className="spin" size={16} /> : <Bot size={16} />}
-          {busy ? 'Analyzing' : 'Ask Agent'}
+          {busy && !canSteer ? <Loader2 className="spin" size={16} /> : busy ? <Zap size={16} /> : <Bot size={16} />}
+          {busy ? (canSteer ? 'Steer Agent' : 'Analyzing') : 'Ask Agent'}
         </button>
       </div>
     </div>

@@ -27,6 +27,9 @@ export const streamAnthropic: ApiStreamFunction = async (model: AgentModel, inpu
   const client = createClient(model);
   const effort = coerceAnthropicEffort(model.reasoningEffort);
   const { system, messages } = messagesToAnthropic(input.messages);
+  const requestOptions = {
+    ...(input.signal ? { signal: input.signal } : {}),
+  };
   const stream = client.messages.stream({
     model: model.id,
     max_tokens: Number(process.env.ANTHROPIC_MAX_TOKENS || 4096),
@@ -37,7 +40,7 @@ export const streamAnthropic: ApiStreamFunction = async (model: AgentModel, inpu
       return { name: String(fn.name), description: String(fn.description || ""), input_schema: (fn.parameters || {}) as never };
     }),
     output_config: { effort },
-  } as never);
+  } as never, requestOptions);
   let content = "";
   for await (const event of stream) {
     if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
@@ -85,12 +88,76 @@ export const listAnthropicModels: ApiListModelsFunction = async (model: AgentMod
 
 function messagesToAnthropic(messages: Array<Record<string, unknown>>): { system: string; messages: Array<Record<string, unknown>> } {
   const systemParts: string[] = [];
-  const output: Array<Record<string, unknown>> = [];
+  const raw: Array<Record<string, unknown>> = [];
+
   for (const msg of messages) {
     const role = String(msg.role || "");
-    if (role === "system") systemParts.push(String(msg.content || ""));
-    else if (role === "user" || role === "assistant") output.push({ role, content: String(msg.content || "") });
-    else if (role === "tool") output.push({ role: "user", content: `Tool ${String(msg.name || "")} returned:\n${String(msg.content || "")}` });
+    if (role === "system") {
+      systemParts.push(String(msg.content || ""));
+      continue;
+    }
+
+    if (role === "assistant") {
+      const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls as Array<Record<string, unknown>> : [];
+      if (toolCalls.length > 0) {
+        const contentBlocks: Array<Record<string, unknown>> = [];
+        const text = String(msg.content || "").trim();
+        if (text) contentBlocks.push({ type: "text", text });
+        for (const tc of toolCalls) {
+          const fn = (tc.function ?? tc) as Record<string, unknown>;
+          const args = typeof fn.arguments === "string"
+            ? (JSON.parse(fn.arguments) as Record<string, unknown>)
+            : (fn.arguments ?? {}) as Record<string, unknown>;
+          contentBlocks.push({
+            type: "tool_use",
+            id: String(tc.id || fn.id || ""),
+            name: String(fn.name || ""),
+            input: args,
+          });
+        }
+        raw.push({ role: "assistant", content: contentBlocks });
+      } else {
+        const text = String(msg.content || "").trim();
+        if (text) raw.push({ role: "assistant", content: text });
+      }
+      continue;
+    }
+
+    if (role === "tool") {
+      raw.push({
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: String(msg.tool_call_id || ""),
+          content: String(msg.content || ""),
+        }],
+      });
+      continue;
+    }
+
+    if (role === "user") {
+      raw.push({ role: "user", content: String(msg.content || "") });
+      continue;
+    }
   }
-  return { system: systemParts.join("\n\n"), messages: output };
+
+  // Anthropic requires strictly alternating user/assistant. Merge consecutive
+  // same-role messages (e.g. multiple tool_result user blocks in a row).
+  const merged: Array<Record<string, unknown>> = [];
+  for (const entry of raw) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.role === entry.role) {
+      const prevContent = Array.isArray(prev.content)
+        ? prev.content as Array<Record<string, unknown>>
+        : [{ type: "text", text: String(prev.content || "") }];
+      const curContent = Array.isArray(entry.content)
+        ? entry.content as Array<Record<string, unknown>>
+        : [{ type: "text", text: String(entry.content || "") }];
+      prev.content = [...prevContent, ...curContent];
+    } else {
+      merged.push({ ...entry });
+    }
+  }
+
+  return { system: systemParts.join("\n\n"), messages: merged };
 }

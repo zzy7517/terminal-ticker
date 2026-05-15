@@ -165,7 +165,11 @@ export function upsertAgentMessage(messages: AgentMessage[], message: AgentMessa
   const index = messages.findIndex((item) => item.id === message.id);
   if (index < 0) return [...messages, message];
   const next = messages.slice();
-  next[index] = { ...next[index], ...message };
+  next[index] = {
+    ...next[index],
+    ...message,
+    metadata: message.metadata ?? next[index].metadata,
+  };
   return next;
 }
 

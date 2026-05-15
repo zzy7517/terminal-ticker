@@ -29,6 +29,7 @@ export const streamCodex: ApiStreamFunction = async (model: AgentModel, input: C
     method: "POST",
     headers: codexHeaders(model.apiKey, model.accountId ?? null),
     body: JSON.stringify(payload),
+    ...(input.signal ? { signal: input.signal } : {}),
   });
   return collectCodexResponse(response, input.onDelta);
 };

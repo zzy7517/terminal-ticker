@@ -618,34 +618,17 @@ export class SessionManager {
     const branch = this.getBranch();
     if (branch.length === 0) return [];
 
-    let lastCompactionIdx = -1;
-    for (let i = branch.length - 1; i >= 0; i--) {
-      if (branch[i].type === "branch_summary" && (branch[i] as BranchSummaryEntry).summary) {
-        // branch_summary is handled inline
-      }
-      // We don't have compaction in v1, but keeping the pattern for future
-    }
-
     const messages: Array<Record<string, unknown>> = [];
     for (const entry of branch) {
       if (entry.type === "message") {
         const msg = entry as MessageEntry;
-        messages.push({ role: msg.role, content: msg.content });
+        messages.push({ role: msg.role, content: msg.content, metadata: msg.metadata });
       } else if (entry.type === "branch_summary") {
         const bs = entry as BranchSummaryEntry;
         messages.push({ role: "system", content: `[Branch context]\n${bs.summary}` });
       }
     }
     return messages;
-  }
-
-  // Returns the most recent `limit` messages from the active branch context.
-  // Older messages are dropped to stay within the LLM context window.
-  historyForContext(options?: { limit?: number }): Array<Record<string, unknown>> {
-    const context = this.buildSessionContext();
-    const limit = options?.limit ?? 8;
-    if (context.length <= limit) return context;
-    return context.slice(-limit);
   }
 
   // =========================================================================

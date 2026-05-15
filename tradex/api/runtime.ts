@@ -14,6 +14,7 @@ import { TradeStatus } from "../trading/models.js";
 import { serializeState } from "./serializers.js";
 import { CronScheduler } from "../cron/scheduler.js";
 import { CronJobStore } from "../cron/job_store.js";
+import type { Agent } from "../agent/core/index.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -29,6 +30,8 @@ export class AppRuntime {
   readonly cronJobStore: CronJobStore;
   readonly cronScheduler: CronScheduler;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
+  /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
+  readonly activeAgents = new Map<string, Agent>();
   private running = false;
 
   // Private to enforce async construction via `create`; wires all subsystems

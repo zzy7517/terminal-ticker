@@ -139,7 +139,13 @@ export interface AgentContext {
   tools: AgentTool[];
 }
 
-/** Thinking/reasoning level. */
+/**
+ * Thinking/reasoning level.
+ *
+ * NOTE: Currently not wired through to providers. Reasoning effort is controlled
+ * at the model layer via `AgentModelDescriptor.reasoningEffort`, which providers
+ * read directly. This field is retained for future dynamic per-turn override support.
+ */
 export type ThinkingLevel = "off" | "low" | "medium" | "high" | "xhigh";
 
 /**

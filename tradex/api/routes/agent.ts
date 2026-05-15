@@ -80,7 +80,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
     const encoder = new TextEncoder();
     const runId = crypto.randomUUID();
-    const assistantClientId = `assistant:${crypto.randomUUID()}`;
+    let assistantClientId = "";
     const toolCallsById = new Map<string, Record<string, unknown>>();
     let seq = 0;
 
@@ -92,40 +92,14 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const stream = new ReadableStream({
       async start(controller) {
         sendFrame(controller, { type: "agent_start" });
-        let assistantEntryId: string | null = null;
 
         try {
           // ---- Session bookkeeping ----
-          const conversationHistory = mgr.historyForContext({ limit: 12 });
+          const conversationHistory = mgr.buildSessionContext();
           mgr.appendMessage({ role: "user", content: message });
-          assistantEntryId = mgr.appendMessage({
-            role: "assistant",
-            content: "",
-            metadata: { toolCalls: [] },
-            error: null,
-          });
           runtime.pendingSessionManagers.delete(sessionId);
-          const currentAssistantEntryId = assistantEntryId;
-          const assistantEntry = mgr.getEntry(currentAssistantEntryId);
 
-          sendFrame(controller, {
-            type: "message_start",
-            message: {
-              id: currentAssistantEntryId,
-              clientId: assistantClientId,
-              sessionId,
-              role: "assistant",
-              content: "",
-              createdAt: assistantEntry?.timestamp ?? new Date().toISOString(),
-              metadata: { toolCalls: [] },
-              error: null,
-              entryId: currentAssistantEntryId,
-              parentId: assistantEntry?.parentId ?? null,
-              entryType: "message",
-            },
-          });
-
-          // ---- Build tools (same as before) ----
+          // ---- Build tools ----
           const requestConfig = agentConfigForRequest(runtime.config.agent, body);
           const tools = mergeRegistries(
             buildMarketTools({ quotes: runtime.controller.quotes, maxCandles: runtime.config.agent.maxCandles }),
@@ -157,7 +131,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             createFilesystemRegistry(),
           );
 
-          // ---- Create Agent (new core) ----
+          // ---- Create Agent ----
           const resolved = resolveAgentModelFromConfig(requestConfig);
           const modelDescriptor: AgentModelDescriptor = {
             id: resolved.id,
@@ -183,30 +157,39 @@ export function agentRoutes(runtime: AppRuntime): Hono {
               return fresh.apiKey;
             },
             toolExecution: "sequential",
-            onDelta: (delta: string) => {
-              sendFrame(controller, {
-                type: "message_update",
-                message: {
-                  clientId: assistantClientId,
-                  role: "assistant",
-                  content: "",
-                  metadata: null,
-                  error: null,
-                },
-                delta,
-              });
-            },
           });
 
-          // Restore conversation history into agent
+          // Restore conversation history into agent.
+          // Track tool call IDs from assistant messages so we can drop orphaned
+          // toolResult entries whose parent assistant was skipped (e.g. empty/error turns).
+          const restoredToolCallIds = new Set<string>();
           for (const msg of conversationHistory) {
             const role = String(msg.role || "");
+            const meta = (msg.metadata ?? {}) as Record<string, unknown>;
             if (role === "user") {
               agent.messages = [...agent.messages, { role: "user", content: String(msg.content || ""), timestamp: Date.now() }];
             } else if (role === "assistant") {
+              const assistantContent: Array<{ type: "text"; text: string } | { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> }> = [];
+              const text = String(msg.content || "");
+              if (text) {
+                assistantContent.push({ type: "text" as const, text });
+              }
+              const toolCalls = Array.isArray(meta.toolCalls) ? meta.toolCalls : [];
+              for (const tc of toolCalls) {
+                const tcObj = tc as Record<string, unknown>;
+                const tcId = String(tcObj.id || "");
+                assistantContent.push({
+                  type: "toolCall" as const,
+                  id: tcId,
+                  name: String(tcObj.name || ""),
+                  arguments: (typeof tcObj.arguments === "object" && tcObj.arguments !== null ? tcObj.arguments : {}) as Record<string, unknown>,
+                });
+                restoredToolCallIds.add(tcId);
+              }
+              if (assistantContent.length === 0) continue;
               agent.messages = [...agent.messages, {
                 role: "assistant",
-                content: [{ type: "text" as const, text: String(msg.content || "") }],
+                content: assistantContent,
                 provider: modelDescriptor.provider,
                 model: modelDescriptor.id,
                 usage: { input: 0, output: 0, totalTokens: 0 },
@@ -215,32 +198,117 @@ export function agentRoutes(runtime: AppRuntime): Hono {
               }];
             } else if (role === "system") {
               agent.messages = [...agent.messages, { role: "user", content: String(msg.content || ""), timestamp: Date.now() }];
-            } else if (role === "tool") {
+            } else if (role === "toolResult") {
+              const toolCallId = String(meta.toolCallId || "");
+              if (!toolCallId || !restoredToolCallIds.has(toolCallId)) continue;
               agent.messages = [...agent.messages, {
                 role: "toolResult" as const,
-                toolCallId: String(msg.tool_call_id || ""),
-                toolName: String(msg.name || ""),
+                toolCallId,
+                toolName: String(meta.toolName || ""),
                 content: [{ type: "text" as const, text: String(msg.content || "") }],
-                isError: false,
+                isError: Boolean(meta.error),
                 timestamp: Date.now(),
               }];
             }
           }
 
           // ---- Subscribe to agent events ----
-          let finalContent = "";
           let finalError: string | null = null;
           let totalTokens = 0;
           let promptTokens = 0;
+          let currentAssistantTurnEntryId: string | null = null;
+          let initialUserMessageSeen = false;
 
           agent.subscribe((event) => {
             switch (event.type) {
+              case "message_start": {
+                const msg = event.message;
+                if (msg.role === "user") {
+                  if (!initialUserMessageSeen) {
+                    initialUserMessageSeen = true;
+                    break;
+                  }
+                  const userContent = typeof msg.content === "string"
+                    ? msg.content
+                    : (msg.content as Array<{ type: string; text?: string }>)
+                        .filter((c) => c.type === "text")
+                        .map((c) => c.text ?? "")
+                        .join("");
+                  const userEntryId = mgr.appendMessage({ role: "user", content: userContent });
+                  const userEntry = mgr.getEntry(userEntryId);
+                  sendFrame(controller, {
+                    type: "message_end",
+                    message: {
+                      id: userEntryId,
+                      sessionId,
+                      role: "user",
+                      content: userContent,
+                      createdAt: userEntry?.timestamp ?? new Date().toISOString(),
+                      metadata: null,
+                      error: null,
+                      entryId: userEntryId,
+                      parentId: userEntry?.parentId ?? null,
+                      entryType: "message",
+                    },
+                  });
+                } else if (msg.role === "assistant") {
+                  // Every assistant message_start creates a fresh turn
+                  toolCallsById.clear();
+                  assistantClientId = `assistant:${crypto.randomUUID()}`;
+                  const entryId = mgr.appendMessage({
+                    role: "assistant",
+                    content: "",
+                    metadata: { toolCalls: [] },
+                    error: null,
+                  });
+                  currentAssistantTurnEntryId = entryId;
+                  const entry = mgr.getEntry(entryId);
+                  sendFrame(controller, {
+                    type: "message_start",
+                    message: {
+                      id: entryId,
+                      clientId: assistantClientId,
+                      sessionId,
+                      role: "assistant",
+                      content: "",
+                      createdAt: entry?.timestamp ?? new Date().toISOString(),
+                      metadata: { toolCalls: [] },
+                      error: null,
+                      entryId,
+                      parentId: entry?.parentId ?? null,
+                      entryType: "message",
+                    },
+                  });
+                }
+                break;
+              }
+
+              case "message_update": {
+                if (event.message.role === "assistant") {
+                  const delta = event.delta ?? "";
+                  sendFrame(controller, {
+                    type: "message_update",
+                    message: {
+                      clientId: assistantClientId,
+                      role: "assistant",
+                      content: "",
+                      metadata: null,
+                      error: null,
+                    },
+                    delta,
+                  });
+                }
+                break;
+              }
+
               case "tool_execution_start": {
                 const toolCall = { id: event.toolCallId, name: event.toolName, arguments: event.args };
                 toolCallsById.set(event.toolCallId, toolCall);
-                mgr.updateMessage(currentAssistantEntryId, {
-                  metadata: { toolCalls: Array.from(toolCallsById.values()) },
-                });
+                if (currentAssistantTurnEntryId) {
+                  mgr.updateMessage(currentAssistantTurnEntryId, {
+                    metadata: { toolCalls: Array.from(toolCallsById.values()) },
+                  });
+                }
                 sendFrame(controller, { type: "tool_execution_start", toolCall });
                 break;
               }
@@ -255,7 +323,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                   toolCall: toolCallsById.get(event.toolCallId) ?? { id: event.toolCallId, name: event.toolName, arguments: {} },
                   toolResult: { callId: event.toolCallId, name: event.toolName, output: toolOutput.slice(0, 2000), error: event.isError },
                 });
-                // Persist tool result to session
                 const entryId = mgr.appendMessage({
                   role: "toolResult",
                   content: toolOutput,
@@ -283,15 +350,47 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
               case "message_end": {
                 const msg = event.message;
-                if (msg.role === "assistant") {
+                if (msg.role === "assistant" && currentAssistantTurnEntryId) {
                   const assistant = msg as AssistantMessage;
-                  finalContent = assistant.content
+                  const turnContent = assistant.content
                     .filter((c): c is TextContent => c.type === "text")
                     .map((c) => c.text)
                     .join("");
                   finalError = assistant.errorMessage ?? null;
                   totalTokens += assistant.usage.totalTokens;
                   promptTokens += assistant.usage.input;
+                  // Extract tool calls declared in the assistant message content
+                  for (const c of assistant.content) {
+                    if (c.type === "toolCall") {
+                      toolCallsById.set(c.id, { id: c.id, name: c.name, arguments: c.arguments });
+                    }
+                  }
+                  const turnMetadata = {
+                    totalTokens: assistant.usage.totalTokens,
+                    promptTokens: assistant.usage.input,
+                    toolCalls: Array.from(toolCallsById.values()),
+                  };
+                  const updated = mgr.updateMessage(currentAssistantTurnEntryId, {
+                    content: turnContent,
+                    metadata: turnMetadata,
+                    error: finalError,
+                  });
+                  sendFrame(controller, {
+                    type: "message_end",
+                    message: {
+                      id: currentAssistantTurnEntryId,
+                      clientId: assistantClientId,
+                      sessionId,
+                      role: "assistant",
+                      content: turnContent,
+                      createdAt: updated.timestamp,
+                      metadata: turnMetadata,
+                      error: finalError,
+                      entryId: currentAssistantTurnEntryId,
+                      parentId: updated.parentId ?? null,
+                      entryType: "message",
+                    },
+                  });
                 }
                 break;
               }
@@ -301,37 +400,11 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             }
           });
 
+          // ---- Register agent for steering/abort ----
+          runtime.activeAgents.set(sessionId, agent);
+
           // ---- Run the agent ----
           await agent.prompt(message);
-
-          // ---- Finalize session ----
-          const metadata = {
-            totalTokens,
-            promptTokens,
-            toolCalls: Array.from(toolCallsById.values()),
-          };
-          const finalizedAssistantEntry = mgr.updateMessage(currentAssistantEntryId, {
-            content: finalContent,
-            metadata,
-            error: finalError,
-          });
-
-          sendFrame(controller, {
-            type: "message_end",
-            message: {
-              id: currentAssistantEntryId,
-              clientId: assistantClientId,
-              sessionId,
-              role: "assistant",
-              content: finalContent,
-              createdAt: finalizedAssistantEntry.timestamp,
-              metadata,
-              error: finalError,
-              entryId: currentAssistantEntryId,
-              parentId: finalizedAssistantEntry.parentId ?? null,
-              entryType: "message",
-            },
-          });
 
           sendFrame(controller, {
             type: "agent_end",
@@ -349,22 +422,45 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
         } catch (error) {
           const errorText = error instanceof Error ? error.message : String(error);
-          if (assistantEntryId) {
-            try {
-              mgr.updateMessage(assistantEntryId, { content: errorText, error: errorText });
-            } catch {
-              // Best-effort persistence for failed runs.
-            }
-          }
           sendFrame(controller, { type: "error", error: errorText });
           sendFrame(controller, { type: "agent_end", error: errorText, totalTokens: 0, promptTokens: 0 });
         } finally {
+          runtime.activeAgents.delete(sessionId);
           controller.close();
         }
       },
     });
 
     return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+  });
+
+  // Injects a steering message into an actively-running agent session.
+  // The message is queued and will be processed after the current tool turn finishes.
+  // Persistence is handled by the event subscriber when the loop processes the message.
+  app.post("/api/agent/sessions/:id/steer", async (c) => {
+    const sessionId = c.req.param("id");
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const message = String(body.message || "").trim();
+    if (!message) {
+      return c.json({ detail: "message is required" }, 400);
+    }
+    const agent = runtime.activeAgents.get(sessionId);
+    if (!agent) {
+      return c.json({ detail: "no active agent run for this session" }, 409);
+    }
+    agent.steer({ role: "user", content: message, timestamp: Date.now() });
+    return c.json({ ok: true });
+  });
+
+  // Aborts the currently-running agent for a session.
+  app.post("/api/agent/sessions/:id/abort", async (c) => {
+    const sessionId = c.req.param("id");
+    const agent = runtime.activeAgents.get(sessionId);
+    if (!agent) {
+      return c.json({ detail: "no active agent run for this session" }, 409);
+    }
+    agent.abort();
+    return c.json({ ok: true });
   });
 
   // Lists available models for the given provider, annotated with the active model.

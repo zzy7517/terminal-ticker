@@ -218,49 +218,63 @@ async function streamAssistantResponse(
   signal: AbortSignal | undefined,
   emit: AgentEventSink,
 ): Promise<AssistantMessage> {
-  // Apply context transform if configured
   let messages = context.messages;
   if (config.transformContext) {
     messages = await config.transformContext(messages, signal);
   }
 
-  // Filter to LLM-visible messages
   const llmMessages = config.convertToLlm(messages);
-
-  // Build LLM context
   const llmContext: AgentContext = {
     systemPrompt: context.systemPrompt,
     messages: llmMessages,
     tools: context.tools,
   };
 
-  // Resolve API key
   const resolvedApiKey = (config.getApiKey
     ? await config.getApiKey(config.model.provider)
     : undefined) || config.apiKey;
 
+  // Emit message_start before streaming begins (pi-mono pattern).
+  // This lets subscribers know a new assistant turn is starting.
+  const partialMessage: AssistantMessage = {
+    role: "assistant",
+    content: [],
+    provider: config.model.provider,
+    model: config.model.id,
+    usage: { input: 0, output: 0, totalTokens: 0 },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  };
+  await emit({ type: "message_start", message: partialMessage });
+
+  let accumulatedContent = "";
   const streamOptions: StreamOptions = {
     apiKey: resolvedApiKey,
     signal,
     reasoning: config.reasoning,
-    onDelta: config.onDelta,
+    onDelta: async (delta: string) => {
+      accumulatedContent += delta;
+      await emit({
+        type: "message_update",
+        message: {
+          ...partialMessage,
+          content: [{ type: "text" as const, text: accumulatedContent }],
+        },
+        delta,
+      });
+      await config.onDelta?.(delta);
+    },
   };
 
   try {
     const { message } = await config.streamFn(config.model, llmContext, streamOptions);
-
-    // Emit start and end for the assistant message
-    await emit({ type: "message_start", message });
-    await emit({ type: "message_end", message });
-
-    // Push to context
     context.messages.push(message);
-
+    await emit({ type: "message_end", message });
     return message;
   } catch (error) {
     const errorMsg = createErrorMessage(config, error);
-    await emitAssistantMessage(errorMsg, emit);
     context.messages.push(errorMsg);
+    await emit({ type: "message_end", message: errorMsg });
     return errorMsg;
   }
 }
