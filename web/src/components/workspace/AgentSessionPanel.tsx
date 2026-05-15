@@ -123,6 +123,7 @@ export function AgentSessionPanel({
   const pendingToolCalls = useAgentStore((s) => s.pendingToolCalls);
   const modelCache = useAgentStore((s) => s.modelCache);
   const contextUsage = useAgentStore((s) => s.contextUsage);
+  const streamFlushTick = useAgentStore((s) => s.streamFlushTick);
 
   const setAgentPrompt = useAgentStore((s) => s.setAgentPrompt);
   const changeProviderModel = useAgentStore((s) => s.changeProviderModel);
@@ -146,6 +147,7 @@ export function AgentSessionPanel({
   const sessionId = agentSession?.session?.id ?? null;
   const lastMessage = messages[messages.length - 1] ?? null;
   const lastMessageToolCallCount = (lastMessage?.metadata?.toolCalls as AgentToolCall[] | undefined)?.length ?? 0;
+
   const toolResultsById = useMemo(() => {
     const results = new Map<string, AgentMessage>();
     for (const message of messages) {
@@ -217,6 +219,7 @@ export function AgentSessionPanel({
     lastMessage?.error,
     lastMessageToolCallCount,
     pendingToolCalls.size,
+    streamFlushTick,
   ]);
 
   const enabledProviders = AGENT_PROVIDER_OPTIONS.filter(

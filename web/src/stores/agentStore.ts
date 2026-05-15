@@ -49,6 +49,7 @@ interface AgentState {
   agentSessionById: Record<string, AgentSessionResponse>;
   runStateBySessionId: Record<string, SessionRunProjection>;
   draftBySessionId: Record<string, string>;
+  streamFlushTick: number;
 
   setAgentSession: (session: AgentSessionResponse | null) => void;
   setAgentSessionHistory: (history: AgentSessionSummary[]) => void;
@@ -238,6 +239,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentSessionById: {},
   runStateBySessionId: {},
   draftBySessionId: {},
+  streamFlushTick: 0,
 
   setAgentSession: (session) => set((s) => {
     const activeAgentSessionId = session?.session?.id ?? null;
@@ -463,8 +465,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               { ...previous, status: 'running', runId: controller.runId, lastSeq: controller.lastSeq },
             );
           }
-          const next = { ...s, agentSessionById, runStateBySessionId };
-          return { agentSessionById, runStateBySessionId, ...activeFields(next) };
+          const next = { ...s, agentSessionById, runStateBySessionId, streamFlushTick: s.streamFlushTick + 1 };
+          return { agentSessionById, runStateBySessionId, streamFlushTick: next.streamFlushTick, ...activeFields(next) };
         });
       }
 
