@@ -31,7 +31,7 @@ export const streamCodex: ApiStreamFunction = async (model: AgentModel, input: C
     body: JSON.stringify(payload),
     ...(input.signal ? { signal: input.signal } : {}),
   });
-  return collectCodexResponse(response, input.onDelta);
+  return collectCodexResponse(response, input.onDelta, input.signal);
 };
 
 export const listCodexModels: ApiListModelsFunction = async (model: AgentModel): Promise<Array<Record<string, unknown>>> => {
@@ -256,7 +256,7 @@ function codexToolsPayload(tools: Array<Record<string, unknown>> | null | undefi
   return out;
 }
 
-async function collectCodexResponse(response: Response, onDelta?: ((delta: string) => void | Promise<void>) | null): Promise<ChatResponse> {
+async function collectCodexResponse(response: Response, onDelta?: ((delta: string) => void | Promise<void>) | null, signal?: AbortSignal): Promise<ChatResponse> {
   const textChunks: string[] = [];
   let doneText: string | null = null;
   const toolCalls = new Map<string, { id: string; name: string; arguments: string }>();
@@ -330,6 +330,10 @@ async function collectCodexResponse(response: Response, onDelta?: ((delta: strin
   }
   const reader = response.body.getReader();
   while (true) {
+    if (signal?.aborted) {
+      await reader.cancel();
+      break;
+    }
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });

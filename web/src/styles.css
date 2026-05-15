@@ -1047,11 +1047,6 @@ textarea:focus-visible {
   background: var(--accent-tint-strong);
 }
 
-.session-message.user.queued {
-  opacity: 0.6;
-  border: 1px dashed var(--accent);
-}
-
 .session-message-head {
   align-items: center;
   display: flex;
@@ -1078,6 +1073,21 @@ textarea:focus-visible {
 
 .session-message-text {
   white-space: pre-wrap;
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  background: var(--fg-muted);
+  animation: streaming-pulse 1s ease-in-out infinite;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+@keyframes streaming-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .session-compose {

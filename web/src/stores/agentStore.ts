@@ -6,7 +6,6 @@ import type {
   AgentSessionResponse,
   AgentSessionRun,
   AgentSessionSummary,
-  AgentToolCall,
 } from '../types';
 import {
   abortAgentSession,
@@ -19,12 +18,6 @@ import {
   streamAgentMessage,
 } from '../api';
 import { AGENT_PROVIDER_OPTIONS } from '../constants';
-import { streamMessageToAgentMessage, upsertAgentMessage } from '../utils';
-import {
-  STREAM_COMMIT_TICK_MS,
-  StreamingMessageController,
-  type StreamingRawMessage,
-} from './streamingController';
 import { useMarketStore } from './marketStore';
 
 type ContextUsage = AgentContextUsage | null;
@@ -51,9 +44,8 @@ interface AgentState {
   agentSessionById: Record<string, AgentSessionResponse>;
   runStateBySessionId: Record<string, SessionRunProjection>;
   draftBySessionId: Record<string, string>;
-  streamFlushTick: number;
-  /** Number of steering messages queued and not yet processed by the agent. */
-  steeringQueueCount: number;
+  /** The assistant message currently being streamed (pi-mono dual-zone pattern). */
+  streamingMessage: AgentMessage | null;
 
   setAgentSession: (session: AgentSessionResponse | null) => void;
   setAgentSessionHistory: (history: AgentSessionSummary[]) => void;
@@ -150,6 +142,21 @@ function activeFields(state: ActiveMirrorSource): Pick<
   };
 }
 
+function appendSessionMessage(
+  state: AgentState,
+  sessionId: string,
+  message: AgentMessage,
+): Record<string, AgentSessionResponse> {
+  const session = responseForSession(state, sessionId);
+  return {
+    ...state.agentSessionById,
+    [sessionId]: {
+      ...session,
+      messages: [...session.messages, message],
+    },
+  };
+}
+
 function cacheSession(
   cache: Record<string, AgentSessionResponse>,
   payload: AgentSessionResponse,
@@ -165,27 +172,6 @@ function responseForSession(state: AgentState, sessionId: string): AgentSessionR
   return summary ? sessionFromSummary(summary) : { session: null, messages: [] };
 }
 
-function setSessionMessage(
-  state: AgentState,
-  sessionId: string,
-  message: AgentMessage,
-): Record<string, AgentSessionResponse> {
-  const session = responseForSession(state, sessionId);
-  const messages = message.role === 'user'
-    ? session.messages.filter((item) => !(
-        item.role === 'user' &&
-        item.metadata?.queued === true &&
-        item.content === message.content
-      ))
-    : session.messages;
-  return {
-    ...state.agentSessionById,
-    [sessionId]: {
-      ...session,
-      messages: upsertAgentMessage(messages, message),
-    },
-  };
-}
 
 function upsertOptimisticSessionSummary(
   history: AgentSessionSummary[],
@@ -220,14 +206,6 @@ function replaceRunState(
   return { ...map, [sessionId]: run };
 }
 
-function latestAssistantController(
-  controllers: Map<string, StreamingMessageController>,
-  sessionId: string,
-): StreamingMessageController | null {
-  const values = Array.from(controllers.values()).reverse();
-  return values.find((controller) => controller.sessionId === sessionId && controller.role === 'assistant') ?? null;
-}
-
 export const useAgentStore = create<AgentState>((set, get) => ({
   agentSession: null,
   agentSessionHistory: [],
@@ -245,8 +223,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentSessionById: {},
   runStateBySessionId: {},
   draftBySessionId: {},
-  streamFlushTick: 0,
-  steeringQueueCount: 0,
+  streamingMessage: null,
 
   setAgentSession: (session) => set((s) => {
     const activeAgentSessionId = session?.session?.id ?? null;
@@ -380,112 +357,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   runAgentAnalysis: async () => {
     const { agentSession, agentPrompt, agentProvider, agentModel } = get();
     let targetSessionId = agentSession?.session?.id ?? null;
-    const messageIds = new Map<string, number>();
-    const toolResultIds = new Map<string, number>();
-    let toolResultIdCounter = 0;
-    const streamControllers = new Map<string, StreamingMessageController>();
-    let streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const TOOL_EVENT_STAGGER_MS = 150;
-    const toolEventQueue: Array<() => void> = [];
-    let toolEventTimer: ReturnType<typeof setTimeout> | null = null;
-    let toolEventDraining = false;
-
-    const drainOneToolEvent = () => {
-      toolEventTimer = null;
-      const apply = toolEventQueue.shift();
-      if (!apply) {
-        toolEventDraining = false;
-        return;
-      }
-      apply();
-      if (toolEventQueue.length > 0) {
-        toolEventDraining = true;
-        toolEventTimer = setTimeout(drainOneToolEvent, TOOL_EVENT_STAGGER_MS);
-      } else {
-        toolEventDraining = false;
-      }
-    };
-
-    const enqueueToolEvent = (apply: () => void) => {
-      if (!toolEventDraining && toolEventQueue.length === 0) {
-        apply();
-        toolEventDraining = true;
-        toolEventTimer = setTimeout(() => { toolEventDraining = false; drainOneToolEvent(); }, TOOL_EVENT_STAGGER_MS);
-      } else {
-        toolEventQueue.push(apply);
-        if (!toolEventTimer) {
-          toolEventTimer = setTimeout(drainOneToolEvent, TOOL_EVENT_STAGGER_MS);
-        }
-      }
-    };
-
-    const flushAllToolEvents = () => {
-      if (toolEventTimer !== null) {
-        clearTimeout(toolEventTimer);
-        toolEventTimer = null;
-      }
-      while (toolEventQueue.length > 0) {
-        toolEventQueue.shift()!();
-      }
-      toolEventDraining = false;
-    };
-
-    const clearStreamFlushTimer = () => {
-      if (streamFlushTimer !== null) {
-        clearTimeout(streamFlushTimer);
-        streamFlushTimer = null;
-      }
-    };
-
-    const resolveFallbackId = (raw: StreamingRawMessage) => {
-      const clientId = raw.clientId;
-      let fallbackId = typeof raw.id === 'number' ? raw.id : 0;
-      if (!fallbackId) {
-        if (clientId && messageIds.has(clientId)) {
-          fallbackId = messageIds.get(clientId) ?? 0;
-        } else {
-          fallbackId = -Date.now() - messageIds.size;
-          if (clientId) messageIds.set(clientId, fallbackId);
-        }
-      }
-      return fallbackId;
-    };
-
-    const flushStreamQueues = (force = false) => {
-      clearStreamFlushTimer();
-      const now = Date.now();
-      const drained = Array.from(streamControllers.values())
-        .map((controller) => ({ controller, message: controller.drain(now, force) }))
-        .filter((item): item is { controller: StreamingMessageController; message: AgentMessage } => item.message !== null);
-
-      if (drained.length > 0) {
-        set((s) => {
-          let agentSessionById = s.agentSessionById;
-          let runStateBySessionId = s.runStateBySessionId;
-          for (const { controller, message } of drained) {
-            agentSessionById = setSessionMessage({ ...s, agentSessionById }, controller.sessionId, message);
-            const previous = runStateBySessionId[controller.sessionId] ?? idleRun(controller.sessionId);
-            runStateBySessionId = replaceRunState(
-              runStateBySessionId,
-              controller.sessionId,
-              { ...previous, status: 'running', runId: controller.runId, lastSeq: controller.lastSeq },
-            );
-          }
-          const next = { ...s, agentSessionById, runStateBySessionId, streamFlushTick: s.streamFlushTick + 1 };
-          return { agentSessionById, runStateBySessionId, streamFlushTick: next.streamFlushTick, ...activeFields(next) };
-        });
-      }
-
-      if (Array.from(streamControllers.values()).some((controller) => controller.hasQueuedChunks())) {
-        streamFlushTimer = setTimeout(() => flushStreamQueues(), STREAM_COMMIT_TICK_MS);
-      }
-    };
-
-    const scheduleStreamFlush = () => {
-      if (streamFlushTimer !== null) return;
-      streamFlushTimer = setTimeout(() => flushStreamQueues(), STREAM_COMMIT_TICK_MS);
-    };
+    let idCounter = 0;
+    const nextId = () => { idCounter += 1; return -(Date.now() * 100 + idCounter); };
 
     try {
       if (!targetSessionId) {
@@ -521,7 +394,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set((s) => {
         const createdAt = new Date().toISOString();
         const optimisticUserMessage: AgentMessage = {
-          id: -Date.now(),
+          id: nextId(),
           sessionId: runSessionId,
           role: 'user',
           content: prompt,
@@ -529,16 +402,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           metadata: null,
           error: null,
         };
-        const agentSessionById = setSessionMessage(s, runSessionId, optimisticUserMessage);
+        const agentSessionById = appendSessionMessage(s, runSessionId, optimisticUserMessage);
         const runningRun = {
           ...idleRun(runSessionId),
           status: 'running' as const,
           pendingToolCalls: new Set<string>(),
         };
-        const runStateBySessionId = {
-          ...s.runStateBySessionId,
-          [runSessionId]: runningRun,
-        };
+        const runStateBySessionId = { ...s.runStateBySessionId, [runSessionId]: runningRun };
         const draftBySessionId = { ...s.draftBySessionId, [runSessionId]: '' };
         const agentSessionHistory = upsertOptimisticSessionSummary(
           s.agentSessionHistory,
@@ -550,6 +420,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const next = { ...s, agentSessionById, runStateBySessionId, draftBySessionId, agentSessionHistory };
         return { agentSessionById, runStateBySessionId, draftBySessionId, agentSessionHistory, ...activeFields(next) };
       });
+
+      let streamingContent = '';
+
       await streamAgentMessage(
         runSessionId,
         prompt,
@@ -558,208 +431,117 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           const sessionId = envelope.sessionId || runSessionId;
           const event = envelope.event;
           if (!event) return;
-          if (event.type === 'tool_execution_start') {
-            const capturedEnvelope = { ...envelope };
-            const capturedEvent = { ...event };
-            enqueueToolEvent(() => {
-              set((s) => {
-                const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
-                const pendingToolCalls = new Set(previous.pendingToolCalls);
-                pendingToolCalls.add(capturedEvent.toolCall.id);
-                const controller = latestAssistantController(streamControllers, sessionId);
-                let agentSessionById: typeof s.agentSessionById;
-                if (controller) {
-                  agentSessionById = setSessionMessage(
-                    s,
-                    sessionId,
-                    controller.addToolCall(capturedEvent.toolCall as AgentToolCall, { runId: capturedEnvelope.runId, seq: capturedEnvelope.seq }),
-                  );
-                } else {
-                  const session = s.agentSessionById[sessionId];
-                  const msgs = session?.messages ?? [];
-                  const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
-                  if (lastAssistant) {
-                    const existing: AgentToolCall[] = lastAssistant.metadata?.toolCalls ?? [];
-                    const tc = capturedEvent.toolCall as AgentToolCall;
-                    if (!existing.some((item) => item.id === tc.id)) {
-                      const updated: AgentMessage = {
-                        ...lastAssistant,
-                        metadata: { ...lastAssistant.metadata, toolCalls: [...existing, tc] },
-                      };
-                      agentSessionById = setSessionMessage(s, sessionId, updated);
-                    } else {
-                      agentSessionById = s.agentSessionById;
-                    }
-                  } else {
-                    agentSessionById = s.agentSessionById;
-                  }
-                }
-                const runStateBySessionId = replaceRunState(
-                  s.runStateBySessionId,
-                  sessionId,
-                  { ...previous, status: 'running', runId: capturedEnvelope.runId, lastSeq: capturedEnvelope.seq, pendingToolCalls },
-                );
-                const next = { ...s, agentSessionById, runStateBySessionId };
-                return { agentSessionById, runStateBySessionId, ...activeFields(next) };
-              });
-            });
-            return;
-          }
-          if (event.type === 'tool_execution_end') {
-            const callId = String(event.toolResult?.callId ?? event.toolCall.id ?? '');
-            if (callId && !toolResultIds.has(callId)) {
-              toolResultIdCounter += 1;
-              toolResultIds.set(callId, -(Date.now() * 100 + toolResultIdCounter));
-            }
-            const capturedEnvelope = { ...envelope };
-            const capturedEvent = { ...event };
-            enqueueToolEvent(() => {
-              set((s) => {
-                const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
-                const pendingToolCalls = new Set(previous.pendingToolCalls);
-                pendingToolCalls.delete(capturedEvent.toolCall.id);
-                let agentSessionById = s.agentSessionById;
-                if (capturedEvent.toolResult && callId) {
-                  const toolResultMessage: AgentMessage = {
-                    id: toolResultIds.get(callId)!,
-                    sessionId,
-                    role: 'toolResult',
-                    content: String(capturedEvent.toolResult.output ?? ''),
-                    createdAt: new Date().toISOString(),
-                    metadata: {
-                      toolCallId: callId,
-                      toolName: capturedEvent.toolResult.name ?? capturedEvent.toolCall.name,
-                      error: capturedEvent.toolResult.error,
-                    },
-                    error: capturedEvent.toolResult.error ? String(capturedEvent.toolResult.output ?? '') : null,
-                  };
-                  agentSessionById = setSessionMessage(s, sessionId, toolResultMessage);
-                }
-                const runStateBySessionId = replaceRunState(
-                  s.runStateBySessionId,
-                  sessionId,
-                  { ...previous, runId: capturedEnvelope.runId, lastSeq: capturedEnvelope.seq, pendingToolCalls },
-                );
-                const next = { ...s, agentSessionById, runStateBySessionId };
-                return { agentSessionById, runStateBySessionId, ...activeFields(next) };
-              });
-            });
-            return;
-          }
-          if (event.type === 'message_start' || event.type === 'message_update' || event.type === 'message_end') {
+
+          if (event.type === 'message_start') {
             const raw = event.message;
-            const clientId = raw.clientId;
-            const toolCallId = raw.role === 'toolResult' ? String(raw.metadata?.toolCallId ?? '') : '';
-            const fallbackId = (toolCallId && toolResultIds.has(toolCallId))
-              ? toolResultIds.get(toolCallId)!
-              : resolveFallbackId(raw);
-            const createdAt = new Date().toISOString();
-            if (raw.role === 'assistant' && clientId) {
-              let controller = streamControllers.get(clientId);
-              if (!controller) {
-                controller = new StreamingMessageController(
-                  raw,
-                  { id: fallbackId, sessionId, createdAt },
-                  { runId: envelope.runId, seq: envelope.seq },
-                );
-                streamControllers.set(clientId, controller);
-              } else {
-                controller.update(raw, { runId: envelope.runId, seq: envelope.seq });
-              }
-
-              if (event.type === 'message_update') {
-                if (controller.pushDelta(event.delta, raw.content)) {
-                  scheduleStreamFlush();
-                }
-                return;
-              }
-
-              if (event.type === 'message_end') {
-                const message = controller.finalize(raw, { runId: envelope.runId, seq: envelope.seq });
-                streamControllers.delete(clientId);
-                set((s) => {
-                  const agentSessionById = setSessionMessage(s, sessionId, message);
-                  const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
-                  const runStateBySessionId = replaceRunState(
-                    s.runStateBySessionId,
-                    sessionId,
-                    { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
-                  );
-                  const next = { ...s, agentSessionById, runStateBySessionId };
-                  return { agentSessionById, runStateBySessionId, ...activeFields(next) };
-                });
-                if (!Array.from(streamControllers.values()).some((item) => item.hasQueuedChunks())) {
-                  clearStreamFlushTimer();
-                }
-                return;
-              }
-
-              set((s) => {
-                const message = controller.toMessage();
-                const agentSessionById = setSessionMessage(s, sessionId, message);
-                const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
-                const runStateBySessionId = replaceRunState(
-                  s.runStateBySessionId,
-                  sessionId,
-                  { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
-                );
-                const next = { ...s, agentSessionById, runStateBySessionId };
-                return { agentSessionById, runStateBySessionId, ...activeFields(next) };
-              });
-              return;
+            if (raw.role === 'assistant') {
+              streamingContent = '';
+              set({ streamingMessage: {
+                id: nextId(),
+                sessionId,
+                role: 'assistant',
+                content: '',
+                createdAt: raw.createdAt ?? new Date().toISOString(),
+                metadata: null,
+                error: null,
+              }});
             }
-            const isToolResultMessage = raw.role === 'toolResult';
-            const isUserMessage = raw.role === 'user';
-            const applyNonAssistantMessage = () => {
-              set((s) => {
-                const message = streamMessageToAgentMessage(raw, { id: fallbackId, sessionId, createdAt });
-                const agentSessionById = setSessionMessage(s, sessionId, message);
-                const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
-                const runStateBySessionId = replaceRunState(
-                  s.runStateBySessionId,
-                  sessionId,
-                  { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
-                );
-                const next = { ...s, agentSessionById, runStateBySessionId };
-                // Decrement steering queue when a steered user message is confirmed by backend
-                const steeringQueueCount = isUserMessage
-                  ? Math.max(0, s.steeringQueueCount - 1)
-                  : s.steeringQueueCount;
-                return { agentSessionById, runStateBySessionId, steeringQueueCount, ...activeFields(next) };
-              });
+            return;
+          }
+
+          if (event.type === 'message_update') {
+            const delta = event.delta ?? '';
+            if (delta) {
+              streamingContent += delta;
+              set((s) => ({
+                streamingMessage: s.streamingMessage
+                  ? { ...s.streamingMessage, content: streamingContent }
+                  : s.streamingMessage,
+              }));
+            }
+            return;
+          }
+
+          if (event.type === 'message_end') {
+            const raw = event.message;
+            const message: AgentMessage = {
+              id: nextId(),
+              sessionId,
+              role: raw.role ?? 'assistant',
+              content: raw.content ?? '',
+              createdAt: raw.createdAt ?? new Date().toISOString(),
+              metadata: raw.metadata ?? null,
+              error: raw.error ?? null,
             };
-            if (isToolResultMessage) {
-              enqueueToolEvent(applyNonAssistantMessage);
-            } else {
-              applyNonAssistantMessage();
-            }
+            set((s) => {
+              const agentSessionById = appendSessionMessage(s, sessionId, message);
+              const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+              const runStateBySessionId = replaceRunState(
+                s.runStateBySessionId,
+                sessionId,
+                { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
+              );
+              const clearStreaming = raw.role === 'assistant';
+              const next = { ...s, agentSessionById, runStateBySessionId };
+              return {
+                agentSessionById,
+                runStateBySessionId,
+                ...(clearStreaming ? { streamingMessage: null } : {}),
+                ...activeFields(next),
+              };
+            });
             return;
           }
+
+          if (event.type === 'tool_execution_start') {
+            set((s) => {
+              const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+              const pendingToolCalls = new Set(previous.pendingToolCalls);
+              pendingToolCalls.add(event.toolCall.id);
+              const runStateBySessionId = replaceRunState(
+                s.runStateBySessionId,
+                sessionId,
+                { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq, pendingToolCalls },
+              );
+              const next = { ...s, runStateBySessionId };
+              return { runStateBySessionId, ...activeFields(next) };
+            });
+            return;
+          }
+
+          if (event.type === 'tool_execution_end') {
+            const callId = String(event.toolResult?.callId ?? event.toolCall?.id ?? '');
+            set((s) => {
+              const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+              const pendingToolCalls = new Set(previous.pendingToolCalls);
+              if (callId) pendingToolCalls.delete(callId);
+              const runStateBySessionId = replaceRunState(
+                s.runStateBySessionId,
+                sessionId,
+                { ...previous, runId: envelope.runId, lastSeq: envelope.seq, pendingToolCalls },
+              );
+              const next = { ...s, runStateBySessionId };
+              return { runStateBySessionId, ...activeFields(next) };
+            });
+            return;
+          }
+
           if (event.type === 'agent_end') {
-            flushAllToolEvents();
-            if (typeof event.totalTokens === 'number') {
-              const totalTokens = event.totalTokens;
-              const promptTokens = event.promptTokens ?? 0;
-              set((s) => {
-                const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
-                const runStateBySessionId = replaceRunState(
-                  s.runStateBySessionId,
-                  sessionId,
-                  {
-                    ...previous,
-                    runId: envelope.runId,
-                    lastSeq: envelope.seq,
-                    contextUsage: { promptTokens, totalTokens },
-                  },
-                );
-                const next = { ...s, runStateBySessionId };
-                return { runStateBySessionId, steeringQueueCount: 0, ...activeFields(next) };
-              });
-            } else {
-              set({ steeringQueueCount: 0 });
-            }
+            const totalTokens = typeof event.totalTokens === 'number' ? event.totalTokens : 0;
+            const promptTokens = event.promptTokens ?? 0;
+            set((s) => {
+              const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+              const runStateBySessionId = replaceRunState(
+                s.runStateBySessionId,
+                sessionId,
+                { ...previous, runId: envelope.runId, lastSeq: envelope.seq, contextUsage: { promptTokens, totalTokens } },
+              );
+              const next = { ...s, runStateBySessionId, streamingMessage: null };
+              return { runStateBySessionId, streamingMessage: null, ...activeFields(next) };
+            });
             return;
           }
+
           if (event.type === 'session_update') {
             useMarketStore.getState().setState(event.state);
             set((s) => {
@@ -773,19 +555,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             });
             return;
           }
+
           if (event.type === 'error') {
-            const createdAt = new Date().toISOString();
             set((s) => {
               const message: AgentMessage = {
-                id: -Date.now(),
+                id: nextId(),
                 sessionId,
                 role: 'assistant',
                 content: event.error,
-                createdAt,
+                createdAt: new Date().toISOString(),
                 metadata: null,
                 error: event.error,
               };
-              const agentSessionById = setSessionMessage(s, sessionId, message);
+              const agentSessionById = appendSessionMessage(s, sessionId, message);
               const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
               const runStateBySessionId = replaceRunState(
                 s.runStateBySessionId,
@@ -793,7 +575,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 { ...previous, status: 'error', error: event.error, runId: envelope.runId, lastSeq: envelope.seq },
               );
               const next = { ...s, agentSessionById, runStateBySessionId };
-              return { agentSessionById, runStateBySessionId, ...activeFields(next) };
+              return { agentSessionById, runStateBySessionId, streamingMessage: null, ...activeFields(next) };
             });
           }
         },
@@ -804,7 +586,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const errorSessionId = targetSessionId;
         set((s) => {
           const errorMessage: AgentMessage = {
-            id: -Date.now(),
+            id: nextId(),
             sessionId: errorSessionId,
             role: 'assistant',
             content: message,
@@ -812,7 +594,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             metadata: null,
             error: message,
           };
-          const agentSessionById = setSessionMessage(s, errorSessionId, errorMessage);
+          const agentSessionById = appendSessionMessage(s, errorSessionId, errorMessage);
           const previous = s.runStateBySessionId[errorSessionId] ?? idleRun(errorSessionId);
           const runStateBySessionId = replaceRunState(
             s.runStateBySessionId,
@@ -820,15 +602,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             { ...previous, status: 'error', error: message, pendingToolCalls: new Set<string>() },
           );
           const next = { ...s, agentSessionById, runStateBySessionId };
-          return { agentSessionById, runStateBySessionId, ...activeFields(next) };
+          return { agentSessionById, runStateBySessionId, streamingMessage: null, ...activeFields(next) };
         });
       }
       console.error(error);
     } finally {
-      flushAllToolEvents();
-      clearStreamFlushTimer();
-      streamControllers.clear();
-      toolResultIds.clear();
       if (targetSessionId) {
         const finishedSessionId = targetSessionId;
         set((s) => {
@@ -840,7 +618,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             { ...previous, status, pendingToolCalls: new Set<string>() },
           );
           const next = { ...s, runStateBySessionId };
-          return { runStateBySessionId, ...activeFields(next) };
+          return { runStateBySessionId, streamingMessage: null, ...activeFields(next) };
         });
       }
     }
@@ -853,34 +631,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     if (run?.status !== 'running') return;
     const prompt = agentPrompt.trim();
     if (!prompt) return;
-    // Clear input and increment queue count immediately
     set((s) => ({
       agentPrompt: '',
       draftBySessionId: { ...s.draftBySessionId, [activeAgentSessionId]: '' },
-      steeringQueueCount: s.steeringQueueCount + 1,
     }));
-    // Add optimistic user message to transcript (shown greyed out as "queued")
-    const createdAt = new Date().toISOString();
-    const optimisticMessage: AgentMessage = {
-      id: -Date.now(),
-      sessionId: activeAgentSessionId,
-      role: 'user',
-      content: prompt,
-      createdAt,
-      metadata: { queued: true },
-      error: null,
-    };
-    set((s) => {
-      const agentSessionById = setSessionMessage(s, activeAgentSessionId, optimisticMessage);
-      const next = { ...s, agentSessionById };
-      return { agentSessionById, ...activeFields(next) };
-    });
     try {
       await steerAgentSession(activeAgentSessionId, prompt);
     } catch (error) {
       console.error('steer failed:', error);
-      // Decrement on failure
-      set((s) => ({ steeringQueueCount: Math.max(0, s.steeringQueueCount - 1) }));
     }
   },
 

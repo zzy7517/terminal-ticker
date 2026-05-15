@@ -70,6 +70,7 @@ export function createStreamFnFromRegistry(): StreamFn {
       });
     }
 
+    const aborted = options.signal?.aborted === true;
     const assistantMessage: AssistantMessage = {
       role: "assistant",
       content,
@@ -80,7 +81,8 @@ export function createStreamFnFromRegistry(): StreamFn {
         output: response.usage.completion_tokens ?? response.usage.completionTokens ?? 0,
         totalTokens: response.usage.total_tokens ?? response.usage.totalTokens ?? 0,
       },
-      stopReason: response.toolCalls.length > 0 ? "toolUse" : "stop",
+      stopReason: aborted ? "aborted" : response.toolCalls.length > 0 ? "toolUse" : "stop",
+      ...(aborted ? { errorMessage: "Request was aborted" } : {}),
       timestamp: Date.now(),
     };
 

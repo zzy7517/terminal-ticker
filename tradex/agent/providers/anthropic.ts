@@ -43,10 +43,19 @@ export const streamAnthropic: ApiStreamFunction = async (model: AgentModel, inpu
   } as never, requestOptions);
   let content = "";
   for await (const event of stream) {
+    if (input.signal?.aborted) break;
     if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       content += event.delta.text;
       await input.onDelta?.(event.delta.text);
     }
+  }
+  if (input.signal?.aborted) {
+    return {
+      content,
+      toolCalls: [],
+      finishReason: "stop",
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    };
   }
   const final = await stream.finalMessage();
   const toolCalls: ToolCall[] = [];

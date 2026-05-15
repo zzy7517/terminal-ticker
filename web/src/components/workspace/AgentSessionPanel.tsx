@@ -89,12 +89,10 @@ function AgentTranscriptMessage({
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
   const content = message.error || message.content || (message.role === 'assistant' ? '' : 'No content.');
   const toolCalls = message.role === 'assistant' ? message.metadata?.toolCalls ?? [] : [];
-  const isQueued = message.role === 'user' && message.metadata?.queued === true;
   return (
-    <div className={`session-message ${message.role}${isQueued ? ' queued' : ''}`}>
+    <div className={`session-message ${message.role}`}>
       <div className="session-message-head">
         <span>{label}</span>
-        {isQueued && <span className="badge sm warning">queued</span>}
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
       </div>
       {toolCalls.length > 0 && (
@@ -126,9 +124,7 @@ export function AgentSessionPanel({
   const pendingToolCalls = useAgentStore((s) => s.pendingToolCalls);
   const modelCache = useAgentStore((s) => s.modelCache);
   const contextUsage = useAgentStore((s) => s.contextUsage);
-  const streamFlushTick = useAgentStore((s) => s.streamFlushTick);
-
-  const steeringQueueCount = useAgentStore((s) => s.steeringQueueCount);
+  const streamingMessage = useAgentStore((s) => s.streamingMessage);
 
   const setAgentPrompt = useAgentStore((s) => s.setAgentPrompt);
   const changeProviderModel = useAgentStore((s) => s.changeProviderModel);
@@ -227,7 +223,7 @@ export function AgentSessionPanel({
     lastMessage?.error,
     lastMessageToolCallCount,
     pendingToolCalls.size,
-    streamFlushTick,
+    streamingMessage?.content,
   ]);
 
   const enabledProviders = AGENT_PROVIDER_OPTIONS.filter(
@@ -303,11 +299,6 @@ export function AgentSessionPanel({
           <Sparkles size={14} /> Agent Session
         </span>
         {busy && <span className="agent-bias neutral">running</span>}
-        {busy && steeringQueueCount > 0 && (
-          <span className="badge mono warning">
-            <Zap size={10} /> {steeringQueueCount} queued
-          </span>
-        )}
         {busy && (
           <button
             className="shell-button ghost sm"
@@ -424,7 +415,21 @@ export function AgentSessionPanel({
             toolResultsById={toolResultsById}
           />
         ))}
-        {!sessionLoading && messages.length === 0 && (
+        {!sessionLoading && streamingMessage && (
+          <div className="session-message assistant streaming">
+            <div className="session-message-head">
+              <span>Agent</span>
+              <Loader2 className="spin" size={12} />
+            </div>
+            {streamingMessage.content && (
+              <p className="session-message-text">{streamingMessage.content}</p>
+            )}
+            {!streamingMessage.content && (
+              <span className="streaming-cursor" />
+            )}
+          </div>
+        )}
+        {!sessionLoading && messages.length === 0 && !streamingMessage && (
           <div className="empty-state row">
             <History size={16} />
             <span>No turns in this agent session.</span>
