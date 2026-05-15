@@ -2,9 +2,11 @@
  * core/agent-loop.ts — Pure stateless agent loop.
  *
  * Modeled after pi-mono's packages/agent/src/agent-loop.ts.
- * This function does not own state. The caller (Agent class) owns messages
- * and passes a mutable context reference. The loop mutates context.messages
- * in place and emits events through the sink.
+ * This function does not own state. The caller (Agent class) passes a
+ * COPIED context snapshot. The loop mutates context.messages on its own
+ * copy (for building LLM context across turns) and emits events through
+ * the sink. The Agent class receives these events and updates its own
+ * authoritative state independently.
  *
  * Two entry points:
  * - runAgentLoop(): starts from new prompt messages

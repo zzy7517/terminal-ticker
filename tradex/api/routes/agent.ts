@@ -9,6 +9,7 @@ import { buildNewsTools } from "../../agent/tools/news.js";
 import { buildSocialFeedTools } from "../../agent/tools/social.js";
 import { buildTradingTools } from "../../agent/tools/trading.js";
 import { buildWebTools } from "../../agent/tools/web.js";
+import { createFilesystemRegistry, setFilesystemRoot } from "../../agent/tools/filesystem.js";
 import { mergeRegistries } from "../../agent/tools/registry.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../../agent/core/index.js";
@@ -153,6 +154,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
               resolveSessionId: () => sessionId,
             }),
             buildWebTools(),
+            createFilesystemRegistry(),
           );
 
           // ---- Create Agent (new core) ----

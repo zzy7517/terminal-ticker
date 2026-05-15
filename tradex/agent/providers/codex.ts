@@ -30,7 +30,6 @@ export const streamCodex: ApiStreamFunction = async (model: AgentModel, input: C
     headers: codexHeaders(model.apiKey, model.accountId ?? null),
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(`Codex API ${response.status}: ${await response.text()}`);
   return collectCodexResponse(response, input.onDelta);
 };
 
@@ -52,12 +51,86 @@ export const listCodexModels: ApiListModelsFunction = async (model: AgentModel):
 
 // ---- Internal helpers ----
 
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
+
+/**
+ * Retry logic adapted from pi-mono's openai-codex-responses provider.
+ * Retries on:
+ *  - Network errors (connection reset, unexpected EOF, socket hang up, timeout)
+ *  - HTTP 429 (rate limit) / 500 / 502 / 503 / 504
+ * Does NOT retry on usage-limit errors (those won't resolve with time).
+ * Exponential backoff: 1s, 2s, 4s.
+ */
 async function codexFetch(url: string, init: Record<string, unknown>): Promise<Response> {
-  return browserFetch(url, {
-    profile: "chrome_133",
-    operatingSystem: "macos",
-    ...init,
-  } as never) as unknown as Response;
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await browserFetch(url, {
+        profile: "chrome_133",
+        operatingSystem: "macos",
+        ...init,
+      } as never) as unknown as Response;
+
+      // Successful fetch — check if HTTP status is retryable
+      if (response.ok) return response;
+
+      const status = response.status;
+      const errorText = await response.text();
+
+      if (attempt < MAX_RETRIES && isRetryableStatus(status, errorText)) {
+        await sleep(BASE_DELAY_MS * 2 ** attempt);
+        continue;
+      }
+
+      // Non-retryable HTTP error or final attempt — throw with context
+      throw new Error(`Codex API ${status}: ${errorText}`);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+
+      // Don't retry usage limit or auth errors
+      if (lastError.message.includes("usage limit") || lastError.message.includes("usage_limit")) {
+        throw lastError;
+      }
+
+      // Network-level errors are retryable
+      if (attempt < MAX_RETRIES && isRetryableNetworkError(lastError)) {
+        await sleep(BASE_DELAY_MS * 2 ** attempt);
+        continue;
+      }
+
+      throw lastError;
+    }
+  }
+
+  throw lastError ?? new Error("codexFetch: failed after retries");
+}
+
+function isRetryableStatus(status: number, errorText: string): boolean {
+  if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) {
+    return true;
+  }
+  return /rate.?limit|overloaded|service.?unavailable|upstream.?connect/i.test(errorText);
+}
+
+function isRetryableNetworkError(err: Error): boolean {
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes("unexpected eof") ||
+    msg.includes("connection reset") ||
+    msg.includes("econnreset") ||
+    msg.includes("econnrefused") ||
+    msg.includes("socket hang up") ||
+    msg.includes("network") ||
+    msg.includes("timeout") ||
+    msg.includes("etimedout") ||
+    msg.includes("fetch failed")
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeCodexModelOption(item: unknown): Record<string, unknown> | null {
