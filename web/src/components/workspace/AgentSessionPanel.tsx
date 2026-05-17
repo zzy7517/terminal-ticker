@@ -86,13 +86,15 @@ function AgentTranscriptMessage({
   toolResultsById: Map<string, AgentMessage>;
 }) {
   if (message.role === 'toolResult') return null;
+  const isQueued = message.role === 'user' && message.metadata?.queued === true;
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
   const content = message.error || message.content || (message.role === 'assistant' ? '' : 'No content.');
   const toolCalls = message.role === 'assistant' ? message.metadata?.toolCalls ?? [] : [];
   return (
-    <div className={`session-message ${message.role}`}>
+    <div className={`session-message ${message.role}${isQueued ? ' queued' : ''}`}>
       <div className="session-message-head">
         <span>{label}</span>
+        {isQueued && <span className="badge sm warning">queued</span>}
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
       </div>
       {toolCalls.length > 0 && (

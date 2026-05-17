@@ -46,6 +46,8 @@ interface AgentState {
   draftBySessionId: Record<string, string>;
   /** The assistant message currently being streamed (pi-mono dual-zone pattern). */
   streamingMessage: AgentMessage | null;
+  /** Number of steering messages queued and not yet processed by the agent. */
+  steeringQueueCount: number;
 
   setAgentSession: (session: AgentSessionResponse | null) => void;
   setAgentSessionHistory: (history: AgentSessionSummary[]) => void;
@@ -148,11 +150,19 @@ function appendSessionMessage(
   message: AgentMessage,
 ): Record<string, AgentSessionResponse> {
   const session = responseForSession(state, sessionId);
+  // When backend confirms a steered user message, remove the optimistic queued placeholder
+  const messages = message.role === 'user'
+    ? session.messages.filter((item) => !(
+        item.role === 'user' &&
+        item.metadata?.queued === true &&
+        item.content === message.content
+      ))
+    : session.messages;
   return {
     ...state.agentSessionById,
     [sessionId]: {
       ...session,
-      messages: [...session.messages, message],
+      messages: [...messages, message],
     },
   };
 }
@@ -224,6 +234,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   runStateBySessionId: {},
   draftBySessionId: {},
   streamingMessage: null,
+  steeringQueueCount: 0,
 
   setAgentSession: (session) => set((s) => {
     const activeAgentSessionId = session?.session?.id ?? null;
@@ -464,6 +475,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
           if (event.type === 'message_end') {
             const raw = event.message;
+            const isUserMessage = (raw.role ?? 'assistant') === 'user';
             const message: AgentMessage = {
               id: nextId(),
               sessionId,
@@ -482,10 +494,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
               );
               const clearStreaming = raw.role === 'assistant';
+              // Decrement steering queue when a steered user message is confirmed by backend
+              const steeringQueueCount = isUserMessage
+                ? Math.max(0, s.steeringQueueCount - 1)
+                : s.steeringQueueCount;
               const next = { ...s, agentSessionById, runStateBySessionId };
               return {
                 agentSessionById,
                 runStateBySessionId,
+                steeringQueueCount,
                 ...(clearStreaming ? { streamingMessage: null } : {}),
                 ...activeFields(next),
               };
@@ -537,7 +554,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 { ...previous, runId: envelope.runId, lastSeq: envelope.seq, contextUsage: { promptTokens, totalTokens } },
               );
               const next = { ...s, runStateBySessionId, streamingMessage: null };
-              return { runStateBySessionId, streamingMessage: null, ...activeFields(next) };
+              return { runStateBySessionId, streamingMessage: null, steeringQueueCount: 0, ...activeFields(next) };
             });
             return;
           }
@@ -631,14 +648,32 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     if (run?.status !== 'running') return;
     const prompt = agentPrompt.trim();
     if (!prompt) return;
+    // Clear input and increment queue count immediately
     set((s) => ({
       agentPrompt: '',
       draftBySessionId: { ...s.draftBySessionId, [activeAgentSessionId]: '' },
+      steeringQueueCount: s.steeringQueueCount + 1,
     }));
+    // Add optimistic user message to transcript (shown greyed out as "queued")
+    const optimisticMessage: AgentMessage = {
+      id: -Date.now(),
+      sessionId: activeAgentSessionId,
+      role: 'user',
+      content: prompt,
+      createdAt: new Date().toISOString(),
+      metadata: { queued: true },
+      error: null,
+    };
+    set((s) => {
+      const agentSessionById = appendSessionMessage(s, activeAgentSessionId, optimisticMessage);
+      const next = { ...s, agentSessionById };
+      return { agentSessionById, ...activeFields(next) };
+    });
     try {
       await steerAgentSession(activeAgentSessionId, prompt);
     } catch (error) {
       console.error('steer failed:', error);
+      set((s) => ({ steeringQueueCount: Math.max(0, s.steeringQueueCount - 1) }));
     }
   },
 
