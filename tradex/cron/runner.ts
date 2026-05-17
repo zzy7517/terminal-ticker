@@ -78,7 +78,7 @@ export async function executeCronJob(input: {
 
   // Assemble tools — always include market + news + memory + web
   const registries: ToolRegistry[] = [
-    buildMarketTools({ quotes: runtime.controller.quotes, maxCandles }),
+    buildMarketTools({ quotes: runtime.controller.quotes, maxCandles, candleContextMode: agentConfig.candleContextMode }),
     buildNewsTools({
       recent: (limit, sinceMinutes) =>
         runtime.newsService.recent(limit ?? undefined).filter((item) => {

@@ -263,7 +263,12 @@ function replaceTopLevelTable(text: string, tableName: string, nextLines: string
 }
 
 export async function updateAgentConfigInWatchlist(watchlistPath: string, config: AgentConfig): Promise<boolean> {
-  const lines = ["[agent]", `enabled = ${config.enabled ? "true" : "false"}`, `max_candles = ${config.maxCandles}`];
+  const lines = [
+    "[agent]",
+    `enabled = ${config.enabled ? "true" : "false"}`,
+    `max_candles = ${config.maxCandles}`,
+    `candle_context_mode = ${tomlString(config.candleContextMode)}`,
+  ];
   for (const [name, profile] of Object.entries(config.providerProfiles)) {
     lines.push("", `[agent.providers.${name}]`, `enabled = ${profile.enabled ? "true" : "false"}`);
     if (profile.apiKey) lines.push(`api_key = ${tomlString(profile.apiKey)}`);
@@ -339,8 +344,8 @@ export async function updateMemoryConfigInWatchlist(watchlistPath: string, confi
 export async function updateTradingConfigInWatchlist(watchlistPath: string, config: TradingConfig): Promise<boolean> {
   return replaceTable(watchlistPath, "trading", [
     "[trading]",
-    `hyperliquid_enabled = ${config.hyperliquidEnabled ? "true" : "false"}`,
-    `bitget_demo_enabled = ${config.bitgetDemoEnabled ? "true" : "false"}`,
+    `hyperliquid_mode = "${config.hyperliquidMode}"`,
+    `bitget_mode = "${config.bitgetMode}"`,
   ]);
 }
 

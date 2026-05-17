@@ -102,7 +102,11 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           // ---- Build tools ----
           const requestConfig = agentConfigForRequest(runtime.config.agent, body);
           const tools = mergeRegistries(
-            buildMarketTools({ quotes: runtime.controller.quotes, maxCandles: runtime.config.agent.maxCandles }),
+            buildMarketTools({
+              quotes: runtime.controller.quotes,
+              maxCandles: requestConfig.maxCandles,
+              candleContextMode: requestConfig.candleContextMode,
+            }),
             buildNewsTools({
               recent: (limit, sinceMinutes) => runtime.newsService.recent(limit ?? undefined).filter((item) => {
                 if (sinceMinutes == null) return true;
@@ -498,6 +502,10 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       ...runtime.config.agent,
       enabled: typeof body.enabled === "boolean" ? body.enabled : runtime.config.agent.enabled,
       maxCandles: Number.isFinite(Number(body.maxCandles)) ? Number(body.maxCandles) : runtime.config.agent.maxCandles,
+      candleContextMode:
+        body.candleContextMode === "raw" || body.candleContextMode === "with_indicators"
+          ? body.candleContextMode
+          : runtime.config.agent.candleContextMode,
     });
     return c.json({ state: await reloadAndState(runtime, watchlistPath) });
   });

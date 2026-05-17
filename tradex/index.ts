@@ -75,6 +75,9 @@ async function main(): Promise<void> {
   });
   process.on("SIGINT", () => void runtime.stop().finally(() => process.exit(0)));
   process.on("SIGTERM", () => void runtime.stop().finally(() => process.exit(0)));
+  // Trading mode warnings
+  if (config.trading.hyperliquidMode === "live") console.warn("⚠️  Hyperliquid LIVE trading enabled — real money at risk");
+  if (config.trading.bitgetMode === "live") console.warn("⚠️  Bitget LIVE trading enabled — real money at risk");
   console.log(`tradex TS backend listening on http://${options.host}:${options.port}`);
 }
 

@@ -16,7 +16,7 @@ export function buildTradingTools(input: {
   const registry = new ToolRegistry();
   const router = input.exchangeRouter;
   const config = input.tradingConfig;
-  const tradingEnabled = config ? (config.hyperliquidEnabled || config.bitgetDemoEnabled) : Boolean(router);
+  const tradingEnabled = config ? (config.hyperliquidMode !== "off" || config.bitgetMode !== "off") : Boolean(router);
 
   registry.register({
     name: "get_exchange_positions",

@@ -93,12 +93,15 @@ export interface ProviderProfile {
   customModels: string[];
 }
 
+export type CandleContextMode = "raw" | "with_indicators";
+
 export interface AgentConfig {
   enabled: boolean;
   provider: string;
   apiMode: string;
   model: string;
   maxCandles: number;
+  candleContextMode: CandleContextMode;
   reasoningEffort: string;
   providerProfiles: Record<string, ProviderProfile>;
 }
@@ -135,9 +138,12 @@ export interface SocialFeedConfig {
   maxItems: number;
 }
 
+/** Per-exchange trading mode: off = no orders, demo = paper/simulated, live = real money */
+export type ExchangeTradingMode = "off" | "demo" | "live";
+
 export interface TradingConfig {
-  hyperliquidEnabled: boolean;
-  bitgetDemoEnabled: boolean;
+  hyperliquidMode: ExchangeTradingMode;
+  bitgetMode: ExchangeTradingMode;
 }
 
 export interface InstrumentConfig {
@@ -484,6 +490,14 @@ export function effortFor(profile: ProviderProfile, model: string): string {
   return profile.modelEfforts.find(([slug]) => slug === model)?.[1] ?? "medium";
 }
 
+function parseCandleContextMode(rawValue: unknown): CandleContextMode {
+  if (rawValue === undefined || rawValue === null || rawValue === "") return "raw";
+  const value = String(rawValue).trim();
+  if (value === "raw" || value === "with_indicators") return value;
+  console.warn(`[config] invalid agent.candle_context_mode "${value}", using "raw"`);
+  return "raw";
+}
+
 export function parseAgentConfig(rawAgentValue: unknown): AgentConfig {
   const rawAgent = asRecord(rawAgentValue, "agent");
   const profiles = parseProviderProfiles(rawAgent);
@@ -494,6 +508,7 @@ export function parseAgentConfig(rawAgentValue: unknown): AgentConfig {
     apiMode: normalizeApiMode(provider),
     model,
     maxCandles: coerceMinInt(rawAgent.max_candles, "agent.max_candles", 40, 10),
+    candleContextMode: parseCandleContextMode(rawAgent.candle_context_mode),
     reasoningEffort,
     providerProfiles: profiles,
   };
@@ -557,19 +572,25 @@ export function parseSocialFeedConfig(rawSocialValue: unknown): SocialFeedConfig
   };
 }
 
-function nestedEnabled(raw: Record<string, unknown>, sectionName: string, defaultValue: boolean): boolean {
-  const rawSection = raw[sectionName];
-  if (rawSection && typeof rawSection === "object" && !Array.isArray(rawSection)) {
-    return normalizeBool((rawSection as Record<string, unknown>).enabled, `trading.${sectionName}.enabled`, defaultValue);
-  }
-  return normalizeBool(raw[`${sectionName}_enabled`], `trading.${sectionName}_enabled`, defaultValue);
+const VALID_TRADING_MODES: ExchangeTradingMode[] = ["off", "demo", "live"];
+
+function parseExchangeMode(raw: Record<string, unknown>, key: string, defaultMode: ExchangeTradingMode): ExchangeTradingMode {
+  const value = raw[key];
+  if (value === undefined || value === null) return defaultMode;
+  const str = String(value).toLowerCase().trim();
+  if (VALID_TRADING_MODES.includes(str as ExchangeTradingMode)) return str as ExchangeTradingMode;
+  // Legacy boolean compat: true → "live" for hyperliquid, "demo" for bitget; false → "off"
+  if (str === "true") return key.includes("bitget") ? "demo" : "live";
+  if (str === "false") return "off";
+  console.warn(`[config] invalid trading mode "${value}" for ${key}, using "${defaultMode}"`);
+  return defaultMode;
 }
 
 export function parseTradingConfig(rawTradingValue: unknown): TradingConfig {
   const raw = asRecord(rawTradingValue, "trading");
   return {
-    hyperliquidEnabled: nestedEnabled(raw, "hyperliquid", false),
-    bitgetDemoEnabled: nestedEnabled(raw, "bitget_demo", true),
+    hyperliquidMode: parseExchangeMode(raw, "hyperliquid_mode", "off"),
+    bitgetMode: parseExchangeMode(raw, "bitget_mode", "off"),
   };
 }
 

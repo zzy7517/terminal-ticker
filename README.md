@@ -1,19 +1,20 @@
 # tradex
 
-tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 主网行情、LLM Agent、Reuters 新闻和本地 SQLite 交易记录放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
+tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 主网行情、LLM Agent、Reuters 新闻、X 社交动态、本地 SQLite 交易记录和定时任务放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证。
 
-它不是生产级交易终端。显式配置凭证并在 `watchlist.toml` 打开平台交易权限后，可以向 Hyperliquid 主网提交真实订单；Bitget 仍只使用 Demo Trading。外部订单号会写回本地 SQLite。
+它不是生产级交易终端。显式配置凭证并在 `watchlist.toml` 打开交易权限后，可以向 Hyperliquid 主网或 Bitget 提交订单；Bitget 支持 demo/live 两种模式，Hyperliquid 只支持主网 live。外部订单号会写回本地 SQLite。
 
 ## 现在它能做什么
 
 - **行情监控**：订阅 Bitget futures，拉取 Hyperliquid 主网快照、K 线与 extended stats。
 - **行情工作区**：前端展示 watchlist、实时价格摘要、Agent、新闻、社交动态和持仓面板。
 - **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Hyperliquid 主网标的，也可以直接编辑 `watchlist.toml`。
-- **Agent 分析**：支持 Codex Responses provider 和 Anthropic Messages provider。Agent 可以读取行情、K 线、新闻和本地交易记录，并返回结构化交易观察。
-- **会话持久化**：每个标的都有独立 Agent session，历史记录保存在本地 SQLite，可以 resume、reset 或删除。
-- **交易执行**：配置层允许时，Agent 或 API 可以向 Hyperliquid 主网提交真实订单，或向 Bitget 模拟盘提交测试订单；关闭时 Agent 只会给出开单建议。
-- **交易复盘**：Positions 页面可以查看 open/planned/history/fills/lessons，也可以手动触发 review。
+- **Agent 分析**：支持 Codex Responses provider 和 Anthropic Messages provider。Agent 可以读取行情、裸 K / 带指标 K 线、新闻、社交动态、本地记忆和交易记录。
+- **会话持久化**：Agent session 会写成本地 JSONL，并用 SQLite 建索引；前端可以恢复、重置或删除历史会话。
+- **交易执行**：配置层允许时，Agent 可以向 Hyperliquid 主网或 Bitget 提交订单；关闭时 Agent 只会给出开单建议。
+- **交易复盘**：Positions 页面可以查看 open/planned/history/fills/lessons，也可以撤销交易所挂单。
 - **新闻流**：Reuters sitemap provider 会拉取新闻，写入本地 SQLite，并通过 Web UI 展示最新新闻。
+- **定时看盘**：Cron 面板可以配置周期任务，按固定时间触发 Agent 分析，结果保存为本地 session。
 
 ## 架构
 
@@ -35,9 +36,12 @@ React + Vite frontend
 - `tradex/api/app.ts`：HTTP API、WebSocket、后台 worker 生命周期。
 - `tradex/runtime/feed.ts`：watchlist 行情循环、多周期 K 线、缓存与 provider 路由。
 - `tradex/market_data/`：Bitget、Hyperliquid、catalog 和 candle provider。
+- `tradex/domain/indicators.ts`：从标准 OHLCV K 线派生 RSI、MACD、EMA。
 - `tradex/agent/`：LLM provider、agent loop、工具和 session 存储。
-- `tradex/trading/`：交易数据模型、SQLite store、Hyperliquid 主网 / Bitget Demo Trading 客户端和 review controller。
+- `tradex/trading/`：交易数据模型、SQLite store、Hyperliquid 主网 / Bitget demo/live 客户端和 review controller。
 - `tradex/news/`：Reuters 新闻抓取、存储和 API 数据源。
+- `tradex/social_feed/`：X/Twitter 数据源、认证和本地缓存。
+- `tradex/cron/`：定时任务、运行记录和 cron session 存储。
 - `web/src/App.tsx`：主 UI，包含 watchlist、Agent、Positions 和设置页面。
 
 ## 快速启动
@@ -106,19 +110,35 @@ candle_retention_seconds = 86400
 
 [agent]
 enabled = true
-provider = "anthropic"
-api_mode = "anthropic_messages"
-model = "global.anthropic.claude-opus-4-6-v1"
-use_tools = true
-timeout_seconds = 45
 max_candles = 40
-max_iterations = 10
+candle_context_mode = "raw" # "raw" | "with_indicators"
+
+[agent.providers.codex]
+enabled = true
+models = ["gpt-5.4-mini"]
+model_efforts = {"gpt-5.4-mini" = "medium"}
+
+[agent.providers.anthropic]
+enabled = false
+base_url = "https://api.anthropic.com/v1"
+models = ["global.anthropic.claude-opus-4-6-v1"]
+model_efforts = {"global.anthropic.claude-opus-4-6-v1" = "high"}
 
 [news]
 enabled = true
 poll_interval_seconds = 300
 retention_days = 30
 recent_limit = 50
+
+[social_feed]
+enabled = false
+recent_limit = 100
+retention_days = 30
+max_items = 2000
+
+[trading]
+hyperliquid_mode = "off" # "off" | "demo" | "live"
+bitget_mode = "demo"    # "off" | "demo" | "live"
 ```
 
 `symbols` 支持两种写法：
@@ -131,6 +151,11 @@ recent_limit = 50
 ```text
 1m, 3m, 5m, 15m, 30m, 1H, 4H, 6H, 12H, 1D, 3D, 1W, 1M
 ```
+
+`agent.candle_context_mode` 控制 Agent 看到的 K 线形态：
+
+- `"raw"`：`get_candles` 只返回 OHLCV。
+- `"with_indicators"`：`get_candles` 返回 OHLCV，并在样本足够时追加 `indicators`。当前指标包括 `rsi14`、`macd`、`ema20` 和 `ema50`；样本不够时对应字段不返回。
 
 ## 行情数据
 
@@ -204,14 +229,18 @@ Web 设置页可以切换 provider、刷新模型列表并保存到本地配置�
 
 ## Agent 工具
 
-Agent 不是只看一段 prompt。打开 `agent.use_tools = true` 后，它可以调用本地工具读取真实工作台状态：
+Agent 不是只看一段 prompt。运行时会把本地工具注册给模型，让它按需读取真实工作台状态：
 
 - `get_quote`：读取当前报价和日内统计。
-- `get_candles`：读取指定周期 K 线。
+- `get_candles`：读取指定周期 K 线；如果 `candle_context_mode = "with_indicators"`，会在样本足够时附带 RSI、MACD 和 EMA。
 - `list_instruments`：列出 watchlist 当前标的。
 - `get_recent_news` / `refresh_news`：读取或刷新新闻。
-- `open_bitget_demo_trade`：向 Bitget 模拟盘提交测试订单并记录 orderId。
-- `open_hyperliquid_trade`：向 Hyperliquid 主网提交真实订单并记录 orderId / fill。
+- `refresh_x_following_feed` / `get_recent_social_feed` / `search_x_tweets`：读取或搜索 X 社交动态。
+- `list_memories` / `read_memory` / `search_memories`：读取本地 memory 文件。
+- `get_exchange_positions` / `get_exchange_orders`：读取交易所当前持仓和挂单。
+- `open_exchange_trade`：按配置向 Hyperliquid 或 Bitget 提交开仓订单，并记录本地 trade。
+- `modify_tpsl` / `close_position`：调整止盈止损或关闭交易所仓位。
+- `check_trade_status` / `get_exchange_fills`：同步本地交易状态，或从交易所拉取真实成交记录。
 - `list_open_trades`：查看 open/planned 交易。
 - `get_trade_history`：读取历史交易、fills 和 lessons。
 - `web_search` / `web_fetch`：受限制的网页搜索和读取工具，会拒绝 localhost、内网地址和不安全 scheme。
@@ -226,15 +255,15 @@ export WEB_SEARCH_BACKEND="exa_mcp"    # 只用 Exa MCP
 export WEB_SEARCH_BACKEND="duckduckgo" # 只用 DuckDuckGo
 ```
 
-Agent 输出会被解析成结构化结果，核心字段包括 `summary`、`bias`、`confidence`、`key_levels`、`watch_plan`、`invalidation` 和 `risk_notes`。
+交易类工具只有在 `[trading]` 里至少一个交易所不是 `"off"` 时才会注册开仓和止盈止损工具。`get_exchange_positions`、`get_exchange_orders`、本地交易查询和复盘工具始终可用，但缺少凭证时会返回交易所侧错误。
 
 ## 交易记录与外部交易所
 
-本地不再用 K 线模拟成交。Hyperliquid 订单会提交到主网，Bitget 订单会提交到 Demo Trading，然后把订单结果写入 SQLite。
+本地不再用 K 线模拟成交。Hyperliquid 订单只会提交到主网 live，Bitget 会根据 `bitget_mode` 提交到 demo 或 live，然后把订单结果写入 SQLite。
 
 流程大致是：
 
-1. Agent 或 API 提交 Hyperliquid 主网或 Bitget Demo Trading 订单。
+1. Agent 调用 `open_exchange_trade` 提交 Hyperliquid 或 Bitget 订单。
 2. 下单结果写入本地 trade store。
 3. review controller 定期或手动复盘交易，并把 lessons 写回本地。
 
@@ -247,7 +276,7 @@ Positions 页面可以看到：
 
 ## 主网 / 模拟盘下单
 
-Hyperliquid 主网使用 SDK 和主网私钥。是否允许下单由 `watchlist.toml` 的 `[trading]` 配置控制：
+Hyperliquid 使用 SDK 和主网私钥。是否允许下单由 `watchlist.toml` 的 `[trading]` 配置控制：
 
 ```bash
 export HYPERLIQUID_PRIVATE_KEY="..."
@@ -258,41 +287,30 @@ export HYPERLIQUID_VAULT_ADDRESS="..."
 
 ```toml
 [trading]
-hyperliquid_enabled = false
-bitget_demo_enabled = true
+hyperliquid_mode = "off"   # "off" | "demo" | "live"
+bitget_mode = "demo"          # "off" | "demo" | "live"
 ```
 
-当某个平台的开关为 `false` 时，该平台的 Agent 下单工具不会注册，API 下单也会被拒绝。
+每个交易所有三种模式：
+- `"off"` — 禁用下单，Agent 工具不会注册
+- `"demo"` — 模拟盘。Bitget 通过 `PAPTRADING: 1` header 切换；Hyperliquid 不支持模拟盘，设为 demo 会拒绝下单
+- `"live"` — 实盘，真金白银
 
-Bitget Demo Trading 使用 Demo API Key。请求仍走 `https://api.bitget.com`，后端会强制加 `paptrading: 1` header：
+⚠️ 设为 `"live"` 时启动日志会打印醒目警告。
+
+Bitget 使用 API Key 认证。请求走 `https://api.bitget.com`，demo 模式下后端自动加 `PAPTRADING: 1` header：
 
 ```bash
-export BITGET_DEMO_API_KEY="..."
-export BITGET_DEMO_API_SECRET="..."
-export BITGET_DEMO_PASSPHRASE="..."
+export BITGET_API_KEY="..."
+export BITGET_API_SECRET="..."
+export BITGET_API_PASSPHRASE="..."
 ```
 
-Bitget demo 下单接口：
-
-```http
-POST /api/bitget-demo/trades/{instrument_key}
-Content-Type: application/json
-
-{
-  "direction": "long",
-  "size": 0.01,
-  "orderType": "limit",
-  "limitPrice": 60000,
-  "marginMode": "crossed",
-  "reasoning": "manual demo trade"
-}
-```
-
-`instrument_key` 使用当前 watchlist 里的 Bitget key，例如 `USDT-FUTURES:BTCUSDT` 或 `USDC-FUTURES:BTCPERP`。
+`instrument_key` 使用当前 watchlist 里的 key。Bitget 形如 `USDT-FUTURES:BTCUSDT` 或 `USDC-FUTURES:BTCPERP`，Hyperliquid 形如 `hyperliquid:BTC` 或 `hyperliquid:xyz:VIX`。
 
 ## 新闻
 
-新闻模块默认从 Reuters sitemap 拉取新闻，写入本地 store，并通过 `/api/news` 给前端展示。
+新闻模块默认从 Reuters sitemap 拉取新闻，写入本地 store，并通过 `/api/state` 和 `/api/news/refresh` 给前端展示。
 
 ## Web UI
 
@@ -300,18 +318,24 @@ Content-Type: application/json
 
 - **Watchlist**：左侧标的列表、分组、搜索、价格和涨跌幅。
 - **Market Summary**：当前聚焦标的的价格、来源、周期和基础统计摘要。
-- **Agent**：按标的发起分析，查看和恢复历史 session。
-- **Positions**：查看交易记录、fills、history、lessons 和手动复盘。
-- **Settings**：管理 Providers、Watchlist 和 News 配置。
+- **Agent**：创建、运行、切换和恢复历史 session。
+- **Positions**：查看交易记录、fills、history、lessons，并撤销交易所挂单。
+- **News / Social**：查看 Reuters 新闻和 X 社交动态。
+- **Cron**：管理定时看盘任务、手动触发任务并查看运行记录。
+- **Settings**：管理 Providers、Watchlist、Agent Context、News、Social、Memory 和 Cron 配置。
 
 ## 本地数据
 
 默认本地状态主要在这些地方：
 
-- `watchlist.toml`：watchlist、display、agent、news、cache 配置。
-- `~/.cache/tradex/agent_sessions.sqlite3`：Agent session 和消息历史。
+- `watchlist.toml`：watchlist、display、agent、news、social、memory、cache、trading 配置。
+- `~/.cache/tradex/agent_sessions/`：Agent session JSONL 消息历史。
+- `~/.cache/tradex/session_index.sqlite3`：Agent session 索引。
+- `~/.cache/tradex/cron.sqlite3`：定时任务配置。
+- `~/.cache/tradex/cron_sessions/`：定时任务运行记录。
 - `~/.cache/tradex/trades.sqlite3`：交易记录、fills、snapshots、lessons。
-- `~/.cache/tradex/news.sqlite3`：新闻、新闻决策和处理状态。
+- `~/.cache/tradex/news.sqlite3`：新闻条目和抓取 cursor。
+- `~/.cache/tradex/social_feed.sqlite3`：社交动态缓存。
 - `~/.cache/tradex/candles.sqlite3`：默认 K 线 cache；如果设置了 `XDG_CACHE_HOME` 或 `[cache].path`，会使用对应路径。
 - 浏览器 localStorage：主题和部分前端偏好。
 
@@ -324,15 +348,24 @@ Content-Type: application/json
 - `GET /api/state`：当前 watchlist、报价、provider 状态。
 - `GET /api/instruments/catalog`：读取启动时预加载的可添加标的目录，前端基于它做本地搜索。
 - `POST /api/watchlist/bitget`：添加 Bitget 标的。
-- `GET /api/agent/models`：当前 provider 可用模型。
-- `GET /api/agent/config` / `PUT /api/agent/config`：读取和更新 Agent 配置。
-- `POST /api/agent/analyze/{instrument_key}`：对某个标的发起 Agent 分析。
-- `GET /api/agent/sessions/{instrument_key}`：读取某个标的的 session 列表。
-- `GET /api/trades`：读取本地交易记录。
-- `POST /api/trades/review`：手动触发交易复盘。
-- `GET /api/news`：读取新闻。
+- `POST /api/watchlist/hyperliquid`：添加 Hyperliquid 标的。
+- `DELETE /api/watchlist/instruments/:key`：删除 watchlist 标的。
+- `GET /api/agent/sessions`：读取 Agent session 列表。
+- `POST /api/agent/sessions`：创建 Agent session。
+- `GET /api/agent/sessions/:id`：读取单个 session 的消息历史。
+- `POST /api/agent/sessions/:id/messages/stream`：以 SSE 运行一轮 Agent。
+- `POST /api/agent/sessions/:id/steer` / `POST /api/agent/sessions/:id/abort`：向运行中的 Agent 注入跟进消息或中止运行。
+- `GET /api/agent/providers/:provider/models`：刷新指定 provider 的模型列表。
+- `POST /api/agent/providers/:provider`：保存 provider 配置。
+- `POST /api/agent/config`：保存 Agent 上下文配置，包括 `maxCandles` 和 `candleContextMode`。
 - `POST /api/news/refresh`：手动刷新新闻。
-- `GET /api/news/decisions`：读取 news analyst 决策记录。
+- `POST /api/news/config`：保存新闻配置。
+- `GET /api/social/feed` / `POST /api/social/x/refresh`：读取或刷新社交动态。
+- `GET /api/lessons`：读取交易 lessons。
+- `DELETE /api/exchange/orders/:exchange/:orderId`：撤销交易所挂单。
+- `GET /api/cron/jobs` / `POST /api/cron/jobs` / `PATCH /api/cron/jobs/:name` / `PUT /api/cron/jobs/:name` / `DELETE /api/cron/jobs/:name`：管理定时任务。
+- `POST /api/cron/jobs/:name/trigger`：手动触发定时任务。
+- `GET /api/cron/runs`：读取最近 cron 运行记录。
 - `GET /ws`：前端实时状态推送。
 
 ## 验证
@@ -352,7 +385,7 @@ npm run build:backend
 
 ## 当前边界
 
-- Hyperliquid 是真实主网交易；Bitget 只支持 Demo Trading。
+- Hyperliquid 是真实主网交易，不支持 demo；Bitget 支持 demo/live，默认建议先用 demo。
 - 本地不会用 1m K 线模拟成交；未成交或挂单状态依赖交易所状态同步/撤单能力。
-- Agent 和 news analyst 适合做研究辅助，不应该直接当作交易信号执行。
+- Agent、新闻和社交动态适合做研究辅助，不应该直接当作交易信号执行。
 - 新闻来源目前以 Reuters sitemap provider 为主。

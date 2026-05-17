@@ -53,12 +53,12 @@ npm test
 
 Codex provider reads `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), or `CODEX_API_KEY` env var.
 
-Bitget Demo Trading uses demo-only API credentials. The backend signs v2 REST requests and always sends `paptrading: 1`:
+Bitget uses API credentials. In demo mode the backend sends `PAPTRADING: 1` header; in live mode it omits it:
 
 ```bash
-export BITGET_DEMO_API_KEY=...
-export BITGET_DEMO_API_SECRET=...
-export BITGET_DEMO_PASSPHRASE=...
+export BITGET_API_KEY=...
+export BITGET_API_SECRET=...
+export BITGET_API_PASSPHRASE=...
 ```
 
 ## Architecture
@@ -73,7 +73,7 @@ The TypeScript backend `tradex/` is organized as strict layers. Upper layers imp
 2. **`config/`** — parses `watchlist.toml` → `AppConfig`. Also holds agent model normalization (`agent_models.ts`) and `watchlist_store.ts` which round-trips the TOML on add/remove from the UI.
 3. **`market_data/`** — per-provider adapters (`bitget.ts`, `hyperliquid.ts`) plus `router.ts` which dispatches `InstrumentConfig` to the right provider and preserves watchlist order. `candle_cache.ts` provides the local OHLCV cache that agent tools read from.
 4. **`runtime/`** — `feed.ts` runs background async tasks that stream quotes/candles from providers into controller events. `controller.ts` (`TickerController`) drains those events into an in-memory `QuoteState` map and tracks flash directions.
-5. **`trading/`** — local trade records and external live/demo execution. `store.ts` is a SQLite-backed `TradeStore` at `~/.cache/tradex/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.ts` submits signed Hyperliquid mainnet orders when `[trading].hyperliquid_enabled` is true; `bitget.ts` signs Bitget Demo Trading orders when `[trading].bitget_demo_enabled` is true. `review.ts` orchestrates LLM post-trade reviews that produce lesson rows.
+5. **`trading/`** — local trade records and external live/demo execution. `store.ts` is a SQLite-backed `TradeStore` at `~/.cache/tradex/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.ts` submits signed Hyperliquid mainnet orders when `[trading].hyperliquid_mode = "live"`; `bitget.ts` signs Bitget orders with `PAPTRADING: 1` header in demo mode or without it in live mode when `[trading].bitget_mode` is not `"off"`. `review.ts` orchestrates LLM post-trade reviews that produce lesson rows.
 6. **`agent/`** — LLM layer. `providers/codex.ts` and `providers/anthropic.ts` implement the transport. `loop.ts` is a tool-calling agent loop; `tools/` defines `ToolRegistry` and tool packs.
 7. **`api/app.ts`** — Hono API and SSE routes. `api/runtime.ts` owns the `TickerController`, local stores, provider services, and state serialization.
 
@@ -117,4 +117,4 @@ There is currently no dedicated test suite after the TypeScript migration. Use `
 
 - Bitget symbols that exist in both Spot and Futures require explicit `inst_type` in watchlist.toml.
 - The Codex adapter reads Codex CLI auth directly — it does not reuse Hermes auth store and does not allow base URL overrides.
-- The app can place Hyperliquid mainnet orders only when `[trading].hyperliquid_enabled = true`, and Bitget Demo Trading orders only when `[trading].bitget_demo_enabled = true`. It does not manage real-money broker lifecycle or compute risk. It's still primarily a research/monitoring tool.
+- Each exchange has a trading mode (`"off"` | `"demo"` | `"live"`). Hyperliquid only supports live (mode=demo is rejected). Bitget switches between paper and real via the `PAPTRADING` header. The app does not manage real-money broker lifecycle or compute risk. It's still primarily a research/monitoring tool.

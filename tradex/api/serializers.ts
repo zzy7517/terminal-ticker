@@ -55,6 +55,7 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       apiMode: config.agent.apiMode,
       model: config.agent.model,
       maxCandles: config.agent.maxCandles,
+      candleContextMode: config.agent.candleContextMode,
       reasoningEffort: config.agent.reasoningEffort,
       providerProfiles: Object.fromEntries(
         Object.entries(config.agent.providerProfiles).map(([name, profile]) => [

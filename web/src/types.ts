@@ -153,6 +153,7 @@ export interface AgentConfig {
   apiMode: string;
   model: string;
   maxCandles: number;
+  candleContextMode: "raw" | "with_indicators";
   reasoningEffort: string;
   providerProfiles: Record<string, ProviderProfileState>;
 }
@@ -160,6 +161,7 @@ export interface AgentConfig {
 export interface AgentConfigUpdate {
   enabled: boolean;
   maxCandles: number;
+  candleContextMode: "raw" | "with_indicators";
 }
 
 export interface ProviderProfileUpdate {
@@ -404,8 +406,8 @@ export interface MarketState {
     memory: MemoryConfig;
     socialFeed: SocialFeedConfig;
     trading: {
-      hyperliquidEnabled: boolean;
-      bitgetDemoEnabled: boolean;
+      hyperliquidMode: "off" | "demo" | "live";
+      bitgetMode: "off" | "demo" | "live";
     };
     sourcePath: string | null;
   };

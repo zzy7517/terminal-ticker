@@ -59,8 +59,8 @@ retention_days = 30
 max_items = 2000
 
 [trading]
-hyperliquid_enabled = false
-bitget_demo_enabled = true
+hyperliquid_mode = "off"   # "off" | "demo" | "live"
+bitget_mode = "demo"          # "off" | "demo" | "live"
 
 [memory]
 enabled = false

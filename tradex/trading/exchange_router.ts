@@ -1,4 +1,4 @@
-import { TradingConfig } from "../config/index.js";
+import { ExchangeTradingMode, TradingConfig } from "../config/index.js";
 import * as bitget from "./bitget.js";
 import { ExchangeOrder, ExchangePosition, OrderResult, TradeSyncResult, orderResult } from "./exchange_models.js";
 import * as hyperliquid from "./hyperliquid.js";
@@ -19,12 +19,16 @@ export class ExchangeRouter {
 
   constructor(input: { tradeStore?: TradeStore | null; tradingConfig?: TradingConfig | null } = {}) {
     this.tradeStore = input.tradeStore ?? null;
-    this.tradingConfig = input.tradingConfig ?? { hyperliquidEnabled: false, bitgetDemoEnabled: true };
+    this.tradingConfig = input.tradingConfig ?? { hyperliquidMode: "off", bitgetMode: "off" };
+  }
+
+  private get bitgetLive(): boolean {
+    return this.tradingConfig.bitgetMode === "live";
   }
 
   async getAllPositions(): Promise<ExchangePosition[]> {
     const labels = ["hyperliquid", "bitget"];
-    const results = await Promise.allSettled([hyperliquid.getPositions(), bitget.getPositions()]);
+    const results = await Promise.allSettled([hyperliquid.getPositions(), bitget.getPositions("USDT-FUTURES", { live: this.bitgetLive })]);
     for (let i = 0; i < results.length; i++) {
       if (results[i].status === "rejected") {
         console.warn(`[ExchangeRouter] getPositions failed for ${labels[i]}:`, (results[i] as PromiseRejectedResult).reason);
@@ -35,7 +39,7 @@ export class ExchangeRouter {
 
   async getAllOrders(): Promise<ExchangeOrder[]> {
     const labels = ["hyperliquid", "bitget"];
-    const results = await Promise.allSettled([hyperliquid.getOpenOrders(), bitget.getOpenOrders()]);
+    const results = await Promise.allSettled([hyperliquid.getOpenOrders(), bitget.getOpenOrders("USDT-FUTURES", { live: this.bitgetLive })]);
     for (let i = 0; i < results.length; i++) {
       if (results[i].status === "rejected") {
         console.warn(`[ExchangeRouter] getOpenOrders failed for ${labels[i]}:`, (results[i] as PromiseRejectedResult).reason);
@@ -62,7 +66,7 @@ export class ExchangeRouter {
     }
     if (exchange === EXCHANGE_BITGET) {
       const [productType, symbol] = this.splitBitgetKey(trade.instrumentKey);
-      return bitget.getOrderFills({ symbol, productType, orderId: trade.externalOrderId, limit });
+      return bitget.getOrderFills({ symbol, productType, orderId: trade.externalOrderId, limit, live: this.bitgetLive });
     }
     return [];
   }
@@ -98,16 +102,22 @@ export class ExchangeRouter {
 
   async placeOrder(input: { instrumentKey: string; [key: string]: unknown }): Promise<OrderResult> {
     const exchange = this.exchangeForKey(input.instrumentKey);
-    if (!this.mutationEnabled(exchange)) return orderResult({ exchange, error: `${exchange} trading is disabled by config` });
-    if (exchange === EXCHANGE_HYPERLIQUID) return this.placeHyperliquid(input);
+    const mode = this.modeForExchange(exchange);
+    if (mode === "off") return orderResult({ exchange, error: `${exchange} trading is disabled by config` });
+    if (exchange === EXCHANGE_HYPERLIQUID) {
+      if (mode === "demo") return orderResult({ exchange, error: "Hyperliquid does not support demo/paper trading" });
+      return this.placeHyperliquid(input);
+    }
     if (exchange === EXCHANGE_BITGET) return this.placeBitget(input);
     return orderResult({ exchange: "unknown", error: `No trading support for ${input.instrumentKey}` });
   }
 
   async closePosition(input: { instrumentKey: string; size?: number | null; holdSide?: string | null; slippage?: number }): Promise<OrderResult> {
     const exchange = this.exchangeForKey(input.instrumentKey);
-    if (!this.mutationEnabled(exchange)) return orderResult({ exchange, error: `${exchange} trading is disabled by config` });
+    const mode = this.modeForExchange(exchange);
+    if (mode === "off") return orderResult({ exchange, error: `${exchange} trading is disabled by config` });
     if (exchange === EXCHANGE_HYPERLIQUID) {
+      if (mode === "demo") return orderResult({ exchange, error: "Hyperliquid does not support demo/paper trading" });
       try {
         const result = await hyperliquid.closePosition({ coin: hyperliquidCoinFromKey(input.instrumentKey), size: input.size, slippage: input.slippage });
         return orderResult({ exchange, orderId: result.externalOrderId, averagePrice: result.averagePrice, filledSize: result.filledSize, resting: result.resting, raw: result.raw });
@@ -117,7 +127,7 @@ export class ExchangeRouter {
     }
     if (exchange === EXCHANGE_BITGET) {
       const [productType, symbol] = this.splitBitgetKey(input.instrumentKey);
-      return bitget.closePosition({ symbol, productType, holdSide: input.holdSide });
+      return bitget.closePosition({ symbol, productType, holdSide: input.holdSide, live: this.bitgetLive });
     }
     return orderResult({ exchange: "unknown", error: `No close support for ${input.instrumentKey}` });
   }
@@ -130,8 +140,10 @@ export class ExchangeRouter {
     stopLossPrice?: number | null;
   }): Promise<OrderResult> {
     const exchange = this.exchangeForKey(input.instrumentKey);
-    if (!this.mutationEnabled(exchange)) return orderResult({ exchange, error: `${exchange} trading is disabled by config` });
+    const mode = this.modeForExchange(exchange);
+    if (mode === "off") return orderResult({ exchange, error: `${exchange} trading is disabled by config` });
     if (exchange === EXCHANGE_HYPERLIQUID) {
+      if (mode === "demo") return orderResult({ exchange, error: "Hyperliquid does not support demo/paper trading" });
       const coin = hyperliquidCoinFromKey(input.instrumentKey);
       const results: OrderResult[] = [];
       if (input.takeProfitPrice != null) {
@@ -163,6 +175,7 @@ export class ExchangeRouter {
         takeProfitPrice: input.takeProfitPrice,
         stopLossPrice: input.stopLossPrice,
         size: input.size,
+        live: this.bitgetLive,
       });
     }
     return orderResult({ exchange: "unknown", error: `No TPSL support for ${input.instrumentKey}` });
@@ -171,7 +184,7 @@ export class ExchangeRouter {
   async cancelOrder(input: { exchange: string; orderId: string; symbol?: string; coin?: string; productType?: string }): Promise<boolean> {
     if (!this.mutationEnabled(input.exchange)) return false;
     if (input.exchange === EXCHANGE_HYPERLIQUID) return hyperliquid.cancelOrder({ orderId: input.orderId, coin: input.coin || input.symbol || "" });
-    if (input.exchange === EXCHANGE_BITGET) return bitget.cancelOrder({ orderId: input.orderId, symbol: input.symbol || "", productType: input.productType });
+    if (input.exchange === EXCHANGE_BITGET) return bitget.cancelOrder({ orderId: input.orderId, symbol: input.symbol || "", productType: input.productType, live: this.bitgetLive });
     return false;
   }
 
@@ -201,6 +214,7 @@ export class ExchangeRouter {
       orderType: String(input.orderType ?? input.order_type ?? "market"),
       size: Number(input.size),
       price: input.limitPrice === undefined || input.limitPrice === null ? null : Number(input.limitPrice),
+      live: this.bitgetLive,
     });
   }
 
@@ -216,10 +230,14 @@ export class ExchangeRouter {
     return [instrumentKey.slice(0, index), instrumentKey.slice(index + 1)];
   }
 
+  modeForExchange(exchange: string): ExchangeTradingMode {
+    if (exchange === EXCHANGE_HYPERLIQUID) return this.tradingConfig.hyperliquidMode;
+    if (exchange === EXCHANGE_BITGET) return this.tradingConfig.bitgetMode;
+    return "off";
+  }
+
   private mutationEnabled(exchange: string): boolean {
-    if (exchange === EXCHANGE_HYPERLIQUID) return this.tradingConfig.hyperliquidEnabled;
-    if (exchange === EXCHANGE_BITGET) return this.tradingConfig.bitgetDemoEnabled;
-    return false;
+    return this.modeForExchange(exchange) !== "off";
   }
 }
 

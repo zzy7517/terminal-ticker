@@ -1,4 +1,6 @@
 import { QuoteState } from "../../domain/quotes.js";
+import { calculateTechnicalIndicators } from "../../domain/indicators.js";
+import type { CandleContextMode } from "../../config/index.js";
 import { ToolRegistry, jsonOutput } from "./registry.js";
 import { shortCandle } from "./market_context.js";
 
@@ -13,10 +15,11 @@ const INTERVAL_ALIASES: Record<string, string> = {
   "1mo": "1M",
 };
 
-export function buildMarketTools(input: { quotes: Record<string, QuoteState>; maxCandles?: number }): ToolRegistry {
+export function buildMarketTools(input: { quotes: Record<string, QuoteState>; maxCandles?: number; candleContextMode?: CandleContextMode }): ToolRegistry {
   const registry = new ToolRegistry();
   const resolveKey = (instrumentKey: string) => instrumentKey || Object.keys(input.quotes)[0] || "";
   const maxCandles = Math.max(1, Math.floor(input.maxCandles ?? 80));
+  const candleContextMode = input.candleContextMode ?? "raw";
 
   registry.register({
     name: "get_quote",
@@ -41,7 +44,10 @@ export function buildMarketTools(input: { quotes: Record<string, QuoteState>; ma
 
   registry.register({
     name: "get_candles",
-    description: `Get cached OHLCV candles for an instrument. Limit is capped at ${maxCandles}.`,
+    description:
+      candleContextMode === "with_indicators"
+        ? `Get cached OHLCV candles plus derived RSI/MACD/EMA when enough samples exist. Limit is capped at ${maxCandles}.`
+        : `Get cached OHLCV candles for an instrument. Limit is capped at ${maxCandles}.`,
     parameters: {
       type: "object",
       properties: {
@@ -58,7 +64,16 @@ export function buildMarketTools(input: { quotes: Record<string, QuoteState>; ma
       const candles = intervalKey ? quote.multiTimeframeCandles[intervalKey] ?? [] : quote.candles;
       const requestedLimit = Math.floor(Number(limit));
       const effectiveLimit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, maxCandles) : maxCandles;
-      return jsonOutput({ candles: candles.slice(-effectiveLimit).map(shortCandle), interval: intervalKey ?? null, limit: effectiveLimit });
+      const output: Record<string, unknown> = {
+        candles: candles.slice(-effectiveLimit).map(shortCandle),
+        interval: intervalKey ?? null,
+        limit: effectiveLimit,
+      };
+      if (candleContextMode === "with_indicators") {
+        const indicators = calculateTechnicalIndicators(candles);
+        if (indicators !== null) output.indicators = indicators;
+      }
+      return jsonOutput(output);
     },
   });
 

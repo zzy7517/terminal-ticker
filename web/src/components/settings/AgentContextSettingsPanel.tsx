@@ -3,17 +3,21 @@ import { Loader2, Save } from 'lucide-react';
 import { useMarketStore } from '../../stores/marketStore';
 import { saveAgentConfig } from '../../api';
 
+type CandleContextMode = 'raw' | 'with_indicators';
+
 export function AgentContextSettingsPanel() {
   const state = useMarketStore((s) => s.state);
   const config = state?.config.agent;
   const [maxCandles, setMaxCandles] = useState(config?.maxCandles ?? 40);
+  const [candleContextMode, setCandleContextMode] = useState<CandleContextMode>(config?.candleContextMode ?? 'raw');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('Controls how much recent candle context the agent sees.');
 
   useEffect(() => {
     if (!config) return;
     setMaxCandles(config.maxCandles);
-  }, [config?.maxCandles]);
+    setCandleContextMode(config.candleContextMode);
+  }, [config?.candleContextMode, config?.maxCandles]);
 
   async function saveContext() {
     if (!config) return;
@@ -23,6 +27,7 @@ export function AgentContextSettingsPanel() {
       const nextState = await saveAgentConfig({
         enabled: config.enabled,
         maxCandles,
+        candleContextMode,
       });
       useMarketStore.getState().setState(nextState);
       setStatus('Saved.');
@@ -57,6 +62,17 @@ export function AgentContextSettingsPanel() {
               value={maxCandles}
               onChange={(e) => setMaxCandles(Math.max(10, Number(e.target.value) || 10))}
             />
+          </label>
+          <label>
+            <span>Candle Mode</span>
+            <select
+              className="input"
+              value={candleContextMode}
+              onChange={(e) => setCandleContextMode(e.target.value as CandleContextMode)}
+            >
+              <option value="raw">Raw candles</option>
+              <option value="with_indicators">With indicators</option>
+            </select>
           </label>
         </div>
         <div className="settings-action-row">
