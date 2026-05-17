@@ -5,6 +5,7 @@ import { SessionManager } from "../../agent/session_manager.js";
 import { DEFAULT_AGENT_MODEL_REGISTRY } from "../../agent/model_registry.js";
 import { buildMarketTools } from "../../agent/tools/market.js";
 import { buildMemoryTools } from "../../memory/tools.js";
+import { buildMemoryDeveloperInstructions } from "../../memory/read/index.js";
 import { buildNewsTools } from "../../agent/tools/news.js";
 import { buildSocialFeedTools } from "../../agent/tools/social.js";
 import { buildTradingTools } from "../../agent/tools/trading.js";
@@ -146,9 +147,15 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             accountId: resolved.accountId,
           };
 
+          // Inject memory context into system prompt when available.
+          const memoryInstructions = runtime.config.memory.enabled && runtime.config.memory.useMemories
+            ? buildMemoryDeveloperInstructions(runtime.config.memory.storagePath)
+            : null;
+          const systemPrompt = memoryInstructions ?? "";
+
           const agent = new Agent({
             initialState: {
-              systemPrompt: "",
+              systemPrompt,
               model: modelDescriptor,
               thinkingLevel: "off",
               tools: registryToAgentTools(tools),

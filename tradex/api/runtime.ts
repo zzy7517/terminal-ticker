@@ -1,5 +1,7 @@
 import { AppConfig } from "../config/index.js";
 import { LocalMemoryBackend } from "../memory/backend.js";
+import { MemoryPipeline } from "../memory/pipeline.js";
+import { MemoryRuntimePolicy } from "../memory/policy.js";
 import { NewsService } from "../news/service.js";
 import { SocialFeedService } from "../social_feed/service.js";
 import { XAuthStore } from "../social_feed/auth.js";
@@ -8,13 +10,14 @@ import { SessionIndex } from "../agent/session_index.js";
 import { SessionManager } from "../agent/session_manager.js";
 import { ExchangeRouter } from "../trading/exchange_router.js";
 import { TradeStore } from "../trading/store.js";
+import { TradeStatus } from "../trading/models.js";
 import { TickerController } from "../runtime/controller.js";
 import { resolveInstruments, MarketInstrument } from "../market_data/router.js";
-import { TradeStatus } from "../trading/models.js";
 import { serializeState } from "./serializers.js";
 import { CronScheduler } from "../cron/scheduler.js";
 import { CronJobStore } from "../cron/job_store.js";
 import type { Agent } from "../agent/core/index.js";
+import { AgentModelRegistry } from "../agent/model_registry.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -26,6 +29,7 @@ export class AppRuntime {
   socialFeedService: SocialFeedService;
   readonly xAuthStore: XAuthStore;
   readonly memoryBackend: LocalMemoryBackend;
+  readonly memoryPipeline: MemoryPipeline | null;
   readonly sessionIndex: SessionIndex;
   readonly cronJobStore: CronJobStore;
   readonly cronScheduler: CronScheduler;
@@ -50,6 +54,10 @@ export class AppRuntime {
     });
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
     this.sessionIndex = new SessionIndex();
+    this.memoryPipeline = this._buildMemoryPipeline(config);
+
+    // Wire trade closure → memory pipeline enqueue
+    this.tradeStore.onTradeClosed((tradeId) => this.enqueueTradeForMemory(tradeId));
     this.cronJobStore = new CronJobStore();
     if (this.cronJobStore.isEmpty() && config.cronJobs.length > 0) {
       const count = this.cronJobStore.importFromToml(config.cronJobs);
@@ -88,12 +96,13 @@ export class AppRuntime {
     this.cronScheduler.reload();
   }
 
-  // Starts background market data streaming, news polling, and cron scheduler.
+  // Starts background market data streaming, news polling, cron scheduler, and memory pipeline.
   async start(): Promise<void> {
     this.running = true;
     this.controller.start();
     await this.newsService.start();
     this.cronScheduler.start();
+    this.memoryPipeline?.kickoffStartup();
   }
 
   // Gracefully stops all background tasks; called on process shutdown or before reload.
@@ -102,6 +111,7 @@ export class AppRuntime {
     await this.controller.stop();
     await this.newsService.stop();
     await this.cronScheduler.stop();
+    await this.memoryPipeline?.shutdown();
   }
 
   // Drains pending controller events, fetches live exchange positions/orders,
@@ -125,6 +135,55 @@ export class AppRuntime {
         lastError: this.newsService.lastError,
         lastFetchedAtMs: this.newsService.lastFetchedAtMs,
       },
+    });
+  }
+
+  // Enqueue a closed trade into the memory pipeline for automatic extraction.
+  enqueueTradeForMemory(tradeId: number): void {
+    if (!this.memoryPipeline) return;
+    this.memoryPipeline.enqueueTradeEvent({ tradeId });
+  }
+
+  // Builds the memory pipeline from current config; returns null when disabled.
+  private _buildMemoryPipeline(config: AppConfig): MemoryPipeline | null {
+    if (!config.memory.enabled) return null;
+
+    const registry = new AgentModelRegistry();
+    const tradeStore = this.tradeStore;
+    const sessionIndex = this.sessionIndex;
+
+    const sessionSource = {
+      listSessions(input: { limit?: number }) {
+        return sessionIndex.listSessions({ limit: input.limit }).map((row) => ({
+          id: row.id,
+          updatedAt: row.updatedAt,
+          messageCount: row.messageCount,
+        }));
+      },
+      sessionPayload(sessionId: string) {
+        const row = sessionIndex.get(sessionId);
+        if (!row) return null;
+        try {
+          const mgr = SessionManager.open(row.filePath);
+          return mgr.sessionPayload();
+        } catch {
+          return null;
+        }
+      },
+    };
+
+    const agentConfigProvider = () => config.agent;
+    const llmProviderFactory = (agentConfig: typeof config.agent) => registry.createProvider(agentConfig);
+
+    return new MemoryPipeline({
+      config: config.memory,
+      sessionSource,
+      tradeStore,
+      agentConfigProvider,
+      llmProviderFactory,
+      policy: config.memory.generateMemories
+        ? MemoryRuntimePolicy.normal()
+        : MemoryRuntimePolicy.disabled(),
     });
   }
 }

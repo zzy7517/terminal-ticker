@@ -10,9 +10,18 @@ export function defaultTradeStorePath(): string {
   return path.join(defaultCacheDir(), DEFAULT_TRADE_FILENAME);
 }
 
+export type TradeClosedCallback = (tradeId: number) => void;
+
 export class TradeStore extends BaseStore {
+  private _onTradeClosedCallbacks: TradeClosedCallback[] = [];
+
   constructor(dbPath: string | null = null) {
     super(dbPath ?? defaultTradeStorePath());
+  }
+
+  /** Register a callback to be invoked whenever a trade is marked closed. */
+  onTradeClosed(cb: TradeClosedCallback): void {
+    this._onTradeClosedCallbacks.push(cb);
   }
 
   protected override initSchema(conn: Database.Database): void {
@@ -215,7 +224,11 @@ export class TradeStore extends BaseStore {
     const pnl = input.realizedPnl ?? computeRealizedPnl(trade);
     const at = input.closedAtMs ?? nowMs();
     this.getConn().prepare("UPDATE trades SET status = ?, closed_at_ms = ?, realized_pnl = ?, updated_at_ms = ? WHERE id = ?").run(TradeStatus.CLOSED, at, pnl, nowMs(), tradeId);
-    return this.mustGetTrade(tradeId);
+    const closed = this.mustGetTrade(tradeId);
+    for (const cb of this._onTradeClosedCallbacks) {
+      try { cb(tradeId); } catch { /* best-effort */ }
+    }
+    return closed;
   }
 
   cancelTrade(tradeId: number): Trade {
