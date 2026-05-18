@@ -1075,6 +1075,10 @@ textarea:focus-visible {
   white-space: pre-wrap;
 }
 
+.session-message-text.markdown-body {
+  white-space: normal;
+}
+
 .streaming-cursor {
   display: inline-block;
   width: 6px;
@@ -1237,6 +1241,27 @@ textarea:focus-visible {
   user-select: none;
 }
 
+.tool-step-summary.clickable {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.tool-step-summary.clickable:hover {
+  background: var(--accent-tint);
+}
+
+.tool-step-chevron {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.tool-step-chevron.open {
+  transform: rotate(90deg);
+}
+
 .agent-tool-step .tool-name {
   color: var(--accent);
   font-family: var(--mono);
@@ -1246,6 +1271,12 @@ textarea:focus-visible {
 .tool-step-detail {
   border-top: 1px solid var(--line-soft);
   padding: 6px 8px;
+  animation: toolDetailIn 0.2s ease;
+}
+
+@keyframes toolDetailIn {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 500px; }
 }
 
 .tool-step-detail small {
@@ -1288,6 +1319,14 @@ textarea:focus-visible {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ── Provider icon ────────────────────────────────────────────────── */
+.provider-icon {
+  border-radius: 3px;
+  object-fit: contain;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
 
 /* ── Provider settings ────────────────────────────────────────────── */

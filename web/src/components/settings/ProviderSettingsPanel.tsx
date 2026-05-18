@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Bot, Eye, EyeOff, KeyRound, Loader2, Plus, RefreshCw, Save, Search, Sparkles, X } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Loader2, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
+import { ProviderIcon } from '../ProviderIcon';
 import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -199,7 +200,7 @@ export function ProviderSettingsPanel() {
                   onClick={() => switchProvider(o.provider)}
                 >
                   <div className="provider-item-icon">
-                    {o.provider === 'anthropic' ? <Sparkles size={18} /> : <Bot size={18} />}
+                    <ProviderIcon provider={o.provider} size={20} />
                   </div>
                   <div className="provider-item-copy">
                     <strong>{o.label}</strong>

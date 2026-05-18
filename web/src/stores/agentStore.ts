@@ -18,6 +18,32 @@ import {
   streamAgentMessage,
 } from '../api';
 import { AGENT_PROVIDER_OPTIONS } from '../constants';
+
+const STORAGE_KEY_PROVIDER = 'tradex-agent-provider';
+const STORAGE_KEY_MODEL = 'tradex-agent-model';
+
+function loadPersistedProvider(): string {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_PROVIDER);
+    if (stored && AGENT_PROVIDER_OPTIONS.some((o) => o.provider === stored)) return stored;
+  } catch {}
+  return AGENT_PROVIDER_OPTIONS[0].provider;
+}
+
+function loadPersistedModel(): string {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_MODEL);
+    if (stored) return stored;
+  } catch {}
+  return AGENT_PROVIDER_OPTIONS[0].defaultModel;
+}
+
+function persistProviderModel(provider: string, model: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_PROVIDER, provider);
+    localStorage.setItem(STORAGE_KEY_MODEL, model);
+  } catch {}
+}
 import { useMarketStore } from './marketStore';
 
 type ContextUsage = AgentContextUsage | null;
@@ -224,8 +250,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentSessionActionKey: null,
   agentBusyKey: null,
   agentPrompt: '',
-  agentProvider: AGENT_PROVIDER_OPTIONS[0].provider,
-  agentModel: AGENT_PROVIDER_OPTIONS[0].defaultModel,
+  agentProvider: loadPersistedProvider(),
+  agentModel: loadPersistedModel(),
   pendingToolCalls: new Set(),
   modelCache: {},
   contextUsage: null,
@@ -263,10 +289,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       ? { ...s.draftBySessionId, [s.activeAgentSessionId]: prompt }
       : s.draftBySessionId,
   })),
-  setAgentProvider: (provider) => set({ agentProvider: provider }),
-  setAgentModel: (model) => set({ agentModel: model }),
+  setAgentProvider: (provider) => {
+    set({ agentProvider: provider });
+    persistProviderModel(provider, get().agentModel);
+  },
+  setAgentModel: (model) => {
+    set({ agentModel: model });
+    persistProviderModel(get().agentProvider, model);
+  },
   setModelCache: (updater) => set((s) => ({ modelCache: updater(s.modelCache) })),
-  changeProviderModel: (provider, defaultModel) => set({ agentProvider: provider, agentModel: defaultModel }),
+  changeProviderModel: (provider, defaultModel) => {
+    set({ agentProvider: provider, agentModel: defaultModel });
+    persistProviderModel(provider, defaultModel);
+  },
 
   syncProviderModel: (profiles) => {
     const { agentProvider, agentModel } = get();

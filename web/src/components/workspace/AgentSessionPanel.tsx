@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   Bot,
   Check,
   ChevronDown,
+  ChevronRight,
   CircleDot,
   History,
   Loader2,
@@ -11,6 +13,7 @@ import {
   Square,
   Zap,
 } from 'lucide-react';
+import { ProviderIcon } from '../ProviderIcon';
 import type { AgentMessage, AgentToolCall } from '../../types';
 import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useAgentStore } from '../../stores/agentStore';
@@ -29,6 +32,67 @@ type MentionPickerState = {
   activeIndex: number;
 };
 
+function AgentToolStep({
+  call,
+  isPending,
+  result,
+}: {
+  call: AgentToolCall;
+  isPending: boolean;
+  result: AgentMessage | undefined;
+}) {
+  const hasError = !!result?.metadata?.error;
+  // Auto-expand if: pending (in-progress), or has error
+  const [expanded, setExpanded] = useState(isPending || hasError);
+
+  // Auto-expand when error arrives
+  useEffect(() => {
+    if (hasError) setExpanded(true);
+  }, [hasError]);
+
+  const hasArgs = Object.keys(call.arguments ?? {}).length > 0;
+  const hasDetail = hasArgs || !!result;
+
+  const toggle = useCallback(() => {
+    if (hasDetail) setExpanded((v) => !v);
+  }, [hasDetail]);
+
+  return (
+    <div key={call.id} className={`agent-tool-step${expanded ? ' expanded' : ''}`}>
+      <div
+        className={`tool-step-summary${hasDetail ? ' clickable' : ''}`}
+        onClick={toggle}
+      >
+        {isPending ? <Loader2 className="spin" size={12} /> : <Zap size={12} />}
+        <span className="tool-name">{call.name}</span>
+        {!isPending && result && !hasError && <Check size={12} className="tool-done-icon" />}
+        {hasError && <span className="badge sm danger">error</span>}
+        {hasDetail && (
+          <span className={`tool-step-chevron${expanded ? ' open' : ''}`}>
+            <ChevronRight size={12} />
+          </span>
+        )}
+      </div>
+      {expanded && hasDetail && (
+        <div className="tool-step-detail">
+          {hasArgs && (
+            <div className="tool-args">
+              <small>Arguments</small>
+              <pre>{JSON.stringify(call.arguments, null, 2)}</pre>
+            </div>
+          )}
+          {result && (
+            <div className={`tool-output ${hasError ? 'error' : ''}`}>
+              <small>Output</small>
+              <pre>{result.content}</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AgentToolCalls({
   pendingToolCalls,
   toolCalls,
@@ -43,33 +107,13 @@ function AgentToolCalls({
       {toolCalls.map((call) => {
         const result = toolResultsById.get(call.id);
         const isPending = pendingToolCalls.has(call.id) && !result;
-        const hasArgs = Object.keys(call.arguments ?? {}).length > 0;
-        const showDetail = hasArgs || !!result;
         return (
-          <div key={call.id} className="agent-tool-step">
-            <div className="tool-step-summary">
-              {isPending ? <Loader2 className="spin" size={12} /> : <Zap size={12} />}
-              <span className="tool-name">{call.name}</span>
-              {!isPending && result && !result.metadata?.error && <Check size={12} className="tool-done-icon" />}
-              {result?.metadata?.error && <span className="badge sm danger">error</span>}
-            </div>
-            {showDetail && (
-              <div className="tool-step-detail">
-                {hasArgs && (
-                  <div className="tool-args">
-                    <small>Arguments</small>
-                    <pre>{JSON.stringify(call.arguments, null, 2)}</pre>
-                  </div>
-                )}
-                {result && (
-                  <div className={`tool-output ${result.metadata?.error ? 'error' : ''}`}>
-                    <small>Output</small>
-                    <pre>{result.content}</pre>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <AgentToolStep
+            key={call.id}
+            call={call}
+            isPending={isPending}
+            result={result}
+          />
         );
       })}
     </div>
@@ -104,7 +148,11 @@ function AgentTranscriptMessage({
           toolResultsById={toolResultsById}
         />
       )}
-      {content && <p className="session-message-text">{content}</p>}
+      {content && (
+        <div className="session-message-text markdown-body">
+          <ReactMarkdown>{content}</ReactMarkdown>
+        </div>
+      )}
     </div>
   );
 }
@@ -207,8 +255,15 @@ export function AgentSessionPanel({
   useLayoutEffect(() => {
     const transcript = transcriptRef.current;
     if (!transcript || !sessionId) return;
-    transcript.scrollTop = transcriptScrollBySessionRef.current.get(sessionId) ?? 0;
-    shouldFollowTranscriptRef.current = transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 48;
+    const savedScroll = transcriptScrollBySessionRef.current.get(sessionId);
+    if (savedScroll !== undefined) {
+      transcript.scrollTop = savedScroll;
+      shouldFollowTranscriptRef.current = transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= 48;
+    } else {
+      // First time opening this session — scroll to bottom
+      transcript.scrollTop = transcript.scrollHeight;
+      shouldFollowTranscriptRef.current = true;
+    }
   }, [sessionId, sessionLoading]);
 
   useLayoutEffect(() => {
@@ -330,7 +385,7 @@ export function AgentSessionPanel({
           >
             {currentProviderOption && (
               <span className="session-model-provider-icon">
-                {currentProviderOption.provider === 'anthropic' ? <Sparkles size={12} /> : <Bot size={12} />}
+                <ProviderIcon provider={currentProviderOption.provider} size={14} />
               </span>
             )}
             <span>{agentModel}</span>
@@ -357,7 +412,7 @@ export function AgentSessionPanel({
                   return (
                     <div key={opt.provider} className="session-model-group">
                       <div className="session-model-group-head">
-                        {opt.provider === 'anthropic' ? <Sparkles size={13} /> : <Bot size={13} />}
+                        <ProviderIcon provider={opt.provider} size={15} />
                         <span>{opt.label}</span>
                       </div>
                       {providerModels.map((m) => {
@@ -424,7 +479,9 @@ export function AgentSessionPanel({
               <Loader2 className="spin" size={12} />
             </div>
             {streamingMessage.content && (
-              <p className="session-message-text">{streamingMessage.content}</p>
+              <div className="session-message-text markdown-body">
+                <ReactMarkdown>{streamingMessage.content}</ReactMarkdown>
+              </div>
             )}
             {!streamingMessage.content && (
               <span className="streaming-cursor" />

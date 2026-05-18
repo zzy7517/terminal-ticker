@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Clock, Plus, Trash2, Save, ChevronDown, Search, Check, Bot, Sparkles, Cpu } from 'lucide-react';
+import { Clock, Plus, Trash2, Save, ChevronDown, Search, Check, Cpu } from 'lucide-react';
+import { ProviderIcon } from '../ProviderIcon';
 import type { AgentModelOption, CronJobStatus } from '../../types';
 import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useAgentStore } from '../../stores/agentStore';
@@ -92,7 +93,7 @@ function CronModelPicker({ value, onChange }: { value: string | null; onChange: 
       <button className="memory-model-trigger" type="button" onClick={() => setOpen(!open)}>
         {providerForValue ? (
           <span className="memory-model-provider-icon">
-            {providerForValue === 'anthropic' ? <Sparkles size={11} /> : <Bot size={11} />}
+            <ProviderIcon provider={providerForValue} size={13} />
           </span>
         ) : (
           <span className="memory-model-provider-icon"><Cpu size={11} /></span>
@@ -120,7 +121,7 @@ function CronModelPicker({ value, onChange }: { value: string | null; onChange: 
               return (
                 <div key={opt.provider} className="memory-model-group">
                   <div className="memory-model-group-head">
-                    {opt.provider === 'anthropic' ? <Sparkles size={11} /> : <Bot size={11} />}
+                    <ProviderIcon provider={opt.provider} size={13} />
                     <span>{opt.label}</span>
                   </div>
                   {models.map((m) => {
