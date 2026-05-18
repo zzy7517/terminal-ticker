@@ -19,6 +19,7 @@ import { buildWebTools } from "../agent/tools/web.js";
 import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildSocialFeedTools } from "../agent/tools/social.js";
 import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
+import { loadSkills, formatSkillsForPrompt } from "../agent/skills.js";
 import { newCronSessionPath } from "./store.js";
 import type { AppRuntime } from "../api/runtime.js";
 
@@ -127,11 +128,26 @@ export async function executeCronJob(input: {
   let totalTokens = 0;
 
   try {
+    // Build system prompt: job-specific prompt + skills
+    let systemPrompt = job.systemPrompt || "";
+    const skillsConfig = runtime.config.agent.skills;
+    if (skillsConfig.enabled) {
+      const { skills: loadedSkills } = loadSkills({
+        cwd: process.cwd(),
+        skillPaths: skillsConfig.paths,
+        includeDefaults: skillsConfig.includeDefaults,
+      });
+      const skillsBlock = formatSkillsForPrompt(loadedSkills);
+      if (skillsBlock) {
+        systemPrompt = systemPrompt ? `${systemPrompt}\n${skillsBlock}` : skillsBlock;
+      }
+    }
+
     const result = await agentRuntime.run({
       message: job.userMessage,
       tools,
       history: [],
-      systemPrompt: job.systemPrompt || null,
+      systemPrompt: systemPrompt || null,
       eventHandler: null,
       maxIterations: job.maxIterations ?? undefined,
     });
