@@ -181,6 +181,11 @@ export interface CronJobConfig {
   timezone: string | null;
 }
 
+export interface McpAppConfig {
+  enabled: boolean;
+  configPath: string | null;
+}
+
 export interface AppConfig {
   instruments: InstrumentConfig[];
   display: DisplayConfig;
@@ -192,6 +197,7 @@ export interface AppConfig {
   news: NewsConfig;
   socialFeed: SocialFeedConfig;
   trading: TradingConfig;
+  mcp: McpAppConfig;
   cronJobs: CronJobConfig[];
 }
 
@@ -659,6 +665,15 @@ export function parseCacheConfig(rawCacheValue: unknown): CacheConfig {
   };
 }
 
+export function parseMcpConfig(rawMcpValue: unknown): McpAppConfig {
+  const raw = asRecord(rawMcpValue, "mcp");
+  const configPath = typeof raw.config_path === "string" && raw.config_path.trim() ? raw.config_path.trim() : null;
+  return {
+    enabled: normalizeBool(raw.enabled, "mcp.enabled", true),
+    configPath,
+  };
+}
+
 export function parseConfig(data: Record<string, unknown>, sourcePath: string | null = null): AppConfig {
   const rawSymbols = data.symbols;
   if (!Array.isArray(rawSymbols)) throw new Error("symbols must be a list of symbol entries");
@@ -678,6 +693,7 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     news: parseNewsConfig(data.news),
     socialFeed: parseSocialFeedConfig(data.social_feed),
     trading: parseTradingConfig(data.trading),
+    mcp: parseMcpConfig(data.mcp),
     cronJobs: parseCronJobsConfig(data.cron_jobs),
     sourcePath,
   };
@@ -707,6 +723,7 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       news: parseNewsConfig({}),
       socialFeed: parseSocialFeedConfig({}),
       trading: parseTradingConfig({}),
+      mcp: parseMcpConfig({}),
       cronJobs: [],
       sourcePath: null,
     } satisfies AppConfig);

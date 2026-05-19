@@ -12,6 +12,7 @@ import { buildTradingTools } from "../../agent/tools/trading.js";
 import { buildWebTools } from "../../agent/tools/web.js";
 import { createFilesystemRegistry, setFilesystemRoot } from "../../agent/tools/filesystem.js";
 import { mergeRegistries } from "../../agent/tools/registry.js";
+import { buildMcpToolRegistry } from "../../mcp/index.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../../agent/core/index.js";
 import type { AssistantMessage, TextContent, AgentModelDescriptor } from "../../agent/core/types.js";
@@ -154,6 +155,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             }),
             buildWebTools(),
             createFilesystemRegistry({ allowedSkillPaths }),
+            ...(runtime.mcpManager ? [buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig())] : []),
           );
 
           // ---- Create Agent ----

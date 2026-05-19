@@ -18,6 +18,7 @@ import { CronScheduler } from "../cron/scheduler.js";
 import { CronJobStore } from "../cron/job_store.js";
 import type { Agent } from "../agent/core/index.js";
 import { AgentModelRegistry } from "../agent/model_registry.js";
+import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -33,6 +34,7 @@ export class AppRuntime {
   readonly sessionIndex: SessionIndex;
   readonly cronJobStore: CronJobStore;
   readonly cronScheduler: CronScheduler;
+  readonly mcpManager: McpClientManager | null;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
   readonly activeAgents = new Map<string, Agent>();
@@ -55,6 +57,15 @@ export class AppRuntime {
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
     this.sessionIndex = new SessionIndex();
     this.memoryPipeline = this._buildMemoryPipeline(config);
+
+    // Wire MCP client manager
+    if (config.mcp.enabled) {
+      const mcpConfig = loadMcpConfig(config.mcp.configPath);
+      const hasServers = Object.keys(mcpConfig.mcpServers).length > 0;
+      this.mcpManager = hasServers ? new McpClientManager(mcpConfig) : null;
+    } else {
+      this.mcpManager = null;
+    }
 
     // Wire trade closure → memory pipeline enqueue
     this.tradeStore.onTradeClosed((tradeId) => this.enqueueTradeForMemory(tradeId));
@@ -96,12 +107,13 @@ export class AppRuntime {
     this.cronScheduler.reload();
   }
 
-  // Starts background market data streaming, news polling, cron scheduler, and memory pipeline.
+  // Starts background market data streaming, news polling, cron scheduler, MCP, and memory pipeline.
   async start(): Promise<void> {
     this.running = true;
     this.controller.start();
     await this.newsService.start();
     this.cronScheduler.start();
+    this.mcpManager?.start();
     this.memoryPipeline?.kickoffStartup();
   }
 
@@ -111,6 +123,7 @@ export class AppRuntime {
     await this.controller.stop();
     await this.newsService.stop();
     await this.cronScheduler.stop();
+    await this.mcpManager?.shutdown();
     await this.memoryPipeline?.shutdown();
   }
 
