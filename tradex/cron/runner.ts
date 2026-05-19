@@ -19,6 +19,7 @@ import { buildWebTools } from "../agent/tools/web.js";
 import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildSocialFeedTools } from "../agent/tools/social.js";
 import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
+import { buildMcpToolRegistry } from "../mcp/index.js";
 import { newCronSessionPath } from "./store.js";
 import type { AppRuntime } from "../api/runtime.js";
 
@@ -117,6 +118,11 @@ export async function executeCronJob(input: {
         })).items,
       }),
     );
+  }
+
+  // Add MCP tools if available
+  if (runtime.mcpManager) {
+    registries.push(buildMcpToolRegistry(runtime.mcpManager, { mcpServers: runtime.mcpManager.getServerConfig(), settings: undefined }));
   }
 
   const tools = mergeRegistries(...registries);
