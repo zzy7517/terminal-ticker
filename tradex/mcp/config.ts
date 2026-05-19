@@ -38,8 +38,21 @@ function validateMcpConfig(raw: unknown): McpConfig {
     return { mcpServers: {} };
   }
 
+  // Normalize server entries (handle serverUrl → url alias)
+  const normalized: Record<string, McpServerEntry> = {};
+  for (const [name, entry] of Object.entries(servers as Record<string, Record<string, unknown>>)) {
+    if (!entry || typeof entry !== "object") continue;
+    const serverEntry = { ...entry } as Record<string, unknown>;
+    // Support serverUrl as alias for url
+    if (!serverEntry.url && serverEntry.serverUrl) {
+      serverEntry.url = serverEntry.serverUrl;
+      delete serverEntry.serverUrl;
+    }
+    normalized[name] = serverEntry as unknown as McpServerEntry;
+  }
+
   return {
-    mcpServers: servers as Record<string, McpServerEntry>,
+    mcpServers: normalized,
     settings: (obj.settings as McpConfig["settings"]) ?? undefined,
   };
 }
