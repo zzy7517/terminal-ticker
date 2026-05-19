@@ -15,6 +15,7 @@ import { mergeRegistries } from "../../agent/tools/registry.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../../agent/core/index.js";
 import type { AssistantMessage, TextContent, AgentModelDescriptor } from "../../agent/core/types.js";
+import { loadSkills, formatSkillsForPrompt } from "../../agent/skills.js";
 import type { AppRuntime } from "../runtime.js";
 import {
   idleRun,
@@ -100,8 +101,27 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           mgr.appendMessage({ role: "user", content: message });
           runtime.pendingSessionManagers.delete(sessionId);
 
-          // ---- Build tools ----
+          // ---- Load skills ----
           const requestConfig = agentConfigForRequest(runtime.config.agent, body);
+          const skillsConfig = runtime.config.agent.skills;
+          let skillsPromptBlock = "";
+          const allowedSkillPaths = new Set<string>();
+          if (skillsConfig.enabled) {
+            const { skills: loadedSkills, diagnostics: skillDiagnostics } = loadSkills({
+              cwd: process.cwd(),
+              skillPaths: skillsConfig.paths,
+              includeDefaults: skillsConfig.includeDefaults,
+            });
+            if (skillDiagnostics.length > 0) {
+              for (const d of skillDiagnostics) {
+                console.warn(`[skills] ${d.type}: ${d.message} (${d.path})`);
+              }
+            }
+            for (const s of loadedSkills) allowedSkillPaths.add(s.filePath);
+            skillsPromptBlock = formatSkillsForPrompt(loadedSkills);
+          }
+
+          // ---- Build tools ----
           const tools = mergeRegistries(
             buildMarketTools({
               quotes: runtime.controller.quotes,
@@ -133,7 +153,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
               resolveSessionId: () => sessionId,
             }),
             buildWebTools(),
-            createFilesystemRegistry(),
+            createFilesystemRegistry({ allowedSkillPaths }),
           );
 
           // ---- Create Agent ----
@@ -151,7 +171,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           const memoryInstructions = runtime.config.memory.enabled && runtime.config.memory.useMemories
             ? buildMemoryDeveloperInstructions(runtime.config.memory.storagePath)
             : null;
-          const systemPrompt = memoryInstructions ?? "";
+
+          const systemPrompt = [memoryInstructions ?? "", skillsPromptBlock].filter(Boolean).join("\n");
 
           const agent = new Agent({
             initialState: {
