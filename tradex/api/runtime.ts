@@ -18,7 +18,7 @@ import { CronScheduler } from "../cron/scheduler.js";
 import { CronJobStore } from "../cron/job_store.js";
 import type { Agent } from "../agent/core/index.js";
 import { AgentModelRegistry } from "../agent/model_registry.js";
-import { McpClientManager, loadMcpConfig, buildMcpToolRegistry } from "../mcp/index.js";
+import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 
 export class AppRuntime {
   config: AppConfig;
