@@ -13,6 +13,7 @@ import {
   MemorySettingsPanel,
   SocialSettingsPanel,
   CronSettingsPanel,
+  McpSettingsPanel,
   WatchlistSettingsPanel,
 } from './components/settings';
 
@@ -90,6 +91,8 @@ export default function App() {
           <CronSettingsPanel />
         ) : route.section === 'social' ? (
           <SocialSettingsPanel />
+        ) : route.section === 'mcp' ? (
+          <McpSettingsPanel />
         ) : (
           <WatchlistSettingsPanel />
         )}

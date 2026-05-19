@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Bot,
   Brain,
+  Cable,
   CircleDot,
   Clock,
   KeyRound,
@@ -97,6 +98,14 @@ export function SettingsFrame({
             >
               <KeyRound size={18} />
               <span>Social</span>
+            </button>
+            <button
+              className={`settings-nav-item ${section === 'mcp' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('mcp')}
+            >
+              <Cable size={18} />
+              <span>MCP</span>
             </button>
           </div>
 

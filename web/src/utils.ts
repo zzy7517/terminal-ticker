@@ -10,6 +10,7 @@ import {
   AGENT_CONTEXT_HASH,
   CRON_HASH,
   GROUP_LABELS,
+  MCP_HASH,
   MEMORY_HASH,
   NEWS_HASH,
   PROVIDERS_HASH,
@@ -37,6 +38,9 @@ export function nextTheme(theme: ThemeName): ThemeName {
 }
 
 export function readRouteFromHash(): AppRoute {
+  if (window.location.hash.startsWith(MCP_HASH)) {
+    return { view: 'settings', section: 'mcp' };
+  }
   if (window.location.hash.startsWith(CRON_HASH)) {
     return { view: 'settings', section: 'cron' };
   }
@@ -76,7 +80,9 @@ export function navigateToRoute(route: AppRoute) {
         ? NEWS_HASH
         : route.section === 'watchlist'
           ? WATCHLIST_HASH
-          : PROVIDERS_HASH;
+          : route.section === 'mcp'
+            ? MCP_HASH
+            : PROVIDERS_HASH;
     window.location.hash = hash;
     return;
   }

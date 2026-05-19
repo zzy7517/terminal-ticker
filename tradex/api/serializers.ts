@@ -90,6 +90,10 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
     },
     socialFeed: config.socialFeed,
     trading: config.trading,
+    mcp: {
+      enabled: config.mcp.enabled,
+      configPath: config.mcp.configPath,
+    },
     sourcePath: config.sourcePath,
   };
 }

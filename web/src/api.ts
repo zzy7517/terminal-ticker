@@ -27,6 +27,10 @@ import type {
   SocialAuthStatus,
   SocialFeedItem,
   SocialFeedConfigUpdate,
+  McpStatusResponse,
+  McpServerToolsResponse,
+  McpSettings,
+  McpServerEntry,
 } from './types';
 
 const DEFAULT_DEV_BACKEND_ORIGIN = 'http://127.0.0.1:8765';
@@ -605,4 +609,66 @@ export async function deleteCronJob(name: string): Promise<CronJobStatus[]> {
   if (!response.ok) throw await responseError(response, 'cron job delete failed');
   const payload = await response.json();
   return payload.jobs;
+}
+
+// ── MCP API ──────────────────────────────────────────────────────────────────
+
+export async function fetchMcpStatus(): Promise<McpStatusResponse> {
+  const response = await fetch('/api/mcp/status');
+  if (!response.ok) throw await responseError(response, 'fetch MCP status failed');
+  return response.json();
+}
+
+export async function connectMcpServer(name: string): Promise<{ server: string; status: string; toolCount?: number; tools?: { name: string; description: string }[]; error?: string }> {
+  const response = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/connect`, { method: 'POST' });
+  if (!response.ok) throw await responseError(response, 'MCP connect failed');
+  return response.json();
+}
+
+export async function disconnectMcpServer(name: string): Promise<{ server: string; status: string }> {
+  const response = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/disconnect`, { method: 'POST' });
+  if (!response.ok) throw await responseError(response, 'MCP disconnect failed');
+  return response.json();
+}
+
+export async function fetchMcpServerTools(name: string): Promise<McpServerToolsResponse> {
+  const response = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/tools`);
+  if (!response.ok) throw await responseError(response, 'fetch MCP tools failed');
+  return response.json();
+}
+
+export async function updateMcpSettings(settings: McpSettings): Promise<{ ok: boolean; settings: McpSettings }> {
+  const response = await fetch('/api/mcp/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ settings }),
+  });
+  if (!response.ok) throw await responseError(response, 'update MCP settings failed');
+  return response.json();
+}
+
+export async function addMcpServer(name: string, config: McpServerEntry): Promise<{ ok: boolean; server: string }> {
+  const response = await fetch('/api/mcp/servers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, config }),
+  });
+  if (!response.ok) throw await responseError(response, 'add MCP server failed');
+  return response.json();
+}
+
+export async function updateMcpServer(name: string, config: McpServerEntry): Promise<{ ok: boolean; server: string }> {
+  const response = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ config }),
+  });
+  if (!response.ok) throw await responseError(response, 'update MCP server failed');
+  return response.json();
+}
+
+export async function deleteMcpServer(name: string): Promise<{ ok: boolean }> {
+  const response = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  if (!response.ok) throw await responseError(response, 'delete MCP server failed');
+  return response.json();
 }

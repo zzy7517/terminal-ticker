@@ -409,6 +409,10 @@ export interface MarketState {
       hyperliquidMode: "off" | "demo" | "live";
       bitgetMode: "off" | "demo" | "live";
     };
+    mcp: {
+      enabled: boolean;
+      configPath: string | null;
+    };
     sourcePath: string | null;
   };
   instruments: Instrument[];
@@ -617,4 +621,61 @@ export interface CronStoragePaths {
 export interface CronJobsResponse {
   jobs: CronJobStatus[];
   storagePaths: CronStoragePaths;
+}
+
+// ── MCP Types ────────────────────────────────────────────────────────────────
+
+export type McpServerStatus = 'idle' | 'connecting' | 'connected' | 'failed';
+
+export interface McpServerInfo {
+  name: string;
+  status: McpServerStatus;
+  type: 'stdio' | 'http';
+  lifecycle: 'lazy' | 'eager';
+  directTools: boolean | string[];
+  toolCount: number;
+  command: string | null;
+  url: string | null;
+  args: string[];
+  env: string[];
+  cwd: string | null;
+  idleTimeout: number | null;
+}
+
+export interface McpSettings {
+  toolPrefix?: 'server' | 'none' | 'short';
+  idleTimeout?: number;
+  directTools?: boolean;
+}
+
+export interface McpStatusResponse {
+  enabled: boolean;
+  configured: boolean;
+  servers: McpServerInfo[];
+  settings: McpSettings | null;
+}
+
+export interface McpToolInfo {
+  name: string;
+  originalName: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface McpServerToolsResponse {
+  server: string;
+  status: McpServerStatus;
+  tools: McpToolInfo[];
+}
+
+export interface McpServerEntry {
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  url?: string;
+  headers?: Record<string, string>;
+  lifecycle?: 'lazy' | 'eager';
+  idleTimeout?: number;
+  directTools?: boolean | string[];
 }
