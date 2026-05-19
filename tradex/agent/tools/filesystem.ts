@@ -389,11 +389,44 @@ const runCommandTool: ToolDefinition = {
   },
 };
 
+/**
+ * Create a read_skill_file tool restricted to the given allowlist of paths.
+ * If no allowlist is provided, the tool rejects all reads.
+ */
+function createReadSkillFileTool(allowedPaths?: Set<string>): ToolDefinition {
+  return {
+    name: "read_skill_file",
+    description: "Read the full content of a skill file by its absolute path. Use this when a skill's location is shown in <available_skills> and you need to load its full instructions.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute path to the skill file (from the <location> in available_skills)" },
+      },
+      required: ["path"],
+    },
+    handler: async (args) => {
+      const filePath = args.path as string;
+      if (!filePath.endsWith(".md")) {
+        throw new Error("read_skill_file only reads .md skill files");
+      }
+      if (allowedPaths && !allowedPaths.has(filePath)) {
+        throw new Error(`Access denied: "${filePath}" is not a registered skill file`);
+      }
+      const content = await readFile(filePath, "utf-8");
+      const r = truncateHead(content);
+      if (r.truncated) {
+        return `${r.text}\n\n[Showing ${r.outputLines} of ${r.totalLines} lines.]`;
+      }
+      return r.text;
+    },
+  };
+}
+
 // ============================================================================
 // REGISTRY FACTORY
 // ============================================================================
 
-/** All filesystem tool definitions */
+/** Base filesystem tool definitions (without read_skill_file). */
 export const filesystemTools: ToolDefinition[] = [
   readFileTool,
   writeFileTool,
@@ -404,18 +437,25 @@ export const filesystemTools: ToolDefinition[] = [
   runCommandTool,
 ];
 
+export interface FilesystemRegistryOptions {
+  /** Set of absolute paths the read_skill_file tool is allowed to read. */
+  allowedSkillPaths?: Set<string>;
+}
+
 /** Create a ToolRegistry with all filesystem tools pre-registered. */
-export function createFilesystemRegistry(): ToolRegistry {
+export function createFilesystemRegistry(options?: FilesystemRegistryOptions): ToolRegistry {
   const registry = new ToolRegistry();
   for (const tool of filesystemTools) {
     registry.register(tool);
   }
+  registry.register(createReadSkillFileTool(options?.allowedSkillPaths));
   return registry;
 }
 
 /** Register all filesystem tools into an existing registry. */
-export function registerFilesystemTools(registry: ToolRegistry): void {
+export function registerFilesystemTools(registry: ToolRegistry, options?: FilesystemRegistryOptions): void {
   for (const tool of filesystemTools) {
     registry.register(tool);
   }
+  registry.register(createReadSkillFileTool(options?.allowedSkillPaths));
 }
