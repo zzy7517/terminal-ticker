@@ -155,7 +155,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             }),
             buildWebTools(),
             createFilesystemRegistry({ allowedSkillPaths }),
-            ...(runtime.mcpManager ? [buildMcpToolRegistry(runtime.mcpManager, { mcpServers: runtime.mcpManager.getServerConfig(), settings: undefined })] : []),
+            ...(runtime.mcpManager ? [buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig())] : []),
           );
 
           // ---- Create Agent ----

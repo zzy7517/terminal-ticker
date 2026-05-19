@@ -217,26 +217,22 @@ function registerDirectToolsForServer(
   serverName: string,
   entry: McpServerEntry,
 ): void {
-  // For eager servers, we connect at startup and register tools.
-  // For lazy servers, we register placeholder tools that connect on first call.
-  // Since we don't have the tool list yet for lazy servers, direct mode
-  // requires eager connection or a cached tool list.
-  //
-  // For simplicity in this implementation: when directTools is enabled,
-  // we defer registration until the server is first connected via the proxy tool
-  // or explicitly via connect. The proxy tool's "connect" will populate
-  // the manager's tool list, and subsequent calls work.
-  //
-  // For eager servers, we auto-connect at runtime start (handled by caller).
-  if (entry.lifecycle === "eager") {
-    // Will be populated after connect in runtime startup
+  // If the server is already connected (e.g. eager servers connected at runtime start),
+  // register its tools synchronously so they appear in the agent's tool schema immediately.
+  // Otherwise, for eager servers not yet connected, fire an async connect + register.
+  // For lazy servers, tools become available after the first proxy "connect" call.
+  const status = manager.getStatus(serverName);
+  if (status === "connected") {
+    // Server already connected — register tools synchronously
+    registerConnectedDirectTools(registry, manager, serverName, entry);
+  } else if (entry.lifecycle === "eager") {
+    // Not yet connected — kick off async connect and register when done
     void manager.connect(serverName).then(() => {
       registerConnectedDirectTools(registry, manager, serverName, entry);
     }).catch((err) => {
       console.warn(`[mcp] Failed eager connect to "${serverName}":`, err instanceof Error ? err.message : err);
     });
   }
-  // For lazy servers with directTools, tools will become available after first proxy connect
 }
 
 function registerConnectedDirectTools(

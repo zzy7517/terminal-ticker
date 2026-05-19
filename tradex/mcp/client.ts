@@ -71,6 +71,11 @@ export class McpClientManager {
     return tools;
   }
 
+  /** Get the full MCP config (servers + settings). */
+  getConfig(): McpConfig {
+    return this.config;
+  }
+
   /** Get server config entries. */
   getServerConfig(): Record<string, McpServerEntry> {
     return this.config.mcpServers;
