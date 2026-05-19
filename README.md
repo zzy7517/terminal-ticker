@@ -157,6 +157,44 @@ bitget_mode = "demo"    # "off" | "demo" | "live"
 - `"raw"`：`get_candles` 只返回 OHLCV。
 - `"with_indicators"`：`get_candles` 返回 OHLCV，并在样本足够时追加 `indicators`。当前指标包括 `rsi14`、`macd`、`ema20` 和 `ema50`；样本不够时对应字段不返回。
 
+## MCP 外部工具
+
+tradex 可以连接外部 MCP 服务器，把它们的工具暴露给 Agent。在项目根目录放一个 `.mcp.json`（格式兼容 Claude Desktop / Cursor / VS Code）：
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    },
+    "my-api": {
+      "url": "http://localhost:3001/mcp"
+    }
+  },
+  "settings": {
+    "toolPrefix": "server",
+    "idleTimeout": 10,
+    "directTools": false
+  }
+}
+```
+
+`watchlist.toml` 中可以控制开关（默认启用）：
+
+```toml
+[mcp]
+enabled = true
+config_path = ".mcp.json"  # 可选
+```
+
+**工作模式：**
+
+- **Proxy（默认）**：注册一个 `mcp` 工具（~200 tokens），Agent 通过它搜索、查看和调用所有外部工具。
+- **Direct**：在 server 或全局设置 `directTools: true`，每个工具单独注册到 Agent 工具列表（更方便但占用更多 context）。
+
+服务器支持 `lifecycle: "lazy"` (按需连接) 或 `"eager"` (启动连接)，以及 `idleTimeout` 空闲断开。前端 Settings → MCP 页面可以实时管理连接和查看工具。
+
 ## 行情数据
 
 Bitget：
@@ -366,6 +404,9 @@ export BITGET_API_PASSPHRASE="..."
 - `GET /api/cron/jobs` / `POST /api/cron/jobs` / `PATCH /api/cron/jobs/:name` / `PUT /api/cron/jobs/:name` / `DELETE /api/cron/jobs/:name`：管理定时任务。
 - `POST /api/cron/jobs/:name/trigger`：手动触发定时任务。
 - `GET /api/cron/runs`：读取最近 cron 运行记录。
+- `GET /api/mcp/status`：MCP 服务器状态和工具列表。
+- `POST /api/mcp/servers/:name/connect` / `disconnect`：连接或断开 MCP 服务器。
+- `POST /api/mcp/servers` / `PUT /api/mcp/servers/:name` / `DELETE /api/mcp/servers/:name`：管理 MCP 服务器配置。
 - `GET /ws`：前端实时状态推送。
 
 ## 验证
