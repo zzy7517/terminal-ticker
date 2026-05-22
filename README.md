@@ -193,6 +193,14 @@ config_path = ".mcp.json"  # 可选
 - **Proxy（默认）**：注册一个 `mcp` 工具（~200 tokens），Agent 通过它搜索、查看和调用所有外部工具。
 - **Direct**：在 server 或全局设置 `directTools: true`，每个工具单独注册到 Agent 工具列表（更方便但占用更多 context）。
 
+Proxy 工具也支持 MCP resources：`{ "resources": "jin10" }` 列出资源，`{ "readResource": "quote://codes", "server": "jin10" }` 读取资源内容。REST 侧提供：
+
+- `GET /api/mcp/resources`
+- `GET /api/mcp/servers/:name/resources`
+- `GET /api/mcp/resource-templates`
+- `GET /api/mcp/servers/:name/resource-templates`
+- `POST /api/mcp/servers/:name/resources/read`
+
 服务器支持 `lifecycle: "lazy"` (按需连接) 或 `"eager"` (启动连接)，以及 `idleTimeout` 空闲断开。前端 Settings → MCP 页面可以实时管理连接和查看工具。
 
 ## 行情数据

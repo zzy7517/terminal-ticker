@@ -47,9 +47,10 @@ function registerProxyTool(registry: ToolRegistry, manager: McpClientManager, co
   registry.register({
     name: "mcp",
     description:
-      `MCP gateway — connect to external MCP servers and call their tools. ` +
+      `MCP gateway — connect to external MCP servers and call their tools/resources. ` +
       `Configured servers: ${serverList}. ` +
-      `Modes: status (no args) | connect (server name) | search (query) | describe (tool name) | call (tool + args).`,
+      `Modes: status (no args) | connect (server name) | search (query) | describe (tool name) | ` +
+      `call (tool + args) | resources/resourceTemplates (server or all) | readResource (URI + server).`,
     parameters: {
       type: "object",
       properties: {
@@ -58,13 +59,26 @@ function registerProxyTool(registry: ToolRegistry, manager: McpClientManager, co
         connect: { type: "string", description: "Server name to connect" },
         describe: { type: "string", description: "Tool name to describe (shows parameters)" },
         search: { type: "string", description: "Search tools by name/description" },
-        server: { type: "string", description: "Filter to specific server" },
+        server: { type: "string", description: "Filter to specific server, or required server for readResource" },
+        resources: { type: "string", description: "List MCP resources. Pass a server name, or 'all' for every configured server." },
+        resourceTemplates: { type: "string", description: "List MCP resource templates. Pass a server name, or 'all' for every configured server." },
+        readResource: { type: "string", description: "Resource URI to read, e.g. quote://codes. Requires server." },
+        cursor: { type: "string", description: "Pagination cursor returned by resources/resourceTemplates for a specific server" },
       },
     },
     handler: async (params: Record<string, unknown>) => {
-      const { tool, args, connect, describe, search, server } = params as {
-        tool?: string; args?: string; connect?: string; describe?: string; search?: string; server?: string;
-      };
+      const tool = stringParam(params.tool);
+      const args = stringParam(params.args);
+      const connect = stringParam(params.connect);
+      const describe = stringParam(params.describe);
+      const search = stringParam(params.search);
+      const server = normalizeServerName(stringParam(params.server));
+      const resources = params.resources === undefined ? undefined : normalizeServerName(stringParam(params.resources) ?? server ?? "all");
+      const resourceTemplates = params.resourceTemplates === undefined
+        ? undefined
+        : normalizeServerName(stringParam(params.resourceTemplates) ?? server ?? "all");
+      const readResource = stringParam(params.readResource);
+      const cursor = stringParam(params.cursor);
 
       // Call a tool
       if (tool) {
@@ -82,10 +96,33 @@ function registerProxyTool(registry: ToolRegistry, manager: McpClientManager, co
       if (search) {
         return executeSearch(manager, search, server);
       }
+      // Read a resource
+      if (readResource) {
+        return executeReadResource(manager, readResource, server);
+      }
+      // List resources
+      if (params.resources !== undefined) {
+        return executeListResources(manager, resources, cursor);
+      }
+      // List resource templates
+      if (params.resourceTemplates !== undefined) {
+        return executeListResourceTemplates(manager, resourceTemplates, cursor);
+      }
       // Status (default)
       return executeStatus(manager);
     },
   });
+}
+
+function stringParam(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeServerName(serverName: string | undefined): string | undefined {
+  if (!serverName || serverName === "all" || serverName === "*") return undefined;
+  return serverName;
 }
 
 async function executeStatus(manager: McpClientManager): Promise<string> {
@@ -206,6 +243,65 @@ async function executeCall(manager: McpClientManager, toolName: string, argsStr?
     return result;
   } catch (error) {
     return jsonOutput({ error: `Tool call failed: ${error instanceof Error ? error.message : error}` });
+  }
+}
+
+async function executeListResources(manager: McpClientManager, serverName?: string, cursor?: string): Promise<string> {
+  if (cursor && !serverName) {
+    return jsonOutput({ error: "cursor can only be used when listing resources for a specific server" });
+  }
+
+  try {
+    if (serverName) {
+      const result = await manager.listResources(serverName, cursor);
+      return jsonOutput({ server: serverName, ...result });
+    }
+
+    const result = await manager.listAllResources();
+    return jsonOutput({
+      resources: Object.entries(result.resources).flatMap(([server, resources]) => (
+        resources.map((resource) => ({ server, ...resource }))
+      )),
+      errors: result.errors,
+    });
+  } catch (error) {
+    return jsonOutput({ error: `Resource list failed: ${error instanceof Error ? error.message : error}` });
+  }
+}
+
+async function executeListResourceTemplates(manager: McpClientManager, serverName?: string, cursor?: string): Promise<string> {
+  if (cursor && !serverName) {
+    return jsonOutput({ error: "cursor can only be used when listing resource templates for a specific server" });
+  }
+
+  try {
+    if (serverName) {
+      const result = await manager.listResourceTemplates(serverName, cursor);
+      return jsonOutput({ server: serverName, ...result });
+    }
+
+    const result = await manager.listAllResourceTemplates();
+    return jsonOutput({
+      resourceTemplates: Object.entries(result.resourceTemplates).flatMap(([server, resourceTemplates]) => (
+        resourceTemplates.map((resourceTemplate) => ({ server, ...resourceTemplate }))
+      )),
+      errors: result.errors,
+    });
+  } catch (error) {
+    return jsonOutput({ error: `Resource template list failed: ${error instanceof Error ? error.message : error}` });
+  }
+}
+
+async function executeReadResource(manager: McpClientManager, uri: string, serverName?: string): Promise<string> {
+  if (!serverName) {
+    return jsonOutput({ error: "readResource requires a server name" });
+  }
+
+  try {
+    const result = await manager.readResource(serverName, uri);
+    return jsonOutput({ server: serverName, uri, ...result });
+  } catch (error) {
+    return jsonOutput({ error: `Resource read failed: ${error instanceof Error ? error.message : error}` });
   }
 }
 

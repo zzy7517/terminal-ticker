@@ -6,6 +6,10 @@
  * - POST /api/mcp/servers/:name/connect    → connect a server
  * - POST /api/mcp/servers/:name/disconnect → disconnect a server
  * - GET  /api/mcp/servers/:name/tools      → list tools for a connected server
+ * - GET  /api/mcp/servers/:name/resources  → list resources for a server
+ * - GET  /api/mcp/resources                → list resources for all servers
+ * - GET  /api/mcp/resource-templates       → list resource templates for all servers
+ * - POST /api/mcp/servers/:name/resources/read → read a resource by URI
  * - PUT  /api/mcp/config         → update MCP config (.mcp.json)
  * - POST /api/mcp/servers        → add a new server
  * - DELETE /api/mcp/servers/:name → remove a server
@@ -81,6 +85,114 @@ export function mcpRoutes(runtime: AppRuntime): Hono {
         inputSchema: t.inputSchema,
       })),
     });
+  });
+
+  // GET /api/mcp/resources — list all resources across configured servers
+  app.get("/api/mcp/resources", async (c) => {
+    const manager = runtime.mcpManager;
+    if (!manager) return c.json({ error: "MCP not enabled" }, 400);
+
+    const result = await manager.listAllResources();
+    return c.json({
+      resources: Object.entries(result.resources).flatMap(([server, resources]) => (
+        resources.map((resource) => ({ server, ...resource }))
+      )),
+      errors: result.errors,
+    });
+  });
+
+  // GET /api/mcp/resource-templates — list all resource templates across configured servers
+  app.get("/api/mcp/resource-templates", async (c) => {
+    const manager = runtime.mcpManager;
+    if (!manager) return c.json({ error: "MCP not enabled" }, 400);
+
+    const result = await manager.listAllResourceTemplates();
+    return c.json({
+      resourceTemplates: Object.entries(result.resourceTemplates).flatMap(([server, resourceTemplates]) => (
+        resourceTemplates.map((resourceTemplate) => ({ server, ...resourceTemplate }))
+      )),
+      errors: result.errors,
+    });
+  });
+
+  // GET /api/mcp/servers/:name/resources — list resources for a server
+  app.get("/api/mcp/servers/:name/resources", async (c) => {
+    const manager = runtime.mcpManager;
+    if (!manager) return c.json({ error: "MCP not enabled" }, 400);
+
+    const name = c.req.param("name");
+    if (!manager.getServerNames().includes(name)) {
+      return c.json({ error: `Server "${name}" not found in config` }, 404);
+    }
+
+    try {
+      const result = await manager.listResources(name, c.req.query("cursor"));
+      return c.json({
+        server: name,
+        status: manager.getStatus(name),
+        resources: result.resources,
+        nextCursor: result.nextCursor ?? null,
+      });
+    } catch (error) {
+      return c.json({
+        server: name,
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      }, 500);
+    }
+  });
+
+  // GET /api/mcp/servers/:name/resource-templates — list resource templates for a server
+  app.get("/api/mcp/servers/:name/resource-templates", async (c) => {
+    const manager = runtime.mcpManager;
+    if (!manager) return c.json({ error: "MCP not enabled" }, 400);
+
+    const name = c.req.param("name");
+    if (!manager.getServerNames().includes(name)) {
+      return c.json({ error: `Server "${name}" not found in config` }, 404);
+    }
+
+    try {
+      const result = await manager.listResourceTemplates(name, c.req.query("cursor"));
+      return c.json({
+        server: name,
+        status: manager.getStatus(name),
+        resourceTemplates: result.resourceTemplates,
+        nextCursor: result.nextCursor ?? null,
+      });
+    } catch (error) {
+      return c.json({
+        server: name,
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      }, 500);
+    }
+  });
+
+  // POST /api/mcp/servers/:name/resources/read — read a resource by URI
+  app.post("/api/mcp/servers/:name/resources/read", async (c) => {
+    const manager = runtime.mcpManager;
+    if (!manager) return c.json({ error: "MCP not enabled" }, 400);
+
+    const name = c.req.param("name");
+    if (!manager.getServerNames().includes(name)) {
+      return c.json({ error: `Server "${name}" not found in config` }, 404);
+    }
+
+    const body = await c.req.json<{ uri?: string }>().catch((): { uri?: string } => ({}));
+    const uri = body.uri?.trim();
+    if (!uri) return c.json({ error: "Resource URI is required" }, 400);
+
+    try {
+      const result = await manager.readResource(name, uri);
+      return c.json({ server: name, uri, ...result });
+    } catch (error) {
+      return c.json({
+        server: name,
+        uri,
+        error: error instanceof Error ? error.message : String(error),
+      }, 500);
+    }
   });
 
   // POST /api/mcp/servers/:name/connect — connect to a server

@@ -668,6 +668,67 @@ export interface McpServerToolsResponse {
   tools: McpToolInfo[];
 }
 
+export interface McpResourceInfo {
+  server?: string;
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+  size?: number;
+  annotations?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
+}
+
+export interface McpResourceTemplateInfo {
+  server?: string;
+  uriTemplate: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+  annotations?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
+}
+
+export interface McpResourceContent {
+  uri: string;
+  mimeType?: string;
+  text?: string;
+  blob?: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface McpServerResourcesResponse {
+  server: string;
+  status: McpServerStatus;
+  resources: McpResourceInfo[];
+  nextCursor: string | null;
+}
+
+export interface McpAllResourcesResponse {
+  resources: McpResourceInfo[];
+  errors: { serverName: string; error: string }[];
+}
+
+export interface McpServerResourceTemplatesResponse {
+  server: string;
+  status: McpServerStatus;
+  resourceTemplates: McpResourceTemplateInfo[];
+  nextCursor: string | null;
+}
+
+export interface McpAllResourceTemplatesResponse {
+  resourceTemplates: McpResourceTemplateInfo[];
+  errors: { serverName: string; error: string }[];
+}
+
+export interface McpReadResourceResponse {
+  server: string;
+  uri: string;
+  contents: McpResourceContent[];
+}
+
 export interface McpServerEntry {
   command?: string;
   args?: string[];

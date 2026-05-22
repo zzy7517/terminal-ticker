@@ -1,6 +1,7 @@
 /**
  * MCP Client types for tradex.
  */
+import type { ReadResourceResult, Resource, ResourceTemplate } from "@modelcontextprotocol/sdk/types.js";
 
 /** Server entry in .mcp.json config */
 export interface McpServerEntry {
@@ -47,6 +48,40 @@ export interface McpToolMeta {
   serverName: string;
   description: string;
   inputSchema: Record<string, unknown>;
+}
+
+/** Resource metadata exposed by an MCP server. */
+export type McpResourceMeta = Resource;
+
+/** Resource template metadata exposed by an MCP server. */
+export type McpResourceTemplateMeta = ResourceTemplate;
+
+/** Resource read result returned by an MCP server. */
+export type McpResourceReadResult = ReadResourceResult;
+
+export interface McpResourceListResult {
+  resources: McpResourceMeta[];
+  nextCursor?: string;
+}
+
+export interface McpResourceTemplateListResult {
+  resourceTemplates: McpResourceTemplateMeta[];
+  nextCursor?: string;
+}
+
+export interface McpResourceListError {
+  serverName: string;
+  error: string;
+}
+
+export interface McpAllResourcesResult {
+  resources: Record<string, McpResourceMeta[]>;
+  errors: McpResourceListError[];
+}
+
+export interface McpAllResourceTemplatesResult {
+  resourceTemplates: Record<string, McpResourceTemplateMeta[]>;
+  errors: McpResourceListError[];
 }
 
 /** Connection status for a server */

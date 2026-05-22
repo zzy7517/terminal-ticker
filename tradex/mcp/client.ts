@@ -9,7 +9,17 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { McpConfig, McpServerEntry, McpToolMeta, McpServerStatus } from "./types.js";
+import type {
+  McpAllResourceTemplatesResult,
+  McpAllResourcesResult,
+  McpConfig,
+  McpResourceListResult,
+  McpResourceReadResult,
+  McpResourceTemplateListResult,
+  McpServerEntry,
+  McpServerStatus,
+  McpToolMeta,
+} from "./types.js";
 import { formatToolName } from "./config.js";
 
 interface ServerConnection {
@@ -139,6 +149,102 @@ export class McpClientManager {
     }
 
     return textParts.join("\n") || JSON.stringify(result.content);
+  }
+
+  /** List one page of resources exposed by a specific MCP server. */
+  async listResources(serverName: string, cursor?: string): Promise<McpResourceListResult> {
+    const conn = await this.connect(serverName);
+    conn.lastUsedAt = Date.now();
+
+    const result = await conn.client.listResources(cursor ? { cursor } : undefined);
+    return { resources: result.resources, nextCursor: result.nextCursor };
+  }
+
+  /** List every resource exposed by every configured MCP server. */
+  async listAllResources(): Promise<McpAllResourcesResult> {
+    const entries = await Promise.all(this.getServerNames().map(async (serverName) => {
+      try {
+        const resources: McpResourceListResult["resources"] = [];
+        const seenCursors = new Set<string>();
+        let cursor: string | undefined;
+        while (true) {
+          const page = await this.listResources(serverName, cursor);
+          resources.push(...page.resources);
+          const nextCursor = page.nextCursor?.trim();
+          if (!nextCursor) break;
+          if (seenCursors.has(nextCursor)) {
+            throw new Error("resources/list returned duplicate cursor");
+          }
+          seenCursors.add(nextCursor);
+          cursor = nextCursor;
+        }
+        return { serverName, resources };
+      } catch (error) {
+        return { serverName, error: error instanceof Error ? error.message : String(error) };
+      }
+    }));
+
+    const result: McpAllResourcesResult = { resources: {}, errors: [] };
+    for (const entry of entries) {
+      if ("error" in entry) {
+        result.errors.push({ serverName: entry.serverName, error: entry.error ?? "unknown error" });
+      } else {
+        result.resources[entry.serverName] = entry.resources;
+      }
+    }
+    return result;
+  }
+
+  /** List one page of resource templates exposed by a specific MCP server. */
+  async listResourceTemplates(serverName: string, cursor?: string): Promise<McpResourceTemplateListResult> {
+    const conn = await this.connect(serverName);
+    conn.lastUsedAt = Date.now();
+
+    const result = await conn.client.listResourceTemplates(cursor ? { cursor } : undefined);
+    return { resourceTemplates: result.resourceTemplates, nextCursor: result.nextCursor };
+  }
+
+  /** List every resource template exposed by every configured MCP server. */
+  async listAllResourceTemplates(): Promise<McpAllResourceTemplatesResult> {
+    const entries = await Promise.all(this.getServerNames().map(async (serverName) => {
+      try {
+        const resourceTemplates: McpResourceTemplateListResult["resourceTemplates"] = [];
+        const seenCursors = new Set<string>();
+        let cursor: string | undefined;
+        while (true) {
+          const page = await this.listResourceTemplates(serverName, cursor);
+          resourceTemplates.push(...page.resourceTemplates);
+          const nextCursor = page.nextCursor?.trim();
+          if (!nextCursor) break;
+          if (seenCursors.has(nextCursor)) {
+            throw new Error("resources/templates/list returned duplicate cursor");
+          }
+          seenCursors.add(nextCursor);
+          cursor = nextCursor;
+        }
+        return { serverName, resourceTemplates };
+      } catch (error) {
+        return { serverName, error: error instanceof Error ? error.message : String(error) };
+      }
+    }));
+
+    const result: McpAllResourceTemplatesResult = { resourceTemplates: {}, errors: [] };
+    for (const entry of entries) {
+      if ("error" in entry) {
+        result.errors.push({ serverName: entry.serverName, error: entry.error ?? "unknown error" });
+      } else {
+        result.resourceTemplates[entry.serverName] = entry.resourceTemplates;
+      }
+    }
+    return result;
+  }
+
+  /** Read the contents of a specific MCP resource. */
+  async readResource(serverName: string, uri: string): Promise<McpResourceReadResult> {
+    const conn = await this.connect(serverName);
+    conn.lastUsedAt = Date.now();
+
+    return conn.client.readResource({ uri });
   }
 
   /** Disconnect from a specific server. */

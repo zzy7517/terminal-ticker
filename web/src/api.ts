@@ -27,6 +27,11 @@ import type {
   SocialAuthStatus,
   SocialFeedItem,
   SocialFeedConfigUpdate,
+  McpAllResourcesResponse,
+  McpAllResourceTemplatesResponse,
+  McpReadResourceResponse,
+  McpServerResourcesResponse,
+  McpServerResourceTemplatesResponse,
   McpStatusResponse,
   McpServerToolsResponse,
   McpSettings,
@@ -634,6 +639,42 @@ export async function disconnectMcpServer(name: string): Promise<{ server: strin
 export async function fetchMcpServerTools(name: string): Promise<McpServerToolsResponse> {
   const response = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/tools`);
   if (!response.ok) throw await responseError(response, 'fetch MCP tools failed');
+  return response.json();
+}
+
+export async function fetchMcpResources(): Promise<McpAllResourcesResponse> {
+  const response = await fetch('/api/mcp/resources');
+  if (!response.ok) throw await responseError(response, 'fetch MCP resources failed');
+  return response.json();
+}
+
+export async function fetchMcpServerResources(name: string, cursor?: string): Promise<McpServerResourcesResponse> {
+  const params = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+  const response = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/resources${params}`);
+  if (!response.ok) throw await responseError(response, 'fetch MCP server resources failed');
+  return response.json();
+}
+
+export async function fetchMcpResourceTemplates(): Promise<McpAllResourceTemplatesResponse> {
+  const response = await fetch('/api/mcp/resource-templates');
+  if (!response.ok) throw await responseError(response, 'fetch MCP resource templates failed');
+  return response.json();
+}
+
+export async function fetchMcpServerResourceTemplates(name: string, cursor?: string): Promise<McpServerResourceTemplatesResponse> {
+  const params = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+  const response = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/resource-templates${params}`);
+  if (!response.ok) throw await responseError(response, 'fetch MCP server resource templates failed');
+  return response.json();
+}
+
+export async function readMcpResource(name: string, uri: string): Promise<McpReadResourceResponse> {
+  const response = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/resources/read`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uri }),
+  });
+  if (!response.ok) throw await responseError(response, 'read MCP resource failed');
   return response.json();
 }
 
