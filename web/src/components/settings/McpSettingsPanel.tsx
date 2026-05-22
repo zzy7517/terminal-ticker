@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
+  Database,
+  FileText,
   Loader2,
   Plug,
   Plus,
@@ -13,18 +15,25 @@ import {
   Wrench,
   Globe,
   Pencil,
+  X,
 } from 'lucide-react';
 import type {
   McpServerInfo,
   McpStatusResponse,
   McpToolInfo,
   McpServerEntry,
+  McpResourceInfo,
+  McpResourceTemplateInfo,
+  McpResourceContent,
 } from '../../types';
 import {
   fetchMcpStatus,
   connectMcpServer,
   disconnectMcpServer,
   fetchMcpServerTools,
+  fetchMcpServerResources,
+  fetchMcpServerResourceTemplates,
+  readMcpResource,
   updateMcpSettings,
   addMcpServer,
   updateMcpServer,
@@ -32,6 +41,7 @@ import {
 } from '../../api';
 
 type ServerFormMode = 'view' | 'edit' | 'create';
+type DetailTab = 'overview' | 'tools' | 'resources';
 
 function statusBadge(status: McpServerInfo['status']) {
   switch (status) {
@@ -46,9 +56,15 @@ export function McpSettingsPanel() {
   const [mcpStatus, setMcpStatus] = useState<McpStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [tools, setTools] = useState<McpToolInfo[]>([]);
   const [toolsLoading, setToolsLoading] = useState(false);
   const [toolsExpanded, setToolsExpanded] = useState(false);
+  const [resources, setResources] = useState<McpResourceInfo[]>([]);
+  const [resourceTemplates, setResourceTemplates] = useState<McpResourceTemplateInfo[]>([]);
+  const [resourcesLoading, setResourcesLoading] = useState(false);
+  const [readResult, setReadResult] = useState<{ uri: string; contents: McpResourceContent[] } | null>(null);
+  const [readLoading, setReadLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -95,8 +111,9 @@ export function McpSettingsPanel() {
   function selectServer(name: string) {
     setSelected(name);
     setFormMode('view');
-    setTools([]);
-    setToolsExpanded(false);
+    setDetailTab('overview');
+    setTools([]); setToolsExpanded(false);
+    setResources([]); setResourceTemplates([]); setReadResult(null);
     setDeleteConfirm(false);
     setStatus('');
     setError(null);
@@ -108,7 +125,8 @@ export function McpSettingsPanel() {
     setFormName(''); setFormCommand(''); setFormArgs(''); setFormUrl('');
     setFormCwd(''); setFormEnv(''); setFormLifecycle('lazy');
     setFormDirectTools(false); setFormIdleTimeout('');
-    setDeleteConfirm(false); setTools([]); setStatus(''); setError(null);
+    setDeleteConfirm(false); setTools([]); setResources([]); setResourceTemplates([]);
+    setReadResult(null); setStatus(''); setError(null);
   }
 
   function startEdit() {
@@ -141,10 +159,41 @@ export function McpSettingsPanel() {
     setConnecting(true); setError(null);
     try {
       await disconnectMcpServer(name);
-      setStatus('Disconnected'); setTools([]);
+      setStatus('Disconnected'); setTools([]); setResources([]); setResourceTemplates([]); setReadResult(null);
       await loadStatus();
     } catch (e) { setError(e instanceof Error ? e.message : 'Disconnect failed'); }
     finally { setConnecting(false); }
+  }
+
+  async function handleLoadResources(name: string) {
+    setResourcesLoading(true);
+    try {
+      const [resData, tmplData] = await Promise.all([
+        fetchMcpServerResources(name),
+        fetchMcpServerResourceTemplates(name),
+      ]);
+      setResources(resData.resources);
+      setResourceTemplates(tmplData.resourceTemplates);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load resources'); }
+    finally { setResourcesLoading(false); }
+  }
+
+  async function handleReadResource(serverName: string, uri: string) {
+    setReadLoading(true); setReadResult(null);
+    try {
+      const data = await readMcpResource(serverName, uri);
+      setReadResult({ uri, contents: data.contents });
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to read resource'); }
+    finally { setReadLoading(false); }
+  }
+
+  function switchDetailTab(tab: DetailTab) {
+    setDetailTab(tab); setReadResult(null);
+    if (!selected) return;
+    const server = mcpStatus?.servers.find((s) => s.name === selected);
+    if (!server || server.status !== 'connected') return;
+    if (tab === 'tools' && tools.length === 0) handleLoadTools(selected);
+    if (tab === 'resources' && resources.length === 0) handleLoadResources(selected);
   }
 
   async function handleLoadTools(name: string) {
@@ -351,12 +400,6 @@ export function McpSettingsPanel() {
           <button className="shell-button muted" type="button" onClick={startEdit}>
             <Pencil size={14} /> Edit
           </button>
-          {activeServer.status === 'connected' && (
-            <button className="shell-button muted" type="button" onClick={() => handleLoadTools(activeServer.name)} disabled={toolsLoading}>
-              {toolsLoading ? <Loader2 className="spin" size={14} /> : <Wrench size={14} />}
-              {tools.length > 0 ? 'Refresh Tools' : 'Load Tools'}
-            </button>
-          )}
         </div>
 
         {/* Server info */}
@@ -393,15 +436,30 @@ export function McpSettingsPanel() {
           </div>
         </div>
 
-        {/* Tools list */}
-        {tools.length > 0 && (
-          <div className="mcp-tools-section">
-            <button className="mcp-tools-trigger" type="button" onClick={() => setToolsExpanded(!toolsExpanded)}>
-              {toolsExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              <Wrench size={14} />
-              <span>{tools.length} Tools</span>
-            </button>
-            {toolsExpanded && (
+        {/* Tab navigation */}
+        <div className="mcp-tabs">
+          <button type="button" className={`mcp-tab${detailTab === 'overview' ? ' active' : ''}`} onClick={() => switchDetailTab('overview')}>
+            Info
+          </button>
+          <button type="button" className={`mcp-tab${detailTab === 'tools' ? ' active' : ''}`} onClick={() => switchDetailTab('tools')}>
+            <Wrench size={13} /> Tools {activeServer?.toolCount ? `(${activeServer.toolCount})` : ''}
+          </button>
+          <button type="button" className={`mcp-tab${detailTab === 'resources' ? ' active' : ''}`} onClick={() => switchDetailTab('resources')}>
+            <Database size={13} /> Resources
+          </button>
+        </div>
+
+        {/* Tab: Tools */}
+        {detailTab === 'tools' && (
+          <div className="mcp-tab-content">
+            {toolsLoading && <div className="empty-state sm"><Loader2 className="spin" size={16} /> Loading tools...</div>}
+            {!toolsLoading && tools.length === 0 && activeServer?.status === 'connected' && (
+              <div className="empty-state sm">No tools discovered. <button className="link-btn" type="button" onClick={() => selected && handleLoadTools(selected)}>Refresh</button></div>
+            )}
+            {!toolsLoading && tools.length === 0 && activeServer?.status !== 'connected' && (
+              <div className="empty-state sm">Connect server to discover tools.</div>
+            )}
+            {tools.length > 0 && (
               <div className="mcp-tools-list">
                 {tools.map((tool) => (
                   <div key={tool.name} className="mcp-tool-item">
@@ -412,6 +470,74 @@ export function McpSettingsPanel() {
                     <div className="mcp-tool-desc">{tool.description}</div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Resources */}
+        {detailTab === 'resources' && (
+          <div className="mcp-tab-content">
+            {resourcesLoading && <div className="empty-state sm"><Loader2 className="spin" size={16} /> Loading resources...</div>}
+            {!resourcesLoading && resources.length === 0 && resourceTemplates.length === 0 && activeServer?.status === 'connected' && (
+              <div className="empty-state sm">No resources exposed by this server. <button className="link-btn" type="button" onClick={() => selected && handleLoadResources(selected)}>Refresh</button></div>
+            )}
+            {!resourcesLoading && activeServer?.status !== 'connected' && resources.length === 0 && (
+              <div className="empty-state sm">Connect server to discover resources.</div>
+            )}
+
+            {resources.length > 0 && (
+              <div className="mcp-resource-section">
+                <div className="mcp-resource-section-title"><Database size={13} /> Resources ({resources.length})</div>
+                <div className="mcp-resource-list">
+                  {resources.map((res) => (
+                    <div key={res.uri} className={`mcp-resource-item${readResult?.uri === res.uri ? ' active' : ''}`}>
+                      <div className="mcp-resource-item-head">
+                        <span className="mcp-resource-uri">{res.uri}</span>
+                        <span className="mcp-resource-name">{res.title ?? res.name}</span>
+                      </div>
+                      {res.description && <div className="mcp-resource-desc">{res.description}</div>}
+                      <div className="mcp-resource-actions">
+                        <button className="shell-button sm" type="button" disabled={readLoading} onClick={() => selected && handleReadResource(selected, res.uri)}>
+                          {readLoading && readResult === null ? <Loader2 className="spin" size={12} /> : <FileText size={12} />} Read
+                        </button>
+                        {res.mimeType && <span className="mcp-resource-mime">{res.mimeType}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {resourceTemplates.length > 0 && (
+              <div className="mcp-resource-section">
+                <div className="mcp-resource-section-title"><FileText size={13} /> Templates ({resourceTemplates.length})</div>
+                <div className="mcp-resource-list">
+                  {resourceTemplates.map((tmpl) => (
+                    <div key={tmpl.uriTemplate} className="mcp-resource-item">
+                      <div className="mcp-resource-item-head">
+                        <span className="mcp-resource-uri">{tmpl.uriTemplate}</span>
+                        <span className="mcp-resource-name">{tmpl.title ?? tmpl.name}</span>
+                      </div>
+                      {tmpl.description && <div className="mcp-resource-desc">{tmpl.description}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Read result viewer */}
+            {readResult && (
+              <div className="mcp-read-viewer">
+                <div className="mcp-read-viewer-head">
+                  <span className="mcp-read-viewer-uri">{readResult.uri}</span>
+                  <button className="shell-button sm muted" type="button" onClick={() => setReadResult(null)}><X size={12} /> Close</button>
+                </div>
+                <div className="mcp-read-viewer-body">
+                  {readResult.contents.map((content, i) => (
+                    <pre key={i} className="mcp-read-viewer-pre">{content.text ?? (content.blob ? `[binary ${content.blob.length} bytes]` : '(empty)')}</pre>
+                  ))}
+                </div>
               </div>
             )}
           </div>
