@@ -48,8 +48,7 @@ export function mcpRoutes(runtime: AppRuntime): Hono {
         name,
         status,
         type: entry.url ? "http" : "stdio",
-        lifecycle: entry.lifecycle ?? "lazy",
-        directTools: entry.directTools ?? false,
+
         toolCount: tools.length,
         command: entry.command ?? null,
         url: entry.url ?? null,

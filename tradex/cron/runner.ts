@@ -123,7 +123,7 @@ export async function executeCronJob(input: {
 
   // Add MCP tools if available
   if (runtime.mcpManager) {
-    registries.push(buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig()));
+    registries.push(await buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig()));
   }
 
   const tools = mergeRegistries(...registries);

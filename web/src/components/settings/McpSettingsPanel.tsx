@@ -76,14 +76,11 @@ export function McpSettingsPanel() {
   const [formUrl, setFormUrl] = useState('');
   const [formCwd, setFormCwd] = useState('');
   const [formEnv, setFormEnv] = useState('');
-  const [formLifecycle, setFormLifecycle] = useState<'lazy' | 'eager'>('lazy');
-  const [formDirectTools, setFormDirectTools] = useState(false);
   const [formIdleTimeout, setFormIdleTimeout] = useState('');
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPrefix, setSettingsPrefix] = useState<'server' | 'none' | 'short'>('server');
   const [settingsIdleTimeout, setSettingsIdleTimeout] = useState('10');
-  const [settingsDirectTools, setSettingsDirectTools] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
 
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -98,7 +95,7 @@ export function McpSettingsPanel() {
       if (data.settings) {
         setSettingsPrefix(data.settings.toolPrefix ?? 'server');
         setSettingsIdleTimeout(String(data.settings.idleTimeout ?? 10));
-        setSettingsDirectTools(data.settings.directTools ?? false);
+
       }
       setError(null);
     } catch (e) {
@@ -123,8 +120,7 @@ export function McpSettingsPanel() {
     setSelected(null);
     setFormMode('create');
     setFormName(''); setFormCommand(''); setFormArgs(''); setFormUrl('');
-    setFormCwd(''); setFormEnv(''); setFormLifecycle('lazy');
-    setFormDirectTools(false); setFormIdleTimeout('');
+    setFormCwd(''); setFormEnv(''); setFormIdleTimeout('');
     setDeleteConfirm(false); setTools([]); setResources([]); setResourceTemplates([]);
     setReadResult(null); setStatus(''); setError(null);
   }
@@ -139,8 +135,6 @@ export function McpSettingsPanel() {
     setFormUrl(server.url ?? '');
     setFormCwd(server.cwd ?? '');
     setFormEnv(server.env.join(', '));
-    setFormLifecycle(server.lifecycle);
-    setFormDirectTools(Array.isArray(server.directTools) ? true : Boolean(server.directTools));
     setFormIdleTimeout(server.idleTimeout != null ? String(server.idleTimeout) : '');
     setDeleteConfirm(false);
   }
@@ -219,8 +213,6 @@ export function McpSettingsPanel() {
       });
       if (Object.keys(envObj).length > 0) entry.env = envObj;
     }
-    entry.lifecycle = formLifecycle;
-    entry.directTools = formDirectTools;
     if (formIdleTimeout.trim()) entry.idleTimeout = Number(formIdleTimeout);
     return entry;
   }
@@ -259,7 +251,6 @@ export function McpSettingsPanel() {
       await updateMcpSettings({
         toolPrefix: settingsPrefix,
         idleTimeout: Number(settingsIdleTimeout) || 10,
-        directTools: settingsDirectTools,
       });
       setStatus('Settings saved'); await loadStatus();
     } catch (e) { setError(e instanceof Error ? e.message : 'Save settings failed'); }
@@ -321,29 +312,10 @@ export function McpSettingsPanel() {
         </div>
 
         <div className="provider-field">
-          <span className="provider-field-label">Lifecycle</span>
-          <select className="input" value={formLifecycle} onChange={(e) => setFormLifecycle(e.target.value as 'lazy' | 'eager')}>
-            <option value="lazy">Lazy (connect on first use)</option>
-            <option value="eager">Eager (connect at startup)</option>
-          </select>
-        </div>
-
-        <div className="provider-field">
           <span className="provider-field-label">Idle Timeout (minutes) <em>optional</em></span>
           <input className="input" type="number" min={0} value={formIdleTimeout}
             onChange={(e) => setFormIdleTimeout(e.target.value)} placeholder="inherit global" />
         </div>
-
-        <label className="settings-toggle-row">
-          <div>
-            <strong>Direct Tools</strong>
-            <small>Register this server's tools directly (vs. proxy mode)</small>
-          </div>
-          <button className={`settings-toggle ${formDirectTools ? 'on' : ''}`} type="button"
-            onClick={() => setFormDirectTools(!formDirectTools)} aria-pressed={formDirectTools}>
-            <span />
-          </button>
-        </label>
       </div>
 
       <div className="provider-connection-actions">
@@ -409,14 +381,7 @@ export function McpSettingsPanel() {
               <span className="mcp-info-label">Type</span>
               <span className="mcp-info-value">{activeServer.type}</span>
             </div>
-            <div className="mcp-info-item">
-              <span className="mcp-info-label">Lifecycle</span>
-              <span className="mcp-info-value">{activeServer.lifecycle}</span>
-            </div>
-            <div className="mcp-info-item">
-              <span className="mcp-info-label">Direct Tools</span>
-              <span className="mcp-info-value">{String(activeServer.directTools)}</span>
-            </div>
+
             <div className="mcp-info-item">
               <span className="mcp-info-label">Tools</span>
               <span className="mcp-info-value">{activeServer.toolCount}</span>
@@ -588,16 +553,7 @@ export function McpSettingsPanel() {
                 onChange={(e) => setSettingsIdleTimeout(e.target.value)} placeholder="10" />
               <span className="provider-field-hint">Disconnect idle servers after this many minutes (0 = never)</span>
             </div>
-            <label className="settings-toggle-row">
-              <div>
-                <strong>Direct Tools</strong>
-                <small>Register all MCP tools directly in Agent tool list</small>
-              </div>
-              <button className={`settings-toggle ${settingsDirectTools ? 'on' : ''}`} type="button"
-                onClick={() => setSettingsDirectTools(!settingsDirectTools)} aria-pressed={settingsDirectTools}>
-                <span />
-              </button>
-            </label>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
               <button className="shell-button primary sm" type="button" onClick={handleSaveSettings} disabled={settingsSaving}>
                 {settingsSaving ? <Loader2 className="spin" size={13} /> : <Save size={13} />}

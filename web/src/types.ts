@@ -631,8 +631,6 @@ export interface McpServerInfo {
   name: string;
   status: McpServerStatus;
   type: 'stdio' | 'http';
-  lifecycle: 'lazy' | 'eager';
-  directTools: boolean | string[];
   toolCount: number;
   command: string | null;
   url: string | null;
@@ -645,7 +643,6 @@ export interface McpServerInfo {
 export interface McpSettings {
   toolPrefix?: 'server' | 'none' | 'short';
   idleTimeout?: number;
-  directTools?: boolean;
 }
 
 export interface McpStatusResponse {
@@ -736,7 +733,5 @@ export interface McpServerEntry {
   cwd?: string;
   url?: string;
   headers?: Record<string, string>;
-  lifecycle?: 'lazy' | 'eager';
   idleTimeout?: number;
-  directTools?: boolean | string[];
 }

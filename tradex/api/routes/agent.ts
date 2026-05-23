@@ -123,6 +123,9 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           }
 
           // ---- Build tools ----
+          const mcpRegistry = runtime.mcpManager
+            ? await buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig())
+            : null;
           const tools = mergeRegistries(
             buildMarketTools({
               quotes: runtime.controller.quotes,
@@ -155,7 +158,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             }),
             buildWebTools(),
             createFilesystemRegistry({ allowedSkillPaths }),
-            ...(runtime.mcpManager ? [buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig())] : []),
+            ...(mcpRegistry ? [mcpRegistry] : []),
           );
 
           // ---- Create Agent ----
