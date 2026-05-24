@@ -20,6 +20,7 @@
     "@nktkas/hyperliquid": "^0.32.2",
     "better-sqlite3": "^12.9.0",
     "croner": "^10.0.1",
+    "diff": "^8.0.4",
     "hono": "^4.12.18",
     "ignore": "^7.0.5",
     "lucide-react": "^0.468.0",
