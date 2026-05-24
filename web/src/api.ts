@@ -713,3 +713,46 @@ export async function deleteMcpServer(name: string): Promise<{ ok: boolean }> {
   if (!response.ok) throw await responseError(response, 'delete MCP server failed');
   return response.json();
 }
+
+// ─── Browser (Open Browser Use) ─────────────────────────────────────────────
+
+export interface BrowserStatus {
+  enabled: boolean;
+  connected: boolean;
+  socketPath: string | null;
+  error: string | null;
+}
+
+export interface BrowserPingResult {
+  ok: boolean;
+  info?: unknown;
+  error?: string;
+}
+
+export async function fetchBrowserStatus(): Promise<BrowserStatus> {
+  const response = await fetch('/api/browser/status');
+  if (!response.ok) throw await responseError(response, 'fetch browser status failed');
+  return response.json();
+}
+
+export async function pingBrowser(): Promise<BrowserPingResult> {
+  const response = await fetch('/api/browser/ping', { method: 'POST' });
+  if (!response.ok) throw await responseError(response, 'browser ping failed');
+  return response.json();
+}
+
+export async function updateBrowserSettings(settings: {
+  enabled?: boolean;
+  socketPath?: string | null;
+  timeoutMs?: number;
+}): Promise<{ ok: boolean; browser: BrowserStatus }> {
+  const response = await fetch('/api/browser/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  if (!response.ok) throw await responseError(response, 'update browser settings failed');
+  return response.json();
+}
+
+

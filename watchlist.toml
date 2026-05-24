@@ -75,6 +75,11 @@ extension_retention_days = 7
 extract_model = "codex:gpt-5.5"
 consolidation_model = "codex:gpt-5.5"
 
+[browser]
+enabled = true
+# socket_path = "/tmp/open-browser-use/example.sock"  # optional, auto-discovers by default
+# timeout_ms = 15000
+
 # -- Cron Jobs ---------------------------------------------------------------
 # Each [[cron_jobs]] defines a scheduled agent task. Cron expressions are
 # evaluated in local time.

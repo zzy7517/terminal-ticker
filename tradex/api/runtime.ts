@@ -19,6 +19,7 @@ import { CronJobStore } from "../cron/job_store.js";
 import type { Agent } from "../agent/core/index.js";
 import { AgentModelRegistry } from "../agent/model_registry.js";
 import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
+import { BrowserManager } from "../browser/index.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -35,6 +36,7 @@ export class AppRuntime {
   readonly cronJobStore: CronJobStore;
   readonly cronScheduler: CronScheduler;
   readonly mcpManager: McpClientManager | null;
+  readonly browserManager: BrowserManager;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
   readonly activeAgents = new Map<string, Agent>();
@@ -66,6 +68,9 @@ export class AppRuntime {
     } else {
       this.mcpManager = null;
     }
+
+    // Wire browser automation manager
+    this.browserManager = new BrowserManager(config.browser);
 
     // Wire trade closure → memory pipeline enqueue
     this.tradeStore.onTradeClosed((tradeId) => this.enqueueTradeForMemory(tradeId));

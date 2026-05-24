@@ -4,6 +4,7 @@ import {
   Bot,
   Brain,
   Cable,
+  Chrome,
   CircleDot,
   Clock,
   KeyRound,
@@ -106,6 +107,14 @@ export function SettingsFrame({
             >
               <Cable size={18} />
               <span>MCP</span>
+            </button>
+            <button
+              className={`settings-nav-item ${section === 'browser' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('browser')}
+            >
+              <Chrome size={18} />
+              <span>Browser</span>
             </button>
           </div>
 

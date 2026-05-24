@@ -6,3 +6,4 @@ export * from "./social.js";
 export * from "./trading.js";
 export * from "./web.js";
 export * from "./filesystem.js";
+export * from "./browser.js";

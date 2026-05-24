@@ -8,6 +8,7 @@ import type {
 } from './types';
 import {
   AGENT_CONTEXT_HASH,
+  BROWSER_HASH,
   CRON_HASH,
   GROUP_LABELS,
   MCP_HASH,
@@ -38,6 +39,9 @@ export function nextTheme(theme: ThemeName): ThemeName {
 }
 
 export function readRouteFromHash(): AppRoute {
+  if (window.location.hash.startsWith(BROWSER_HASH)) {
+    return { view: 'settings', section: 'browser' };
+  }
   if (window.location.hash.startsWith(MCP_HASH)) {
     return { view: 'settings', section: 'mcp' };
   }
@@ -82,7 +86,9 @@ export function navigateToRoute(route: AppRoute) {
           ? WATCHLIST_HASH
           : route.section === 'mcp'
             ? MCP_HASH
-            : PROVIDERS_HASH;
+            : route.section === 'browser'
+              ? BROWSER_HASH
+              : PROVIDERS_HASH;
     window.location.hash = hash;
     return;
   }

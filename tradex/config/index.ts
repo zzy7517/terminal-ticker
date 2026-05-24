@@ -186,6 +186,14 @@ export interface McpAppConfig {
   configPath: string | null;
 }
 
+export interface BrowserConfig {
+  enabled: boolean;
+  /** Path to the OBU socket. null = auto-discover from /tmp/open-browser-use/active.json */
+  socketPath: string | null;
+  /** Default timeout for browser operations in ms */
+  timeoutMs: number;
+}
+
 export interface AppConfig {
   instruments: InstrumentConfig[];
   display: DisplayConfig;
@@ -198,6 +206,7 @@ export interface AppConfig {
   socialFeed: SocialFeedConfig;
   trading: TradingConfig;
   mcp: McpAppConfig;
+  browser: BrowserConfig;
   cronJobs: CronJobConfig[];
 }
 
@@ -674,6 +683,16 @@ export function parseMcpConfig(rawMcpValue: unknown): McpAppConfig {
   };
 }
 
+export function parseBrowserConfig(rawBrowserValue: unknown): BrowserConfig {
+  const raw = asRecord(rawBrowserValue, "browser");
+  const socketPath = typeof raw.socket_path === "string" && raw.socket_path.trim() ? raw.socket_path.trim() : null;
+  return {
+    enabled: normalizeBool(raw.enabled, "browser.enabled", false),
+    socketPath,
+    timeoutMs: coerceInt(raw.timeout_ms, "browser.timeout_ms", 15_000),
+  };
+}
+
 export function parseConfig(data: Record<string, unknown>, sourcePath: string | null = null): AppConfig {
   const rawSymbols = data.symbols;
   if (!Array.isArray(rawSymbols)) throw new Error("symbols must be a list of symbol entries");
@@ -694,6 +713,7 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     socialFeed: parseSocialFeedConfig(data.social_feed),
     trading: parseTradingConfig(data.trading),
     mcp: parseMcpConfig(data.mcp),
+    browser: parseBrowserConfig(data.browser),
     cronJobs: parseCronJobsConfig(data.cron_jobs),
     sourcePath,
   };
@@ -724,6 +744,7 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       socialFeed: parseSocialFeedConfig({}),
       trading: parseTradingConfig({}),
       mcp: parseMcpConfig({}),
+      browser: parseBrowserConfig({}),
       cronJobs: [],
       sourcePath: null,
     } satisfies AppConfig);

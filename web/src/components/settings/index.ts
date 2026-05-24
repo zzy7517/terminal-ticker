@@ -7,3 +7,4 @@ export { MemorySettingsPanel } from './MemorySettingsPanel';
 export { SocialSettingsPanel } from './SocialSettingsPanel';
 export { CronSettingsPanel } from './CronSettingsPanel';
 export { McpSettingsPanel } from './McpSettingsPanel';
+export { BrowserSettingsPanel } from './BrowserSettingsPanel';

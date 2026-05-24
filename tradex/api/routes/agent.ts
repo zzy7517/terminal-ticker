@@ -10,6 +10,7 @@ import { buildNewsTools } from "../../agent/tools/news.js";
 import { buildSocialFeedTools } from "../../agent/tools/social.js";
 import { buildTradingTools } from "../../agent/tools/trading.js";
 import { buildWebTools } from "../../agent/tools/web.js";
+import { buildBrowserTools } from "../../agent/tools/browser.js";
 import { createFilesystemRegistry, setFilesystemRoot } from "../../agent/tools/filesystem.js";
 import { mergeRegistries } from "../../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../../mcp/index.js";
@@ -157,6 +158,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
               resolveSessionId: () => sessionId,
             }),
             buildWebTools(),
+            ...(runtime.config.browser.enabled ? [buildBrowserTools(runtime.browserManager)] : []),
             createFilesystemRegistry({ allowedSkillPaths }),
             ...(mcpRegistry ? [mcpRegistry] : []),
           );

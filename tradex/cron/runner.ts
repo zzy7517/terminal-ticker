@@ -18,6 +18,7 @@ import { buildMemoryTools } from "../memory/tools.js";
 import { buildWebTools } from "../agent/tools/web.js";
 import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildSocialFeedTools } from "../agent/tools/social.js";
+import { buildBrowserTools } from "../agent/tools/browser.js";
 import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../mcp/index.js";
 import { loadSkills, formatSkillsForPrompt } from "../agent/skills.js";
@@ -119,6 +120,11 @@ export async function executeCronJob(input: {
         })).items,
       }),
     );
+  }
+
+  // Add browser tools if enabled
+  if (runtime.config.browser.enabled) {
+    registries.push(buildBrowserTools(runtime.browserManager));
   }
 
   // Add MCP tools if available
