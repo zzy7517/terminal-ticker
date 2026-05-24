@@ -1,5 +1,5 @@
 import type { AgentConfig, MemoryConfig } from "../config/index.js";
-import type { AgentLLMProvider } from "../agent/loop.js";
+import type { LLMChatClient } from "../agent/llm_client.js";
 import type { TradeStore } from "../trading/store.js";
 import { ensureMemoryLayout } from "./paths.js";
 import { MemoryRuntimePolicy } from "./policy.js";

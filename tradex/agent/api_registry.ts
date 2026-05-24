@@ -10,7 +10,7 @@
  */
 
 import type { AgentModel } from "./models.js";
-import type { ChatResponse } from "./loop.js";
+import type { ChatResponse } from "./llm_client.js";
 
 /**
  * The input shape passed to a registered stream function.

@@ -1,6 +1,6 @@
 import type { AgentConfig } from "../../config/index.js";
 import { nowMs } from "../../db.js";
-import type { AgentLLMProvider } from "../../agent/loop.js";
+import type { LLMChatClient } from "../../agent/llm_client.js";
 import { DEFAULT_RETRY_DELAY_MS, type MemoryStateStore, type Stage1Output } from "../state.js";
 import type { MemoryWorkspaceDiff } from "../workspace.js";
 import {
@@ -60,7 +60,7 @@ Rules:
 - Do not invent facts, claims, files, or validation.
 `;
 
-export type LLMProviderFactory = (config: AgentConfig) => AgentLLMProvider;
+export type LLMProviderFactory = (config: AgentConfig) => LLMChatClient;
 
 export class Phase2Runner {
   readonly root: string;

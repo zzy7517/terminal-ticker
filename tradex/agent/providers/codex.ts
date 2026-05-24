@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { fetch as browserFetch } from "wreq-js";
 import type { AgentModel } from "../models.js";
 import type { ChatInput, ApiStreamFunction, ApiListModelsFunction } from "../api_registry.js";
-import type { ChatResponse } from "../loop.js";
+import type { ChatResponse } from "../llm_client.js";
 import type { ToolCall } from "../tools/registry.js";
 
 // ---- Stateless stream function (the new primary API) ----

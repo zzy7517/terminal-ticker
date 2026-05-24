@@ -11,7 +11,7 @@
 
 import { AgentConfig } from "../config/index.js";
 import { ANTHROPIC_PROVIDER, CODEX_PROVIDER, normalizeApiMode, normalizeModel, normalizeProvider, normalizeReasoningEffort } from "../config/agent_models.js";
-import type { AgentLLMProvider } from "./loop.js";
+import type { LLMChatClient } from "./llm_client.js";
 import type { AgentModel } from "./models.js";
 import { resolveAgentModelFromConfig } from "./models.js";
 import { getApiStream, getApiListModels } from "./api_registry.js";
@@ -34,11 +34,11 @@ export class AgentModelRegistry {
   }
 
   /**
-   * Create a legacy AgentLLMProvider from config.
-   * This wraps the new registry-based dispatch into the old interface
-   * so existing consumers (memory pipeline) don't need changes.
+   * Create an LLMChatClient from config.
+   * Wraps the registry-based dispatch into the lightweight chat interface
+   * used by non-agentic consumers like the memory pipeline.
    */
-  createProvider(config: AgentConfig): AgentLLMProvider {
+  createProvider(config: AgentConfig): LLMChatClient {
     const model = this.resolve(config);
     const streamFn = getApiStream(model.api);
     return {
@@ -77,8 +77,4 @@ export class AgentModelRegistry {
   }
 }
 
-export function defaultAgentModelRegistry(): AgentModelRegistry {
-  return new AgentModelRegistry();
-}
-
-export const DEFAULT_AGENT_MODEL_REGISTRY = defaultAgentModelRegistry();
+export const DEFAULT_AGENT_MODEL_REGISTRY = new AgentModelRegistry();

@@ -1,6 +1,4 @@
 import type {
-  AgentMessage,
-  AgentStreamPayload,
   Instrument,
   InstrumentSearchResult,
   MarketState,
@@ -10,7 +8,6 @@ import {
   AGENT_CONTEXT_HASH,
   BROWSER_HASH,
   CRON_HASH,
-  GROUP_LABELS,
   MCP_HASH,
   MEMORY_HASH,
   NEWS_HASH,
@@ -115,40 +112,9 @@ export function changeClass(quote: Quote | undefined) {
   return 'neutral';
 }
 
-export function sourceLabel(instrument: Instrument | undefined) {
-  if (!instrument) return '-';
-  return instrument.source.toUpperCase();
-}
-
 export function sourceName(source: string) {
   if (source === 'hyperliquid') return 'Hyperliquid';
   return source.toUpperCase();
-}
-
-export function instrumentVenue(instrument: Instrument) {
-  if (instrument.source === 'bitget') {
-    return instrument.instType ?? instrument.key.split(':', 1)[0] ?? 'Bitget';
-  }
-  return sourceName(instrument.source);
-}
-
-export function watchlistSectionLabel(source: string) {
-  return GROUP_LABELS[source] ?? sourceName(source);
-}
-
-export function watchlistSections(instruments: Instrument[]) {
-  const preferred = ['bitget', 'hyperliquid'];
-  const sources = [
-    ...preferred.filter((source) => instruments.some((instrument) => instrument.source === source)),
-    ...Array.from(new Set(instruments.map((instrument) => instrument.source)))
-      .filter((source) => !preferred.includes(source))
-      .sort(),
-  ];
-  return sources.map((source) => ({
-    source,
-    label: watchlistSectionLabel(source),
-    instruments: instruments.filter((instrument) => instrument.source === source),
-  }));
 }
 
 export function addInstrumentBySource(result: InstrumentSearchResult) {
@@ -156,46 +122,8 @@ export function addInstrumentBySource(result: InstrumentSearchResult) {
   return addHyperliquidSymbol(result);
 }
 
-export function formatLevelPrice(price: number | null) {
-  if (price == null) return '-';
-  return price.toFixed(price > 1000 ? 1 : 2);
-}
-
 export function formatContextWindow(size: number | null) {
   if (size == null) return '-';
   if (size >= 1000) return `${Math.round(size / 1000)}K`;
   return String(size);
-}
-
-export function formatSignedNumber(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return '-';
-  const prefix = value > 0 ? '+' : '';
-  return `${prefix}${value.toFixed(2)}`;
-}
-
-export function upsertAgentMessage(messages: AgentMessage[], message: AgentMessage) {
-  const index = messages.findIndex((item) => item.id === message.id);
-  if (index < 0) return [...messages, message];
-  const next = messages.slice();
-  next[index] = {
-    ...next[index],
-    ...message,
-    metadata: message.metadata ?? next[index].metadata,
-  };
-  return next;
-}
-
-export function streamMessageToAgentMessage(
-  raw: Extract<AgentStreamPayload, { message: unknown }>['message'],
-  fallback: { id: number; sessionId: string; createdAt: string },
-): AgentMessage {
-  return {
-    id: typeof raw.id === 'number' ? raw.id : fallback.id,
-    sessionId: typeof raw.sessionId === 'string' ? raw.sessionId : fallback.sessionId,
-    role: raw.role,
-    content: raw.content,
-    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : fallback.createdAt,
-    metadata: raw.metadata ?? null,
-    error: raw.error ?? null,
-  };
 }

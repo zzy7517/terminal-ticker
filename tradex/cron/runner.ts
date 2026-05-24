@@ -10,7 +10,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CronJobConfig, AgentConfig } from "../config/index.js";
 import { normalizeApiMode } from "../config/agent_models.js";
-import { AgentRuntime } from "../agent/runtime.js";
+import { resolveAgentModelFromConfig } from "../agent/models.js";
+import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../agent/core/index.js";
+import type { AgentModelDescriptor, TextContent, ShouldStopContext } from "../agent/core/types.js";
 import { SessionManager } from "../agent/session_manager.js";
 import { buildMarketTools } from "../agent/tools/market.js";
 import { buildNewsTools } from "../agent/tools/news.js";
@@ -25,12 +27,13 @@ import { loadSkills, formatSkillsForPrompt } from "../agent/skills.js";
 import { newCronSessionPath } from "./store.js";
 import type { AppRuntime } from "../api/runtime.js";
 
+const DEFAULT_CRON_MAX_ITERATIONS = 10;
+
 export interface CronRunResult {
   sessionId: string;
   filePath: string;
   content: string;
   iterations: number;
-  totalTokens: number;
   error: string | null;
   durationMs: number;
 }
@@ -75,7 +78,6 @@ export async function executeCronJob(input: {
 
   // Build agent config, optionally overriding model from job config
   const agentConfig = buildAgentConfigForJob(job, runtime.config.agent);
-  const agentRuntime = new AgentRuntime({ config: agentConfig });
 
   const maxCandles = job.maxCandles ?? runtime.config.agent.maxCandles;
 
@@ -137,7 +139,6 @@ export async function executeCronJob(input: {
   let content = "";
   let error: string | null = null;
   let iterations = 0;
-  let totalTokens = 0;
 
   try {
     // Build system prompt: job-specific prompt + skills
@@ -155,19 +156,54 @@ export async function executeCronJob(input: {
       }
     }
 
-    const result = await agentRuntime.run({
-      message: job.userMessage,
-      tools,
-      history: [],
-      systemPrompt: systemPrompt || null,
-      eventHandler: null,
-      maxIterations: job.maxIterations ?? undefined,
+    // ---- Build Agent ----
+    const resolved = resolveAgentModelFromConfig(agentConfig);
+    const modelDescriptor: AgentModelDescriptor = {
+      id: resolved.id,
+      provider: resolved.provider,
+      api: resolved.api,
+      baseUrl: resolved.baseUrl,
+      reasoningEffort: resolved.reasoningEffort,
+      accountId: resolved.accountId,
+    };
+
+    const maxIterations = job.maxIterations ?? DEFAULT_CRON_MAX_ITERATIONS;
+
+    const agent = new Agent({
+      initialState: {
+        systemPrompt: systemPrompt || "",
+        model: modelDescriptor,
+        thinkingLevel: "off",
+        tools: registryToAgentTools(tools),
+        messages: [],
+      },
+      streamFn: createStreamFnFromRegistry(),
+      apiKey: resolved.apiKey,
+      toolExecution: "sequential",
+      shouldStopAfterTurn: (_ctx: ShouldStopContext) => {
+        // Stop once we've completed `maxIterations` assistant turns.
+        // turn_end fires before this hook, so iterations is already incremented.
+        return iterations >= maxIterations;
+      },
     });
 
-    content = result.content || "";
-    iterations = result.iterations;
-    totalTokens = result.totalTokens;
-    error = result.error;
+    agent.subscribe((event) => {
+      if (event.type === "turn_end") {
+        iterations += 1;
+        if (event.message.errorMessage) {
+          error = event.message.errorMessage;
+        }
+        // Capture text content from this assistant turn. The final turn's
+        // text is what we surface as the cron run output.
+        const text = event.message.content
+          .filter((c): c is TextContent => c.type === "text")
+          .map((c) => c.text)
+          .join("");
+        if (text) content = text;
+      }
+    });
+
+    await agent.prompt(job.userMessage);
 
     // Persist assistant response
     cronMgr.appendMessage({
@@ -175,9 +211,6 @@ export async function executeCronJob(input: {
       content,
       metadata: {
         iterations,
-        totalTokens,
-        promptTokens: result.promptTokens,
-        finished: result.finished,
       },
     });
   } catch (caught) {
@@ -196,7 +229,6 @@ export async function executeCronJob(input: {
     error,
     durationMs,
     iterations,
-    totalTokens,
   });
 
   return {
@@ -204,7 +236,6 @@ export async function executeCronJob(input: {
     filePath,
     content,
     iterations,
-    totalTokens,
     error,
     durationMs,
   };

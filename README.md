@@ -438,3 +438,11 @@ npm run build:backend
 - 本地不会用 1m K 线模拟成交；未成交或挂单状态依赖交易所状态同步/撤单能力。
 - Agent、新闻和社交动态适合做研究辅助，不应该直接当作交易信号执行。
 - 新闻来源目前以 Reuters sitemap provider 为主。
+
+## Acknowledgements
+
+本项目借鉴了大量来自其它开源项目的代码和设计，在此致谢：
+
+- [**earendil-works/pi**](https://github.com/earendil-works/pi) 
+- [**openai/codex**](https://github.com/openai/codex)
+- [**iFurySt/open-browser-use**](https://github.com/iFurySt/open-browser-use)

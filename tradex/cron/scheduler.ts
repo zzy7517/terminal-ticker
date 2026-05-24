@@ -236,7 +236,7 @@ export class CronScheduler {
       if (result.error) {
         console.error(`[cron] "${job.name}" completed with error: ${result.error}`);
       } else {
-        console.log(`[cron] "${job.name}" completed in ${result.durationMs}ms (${result.iterations} iterations, ${result.totalTokens} tokens)`);
+        console.log(`[cron] "${job.name}" completed in ${result.durationMs}ms (${result.iterations} iterations)`);
       }
     } catch (error) {
       console.error(`[cron] "${job.name}" threw:`, error);

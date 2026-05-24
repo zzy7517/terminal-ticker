@@ -1,6 +1,6 @@
 import type { AgentConfig } from "../../config/index.js";
 import { nowMs } from "../../db.js";
-import type { AgentLLMProvider } from "../../agent/loop.js";
+import type { LLMChatClient } from "../../agent/llm_client.js";
 import { TradeStatus, FillKind, type Trade, type Fill, fillToPayload, tradeToPayload, snapshotToPayload } from "../../trading/models.js";
 import type { TradeStore } from "../../trading/store.js";
 import {
@@ -88,7 +88,7 @@ export function normalizePhase1Output(payload: string | Record<string, unknown>)
   return { rolloutSummary, rolloutSlug, rawMemory };
 }
 
-export type LLMProviderFactory = (config: AgentConfig) => AgentLLMProvider;
+export type LLMProviderFactory = (config: AgentConfig) => LLMChatClient;
 
 export interface SessionSource {
   listSessions(input: { limit?: number }): Array<{ id: string; updatedAt: string; messageCount: number }>;

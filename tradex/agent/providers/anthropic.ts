@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AgentModel } from "../models.js";
 import type { ChatInput, ApiStreamFunction, ApiListModelsFunction } from "../api_registry.js";
-import type { ChatResponse } from "../loop.js";
+import type { ChatResponse } from "../llm_client.js";
 import type { ToolCall } from "../tools/registry.js";
 
 type AnthropicEffort = "low" | "medium" | "high" | "xhigh" | "max";
