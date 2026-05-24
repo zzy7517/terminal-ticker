@@ -1,20 +1,32 @@
 /**
- * model_registry.ts — Backward-compatible registry that bridges the old
- * factory-based interface with the new AgentModel + API Registry pattern.
+ * model_registry.ts — Convenience wrapper around AgentModel resolution + the
+ * api_registry.
  *
- * The AgentModelRegistry is still used by:
+ * Used by:
  *  - api/routes/agent.ts for listAvailableModels()
  *  - memory pipeline (via LLMProviderFactory)
  *
- * Internally it now delegates to resolveAgentModelFromConfig + getApiStream/getApiListModels.
+ * Internally delegates to resolveAgentModelFromConfig + getApiStream /
+ * getApiListModels. memory's LLMChatClient.chat() shape is implemented here so
+ * memory consumers don't have to know about the provider stream contract.
  */
 
 import { AgentConfig } from "../config/index.js";
-import { ANTHROPIC_PROVIDER, CODEX_PROVIDER, normalizeApiMode, normalizeModel, normalizeProvider, normalizeReasoningEffort } from "../config/agent_models.js";
-import type { LLMChatClient } from "./llm_client.js";
+import {
+  ANTHROPIC_PROVIDER,
+  CODEX_PROVIDER,
+  normalizeApiMode,
+  normalizeModel,
+  normalizeProvider,
+  normalizeReasoningEffort,
+} from "../config/agent_models.js";
+import type { LLMChatClient, ChatResponse } from "./llm_client.js";
 import type { AgentModel } from "./models.js";
 import { resolveAgentModelFromConfig } from "./models.js";
 import { getApiStream, getApiListModels } from "./api_registry.js";
+import type { AgentContext, AgentModelDescriptor, TextContent } from "./core/types.js";
+import { transformMessages } from "./core/transform-messages.js";
+import { agentModelToDescriptor } from "./core/model-descriptor.js";
 
 // Ensure built-in providers are registered
 import "./providers/register.js";
@@ -23,58 +35,74 @@ export class LLMProviderUnavailable extends Error {}
 
 /**
  * AgentModelRegistry — resolves config into AgentModel and provides
- * backward-compatible createProvider() for the memory pipeline.
+ * a simple chat client for the memory pipeline.
  */
 export class AgentModelRegistry {
-  /**
-   * Resolve config into an AgentModel value object.
-   */
+  /** Resolve config into an AgentModel value object. */
   resolve(config: AgentConfig): AgentModel {
     return resolveAgentModelFromConfig(config);
   }
 
   /**
-   * Create an LLMChatClient from config.
-   * Wraps the registry-based dispatch into the lightweight chat interface
-   * used by non-agentic consumers like the memory pipeline.
+   * Create an LLMChatClient from config. Wraps the provider stream into the
+   * lightweight chat interface used by non-agentic consumers like the memory
+   * pipeline.
    */
   createProvider(config: AgentConfig): LLMChatClient {
     const model = this.resolve(config);
-    const streamFn = getApiStream(model.api);
+    const descriptor = agentModelToDescriptor(model);
+    const streamFn = getApiStream(descriptor.api);
+    const apiKey = model.apiKey;
     return {
-      name: model.provider,
-      model: model.id,
-      async chat(input) {
-        return streamFn(model, input);
+      name: descriptor.provider,
+      model: descriptor.id,
+      async chat({ system, messages, onDelta }): Promise<ChatResponse> {
+        const context: AgentContext = {
+          systemPrompt: system ?? "",
+          messages: transformMessages(messages, descriptor),
+          tools: [],
+        };
+        const result = await streamFn(descriptor, context, {
+          apiKey,
+          ...(onDelta ? { onDelta } : {}),
+        });
+        const content = result.message.content
+          .filter((c): c is TextContent => c.type === "text")
+          .map((c) => c.text)
+          .join("");
+        return { content, message: result.message };
       },
     };
   }
 
-  /**
-   * List available models for a provider.
-   */
-  async listAvailableModels(config: AgentConfig, providerOverride?: string | null): Promise<Array<Record<string, unknown>>> {
+  /** List available models for a provider. */
+  async listAvailableModels(
+    config: AgentConfig,
+    providerOverride?: string | null,
+  ): Promise<Array<Record<string, unknown>>> {
     let model: AgentModel;
     if (providerOverride) {
       const provider = normalizeProvider(providerOverride);
       const apiMode = normalizeApiMode(provider);
-      model = {
-        id: normalizeModel(provider, null),
+      const stub: AgentConfig = {
+        ...config,
         provider,
-        api: apiMode,
-        baseUrl: "",
+        apiMode,
+        model: normalizeModel(provider, null),
         reasoningEffort: normalizeReasoningEffort(null),
-        apiKey: "",
       };
-      // Fill in credentials from the config profiles
-      const fullConfig: AgentConfig = { ...config, provider, apiMode, model: model.id };
-      model = resolveAgentModelFromConfig(fullConfig);
+      model = resolveAgentModelFromConfig(stub);
     } else {
       model = this.resolve(config);
     }
-    const listFn = getApiListModels(model.api);
-    return listFn(model);
+    const descriptor = agentModelToDescriptor(model);
+    const listFn = getApiListModels(descriptor.api);
+    return listFn(descriptor, { apiKey: model.apiKey });
   }
 }
 
 export const DEFAULT_AGENT_MODEL_REGISTRY = new AgentModelRegistry();
+
+// Re-export the supported provider constants so callers don't have to import
+// from config to know what's registered.
+export { ANTHROPIC_PROVIDER, CODEX_PROVIDER };

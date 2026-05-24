@@ -1,45 +1,58 @@
 import crypto from "node:crypto";
 import { fetch as browserFetch } from "wreq-js";
-import type { AgentModel } from "../models.js";
-import type { ChatInput, ApiStreamFunction, ApiListModelsFunction } from "../api_registry.js";
-import type { ChatResponse } from "../llm_client.js";
-import type { ToolCall } from "../tools/registry.js";
+import type {
+  AgentContext,
+  AgentMessage,
+  AgentModelDescriptor,
+  AssistantMessage,
+  ImageContent,
+  StreamFn,
+  StreamOptions,
+  StreamResult,
+  TextContent,
+  ToolCallContent,
+} from "../core/types.js";
+import { computeUsage } from "../core/usage.js";
+import type { ApiListModelsFunction } from "../api_registry.js";
 
-// ---- Stateless stream function (the new primary API) ----
-
-export const streamCodex: ApiStreamFunction = async (model: AgentModel, input: ChatInput): Promise<ChatResponse> => {
-  if (!model.apiKey) throw new Error("CODEX_API_KEY or Codex CLI auth is required");
-  const instructions = input.messages
-    .filter((message) => message.role === "system")
-    .map((message) => String(message.content || ""))
-    .join("\n\n");
+export const streamCodex: StreamFn = async (
+  model: AgentModelDescriptor,
+  context: AgentContext,
+  options: StreamOptions,
+): Promise<StreamResult> => {
+  const apiKey = options.apiKey || "";
+  if (!apiKey) throw new Error("CODEX_API_KEY or Codex CLI auth is required");
   const payload = {
     model: model.id,
-    input: messagesToCodexInput(input.messages),
-    instructions,
+    input: contextToCodexInput(context),
+    instructions: context.systemPrompt ?? "",
     store: false,
     stream: true,
     reasoning: {
       effort: model.reasoningEffort,
       summary: "auto",
     },
-    tools: codexToolsPayload(input.tools),
+    tools: codexToolsPayload(context),
   };
   const response = await codexFetch(`${model.baseUrl}/responses`, {
     method: "POST",
-    headers: codexHeaders(model.apiKey, model.accountId ?? null),
+    headers: codexHeaders(apiKey, model.accountId ?? null),
     body: JSON.stringify(payload),
-    ...(input.signal ? { signal: input.signal } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
   });
-  return collectCodexResponse(response, input.onDelta, input.signal);
+  return collectCodexResponse(response, model, options);
 };
 
-export const listCodexModels: ApiListModelsFunction = async (model: AgentModel): Promise<Array<Record<string, unknown>>> => {
-  if (!model.apiKey) throw new Error("CODEX_API_KEY or Codex CLI auth is required");
+export const listCodexModels: ApiListModelsFunction = async (
+  model: AgentModelDescriptor,
+  options?: { apiKey?: string },
+): Promise<Array<Record<string, unknown>>> => {
+  const apiKey = options?.apiKey || "";
+  if (!apiKey) throw new Error("CODEX_API_KEY or Codex CLI auth is required");
   const url = new URL(`${model.baseUrl}/models`);
   url.searchParams.set("client_version", "1.0.0");
   const response = await codexFetch(url.toString(), {
-    headers: codexHeaders(model.apiKey, model.accountId ?? null),
+    headers: codexHeaders(apiKey, model.accountId ?? null),
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`Codex models API ${response.status}: ${text}`);
@@ -192,78 +205,101 @@ function jwtClaims(token: string): Record<string, unknown> {
   }
 }
 
-function messagesToCodexInput(messages: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+function contextToCodexInput(context: AgentContext): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
-  for (const message of messages) {
-    const role = String(message.role || "");
-    if (role === "system") continue;
-    if (role === "user") {
-      const content: Array<Record<string, unknown>> = [{ type: "input_text", text: String(message.content || "") }];
-      const images = Array.isArray(message.images) ? message.images as Array<{ data: string; mimeType: string }> : [];
-      for (const img of images) {
-        content.push({ type: "input_image", image_url: `data:${img.mimeType};base64,${img.data}` });
-      }
-      out.push({ role: "user", content });
-    } else if (role === "assistant") {
-      const toolCalls = message.tool_calls;
-      const renderedToolCalls = renderToolCallsForReplay(toolCalls);
-      const text = [String(message.content || ""), renderedToolCalls].filter(Boolean).join("\n\n");
-      out.push({ role: "assistant", content: [{ type: "output_text", text }] });
-    } else if (role === "tool") {
-      const toolContent: Array<Record<string, unknown>> = [{
-        type: "input_text",
-        text: `Tool result for ${String(message.tool_call_id || "")}:\n${String(message.content || "")}`,
-      }];
-      const toolImages = Array.isArray(message.images) ? message.images as Array<{ data: string; mimeType: string }> : [];
-      for (const img of toolImages) {
-        toolContent.push({ type: "input_image", image_url: `data:${img.mimeType};base64,${img.data}` });
-      }
-      out.push({ role: "user", content: toolContent });
+  for (const msg of context.messages) {
+    if (msg.role === "user") {
+      out.push({ role: "user", content: userContentToCodex(msg.content) });
+      continue;
     }
+    if (msg.role === "assistant") {
+      const text = msg.content.filter((c): c is TextContent => c.type === "text").map((c) => c.text).join("");
+      const toolCallParts = msg.content.filter((c): c is ToolCallContent => c.type === "toolCall");
+      const renderedToolCalls = renderToolCallsForReplay(toolCallParts);
+      const replayText = [text, renderedToolCalls].filter(Boolean).join("\n\n");
+      out.push({ role: "assistant", content: [{ type: "output_text", text: replayText }] });
+      continue;
+    }
+    if (msg.role === "toolResult") {
+      out.push({ role: "user", content: toolResultToCodex(msg) });
+      continue;
+    }
+    // custom messages are not sent to the LLM
   }
   return out;
 }
 
-function renderToolCallsForReplay(toolCalls: unknown): string {
-  if (!Array.isArray(toolCalls)) return "";
+function userContentToCodex(
+  content: string | (TextContent | ImageContent)[],
+): Array<Record<string, unknown>> {
+  if (typeof content === "string") {
+    return [{ type: "input_text", text: content }];
+  }
+  const out: Array<Record<string, unknown>> = [];
+  for (const item of content) {
+    if (item.type === "text") {
+      out.push({ type: "input_text", text: item.text });
+    } else {
+      out.push({ type: "input_image", image_url: `data:${item.mimeType};base64,${item.data}` });
+    }
+  }
+  // Codex requires at least one input_text per user message; pad with empty text if needed.
+  if (!out.some((b) => b.type === "input_text")) {
+    out.unshift({ type: "input_text", text: "" });
+  }
+  return out;
+}
+
+function toolResultToCodex(msg: { toolCallId: string; content: (TextContent | ImageContent)[] }): Array<Record<string, unknown>> {
+  const text = msg.content.filter((c): c is TextContent => c.type === "text").map((c) => c.text).join("\n");
+  const images = msg.content.filter((c): c is ImageContent => c.type === "image");
+  const out: Array<Record<string, unknown>> = [{
+    type: "input_text",
+    text: `Tool result for ${msg.toolCallId}:\n${text}`,
+  }];
+  for (const img of images) {
+    out.push({ type: "input_image", image_url: `data:${img.mimeType};base64,${img.data}` });
+  }
+  return out;
+}
+
+function renderToolCallsForReplay(toolCalls: ToolCallContent[]): string {
+  if (!toolCalls.length) return "";
   const lines: string[] = [];
-  for (const rawCall of toolCalls) {
-    if (!rawCall || typeof rawCall !== "object" || Array.isArray(rawCall)) continue;
-    const fn = (rawCall as Record<string, unknown>).function;
-    if (!fn || typeof fn !== "object" || Array.isArray(fn)) continue;
-    const name = String((fn as Record<string, unknown>).name || "");
-    const args = String((fn as Record<string, unknown>).arguments || "{}");
-    if (name) lines.push(`Tool call requested: ${name}`, `Arguments: ${args}`);
+  for (const tc of toolCalls) {
+    if (!tc.name) continue;
+    lines.push(`Tool call requested: ${tc.name}`, `Arguments: ${JSON.stringify(tc.arguments ?? {})}`);
   }
   return lines.join("\n");
 }
 
-function codexToolsPayload(tools: Array<Record<string, unknown>> | null | undefined): Array<Record<string, unknown>> {
+function codexToolsPayload(context: AgentContext): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
   let hasLocalWebSearch = false;
-  for (const tool of tools ?? []) {
-    const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function)
-      ? tool.function as Record<string, unknown>
-      : null;
-    if (!fn) continue;
-    const name = String(fn.name || "");
-    if (!name) continue;
-    if (name === "web_search") {
+  for (const tool of context.tools ?? []) {
+    if (!tool.name) continue;
+    if (tool.name === "web_search") {
       hasLocalWebSearch = true;
       continue;
     }
     out.push({
       type: "function",
-      name,
-      description: fn.description || "",
-      parameters: fn.parameters || {},
+      name: tool.name,
+      description: tool.description ?? "",
+      parameters: tool.parameters ?? {},
     });
   }
   if (hasLocalWebSearch) out.push({ type: "web_search", external_web_access: true });
   return out;
 }
 
-async function collectCodexResponse(response: Response, onDelta?: ((delta: string) => void | Promise<void>) | null, signal?: AbortSignal): Promise<ChatResponse> {
+async function collectCodexResponse(
+  response: Response,
+  model: AgentModelDescriptor,
+  options: StreamOptions,
+): Promise<StreamResult> {
+  const onDelta = options.onDelta ?? null;
+  const signal = options.signal;
   const textChunks: string[] = [];
   let doneText: string | null = null;
   const toolCalls = new Map<string, { id: string; name: string; arguments: string }>();
@@ -357,17 +393,41 @@ async function collectCodexResponse(response: Response, onDelta?: ((delta: strin
   for (const line of buffer.split(/\r?\n/)) {
     if (line) await consumeLine(line);
   }
-  const content = textChunks.join("").trim() || (doneText || "").trim();
+  const aborted = signal?.aborted === true;
+  const text = textChunks.join("").trim() || (doneText || "").trim();
   if (onDelta && doneText && textChunks.length === 0) await onDelta(doneText);
-  const calls: ToolCall[] = [...toolCalls.values()]
+  const calls: ToolCallContent[] = [...toolCalls.values()]
     .filter((call) => call.name.trim())
-    .map((call) => ({ id: call.id, name: call.name, arguments: parseArgs(call.arguments) }));
-  return {
-    content: content || null,
-    toolCalls: calls,
-    finishReason: calls.length > 0 ? "tool_calls" : "stop",
-    usage,
+    .map((call) => ({
+      type: "toolCall",
+      id: call.id,
+      name: call.name,
+      arguments: parseArgs(call.arguments),
+    }));
+
+  const messageContent: (TextContent | ToolCallContent)[] = [];
+  if (text) messageContent.push({ type: "text", text });
+  for (const call of calls) messageContent.push(call);
+
+  const resolvedUsage = computeUsage({
+    inputTokens: Number(usage.prompt_tokens ?? 0),
+    outputTokens: Number(usage.completion_tokens ?? 0),
+    cacheReadTokens: Number(usage.cache_read_tokens ?? 0),
+    cacheWriteTokens: Number(usage.cache_write_tokens ?? 0),
+    rates: model.cost,
+  });
+
+  const message: AssistantMessage = {
+    role: "assistant",
+    content: messageContent,
+    provider: model.provider,
+    model: model.id,
+    usage: resolvedUsage,
+    stopReason: aborted ? "aborted" : calls.length > 0 ? "toolUse" : "stop",
+    ...(aborted ? { errorMessage: "Request was aborted" } : {}),
+    timestamp: Date.now(),
   };
+  return { message };
 }
 
 function functionCallEventKey(event: Record<string, unknown>): string {

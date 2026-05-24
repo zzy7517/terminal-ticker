@@ -5,33 +5,28 @@
  * to stateless stream functions. This is the central dispatch layer that
  * makes model switching a pointer swap rather than a provider rebuild.
  *
- * Modeled after pi-mono's api-registry.ts but adapted for this project's
- * simpler ChatResponse-based interface.
+ * Modeled after pi-mono's api-registry. Provider stream functions speak the
+ * same typed contract the core Agent expects: a typed `AgentContext` in,
+ * a `StreamResult` out. There is no intermediate `ChatInput`/`ChatResponse`
+ * stringly-typed bridge.
  */
 
-import type { AgentModel } from "./models.js";
-import type { ChatResponse } from "./llm_client.js";
-
-/**
- * The input shape passed to a registered stream function.
- */
-export interface ChatInput {
-  messages: Array<Record<string, unknown>>;
-  tools?: Array<Record<string, unknown>> | null;
-  onDelta?: ((delta: string) => void | Promise<void>) | null;
-  signal?: AbortSignal;
-}
+import type { AgentContext, StreamFn, StreamOptions, StreamResult, AgentModelDescriptor } from "./core/types.js";
 
 /**
- * A stateless stream function that takes a model descriptor and chat input,
- * and returns a ChatResponse. No internal state, no connection lifecycle.
+ * Stateless stream function registered for a wire-format API.
+ * Same shape as core `StreamFn` — providers are the implementation.
  */
-export type ApiStreamFunction = (model: AgentModel, input: ChatInput) => Promise<ChatResponse>;
+export type ApiStreamFunction = StreamFn;
 
 /**
- * A model lister function that returns available models for a provider.
+ * Stateless model lister. Receives the same model descriptor the stream
+ * function would, and returns the provider's raw model option list.
  */
-export type ApiListModelsFunction = (model: AgentModel) => Promise<Array<Record<string, unknown>>>;
+export type ApiListModelsFunction = (
+  model: AgentModelDescriptor,
+  options?: { apiKey?: string },
+) => Promise<Array<Record<string, unknown>>>;
 
 interface RegisteredProvider {
   api: string;
@@ -39,14 +34,9 @@ interface RegisteredProvider {
   listModels: ApiListModelsFunction;
 }
 
-// ---- Global registry singleton ----
-
 const registry = new Map<string, RegisteredProvider>();
 
-/**
- * Register a provider's stream function under an API key.
- * Overwrites any previous registration for the same API.
- */
+/** Register a provider's stream + listModels under an API wire-format key. */
 export function registerApiProvider(entry: {
   api: string;
   stream: ApiStreamFunction;
@@ -55,43 +45,34 @@ export function registerApiProvider(entry: {
   registry.set(entry.api, entry);
 }
 
-/**
- * Look up the stream function for the given API wire format.
- * Throws if no provider is registered.
- */
+/** Look up the stream function for the given API. Throws if missing. */
 export function getApiStream(api: string): ApiStreamFunction {
   const entry = registry.get(api);
   if (!entry) throw new Error(`No API provider registered for: ${api}`);
   return entry.stream;
 }
 
-/**
- * Look up the model lister for the given API wire format.
- * Throws if no provider is registered.
- */
+/** Look up the model lister for the given API. Throws if missing. */
 export function getApiListModels(api: string): ApiListModelsFunction {
   const entry = registry.get(api);
   if (!entry) throw new Error(`No API provider registered for: ${api}`);
   return entry.listModels;
 }
 
-/**
- * Check if a provider is registered for the given API.
- */
+/** Check if a provider is registered for the given API. */
 export function hasApiProvider(api: string): boolean {
   return registry.has(api);
 }
 
-/**
- * Clear all registered providers (useful for testing).
- */
+/** Clear all registered providers (testing). */
 export function clearApiProviders(): void {
   registry.clear();
 }
 
-/**
- * Get all registered API keys.
- */
+/** All registered API keys. */
 export function getRegisteredApis(): string[] {
   return [...registry.keys()];
 }
+
+// Re-export the core types so call sites can import from one place.
+export type { StreamFn, StreamOptions, StreamResult, AgentContext };

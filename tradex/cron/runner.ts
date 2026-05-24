@@ -12,7 +12,8 @@ import type { CronJobConfig, AgentConfig } from "../config/index.js";
 import { normalizeApiMode } from "../config/agent_models.js";
 import { resolveAgentModelFromConfig } from "../agent/models.js";
 import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../agent/core/index.js";
-import type { AgentModelDescriptor, TextContent, ShouldStopContext } from "../agent/core/types.js";
+import type { TextContent, ShouldStopContext } from "../agent/core/types.js";
+import { agentModelToDescriptor } from "../agent/core/model-descriptor.js";
 import { SessionManager } from "../agent/session_manager.js";
 import { buildMarketTools } from "../agent/tools/market.js";
 import { buildNewsTools } from "../agent/tools/news.js";
@@ -158,14 +159,7 @@ export async function executeCronJob(input: {
 
     // ---- Build Agent ----
     const resolved = resolveAgentModelFromConfig(agentConfig);
-    const modelDescriptor: AgentModelDescriptor = {
-      id: resolved.id,
-      provider: resolved.provider,
-      api: resolved.api,
-      baseUrl: resolved.baseUrl,
-      reasoningEffort: resolved.reasoningEffort,
-      accountId: resolved.accountId,
-    };
+    const modelDescriptor = agentModelToDescriptor(resolved);
 
     const maxIterations = job.maxIterations ?? DEFAULT_CRON_MAX_ITERATIONS;
 

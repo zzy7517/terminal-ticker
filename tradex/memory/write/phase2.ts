@@ -153,13 +153,12 @@ export class Phase2Runner {
       const provider = this.llmProviderFactory(agentConfig);
       const payload = this._consolidationPromptPayload(outputs, diff);
       const response = await provider.chat({
+        system: PHASE2_SYSTEM_PROMPT,
         messages: [
-          { role: "system", content: PHASE2_SYSTEM_PROMPT },
-          { role: "user", content: jsonForPrompt(payload, 180_000) },
+          { role: "user", content: jsonForPrompt(payload, 180_000), timestamp: Date.now() },
         ],
-        tools: null,
       });
-      const parsed = parseJsonObject(response.content ?? "");
+      const parsed = parseJsonObject(response.content);
       const expectedKeys = new Set(["memory_md", "memory_summary_md"]);
       if (
         new Set(Object.keys(parsed)).size !== expectedKeys.size ||

@@ -16,7 +16,8 @@ import { mergeRegistries } from "../../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../../mcp/index.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../../agent/core/index.js";
-import type { AssistantMessage, TextContent, ImageContent, AgentModelDescriptor } from "../../agent/core/types.js";
+import type { AssistantMessage, TextContent, ImageContent } from "../../agent/core/types.js";
+import { agentModelToDescriptor } from "../../agent/core/model-descriptor.js";
 import { loadSkills, formatSkillsForPrompt } from "../../agent/skills.js";
 import type { AppRuntime } from "../runtime.js";
 import {
@@ -74,9 +75,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const sessionId = c.req.param("id");
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const message = String(body.message || "").trim();
-    if (!message) {
-      return c.json({ detail: "message is required" }, 400);
-    }
 
     // Parse image attachments from request body
     const rawImages = Array.isArray(body.images) ? body.images : [];
@@ -87,6 +85,12 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         typeof (img as Record<string, unknown>).mimeType === "string"
       )
       .map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
+
+    // Allow image-only sends ("paste a screenshot and hit enter") but reject
+    // calls with no content at all.
+    if (!message && requestImages.length === 0) {
+      return c.json({ detail: "message or images is required" }, 400);
+    }
 
     const mgr = openSessionManager(sessionId, runtime);
     if (!mgr) {
@@ -111,7 +115,17 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         try {
           // ---- Session bookkeeping ----
           const conversationHistory = mgr.buildSessionContext();
-          mgr.appendMessage({ role: "user", content: message });
+          // Persist user-attached images on the user message so the frontend
+          // can re-render them after the run completes (when the panel
+          // refreshes the session via session_update / GET sessions/:id).
+          const userImagesMeta = requestImages.length > 0
+            ? requestImages.map((img) => ({ data: img.data, mimeType: img.mimeType }))
+            : null;
+          mgr.appendMessage({
+            role: "user",
+            content: message,
+            metadata: userImagesMeta ? { images: userImagesMeta } : null,
+          });
           runtime.pendingSessionManagers.delete(sessionId);
 
           // ---- Load skills ----
@@ -176,14 +190,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
           // ---- Create Agent ----
           const resolved = resolveAgentModelFromConfig(requestConfig);
-          const modelDescriptor: AgentModelDescriptor = {
-            id: resolved.id,
-            provider: resolved.provider,
-            api: resolved.api,
-            baseUrl: resolved.baseUrl,
-            reasoningEffort: resolved.reasoningEffort,
-            accountId: resolved.accountId,
-          };
+          const modelDescriptor = agentModelToDescriptor(resolved);
 
           // Inject memory context into system prompt when available.
           const memoryInstructions = runtime.config.memory.enabled && runtime.config.memory.useMemories
@@ -217,7 +224,18 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             const role = String(msg.role || "");
             const meta = (msg.metadata ?? {}) as Record<string, unknown>;
             if (role === "user") {
-              agent.messages = [...agent.messages, { role: "user", content: String(msg.content || ""), timestamp: Date.now() }];
+              const text = String(msg.content || "");
+              const storedImages = Array.isArray(meta.images) ? meta.images as Array<{ data: string; mimeType: string }> : [];
+              if (storedImages.length > 0) {
+                const blocks: Array<TextContent | ImageContent> = [];
+                if (text) blocks.push({ type: "text", text });
+                for (const img of storedImages) {
+                  blocks.push({ type: "image", data: img.data, mimeType: img.mimeType });
+                }
+                agent.messages = [...agent.messages, { role: "user", content: blocks, timestamp: Date.now() }];
+              } else {
+                agent.messages = [...agent.messages, { role: "user", content: text, timestamp: Date.now() }];
+              }
             } else if (role === "assistant") {
               const assistantContent: Array<{ type: "text"; text: string } | { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> }> = [];
               const text = String(msg.content || "");
@@ -251,11 +269,19 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             } else if (role === "toolResult") {
               const toolCallId = String(meta.toolCallId || "");
               if (!toolCallId || !restoredToolCallIds.has(toolCallId)) continue;
+              const text = String(msg.content || "");
+              const toolImages = Array.isArray(meta.images) ? meta.images as Array<{ data: string; mimeType: string }> : [];
+              const toolContent: Array<TextContent | ImageContent> = [];
+              if (text) toolContent.push({ type: "text", text });
+              for (const img of toolImages) {
+                toolContent.push({ type: "image", data: img.data, mimeType: img.mimeType });
+              }
+              if (toolContent.length === 0) toolContent.push({ type: "text", text: "" });
               agent.messages = [...agent.messages, {
                 role: "toolResult" as const,
                 toolCallId,
                 toolName: String(meta.toolName || ""),
-                content: [{ type: "text" as const, text: String(msg.content || "") }],
+                content: toolContent,
                 isError: Boolean(meta.error),
                 timestamp: Date.now(),
               }];

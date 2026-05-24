@@ -1,51 +1,51 @@
 /**
- * core/tool-adapter.ts — Bridges existing ToolRegistry/ToolDefinition to AgentTool[].
+ * core/tool-adapter.ts — Bridges ToolRegistry/ToolDefinition to AgentTool[].
  *
- * The old system uses ToolRegistry with ToolDefinition (handler returns string).
- * The new core uses AgentTool (execute returns AgentToolResult).
- * This adapter converts between them so existing tool packs work unchanged.
+ * The new core (mirroring pi's design) consumes AgentTool[] whose `execute`
+ * always returns AgentToolResult { content, details, terminate? }.
+ *
+ * Each tradex ToolDefinition.execute may return:
+ *   • a string                                  → wrapped as text content
+ *   • a ContentBlock[]                          → used as content directly
+ *   • a { content, details?, terminate? }       → forwarded as-is (pi shape)
+ *
+ * This adapter normalizes all three shapes. Errors thrown by tools surface as
+ * AgentToolResult with isError=true semantics (the loop tags them via the
+ * containing event), matching pi's "throw on failure" contract.
  */
 
-import { ToolRegistry, type ToolDefinition, type RichContentBlock } from "../tools/registry.js";
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback, ImageContent, TextContent } from "./types.js";
+import { ToolRegistry, normalizeToolReturn, type ToolDefinition } from "../tools/registry.js";
+import type {
+  AgentTool,
+  AgentToolResult,
+  AgentToolUpdateCallback,
+  TextContent,
+} from "./types.js";
 
-/**
- * Convert a ToolRegistry into an AgentTool[].
- * Each tool's execute() wraps the old handler() and returns structured AgentToolResult.
- */
+/** Convert a ToolRegistry into an AgentTool[]. */
 export function registryToAgentTools(registry: ToolRegistry): AgentTool[] {
   return registry.listTools().map((def) => toolDefinitionToAgentTool(def));
 }
 
-/**
- * Convert a single ToolDefinition to an AgentTool.
- */
+/** Convert a single ToolDefinition into an AgentTool. */
 export function toolDefinitionToAgentTool(def: ToolDefinition): AgentTool {
   return {
     name: def.name,
     description: def.description,
     parameters: def.parameters,
+    executionMode: def.executionMode,
     execute: async (
       _toolCallId: string,
       args: Record<string, unknown>,
-      _signal?: AbortSignal,
-      _onUpdate?: AgentToolUpdateCallback,
+      signal?: AbortSignal,
+      onUpdate?: AgentToolUpdateCallback,
     ): Promise<AgentToolResult> => {
-      // Use richHandler when available to preserve structured content (images)
-      if (def.richHandler) {
-        const blocks = await def.richHandler(args);
-        const content: (TextContent | ImageContent)[] = blocks.map((block: RichContentBlock) => {
-          if (block.type === "image" && block.data && block.mimeType) {
-            return { type: "image" as const, data: block.data, mimeType: block.mimeType };
-          }
-          return { type: "text" as const, text: block.text ?? "" };
-        });
-        return { content, details: {} };
-      }
-      const output = await def.handler(args);
+      const raw = await def.execute(args, signal, onUpdate);
+      const normalized = normalizeToolReturn(raw);
       return {
-        content: [{ type: "text", text: output }],
-        details: {},
+        content: normalized.content,
+        details: normalized.details,
+        terminate: normalized.terminate,
       };
     },
   };
@@ -53,7 +53,9 @@ export function toolDefinitionToAgentTool(def: ToolDefinition): AgentTool {
 
 /**
  * Convert AgentTool[] back to a ToolRegistry.
- * Useful for backward compat when legacy code still expects a ToolRegistry.
+ * Used for backward compatibility with code that still expects ToolRegistry.
+ * Note: image content is dropped here — text-only consumers should not be
+ * receiving images anyway, and this fallback exists purely for legacy paths.
  */
 export function agentToolsToRegistry(tools: AgentTool[]): ToolRegistry {
   const registry = new ToolRegistry();
@@ -62,12 +64,14 @@ export function agentToolsToRegistry(tools: AgentTool[]): ToolRegistry {
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
-      handler: async (args: Record<string, unknown>): Promise<string> => {
+      executionMode: tool.executionMode,
+      execute: async (args: Record<string, unknown>) => {
         const result = await tool.execute("legacy-call", args);
-        return result.content
+        const text = result.content
           .filter((c): c is TextContent => c.type === "text")
           .map((c) => c.text)
           .join("\n");
+        return text;
       },
     });
   }

@@ -180,7 +180,7 @@ export function buildWebTools(input: { timeoutSeconds?: number; bodyLimit?: numb
       },
       required: ["query"],
     },
-    handler: async ({ query, limit, recency_filter, domain_filter }) => {
+    execute: async ({ query, limit, recency_filter, domain_filter }) => {
       const q = String(query || "").trim();
       if (!q) return jsonOutput({ error: "query is empty" });
       const capped = Math.max(1, Math.min(Number(limit) || 5, 20));
@@ -247,7 +247,7 @@ export function buildWebTools(input: { timeoutSeconds?: number; bodyLimit?: numb
     name: "web_fetch",
     description: "Fetch a single URL and return readable text.",
     parameters: { type: "object", properties: { url: { type: "string" }, max_chars: { type: ["integer", "null"] } }, required: ["url"] },
-    handler: async ({ url, max_chars }) => {
+    execute: async ({ url, max_chars }) => {
       const target = String(url || "").trim();
       if (!/^https?:\/\//i.test(target)) return jsonOutput({ error: "unsupported or missing URL", url: target });
       const cap = Math.max(200, Math.min(Number(max_chars) || bodyLimit, bodyLimit));

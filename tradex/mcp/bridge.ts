@@ -49,7 +49,7 @@ function registerDirectTools(
       name: tool.name,
       description: `[MCP: ${serverName}] ${tool.description}`,
       parameters: tool.inputSchema,
-      handler: async (args: Record<string, unknown>) => {
+      execute: async (args: Record<string, unknown>) => {
         try {
           return await manager.callTool(serverName, tool.originalName, args);
         } catch (error) {

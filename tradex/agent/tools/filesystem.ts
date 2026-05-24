@@ -110,7 +110,7 @@ const readFileTool: ToolDefinition = {
     },
     required: ["path"],
   },
-  handler: async (args) => {
+  execute: async (args) => {
     const filePath = resolveSandboxed(args.path as string);
     const offset = args.offset as number | undefined;
     const limit = args.limit as number | undefined;
@@ -160,7 +160,7 @@ const writeFileTool: ToolDefinition = {
     },
     required: ["path", "content"],
   },
-  handler: async (args) => {
+  execute: async (args) => {
     const filePath = resolveSandboxed(args.path as string);
     const content = args.content as string;
     await mkdir(dirname(filePath), { recursive: true });
@@ -191,7 +191,7 @@ const editFileTool: ToolDefinition = {
     },
     required: ["path", "edits"],
   },
-  handler: async (args) => {
+  execute: async (args) => {
     const filePath = resolveSandboxed(args.path as string);
     const edits = args.edits as Array<{ oldText: string; newText: string }>;
     if (!edits || edits.length === 0) throw new Error("edits must not be empty");
@@ -223,7 +223,7 @@ const listDirectoryTool: ToolDefinition = {
     },
     required: [],
   },
-  handler: async (args) => {
+  execute: async (args) => {
     const dirPath = resolveSandboxed((args.path as string) || ".");
     const limit = (args.limit as number) ?? DEFAULT_LS_LIMIT;
     const st = await stat(dirPath);
@@ -260,7 +260,7 @@ const findFilesTool: ToolDefinition = {
     },
     required: ["pattern"],
   },
-  handler: async (args) => {
+  execute: async (args) => {
     const searchPath = resolveSandboxed((args.path as string) || ".");
     const pattern = args.pattern as string;
     const limit = (args.limit as number) ?? DEFAULT_FIND_LIMIT;
@@ -303,7 +303,7 @@ const grepSearchTool: ToolDefinition = {
     },
     required: ["pattern"],
   },
-  handler: async (args) => {
+  execute: async (args) => {
     const searchPath = resolveSandboxed((args.path as string) || ".");
     const pattern = args.pattern as string;
     const include = args.include as string | undefined;
@@ -365,7 +365,7 @@ const runCommandTool: ToolDefinition = {
     },
     required: ["command"],
   },
-  handler: async (args) => {
+  execute: async (args) => {
     const command = args.command as string;
     const timeout = args.timeout as number | undefined;
 
@@ -404,7 +404,7 @@ function createReadSkillFileTool(allowedPaths?: Set<string>): ToolDefinition {
       },
       required: ["path"],
     },
-    handler: async (args) => {
+    execute: async (args) => {
       const filePath = args.path as string;
       if (!filePath.endsWith(".md")) {
         throw new Error("read_skill_file only reads .md skill files");

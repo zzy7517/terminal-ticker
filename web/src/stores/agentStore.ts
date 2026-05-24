@@ -79,7 +79,14 @@ interface AgentState {
   streamingMessage: AgentMessage | null;
   /** Number of steering messages queued and not yet processed by the agent. */
   steeringQueueCount: number;
-  /** Pending image attachments to send with the next message. */
+  /**
+   * Image attachments queued for the next send, keyed by session id.
+   * The active session's bucket is mirrored to `pendingImages` for read-only
+   * consumers; mutations always go through this map so switching sessions
+   * preserves each session's draft attachments.
+   */
+  pendingImagesBySessionId: Record<string, ImageAttachment[]>;
+  /** Pending images for the currently-active session (derived). */
   pendingImages: ImageAttachment[];
 
   setAgentSession: (session: AgentSessionResponse | null) => void;
@@ -106,8 +113,10 @@ interface AgentState {
 
 type ActiveMirrorSource = Pick<
   AgentState,
-  'activeAgentSessionId' | 'agentSessionById' | 'agentSessionHistory' | 'runStateBySessionId' | 'draftBySessionId'
+  'activeAgentSessionId' | 'agentSessionById' | 'agentSessionHistory' | 'runStateBySessionId' | 'draftBySessionId' | 'pendingImagesBySessionId'
 >;
+
+const NEW_SESSION_PENDING_KEY = '__new__';
 
 function idleRun(sessionId: string): SessionRunProjection {
   return {
@@ -166,13 +175,18 @@ function visibleSession(state: ActiveMirrorSource): AgentSessionResponse | null 
   return summary ? sessionFromSummary(summary) : null;
 }
 
+function pendingImagesKey(activeId: string | null): string {
+  return activeId ?? NEW_SESSION_PENDING_KEY;
+}
+
 function activeFields(state: ActiveMirrorSource): Pick<
   AgentState,
-  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'contextUsage' | 'sessionStats' | 'agentBusyKey'
+  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'contextUsage' | 'sessionStats' | 'agentBusyKey' | 'pendingImages'
 > {
   const activeId = state.activeAgentSessionId;
   const run = activeId ? state.runStateBySessionId[activeId] : undefined;
   const session = visibleSession(state);
+  const key = pendingImagesKey(activeId);
   return {
     agentSession: session,
     agentPrompt: activeId ? state.draftBySessionId[activeId] ?? '' : '',
@@ -180,6 +194,7 @@ function activeFields(state: ActiveMirrorSource): Pick<
     contextUsage: run?.contextUsage ?? session?.contextUsage ?? null,
     sessionStats: run?.sessionStats ?? session?.sessionStats ?? null,
     agentBusyKey: activeId && run?.status === 'running' ? activeId : null,
+    pendingImages: state.pendingImagesBySessionId[key] ?? [],
   };
 }
 
@@ -275,6 +290,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   draftBySessionId: {},
   streamingMessage: null,
   steeringQueueCount: 0,
+  pendingImagesBySessionId: {},
   pendingImages: [],
 
   setAgentSession: (session) => set((s) => {
@@ -312,9 +328,32 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({ agentModel: model });
     persistProviderModel(get().agentProvider, model);
   },
-  addPendingImage: (image) => set((s) => ({ pendingImages: [...s.pendingImages, image] })),
-  removePendingImage: (index) => set((s) => ({ pendingImages: s.pendingImages.filter((_, i) => i !== index) })),
-  clearPendingImages: () => set({ pendingImages: [] }),
+  addPendingImage: (image) => set((s) => {
+    const key = pendingImagesKey(s.activeAgentSessionId);
+    const current = s.pendingImagesBySessionId[key] ?? [];
+    const pendingImagesBySessionId = { ...s.pendingImagesBySessionId, [key]: [...current, image] };
+    const next = { ...s, pendingImagesBySessionId };
+    return { pendingImagesBySessionId, ...activeFields(next) };
+  }),
+  removePendingImage: (index) => set((s) => {
+    const key = pendingImagesKey(s.activeAgentSessionId);
+    const current = s.pendingImagesBySessionId[key] ?? [];
+    if (index < 0 || index >= current.length) return s;
+    const updated = current.filter((_, i) => i !== index);
+    const pendingImagesBySessionId = { ...s.pendingImagesBySessionId };
+    if (updated.length === 0) delete pendingImagesBySessionId[key];
+    else pendingImagesBySessionId[key] = updated;
+    const next = { ...s, pendingImagesBySessionId };
+    return { pendingImagesBySessionId, ...activeFields(next) };
+  }),
+  clearPendingImages: () => set((s) => {
+    const key = pendingImagesKey(s.activeAgentSessionId);
+    if (!(key in s.pendingImagesBySessionId)) return s;
+    const pendingImagesBySessionId = { ...s.pendingImagesBySessionId };
+    delete pendingImagesBySessionId[key];
+    const next = { ...s, pendingImagesBySessionId };
+    return { pendingImagesBySessionId, ...activeFields(next) };
+  }),
   setModelCache: (updater) => set((s) => ({ modelCache: updater(s.modelCache) })),
   changeProviderModel: (provider, defaultModel) => {
     set({ agentProvider: provider, agentModel: defaultModel });
@@ -419,10 +458,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   runAgentAnalysis: async () => {
-    const { agentSession, agentPrompt, agentProvider, agentModel, pendingImages } = get();
-    const imagesToSend = pendingImages.length > 0 ? [...pendingImages] : undefined;
-    if (pendingImages.length > 0) set({ pendingImages: [] });
+    const { agentSession, agentPrompt, agentProvider, agentModel } = get();
     let targetSessionId = agentSession?.session?.id ?? null;
+    // Capture pending images from the *current* session bucket. We resolve the
+    // bucket again after possibly creating a new session, so that pending images
+    // queued under the "__new__" placeholder are migrated to the new session id.
+    const initialBucketKey = pendingImagesKey(targetSessionId);
     let idCounter = 0;
     const nextId = () => { idCounter += 1; return -(Date.now() * 100 + idCounter); };
 
@@ -438,25 +479,56 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             ...s.runStateBySessionId,
             [createdSessionId]: mergeRunPayload(s.runStateBySessionId[createdSessionId], createdSessionId, created.run),
           });
+          // Migrate pending images from the placeholder bucket ("__new__") to
+          // the freshly-created session id.
+          const pendingImagesBySessionId = { ...s.pendingImagesBySessionId };
+          const placeholderBucket = pendingImagesBySessionId[NEW_SESSION_PENDING_KEY];
+          if (placeholderBucket && placeholderBucket.length > 0) {
+            pendingImagesBySessionId[createdSessionId] = placeholderBucket;
+            delete pendingImagesBySessionId[NEW_SESSION_PENDING_KEY];
+          }
           const next = {
             ...s,
             agentSessionById,
             runStateBySessionId,
             agentSessionHistory: created.history.sessions,
             activeAgentSessionId: createdSessionId,
+            pendingImagesBySessionId,
           };
           return {
             agentSessionById,
             runStateBySessionId,
             agentSessionHistory: created.history.sessions,
             activeAgentSessionId: createdSessionId,
+            pendingImagesBySessionId,
             ...activeFields(next),
           };
         });
       }
       const runSessionId = targetSessionId;
+      // Drain images from the bucket that now matches this run.
+      const bucketKey = pendingImagesKey(runSessionId);
+      const bucketImages = get().pendingImagesBySessionId[bucketKey] ?? get().pendingImagesBySessionId[initialBucketKey] ?? [];
+      const imagesToSend = bucketImages.length > 0 ? [...bucketImages] : undefined;
+      if (imagesToSend) {
+        set((s) => {
+          const pendingImagesBySessionId = { ...s.pendingImagesBySessionId };
+          delete pendingImagesBySessionId[bucketKey];
+          delete pendingImagesBySessionId[initialBucketKey];
+          const next = { ...s, pendingImagesBySessionId };
+          return { pendingImagesBySessionId, ...activeFields(next) };
+        });
+      }
       if (get().runStateBySessionId[runSessionId]?.status === 'running') return;
-      const prompt = agentPrompt;
+      // Allow image-only sends: when the user pastes/drops a screenshot and
+      // hits Enter without any text, fill in a default prompt so the model
+      // gets an instruction to act on. Mirrors what users would type by hand.
+      const trimmedPrompt = agentPrompt.trim();
+      const prompt = trimmedPrompt.length > 0
+        ? agentPrompt
+        : (imagesToSend && imagesToSend.length > 0 ? '分析这张图片' : agentPrompt);
+      // Bail out if there's nothing to send at all.
+      if (prompt.trim().length === 0 && !imagesToSend) return;
       set((s) => {
         const createdAt = new Date().toISOString();
         const optimisticUserMessage: AgentMessage = {

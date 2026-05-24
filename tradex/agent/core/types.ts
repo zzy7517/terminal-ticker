@@ -184,6 +184,13 @@ export interface AgentModelDescriptor {
   accountId?: string | null;
   /** Cost rates per million tokens. Used to compute cumulative session cost. */
   cost?: ModelCostRates;
+  /**
+   * Input modalities the model accepts. Mirrors pi's Model.input.
+   * If "image" is absent, transformMessages() downgrades image content to a
+   * placeholder before the request is sent to the provider.
+   * Defaults to ["text"] when unspecified.
+   */
+  inputs?: ("text" | "image")[];
 }
 
 /**

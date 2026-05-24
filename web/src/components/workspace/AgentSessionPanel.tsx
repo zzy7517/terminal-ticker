@@ -659,7 +659,13 @@ export function AgentSessionPanel({
             if (['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) return;
             updateMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart);
           }}
-          placeholder={busy ? "Type to steer agent. Esc to abort." : "Ask the agent. Type @ to mention a configured instrument."}
+          placeholder={
+            busy
+              ? "Type to steer agent. Esc to abort."
+              : pendingImages.length > 0
+                ? "Add a question, or send the image alone. Type @ to mention an instrument."
+                : "Ask the agent. Type @ to mention a configured instrument."
+          }
           rows={3}
           value={agentPrompt}
         />

@@ -6,7 +6,7 @@ export function buildNewsTools(newsService: { recent?: (limit: number, sinceMinu
     name: "get_recent_news",
     description: "Get recent market news.",
     parameters: { type: "object", properties: { limit: { type: "integer" }, since_minutes: { type: ["integer", "null"] } } },
-    handler: async ({ limit, since_minutes }) => {
+    execute: async ({ limit, since_minutes }) => {
       if (!newsService?.recent) return jsonOutput({ disabled: true, items: [] });
       return jsonOutput({ items: await newsService.recent(Number(limit) || 10, since_minutes === null ? null : Number(since_minutes ?? 120)) });
     },
@@ -15,7 +15,7 @@ export function buildNewsTools(newsService: { recent?: (limit: number, sinceMinu
     name: "refresh_news",
     description: "Refresh the news feed.",
     parameters: { type: "object", properties: {} },
-    handler: async () => jsonOutput({ result: newsService?.refresh ? await newsService.refresh() : null }),
+    execute: async () => jsonOutput({ result: newsService?.refresh ? await newsService.refresh() : null }),
   });
   return registry;
 }

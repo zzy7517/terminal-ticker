@@ -1,26 +1,81 @@
-export type ToolHandler = (...args: unknown[]) => Promise<string> | string;
+/**
+ * tools/registry.ts — Tool definition + registry.
+ *
+ * Design follows pi's AgentTool contract (packages/agent/src/types.ts):
+ *   • Each tool has a single `execute` method (no handler / richHandler split).
+ *   • The canonical result shape is { content, details?, terminate? } where
+ *     `content` is an array of TextContent | ImageContent blocks.
+ *   • Errors are signaled by throwing — they are not encoded into `content`.
+ *
+ * For pragmatic back-compat with tradex's existing 30+ tools, `execute` may
+ * also return:
+ *   • a plain string (auto-wrapped to [{ type: "text", text }]); or
+ *   • a bare ContentBlock[] (treated as { content, details: undefined }).
+ *
+ * The tool-adapter normalizes all three shapes before handing them to the
+ * agent loop. New tools should prefer the canonical pi-style return value.
+ */
 
-/** Structured content block for rich tool results (text + images). */
-export interface RichContentBlock {
-  type: "text" | "image";
-  text?: string;
-  data?: string;      // base64 for images
-  mimeType?: string;  // e.g. "image/png"
+import type {
+  AgentToolUpdateCallback,
+  ImageContent,
+  TextContent,
+  ToolExecutionMode,
+} from "../core/types.js";
+
+/** Single text or image block returned to the model. */
+export type ContentBlock = TextContent | ImageContent;
+
+/**
+ * Canonical tool execution result. Matches pi's AgentToolResult shape and the
+ * tradex AgentToolResult<T> interface in core/types.ts.
+ */
+export interface ToolHandlerResult<TDetails = unknown> {
+  /** Content blocks returned to the model. */
+  content: ContentBlock[];
+  /** Optional structured details for logs / UI rendering (not sent to model). */
+  details?: TDetails;
+  /**
+   * Hint that the agent loop should stop after this tool batch.
+   * Termination only occurs when every finalized tool result in the batch
+   * sets this to true.
+   */
+  terminate?: boolean;
 }
 
-/** Extended handler that returns structured content (text + images). */
-export type RichToolHandler = (args: Record<string, unknown>) => Promise<RichContentBlock[]> | RichContentBlock[];
+/**
+ * Permitted return values for `ToolDefinition.execute`.
+ *
+ * The first two forms are convenience sugar for tools that only ever return
+ * text or only ever return content blocks. The third form is the canonical
+ * pi-style result that supports `details` and `terminate`.
+ */
+export type ToolReturnValue<TDetails = unknown> =
+  | string
+  | ContentBlock[]
+  | ToolHandlerResult<TDetails>;
 
-export interface ToolDefinition {
+/**
+ * Tool execute signature. Matches pi's AgentTool.execute aside from the
+ * dropped `toolCallId` first argument (tradex tools do not currently use it).
+ */
+export type ToolExecuteFn<TDetails = unknown> = (
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+  onUpdate?: AgentToolUpdateCallback<TDetails>,
+) => Promise<ToolReturnValue<TDetails>> | ToolReturnValue<TDetails>;
+
+export interface ToolDefinition<TDetails = unknown> {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
-  handler: (args: Record<string, unknown>) => Promise<string> | string;
   /**
-   * Optional rich handler that returns structured content blocks.
-   * When present, the tool-adapter uses this instead of `handler` to preserve images.
+   * Execute the tool call. Throw on failure — unhandled errors are caught by
+   * the registry / adapter and surfaced as a tool error to the model.
    */
-  richHandler?: RichToolHandler;
+  execute: ToolExecuteFn<TDetails>;
+  /** Per-tool execution mode override. */
+  executionMode?: ToolExecutionMode;
 }
 
 export interface ToolCall {
@@ -38,6 +93,27 @@ export interface ToolResult {
 
 export type BeforeToolHook = (call: ToolCall, tool: ToolDefinition) => ToolCall | null | Promise<ToolCall | null>;
 export type AfterToolHook = (call: ToolCall, result: ToolResult, tool: ToolDefinition) => ToolResult | null | Promise<ToolResult | null>;
+
+/** Coerce any permitted ToolReturnValue into a canonical ToolHandlerResult. */
+export function normalizeToolReturn<TDetails = unknown>(
+  value: ToolReturnValue<TDetails>,
+): ToolHandlerResult<TDetails> {
+  if (typeof value === "string") {
+    return { content: [{ type: "text", text: value }] };
+  }
+  if (Array.isArray(value)) {
+    return { content: value };
+  }
+  return value;
+}
+
+/** Flatten content blocks into the plain-text representation used by ToolResult.output. */
+export function contentToText(content: ContentBlock[]): string {
+  return content
+    .filter((c): c is TextContent => c.type === "text")
+    .map((c) => c.text)
+    .join("\n");
+}
 
 export class ToolRegistry {
   private readonly tools = new Map<string, ToolDefinition>();
@@ -95,7 +171,9 @@ export class ToolRegistry {
         const replacement = await hook(effectiveCall, tool);
         if (replacement) effectiveCall = replacement;
       }
-      const output = await tool.handler(effectiveCall.arguments);
+      const raw = await tool.execute(effectiveCall.arguments);
+      const normalized = normalizeToolReturn(raw);
+      const output = contentToText(normalized.content);
       let result: ToolResult = { callId: effectiveCall.id, name: effectiveCall.name, output, error: false };
       for (const hook of this.afterToolHooks) {
         const replacement = await hook(effectiveCall, result, tool);
@@ -103,7 +181,12 @@ export class ToolRegistry {
       }
       return result;
     } catch (error) {
-      return { callId: effectiveCall.id, name: effectiveCall.name, output: error instanceof Error ? error.message : String(error), error: true };
+      return {
+        callId: effectiveCall.id,
+        name: effectiveCall.name,
+        output: error instanceof Error ? error.message : String(error),
+        error: true,
+      };
     }
   }
 }

@@ -22,14 +22,14 @@ export function buildTradingTools(input: {
     name: "get_exchange_positions",
     description: "List live exchange positions.",
     parameters: { type: "object", properties: { instrument_key: { type: ["string", "null"] } } },
-    handler: async ({ instrument_key }) => jsonOutput({ positions: router ? (await router.getPositions(String(instrument_key || "") || null)).map(positionToPayload) : [] }),
+    execute: async ({ instrument_key }) => jsonOutput({ positions: router ? (await router.getPositions(String(instrument_key || "") || null)).map(positionToPayload) : [] }),
   });
 
   registry.register({
     name: "list_open_trades",
     description: "List local open trades.",
     parameters: { type: "object", properties: { instrument_key: { type: ["string", "null"] } } },
-    handler: ({ instrument_key }) =>
+    execute: ({ instrument_key }) =>
       jsonOutput({
         trades: input.tradeStore
           .listTrades({ instrumentKey: instrument_key ? String(instrument_key) : null, statuses: [TradeStatus.OPEN] })
@@ -41,7 +41,7 @@ export function buildTradingTools(input: {
     name: "get_trade_history",
     description: "Get recent local trade history.",
     parameters: { type: "object", properties: { instrument_key: { type: ["string", "null"] }, limit: { type: "integer" } } },
-    handler: ({ instrument_key, limit }) =>
+    execute: ({ instrument_key, limit }) =>
       jsonOutput({
         trades: input.tradeStore
           .listTrades({ instrumentKey: instrument_key ? String(instrument_key) : null, limit: Number(limit) || 20 })
@@ -69,7 +69,7 @@ export function buildTradingTools(input: {
         },
         required: ["instrument_key", "direction", "size", "reasoning", "take_profit_price", "stop_loss_price"],
       },
-      handler: async (args) => {
+      execute: async (args) => {
         if (!router) return jsonOutput({ error: "exchange router unavailable" });
         const instrumentKey = String(args.instrument_key);
         const directionStr = String(args.direction || "long").toLowerCase();
@@ -148,7 +148,7 @@ export function buildTradingTools(input: {
         },
         required: ["instrument_key"],
       },
-      handler: async (args) => {
+      execute: async (args) => {
         if (!router) return jsonOutput({ error: "exchange router unavailable" });
         const instrumentKey = String(args.instrument_key);
         const takeProfitPrice = args.take_profit_price == null ? null : Number(args.take_profit_price);
@@ -178,14 +178,14 @@ export function buildTradingTools(input: {
     name: "close_position",
     description: "Close an exchange position.",
     parameters: { type: "object", properties: { instrument_key: { type: "string" }, size: { type: ["number", "null"] } }, required: ["instrument_key"] },
-    handler: async ({ instrument_key, size }) => jsonOutput(router ? await router.closePosition({ instrumentKey: String(instrument_key), size: size === null ? null : Number(size) }) : { error: "exchange router unavailable" }),
+    execute: async ({ instrument_key, size }) => jsonOutput(router ? await router.closePosition({ instrumentKey: String(instrument_key), size: size === null ? null : Number(size) }) : { error: "exchange router unavailable" }),
   });
 
   registry.register({
     name: "check_trade_status",
     description: "Synchronize a local trade with exchange state.",
     parameters: { type: "object", properties: { trade_id: { type: "integer" } }, required: ["trade_id"] },
-    handler: async ({ trade_id }) => {
+    execute: async ({ trade_id }) => {
       if (!router) return jsonOutput({ error: "exchange router unavailable" });
       const trade = input.tradeStore.getTrade(Number(trade_id));
       if (!trade) return jsonOutput({ error: "trade not found" });
@@ -197,14 +197,14 @@ export function buildTradingTools(input: {
     name: "get_exchange_orders",
     description: "List live exchange orders.",
     parameters: { type: "object", properties: { instrument_key: { type: ["string", "null"] } } },
-    handler: async ({ instrument_key }) => jsonOutput({ orders: router ? (await router.getOrders(String(instrument_key || "") || null)).map(orderToPayload) : [] }),
+    execute: async ({ instrument_key }) => jsonOutput({ orders: router ? (await router.getOrders(String(instrument_key || "") || null)).map(orderToPayload) : [] }),
   });
 
   registry.register({
     name: "get_exchange_fills",
     description: "从交易所拉取某笔交易相关的真实成交记录。",
     parameters: { type: "object", properties: { trade_id: { type: "integer" }, limit: { type: "integer" } }, required: ["trade_id"] },
-    handler: async ({ trade_id, limit }) => {
+    execute: async ({ trade_id, limit }) => {
       if (!router) return jsonOutput({ error: "exchange router unavailable" });
       const trade = input.tradeStore.getTrade(Number(trade_id));
       if (!trade) return jsonOutput({ error: "trade not found" });
@@ -228,7 +228,7 @@ export function buildTradeReviewTools(input: {
     name: "get_trade_review_context",
     description: "读取当前待复盘交易的完整上下文，包括本地 trade/fills、开仓快照和同标的最近 lessons。",
     parameters: { type: "object", properties: {} },
-    handler: () => {
+    execute: () => {
       const trade = input.tradeId ? input.tradeStore.getTrade(input.tradeId) : null;
       if (!trade) return jsonOutput({ trade: null });
       let snapshotAtOpen: Record<string, unknown> | null = null;
@@ -245,7 +245,7 @@ export function buildTradeReviewTools(input: {
     name: "check_trade_status",
     description: "Synchronize the review trade with exchange state.",
     parameters: { type: "object", properties: {} },
-    handler: async () => {
+    execute: async () => {
       if (!router) return jsonOutput({ error: "exchange router unavailable" });
       const trade = input.tradeId ? input.tradeStore.getTrade(input.tradeId) : null;
       if (!trade) return jsonOutput({ error: "trade not found" });
@@ -257,7 +257,7 @@ export function buildTradeReviewTools(input: {
     name: "get_exchange_fills",
     description: "Fetch the actual historical fills for this trade from the exchange.",
     parameters: { type: "object", properties: { limit: { type: "integer" } } },
-    handler: async ({ limit }) => {
+    execute: async ({ limit }) => {
       if (!router) return jsonOutput({ error: "exchange router unavailable" });
       const trade = input.tradeId ? input.tradeStore.getTrade(input.tradeId) : null;
       if (!trade) return jsonOutput({ error: "trade not found" });

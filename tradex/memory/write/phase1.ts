@@ -206,13 +206,12 @@ export class Phase1Processor {
       payload,
     };
     const response = await provider.chat({
+      system: PHASE1_SYSTEM_PROMPT,
       messages: [
-        { role: "system", content: PHASE1_SYSTEM_PROMPT },
-        { role: "user", content: jsonForPrompt(userPayload) },
+        { role: "user", content: jsonForPrompt(userPayload), timestamp: Date.now() },
       ],
-      tools: null,
     });
-    return normalizePhase1Output(parseJsonObject(response.content ?? ""));
+    return normalizePhase1Output(parseJsonObject(response.content));
   }
 
   private _serializeSourceForLlm(job: Stage1Job): Record<string, unknown> {

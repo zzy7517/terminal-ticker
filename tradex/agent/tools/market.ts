@@ -25,7 +25,7 @@ export function buildMarketTools(input: { quotes: Record<string, QuoteState>; ma
     name: "get_quote",
     description: "Get the latest quote for an instrument.",
     parameters: { type: "object", properties: { instrument_key: { type: "string" } }, required: ["instrument_key"] },
-    handler: ({ instrument_key }) => {
+    execute: ({ instrument_key }) => {
       const key = resolveKey(String(instrument_key || ""));
       const quote = input.quotes[key];
       if (!quote) return jsonOutput({ error: `unknown instrument: ${key}` });
@@ -57,7 +57,7 @@ export function buildMarketTools(input: { quotes: Record<string, QuoteState>; ma
       },
       required: ["instrument_key"],
     },
-    handler: ({ instrument_key, interval, limit }) => {
+    execute: ({ instrument_key, interval, limit }) => {
       const quote = input.quotes[resolveKey(String(instrument_key || ""))];
       if (!quote) return jsonOutput({ error: "unknown instrument" });
       const intervalKey = resolveIntervalKey(quote.multiTimeframeCandles, interval);
@@ -81,7 +81,7 @@ export function buildMarketTools(input: { quotes: Record<string, QuoteState>; ma
     name: "list_instruments",
     description: "List instruments available to the agent.",
     parameters: { type: "object", properties: {} },
-    handler: () => jsonOutput({ instruments: Object.keys(input.quotes) }),
+    execute: () => jsonOutput({ instruments: Object.keys(input.quotes) }),
   });
 
   return registry;

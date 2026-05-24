@@ -1,4 +1,4 @@
-import { ToolRegistry, jsonOutput, type RichContentBlock } from "./registry.js";
+import { ToolRegistry, jsonOutput, type ContentBlock } from "./registry.js";
 import type { BrowserManager } from "../../browser/manager.js";
 import type { BrowserUseRequestParams } from "open-browser-use-sdk";
 
@@ -23,7 +23,7 @@ export function buildBrowserTools(browserManager: BrowserManager): ToolRegistry 
       },
       required: ["url"],
     },
-    handler: async ({ url, wait_seconds }) => {
+    execute: async ({ url, wait_seconds }) => {
       const targetUrl = String(url || "").trim();
       if (!targetUrl) return jsonOutput({ error: "url is required" });
 
@@ -104,131 +104,28 @@ export function buildBrowserTools(browserManager: BrowserManager): ToolRegistry 
       },
       required: ["url"],
     },
-    handler: async ({ url, wait_seconds, clip }) => {
+    execute: async ({ url, wait_seconds, clip }): Promise<ContentBlock[]> => {
       const targetUrl = String(url || "").trim();
-      if (!targetUrl) return jsonOutput({ error: "url is required" });
-
-      const { connectOpenBrowserUse } = await import("open-browser-use-sdk");
-      const socketPath = await resolveSocket(browserManager);
-      if (!socketPath) {
-        return jsonOutput({
-          error: "Browser automation not available. Enable it in Settings → Browser and ensure Chrome + OBU extension is running.",
-        });
+      if (!targetUrl) {
+        return [{ type: "text", text: jsonOutput({ error: "url is required" }) }];
       }
 
-      const waitMs = Math.min(Math.max(Number(wait_seconds) || 6, 1), 20) * 1000;
+      const shot = await captureScreenshot(browserManager, {
+        url: targetUrl,
+        waitSeconds: Number(wait_seconds) || 6,
+        clip: clip as Record<string, number> | undefined,
+      });
 
-      let browser: Awaited<ReturnType<typeof connectOpenBrowserUse>> | null = null;
-      try {
-        browser = await connectOpenBrowserUse({
-          socketPath,
-          sessionId: `tradex-screenshot-${Date.now()}`,
-          timeoutMs: browserManager.timeoutMs,
-        });
-
-        await browser.client.nameSession("Tradex Screenshot - OBU");
-        const tab = await browser.newTab({ url: targetUrl, waitUntil: "load" });
-
-        // Bring to front — critical for TradingView canvas rendering
-        await browser.cdp.call(tab.id, "Page.bringToFront");
-
-        // Wait for canvas/content to render
-        await waitForRender(browser, tab.id, waitMs);
-
-        // Capture screenshot
-        const params: BrowserUseRequestParams = { format: "png" };
-        if (clip && typeof clip === "object") {
-          const c = clip as Record<string, number>;
-          params.clip = {
-            x: Number(c.x) || 0,
-            y: Number(c.y) || 0,
-            width: Number(c.width) || 1280,
-            height: Number(c.height) || 720,
-            scale: 2,
-          };
-        }
-
-        const result = await browser.cdp.call(tab.id, "Page.captureScreenshot", params);
-        const data = (result as Record<string, unknown>)?.data as string | undefined;
-
-        // Get page title for context
-        const title = await browser.cdp.evaluate(tab.id, "document.title") as string;
-
-        await browser.client.finalizeTabs([]);
-        browser.close();
-
-        if (!data) {
-          return jsonOutput({ error: "Screenshot capture returned no data", url: targetUrl });
-        }
-
-        return jsonOutput({
-          url: targetUrl,
-          title: title || "",
-          format: "png",
-          base64: data,
-          size_bytes: Math.round(data.length * 0.75), // approximate decoded size
-        });
-      } catch (e) {
-        browser?.close();
-        return jsonOutput({ error: e instanceof Error ? e.message : String(e), url: targetUrl });
-      }
-    },
-    richHandler: async ({ url, wait_seconds, clip }): Promise<RichContentBlock[]> => {
-      const targetUrl = String(url || "").trim();
-      if (!targetUrl) return [{ type: "text", text: JSON.stringify({ error: "url is required" }) }];
-
-      const { connectOpenBrowserUse } = await import("open-browser-use-sdk");
-      const socketPath = await resolveSocket(browserManager);
-      if (!socketPath) {
-        return [{ type: "text", text: JSON.stringify({ error: "Browser automation not available." }) }];
+      if ("error" in shot) {
+        return [{ type: "text", text: jsonOutput({ error: shot.error, url: targetUrl }) }];
       }
 
-      const waitMs = Math.min(Math.max(Number(wait_seconds) || 6, 1), 20) * 1000;
-
-      let browser: Awaited<ReturnType<typeof connectOpenBrowserUse>> | null = null;
-      try {
-        browser = await connectOpenBrowserUse({
-          socketPath,
-          sessionId: `tradex-screenshot-${Date.now()}`,
-          timeoutMs: browserManager.timeoutMs,
-        });
-
-        await browser.client.nameSession("Tradex Screenshot - OBU");
-        const tab = await browser.newTab({ url: targetUrl, waitUntil: "load" });
-        await browser.cdp.call(tab.id, "Page.bringToFront");
-        await waitForRender(browser, tab.id, waitMs);
-
-        const params: BrowserUseRequestParams = { format: "png" };
-        if (clip && typeof clip === "object") {
-          const c = clip as Record<string, number>;
-          params.clip = {
-            x: Number(c.x) || 0,
-            y: Number(c.y) || 0,
-            width: Number(c.width) || 1280,
-            height: Number(c.height) || 720,
-            scale: 2,
-          };
-        }
-
-        const result = await browser.cdp.call(tab.id, "Page.captureScreenshot", params);
-        const data = (result as Record<string, unknown>)?.data as string | undefined;
-        const title = await browser.cdp.evaluate(tab.id, "document.title") as string;
-
-        await browser.client.finalizeTabs([]);
-        browser.close();
-
-        if (!data) {
-          return [{ type: "text", text: JSON.stringify({ error: "Screenshot capture returned no data", url: targetUrl }) }];
-        }
-
-        return [
-          { type: "text", text: `Screenshot of ${targetUrl}${title ? ` - ${title}` : ""} (PNG, ~${Math.round(data.length * 0.75 / 1024)}KB)` },
-          { type: "image", data, mimeType: "image/png" },
-        ];
-      } catch (e) {
-        browser?.close();
-        return [{ type: "text", text: JSON.stringify({ error: e instanceof Error ? e.message : String(e), url: targetUrl }) }];
-      }
+      const sizeKb = Math.round(shot.data.length * 0.75 / 1024);
+      const caption = `Screenshot of ${targetUrl}${shot.title ? ` - ${shot.title}` : ""} (PNG, ~${sizeKb}KB)`;
+      return [
+        { type: "text", text: caption },
+        { type: "image", data: shot.data, mimeType: "image/png" },
+      ];
     },
   });
 
@@ -236,7 +133,7 @@ export function buildBrowserTools(browserManager: BrowserManager): ToolRegistry 
     name: "browser_status",
     description: "Check if browser automation (Open Browser Use) is available and connected.",
     parameters: { type: "object", properties: {}, required: [] },
-    handler: async () => {
+    execute: async () => {
       const status = await browserManager.status();
       // status.connected already reflects a live OBU ping (see BrowserManager.status)
       return jsonOutput(status);
@@ -244,6 +141,77 @@ export function buildBrowserTools(browserManager: BrowserManager): ToolRegistry 
   });
 
   return registry;
+}
+
+// ─── Screenshot capture (shared by browser_screenshot) ────────────────────
+
+interface CaptureResult {
+  data: string;       // base64 PNG
+  title: string;
+}
+interface CaptureError {
+  error: string;
+}
+
+/**
+ * Connect to OBU, navigate, render-wait, capture, and tear down. Returns the
+ * raw screenshot bytes plus the page title, or a friendly error string.
+ * Used to live in two near-identical handler/richHandler bodies (~50 lines
+ * each); centralized here so any change to the capture pipeline only happens
+ * once.
+ */
+async function captureScreenshot(
+  browserManager: BrowserManager,
+  args: { url: string; waitSeconds: number; clip?: Record<string, number> },
+): Promise<CaptureResult | CaptureError> {
+  const { connectOpenBrowserUse } = await import("open-browser-use-sdk");
+  const socketPath = await resolveSocket(browserManager);
+  if (!socketPath) {
+    return { error: "Browser automation not available. Enable it in Settings → Browser and ensure Chrome + OBU extension is running." };
+  }
+
+  const waitMs = Math.min(Math.max(args.waitSeconds, 1), 20) * 1000;
+
+  let browser: Awaited<ReturnType<typeof connectOpenBrowserUse>> | null = null;
+  try {
+    browser = await connectOpenBrowserUse({
+      socketPath,
+      sessionId: `tradex-screenshot-${Date.now()}`,
+      timeoutMs: browserManager.timeoutMs,
+    });
+
+    await browser.client.nameSession("Tradex Screenshot - OBU");
+    const tab = await browser.newTab({ url: args.url, waitUntil: "load" });
+
+    // Bring to front — critical for TradingView canvas rendering
+    await browser.cdp.call(tab.id, "Page.bringToFront");
+    await waitForRender(browser, tab.id, waitMs);
+
+    const params: BrowserUseRequestParams = { format: "png" };
+    if (args.clip && typeof args.clip === "object") {
+      const c = args.clip;
+      params.clip = {
+        x: Number(c.x) || 0,
+        y: Number(c.y) || 0,
+        width: Number(c.width) || 1280,
+        height: Number(c.height) || 720,
+        scale: 2,
+      };
+    }
+
+    const result = await browser.cdp.call(tab.id, "Page.captureScreenshot", params);
+    const data = (result as Record<string, unknown>)?.data as string | undefined;
+    const title = await browser.cdp.evaluate(tab.id, "document.title") as string;
+
+    await browser.client.finalizeTabs([]);
+    browser.close();
+
+    if (!data) return { error: "Screenshot capture returned no data" };
+    return { data, title: title || "" };
+  } catch (e) {
+    browser?.close();
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
