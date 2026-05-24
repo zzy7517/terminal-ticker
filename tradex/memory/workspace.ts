@@ -159,8 +159,20 @@ function renderWorkspaceDiffFile(diff: MemoryWorkspaceDiff): string {
 function boundedDiff(value: string): string {
   const encoded = Buffer.from(value, "utf8");
   if (encoded.length <= MAX_WORKSPACE_DIFF_BYTES) return value.replace(/\n$/, "");
-  const clipped = encoded.subarray(0, MAX_WORKSPACE_DIFF_BYTES).toString("utf8");
+  const clipped = truncateUtf8ByBytes(value, MAX_WORKSPACE_DIFF_BYTES);
   return clipped.replace(/\n$/, "") + `\n\n[workspace diff truncated at ${MAX_WORKSPACE_DIFF_BYTES} bytes]`;
+}
+
+function truncateUtf8ByBytes(value: string, maxBytes: number): string {
+  let used = 0;
+  let result = "";
+  for (const char of value) {
+    const bytes = Buffer.byteLength(char, "utf8");
+    if (used + bytes > maxBytes) break;
+    result += char;
+    used += bytes;
+  }
+  return result;
 }
 
 function removeWorkspaceDiff(root: string): void {

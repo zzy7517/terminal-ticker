@@ -246,21 +246,23 @@ export class MemoryStateStore extends BaseStore {
           `UPDATE stage1_jobs
            SET status = ?, ownership_token = ?, claimed_at = ?, finished_at = NULL,
                lease_expires = ?, retry_after = NULL, last_error = NULL
-           WHERE source_id IN (${placeholders})`,
-        ).run(JOB_CLAIMED, token, at, at + leaseMs, ...sourceIds);
+           WHERE source_id IN (${placeholders})
+             AND (
+               status = ?
+               OR (status = ? AND COALESCE(retry_after, 0) <= ?)
+               OR (status = ? AND COALESCE(lease_expires, 0) <= ?)
+             )`,
+        ).run(JOB_CLAIMED, token, at, at + leaseMs, ...sourceIds, JOB_PENDING, JOB_FAILED, at, JOB_CLAIMED, at);
       }
 
-      return sourceIds
-        .map((sourceId) => {
-          const jobRow = conn.prepare(
-            `SELECT j.*, s.id AS src_id, s.source_type, s.source_ref,
-                    s.created_at AS src_created_at, s.updated_at AS src_updated_at
-             FROM stage1_jobs j JOIN memory_sources s ON s.id = j.source_id
-             WHERE j.source_id = ?`,
-          ).get(sourceId) as Record<string, unknown> | undefined;
-          return jobRow ? stage1JobFromRow(jobRow) : null;
-        })
-        .filter((job): job is Stage1Job => job !== null);
+      const claimedRows = conn.prepare(
+        `SELECT j.*, s.id AS src_id, s.source_type, s.source_ref,
+                s.created_at AS src_created_at, s.updated_at AS src_updated_at
+         FROM stage1_jobs j JOIN memory_sources s ON s.id = j.source_id
+         WHERE j.ownership_token = ? AND j.status = ?
+         ORDER BY s.updated_at ASC, s.id ASC`,
+      ).all(token, JOB_CLAIMED) as Record<string, unknown>[];
+      return claimedRows.map(stage1JobFromRow);
     });
 
     return txn();
@@ -268,20 +270,21 @@ export class MemoryStateStore extends BaseStore {
 
   markStage1Succeeded(input: {
     sourceId: number;
+    ownershipToken?: string | null;
     rawMemory: string;
     rolloutSummary: string;
     rolloutSlug?: string | null;
-  }): void {
+  }): boolean {
     const at = nowMs();
     const conn = this.getConn();
     const txn = conn.transaction(() => {
+      if (!this._ownsStage1Job(conn, input.sourceId, input.ownershipToken)) return false;
       const sourceRow = conn.prepare(`SELECT * FROM memory_sources WHERE id = ?`).get(input.sourceId) as Record<string, unknown> | undefined;
       if (!sourceRow) throw new Error(`memory source not found: ${input.sourceId}`);
       const source = sourceFromRow(sourceRow);
 
       if (!input.rawMemory.trim() && !input.rolloutSummary.trim()) {
-        this._markStage1NoOutput(conn, input.sourceId, at);
-        return;
+        return this._markStage1NoOutput(conn, input.sourceId, at, input.ownershipToken);
       }
 
       conn.prepare(
@@ -306,27 +309,40 @@ export class MemoryStateStore extends BaseStore {
       ).run(JOB_SUCCEEDED, at, input.sourceId);
 
       this._queuePhase2(conn, at);
+      return true;
     });
-    txn();
+    return txn();
   }
 
-  markStage1NoOutput(input: { sourceId: number }): void {
+  markStage1NoOutput(input: { sourceId: number; ownershipToken?: string | null }): boolean {
     const at = nowMs();
     const conn = this.getConn();
-    conn.transaction(() => {
-      this._markStage1NoOutput(conn, input.sourceId, at);
+    return conn.transaction(() => {
+      return this._markStage1NoOutput(conn, input.sourceId, at, input.ownershipToken);
     })();
   }
 
-  markStage1Failed(input: { sourceId: number; error: string; retryDelayMs?: number }): void {
+  markStage1Failed(input: { sourceId: number; ownershipToken?: string | null; error: string; retryDelayMs?: number }): boolean {
     const at = nowMs();
     const retryDelayMs = input.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
-    this.getConn().prepare(
+    const result = this.getConn().prepare(
       `UPDATE stage1_jobs
        SET status = ?, ownership_token = NULL, finished_at = ?,
            lease_expires = NULL, retry_after = ?, last_error = ?
-       WHERE source_id = ?`,
-    ).run(JOB_FAILED, at, at + retryDelayMs, String(input.error).slice(0, 4000), input.sourceId);
+       WHERE source_id = ?
+         AND status = ?
+         AND (? IS NULL OR ownership_token = ?)`,
+    ).run(
+      JOB_FAILED,
+      at,
+      at + retryDelayMs,
+      String(input.error).slice(0, 4000),
+      input.sourceId,
+      JOB_CLAIMED,
+      input.ownershipToken ?? null,
+      input.ownershipToken ?? null,
+    );
+    return result.changes > 0;
   }
 
   claimPhase2(input: { leaseMs?: number } = {}): Phase2Claim | null {
@@ -350,10 +366,18 @@ export class MemoryStateStore extends BaseStore {
          SET status = ?, ownership_token = ?, claimed_at = ?,
              finished_at = NULL, lease_expires = ?,
              retry_after = NULL, last_error = NULL, updated_at = ?
-         WHERE id = 1`,
-      ).run(JOB_CLAIMED, token, at, at + leaseMs, at);
+         WHERE id = 1
+           AND (
+             status = ?
+             OR (status = ? AND COALESCE(retry_after, 0) <= ?)
+             OR (status = ? AND COALESCE(lease_expires, 0) <= ?)
+           )`,
+      ).run(JOB_CLAIMED, token, at, at + leaseMs, at, JOB_PENDING, JOB_FAILED, at, JOB_CLAIMED, at);
 
-      return { ownershipToken: token };
+      const claimed = conn.prepare(
+        `SELECT ownership_token FROM phase2_jobs WHERE id = 1 AND status = ? AND ownership_token = ?`,
+      ).get(JOB_CLAIMED, token) as Record<string, unknown> | undefined;
+      return claimed ? { ownershipToken: token } : null;
     });
 
     return txn();
@@ -395,12 +419,14 @@ export class MemoryStateStore extends BaseStore {
   }
 
   markPhase2Succeeded(input: {
+    ownershipToken?: string | null;
     completionWatermark?: number | null;
     selectedSourceIds?: number[];
-  } = {}): void {
+  } = {}): boolean {
     const at = nowMs();
     const conn = this.getConn();
-    conn.transaction(() => {
+    return conn.transaction(() => {
+      if (!this._ownsPhase2Job(conn, input.ownershipToken)) return false;
       const sourceIds = input.selectedSourceIds ?? [];
       if (sourceIds.length > 0) {
         const placeholders = sourceIds.map(() => "?").join(",");
@@ -413,20 +439,22 @@ export class MemoryStateStore extends BaseStore {
          SET status = ?, ownership_token = NULL, finished_at = ?,
              lease_expires = NULL, completion_watermark = ?,
              retry_after = NULL, last_error = NULL, updated_at = ?
-         WHERE id = 1`,
-      ).run(JOB_SUCCEEDED, at, input.completionWatermark ?? at, at);
+         WHERE id = 1 AND status = ? AND (? IS NULL OR ownership_token = ?)`,
+      ).run(JOB_SUCCEEDED, at, input.completionWatermark ?? at, at, JOB_CLAIMED, input.ownershipToken ?? null, input.ownershipToken ?? null);
+      return true;
     })();
   }
 
-  markPhase2Failed(input: { error: string; retryDelayMs?: number }): void {
+  markPhase2Failed(input: { ownershipToken?: string | null; error: string; retryDelayMs?: number }): boolean {
     const at = nowMs();
     const retryDelayMs = input.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
-    this.getConn().prepare(
+    const result = this.getConn().prepare(
       `UPDATE phase2_jobs
        SET status = ?, ownership_token = NULL, finished_at = ?,
            lease_expires = NULL, retry_after = ?, last_error = ?, updated_at = ?
-       WHERE id = 1`,
-    ).run(JOB_FAILED, at, at + retryDelayMs, String(input.error).slice(0, 4000), at);
+       WHERE id = 1 AND status = ? AND (? IS NULL OR ownership_token = ?)`,
+    ).run(JOB_FAILED, at, at + retryDelayMs, String(input.error).slice(0, 4000), at, JOB_CLAIMED, input.ownershipToken ?? null, input.ownershipToken ?? null);
+    return result.changes > 0;
   }
 
   recordUsage(input: { filePath: string; usageKind: string }): void {
@@ -446,6 +474,27 @@ export class MemoryStateStore extends BaseStore {
         conn.prepare(
           `UPDATE stage1_outputs SET usage_count = usage_count + 1, last_usage = ? WHERE source_id = ?`,
         ).run(at, sourceId);
+      }
+    })();
+  }
+
+  recordSourceRefUsage(input: { sourceRefs: string[]; usageKind: string }): void {
+    const cleanRefs = [...new Set(input.sourceRefs.map((ref) => ref.trim()).filter(Boolean))];
+    const cleanKind = input.usageKind.trim();
+    if (cleanRefs.length === 0) return;
+    if (!cleanKind) throw new Error("usage_kind must not be empty");
+    const at = nowMs();
+    const conn = this.getConn();
+    conn.transaction(() => {
+      for (const sourceRef of cleanRefs) {
+        conn.prepare(
+          `INSERT INTO memory_usage (file_path, usage_kind, used_at) VALUES (?, ?, ?)`,
+        ).run(`source_ref:${sourceRef}`, cleanKind, at);
+        conn.prepare(
+          `UPDATE stage1_outputs
+           SET usage_count = usage_count + 1, last_usage = ?
+           WHERE source_id IN (SELECT id FROM memory_sources WHERE source_ref = ?)`,
+        ).run(at, sourceRef);
       }
     })();
   }
@@ -496,15 +545,35 @@ export class MemoryStateStore extends BaseStore {
     this._queuePhase2(conn, nowMs());
   }
 
-  private _markStage1NoOutput(conn: Database.Database, sourceId: number, timestampMs: number): void {
+  private _markStage1NoOutput(conn: Database.Database, sourceId: number, timestampMs: number, ownershipToken?: string | null): boolean {
+    if (!this._ownsStage1Job(conn, sourceId, ownershipToken)) return false;
     conn.prepare(`DELETE FROM stage1_outputs WHERE source_id = ?`).run(sourceId);
     conn.prepare(
       `UPDATE stage1_jobs
        SET status = ?, ownership_token = NULL, finished_at = ?,
            lease_expires = NULL, retry_after = NULL, last_error = NULL
-       WHERE source_id = ?`,
-    ).run(JOB_SUCCEEDED_NO_OUTPUT, timestampMs, sourceId);
+       WHERE source_id = ?
+         AND status = ?
+         AND (? IS NULL OR ownership_token = ?)`,
+    ).run(JOB_SUCCEEDED_NO_OUTPUT, timestampMs, sourceId, JOB_CLAIMED, ownershipToken ?? null, ownershipToken ?? null);
     this._queuePhase2(conn, timestampMs);
+    return true;
+  }
+
+  private _ownsStage1Job(conn: Database.Database, sourceId: number, ownershipToken?: string | null): boolean {
+    if (!ownershipToken) return true;
+    const row = conn.prepare(
+      `SELECT 1 FROM stage1_jobs WHERE source_id = ? AND status = ? AND ownership_token = ?`,
+    ).get(sourceId, JOB_CLAIMED, ownershipToken) as Record<string, unknown> | undefined;
+    return Boolean(row);
+  }
+
+  private _ownsPhase2Job(conn: Database.Database, ownershipToken?: string | null): boolean {
+    if (!ownershipToken) return true;
+    const row = conn.prepare(
+      `SELECT 1 FROM phase2_jobs WHERE id = 1 AND status = ? AND ownership_token = ?`,
+    ).get(JOB_CLAIMED, ownershipToken) as Record<string, unknown> | undefined;
+    return Boolean(row);
   }
 
   private _queuePhase2(conn: Database.Database, timestampMs: number): void {

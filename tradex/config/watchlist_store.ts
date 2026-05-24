@@ -328,6 +328,7 @@ export async function updateMemoryConfigInWatchlist(watchlistPath: string, confi
     `enabled = ${config.enabled ? "true" : "false"}`,
     `use_memories = ${config.useMemories ? "true" : "false"}`,
     `generate_memories = ${config.generateMemories ? "true" : "false"}`,
+    `disable_on_external_context = ${config.disableOnExternalContext ? "true" : "false"}`,
     `max_raw_memories_for_consolidation = ${config.maxRawMemoriesForConsolidation}`,
     `max_unused_days = ${config.maxUnusedDays}`,
     `max_source_age_days = ${config.maxSourceAgeDays}`,

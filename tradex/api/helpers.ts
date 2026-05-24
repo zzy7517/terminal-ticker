@@ -207,6 +207,7 @@ export function mergeMemoryConfig(config: MemoryConfig, body: Record<string, unk
     enabled: typeof body.enabled === "boolean" ? body.enabled : config.enabled,
     useMemories: typeof body.useMemories === "boolean" ? body.useMemories : config.useMemories,
     generateMemories: typeof body.generateMemories === "boolean" ? body.generateMemories : config.generateMemories,
+    disableOnExternalContext: typeof body.disableOnExternalContext === "boolean" ? body.disableOnExternalContext : config.disableOnExternalContext,
     storagePath: typeof body.storagePath === "string" ? body.storagePath || null : config.storagePath,
     extractModel: typeof body.extractModel === "string" ? body.extractModel || null : config.extractModel,
     consolidationModel: typeof body.consolidationModel === "string" ? body.consolidationModel || null : config.consolidationModel,

@@ -1,4 +1,5 @@
 import type { AgentConfig } from "../../config/index.js";
+import type { Usage } from "../../agent/core/types.js";
 import { nowMs } from "../../db.js";
 import type { LLMChatClient } from "../../agent/llm_client.js";
 import { TradeStatus, FillKind, type Trade, type Fill, fillToPayload, tradeToPayload, snapshotToPayload } from "../../trading/models.js";
@@ -23,9 +24,12 @@ import {
   isoToMs,
   jsonForPrompt,
   parseJsonObject,
+  promptCharLimitForModel,
   redactSecrets,
+  redactStructuredValue,
   tradeSlug,
 } from "./renderers.js";
+import { elapsedMs, memoryLog, usageFields } from "../telemetry.js";
 import fs from "node:fs";
 import path from "node:path";
 import { averageEntryPrice, averageExitPrice } from "../../trading/models.js";
@@ -41,11 +45,28 @@ High-signal memory includes:
 3. Reliable task maps and long-lived environment facts.
 4. Closed-trade facts, while keeping causal review/hypothesis separate.
 
+No-op / minimum signal gate:
+- Before writing memory, ask: "Will a future tradex agent plausibly act better because this exists?"
+- If the answer is no, return exactly {"rollout_summary":"","rollout_slug":null,"raw_memory":""}.
+- Prefer no-op for one-off market state, generic status updates, obvious facts, transient news, or recaps with no reusable lesson.
+
+Task outcome triage:
+- Mark task_outcome as success, partial, failed, uncertain, or observed.
+- Use success/partial/failed/uncertain for agent-session work.
+- Use observed for structured trade exports and manual notes unless the source itself contains a reviewed outcome.
+
+Reading priority:
+- User corrections, repeated preferences, and explicit constraints are strongest evidence.
+- Exact commands, paths, config keys, provider names, instrument keys, and error snippets are valuable when reusable.
+- Tool outputs and assistant claims are evidence only when tied to what happened in the source; never promote them into verified facts without support.
+
 Rules:
 - User messages are stronger evidence than assistant messages.
 - No-op is better than low-signal memory: return empty strings when nothing should persist.
-- raw_memory should use task blocks with Preference signals, Reusable knowledge, Failures and how to do differently, and References when applicable.
+- raw_memory should use task blocks with task_outcome, Preference signals, Reusable knowledge, Failures and how to do differently, and References when applicable.
+- Keep raw_memory compact. Preserve searchable exact terms, not long transcript copies.
 - For trade facts, record only observed fields. Do not write causal language such as because, caused, likely, should, 因为, 导致, 应该, 倾向.
+- If the source contains review lessons or hypotheses, label them as hypotheses and keep them separate from observed facts.
 - Do not store secrets. Replace tokens, keys, passwords, cookies, and auth headers with [REDACTED_SECRET].
 `;
 
@@ -53,6 +74,20 @@ export interface Phase1Extraction {
   rolloutSummary: string;
   rolloutSlug: string | null;
   rawMemory: string;
+}
+
+export interface Phase1ProcessResult {
+  sourceId: number;
+  sourceType: string;
+  sourceRef: string;
+  status: "succeeded" | "succeeded_no_output" | "failed" | "lost_lease";
+  durationMs: number;
+  total_tokens?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  error?: string;
 }
 
 export function manualNotePath(root: string, noteRef: string, mustExist = false): string {
@@ -95,6 +130,85 @@ export interface SessionSource {
   sessionPayload(sessionId: string): Record<string, unknown> | null;
 }
 
+interface FilteredSessionMessage {
+  role: string;
+  content: string;
+  created_at: unknown;
+  error: unknown;
+}
+
+function matchesMarkedFragment(text: string, startMarker: string, endMarker: string): boolean {
+  const startTrimmed = text.trimStart();
+  const endTrimmed = text.trimEnd();
+  return startTrimmed.toLowerCase().startsWith(startMarker.toLowerCase()) &&
+    endTrimmed.toLowerCase().endsWith(endMarker.toLowerCase());
+}
+
+function isMemoryExcludedContextualFragment(content: string): boolean {
+  return (
+    matchesMarkedFragment(content, "# AGENTS.md instructions for ", "</INSTRUCTIONS>") ||
+    matchesMarkedFragment(content, "<skill>", "</skill>") ||
+    matchesMarkedFragment(content, "<system_reminder>", "</system_reminder>") ||
+    matchesMarkedFragment(content, "<environment_context>", "</environment_context>")
+  );
+}
+
+function filteredAgentSessionMessages(payload: Record<string, unknown>): FilteredSessionMessage[] {
+  const messages = payload.messages as Array<Record<string, unknown>> | undefined;
+  return (messages ?? [])
+    .filter((item) => typeof item === "object" && item && ["user", "assistant", "tool"].includes(String(item.role ?? "")))
+    .map((item) => ({
+      role: String(item.role ?? ""),
+      content: String(item.content ?? ""),
+      created_at: item.createdAt ?? item.created_at,
+      error: item.error ?? null,
+    }))
+    .filter((item) => item.role !== "user" || !isMemoryExcludedContextualFragment(item.content));
+}
+
+const EXTERNAL_CONTEXT_TOOL_NAMES = new Set([
+  "web_search",
+  "web_fetch",
+  "get_recent_news",
+  "refresh_news",
+  "refresh_x_following_feed",
+  "get_recent_social_feed",
+  "search_x_tweets",
+  "browser_open_page",
+  "browser_screenshot",
+  "browser_status",
+]);
+
+function toolNamePollutesMemory(toolName: unknown): boolean {
+  const name = String(toolName ?? "").trim();
+  return Boolean(name && (EXTERNAL_CONTEXT_TOOL_NAMES.has(name) || name.startsWith("mcp:")));
+}
+
+function sessionHasExternalContext(payload: Record<string, unknown>): boolean {
+  const session = payload.session && typeof payload.session === "object" && !Array.isArray(payload.session)
+    ? payload.session as Record<string, unknown>
+    : {};
+  const memory = session.memory && typeof session.memory === "object" && !Array.isArray(session.memory)
+    ? session.memory as Record<string, unknown>
+    : {};
+  if (memory.externalContext === true || session.memoryExternalContext === true) return true;
+
+  const messages = payload.messages as Array<Record<string, unknown>> | undefined;
+  for (const message of messages ?? []) {
+    const metadata = message.metadata && typeof message.metadata === "object" && !Array.isArray(message.metadata)
+      ? message.metadata as Record<string, unknown>
+      : {};
+    if (toolNamePollutesMemory(metadata.toolName)) return true;
+    const toolCalls = Array.isArray(metadata.toolCalls) ? metadata.toolCalls : [];
+    for (const toolCall of toolCalls) {
+      if (toolCall && typeof toolCall === "object" && toolNamePollutesMemory((toolCall as Record<string, unknown>).name)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export class Phase1Processor {
   readonly root: string;
   readonly stateStore: MemoryStateStore;
@@ -105,6 +219,7 @@ export class Phase1Processor {
   readonly startupScanLimit: number;
   readonly maxSourceAgeDays: number;
   readonly minAgentSessionIdleHours: number;
+  readonly disableOnExternalContext: boolean;
 
   constructor(input: {
     root: string;
@@ -116,6 +231,7 @@ export class Phase1Processor {
     startupScanLimit: number;
     maxSourceAgeDays: number;
     minAgentSessionIdleHours: number;
+    disableOnExternalContext?: boolean;
   }) {
     this.root = input.root;
     this.stateStore = input.stateStore;
@@ -126,6 +242,7 @@ export class Phase1Processor {
     this.startupScanLimit = input.startupScanLimit;
     this.maxSourceAgeDays = input.maxSourceAgeDays;
     this.minAgentSessionIdleHours = input.minAgentSessionIdleHours;
+    this.disableOnExternalContext = input.disableOnExternalContext ?? false;
   }
 
   async scanStartupSources(): Promise<void> {
@@ -133,21 +250,27 @@ export class Phase1Processor {
     const maxAgeMs = this.maxSourceAgeDays * 86_400_000;
     const cutoff = maxAgeMs ? at - maxAgeMs : null;
     const minSessionIdleMs = this.minAgentSessionIdleHours * 3_600_000;
+    let queued = 0;
 
     const sessions = this.sessionSource.listSessions({ limit: this.startupScanLimit });
     for (const summary of sessions) {
+      if (queued >= this.startupScanLimit) break;
       const updatedAt = isoToMs(summary.updatedAt);
       if (cutoff != null && updatedAt < cutoff) continue;
       if (minSessionIdleMs && at - updatedAt < minSessionIdleMs) continue;
       if (summary.messageCount <= 0) continue;
+      if (this.disableOnExternalContext && this._agentSessionHasExternalContext(summary.id)) continue;
       this.stateStore.enqueueSource({
         sourceType: SOURCE_AGENT_SESSION,
         sourceRef: summary.id,
         updatedAt,
       });
+      queued += 1;
     }
 
-    const closed = this.tradeStore.listTrades({ statuses: [TradeStatus.CLOSED], limit: this.startupScanLimit });
+    const remaining = Math.max(0, this.startupScanLimit - queued);
+    if (remaining === 0) return;
+    const closed = this.tradeStore.listTrades({ statuses: [TradeStatus.CLOSED], limit: remaining });
     for (const trade of closed) {
       if (cutoff != null && trade.updatedAtMs < cutoff) continue;
       this.stateStore.enqueueSource({
@@ -155,40 +278,68 @@ export class Phase1Processor {
         sourceRef: String(trade.id),
         updatedAt: trade.updatedAtMs,
       });
+      queued += 1;
+      if (queued >= this.startupScanLimit) break;
     }
   }
 
-  async processJob(job: Stage1Job): Promise<void> {
+  async processJob(job: Stage1Job): Promise<Phase1ProcessResult> {
+    const startedAt = Date.now();
+    const base = {
+      sourceId: job.sourceId,
+      sourceType: job.source.sourceType,
+      sourceRef: job.source.sourceRef,
+    };
     try {
       const agentConfig = this.agentConfigProvider?.() ?? null;
       let extraction: Phase1Extraction;
+      let tokenUsage: Record<string, number> = {};
 
       if (this.agentConfigProvider != null) {
         if (!agentConfig?.enabled) throw new Error("memory Phase 1 requires an enabled agent model configuration");
         const payload = this._serializeSourceForLlm(job);
-        extraction = await this._extractWithLlm(job, payload, agentConfig);
+        const result = await this._extractWithLlm(job, payload, agentConfig);
+        extraction = result.extraction;
+        tokenUsage = usageFields(result.usage);
       } else {
         const payload = this._serializeSource(job);
         extraction = normalizePhase1Output(payload);
       }
 
       if (!extraction.rawMemory.trim() || !extraction.rolloutSummary.trim()) {
-        this.stateStore.markStage1NoOutput({ sourceId: job.sourceId });
-        return;
+        const updated = this.stateStore.markStage1NoOutput({ sourceId: job.sourceId, ownershipToken: job.ownershipToken });
+        const status = updated ? "succeeded_no_output" : "lost_lease";
+        const result = { ...base, status, durationMs: elapsedMs(startedAt), ...tokenUsage } as Phase1ProcessResult;
+        memoryLog(updated ? "info" : "warn", "phase1_job_finished", result);
+        return result;
       }
-      this.stateStore.markStage1Succeeded({
+      const updated = this.stateStore.markStage1Succeeded({
         sourceId: job.sourceId,
+        ownershipToken: job.ownershipToken,
         rawMemory: extraction.rawMemory,
         rolloutSummary: extraction.rolloutSummary,
         rolloutSlug: extraction.rolloutSlug,
       });
+      const status = updated ? "succeeded" : "lost_lease";
+      const result = { ...base, status, durationMs: elapsedMs(startedAt), ...tokenUsage } as Phase1ProcessResult;
+      memoryLog(updated ? "info" : "warn", "phase1_job_finished", result);
+      return result;
     } catch (exc) {
-      console.error(`memory phase1 failed for ${job.source.sourceType}:${job.source.sourceRef}`, exc);
-      this.stateStore.markStage1Failed({
+      const error = exc instanceof Error ? exc.message : String(exc);
+      const updated = this.stateStore.markStage1Failed({
         sourceId: job.sourceId,
-        error: String(exc),
+        ownershipToken: job.ownershipToken,
+        error,
         retryDelayMs: DEFAULT_RETRY_DELAY_MS,
       });
+      const result: Phase1ProcessResult = {
+        ...base,
+        status: updated ? "failed" : "lost_lease",
+        durationMs: elapsedMs(startedAt),
+        error,
+      };
+      memoryLog("error", "phase1_job_finished", result);
+      return result;
     }
   }
 
@@ -196,7 +347,7 @@ export class Phase1Processor {
     job: Stage1Job,
     payload: Record<string, unknown>,
     agentConfig: AgentConfig,
-  ): Promise<Phase1Extraction> {
+  ): Promise<{ extraction: Phase1Extraction; usage: Usage }> {
     const provider = this.llmProviderFactory(agentConfig);
     const userPayload = {
       source_id: job.sourceId,
@@ -205,13 +356,20 @@ export class Phase1Processor {
       source_updated_at: job.source.updatedAt,
       payload,
     };
+    const promptLimit = promptCharLimitForModel({
+      provider: agentConfig.provider,
+      model: agentConfig.model,
+      contextPercent: 0.7,
+      reservedTokens: 6_000,
+      fallbackTokens: 128_000,
+    });
     const response = await provider.chat({
       system: PHASE1_SYSTEM_PROMPT,
       messages: [
-        { role: "user", content: jsonForPrompt(userPayload), timestamp: Date.now() },
+        { role: "user", content: jsonForPrompt(userPayload, promptLimit), timestamp: Date.now() },
       ],
     });
-    return normalizePhase1Output(parseJsonObject(response.content));
+    return { extraction: normalizePhase1Output(parseJsonObject(response.content)), usage: response.message.usage };
   }
 
   private _serializeSourceForLlm(job: Stage1Job): Record<string, unknown> {
@@ -233,39 +391,37 @@ export class Phase1Processor {
   private _agentSessionLlmPayload(sessionId: string): Record<string, unknown> {
     const payload = this.sessionSource.sessionPayload(sessionId);
     if (!payload) throw new Error(`agent session not found: ${sessionId}`);
-    const messages = (payload as Record<string, unknown>).messages as Array<Record<string, unknown>> | undefined;
-    const filtered = (messages ?? [])
-      .filter((item) => typeof item === "object" && item && ["user", "assistant", "tool"].includes(String(item.role ?? "")))
-      .map((item) => ({
-        role: String(item.role ?? ""),
-        content: String(item.content ?? ""),
-        created_at: item.createdAt ?? item.created_at,
-        error: item.error ?? null,
-      }));
-    return { session: (payload as Record<string, unknown>).session, messages: filtered };
+    if (this.disableOnExternalContext && sessionHasExternalContext(payload as Record<string, unknown>)) {
+      return { session: (payload as Record<string, unknown>).session, messages: [], skipped: "external_context" };
+    }
+    const filtered = filteredAgentSessionMessages(payload as Record<string, unknown>);
+    return redactStructuredValue({ session: (payload as Record<string, unknown>).session, messages: filtered });
   }
 
   private _tradeEventLlmPayload(tradeRef: string): Record<string, unknown> {
     const trade = this.tradeStore.getTrade(parseInt(tradeRef, 10));
     if (!trade) throw new Error(`trade not found: ${tradeRef}`);
     const snapshot = trade.snapshotId ? this.tradeStore.getSnapshot(trade.snapshotId) : null;
-    return {
+    return redactStructuredValue({
       trade: tradeToPayload(trade),
       snapshot: snapshot ? snapshotToPayload(snapshot) : null,
       fills: trade.fills.map(fillToPayload),
-    };
+    });
   }
 
   private _manualNoteLlmPayload(noteRef: string): Record<string, unknown> {
     const notePath = manualNotePath(this.root, noteRef, true);
     if (!fs.existsSync(notePath)) throw new Error(`manual note not found: ${noteRef}`);
-    return JSON.parse(fs.readFileSync(notePath, "utf8")) as Record<string, unknown>;
+    return redactStructuredValue(JSON.parse(fs.readFileSync(notePath, "utf8")) as Record<string, unknown>);
   }
 
   private _extractAgentSession(sessionId: string): Record<string, unknown> {
     const payload = this.sessionSource.sessionPayload(sessionId);
     if (!payload) throw new Error(`agent session not found: ${sessionId}`);
-    const messages = ((payload as Record<string, unknown>).messages ?? []) as Array<Record<string, unknown>>;
+    if (this.disableOnExternalContext && sessionHasExternalContext(payload as Record<string, unknown>)) {
+      return { rollout_summary: "", rollout_slug: null, raw_memory: "" };
+    }
+    const messages = filteredAgentSessionMessages(payload as Record<string, unknown>);
     const userMessages = messages
       .filter((m) => m.role === "user" && String(m.content ?? "").trim())
       .map((m) => String(m.content ?? "").trim());
@@ -302,6 +458,11 @@ export class Phase1Processor {
       rollout_slug: `agent-session-${sessionId.slice(0, 8)}`,
       raw_memory: rawLines.join("\n"),
     };
+  }
+
+  private _agentSessionHasExternalContext(sessionId: string): boolean {
+    const payload = this.sessionSource.sessionPayload(sessionId);
+    return Boolean(payload && sessionHasExternalContext(payload as Record<string, unknown>));
   }
 
   private _extractTradeEvent(tradeRef: string): Record<string, unknown> {
@@ -351,7 +512,7 @@ export class Phase1Processor {
   private _extractManualNote(noteRef: string): Record<string, unknown> {
     const notePath = manualNotePath(this.root, noteRef, true);
     if (!fs.existsSync(notePath)) throw new Error(`manual note not found: ${noteRef}`);
-    const payload = JSON.parse(fs.readFileSync(notePath, "utf8")) as Record<string, unknown>;
+    const payload = redactStructuredValue(JSON.parse(fs.readFileSync(notePath, "utf8")) as Record<string, unknown>);
     if (["rollout_summary", "rollout_slug", "raw_memory"].every((k) => k in payload)) {
       return { rollout_summary: payload.rollout_summary, rollout_slug: payload.rollout_slug, raw_memory: payload.raw_memory };
     }

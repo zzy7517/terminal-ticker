@@ -93,7 +93,10 @@ export async function executeCronJob(input: {
         }),
       refresh: () => runtime.newsService.refreshNow(),
     }),
-    buildMemoryTools(runtime.config.memory.storagePath),
+    buildMemoryTools({
+      root: runtime.config.memory.storagePath,
+      allowWriteNotes: runtime.config.memory.enabled && runtime.config.memory.generateMemories,
+    }),
     buildWebTools(),
   ];
 

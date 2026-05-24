@@ -11,8 +11,15 @@ import {
 export const RAW_MEMORIES_FILENAME = "raw_memories.md";
 export const MEMORY_INDEX_FILENAME = "MEMORY.md";
 export const MEMORY_SUMMARY_FILENAME = "memory_summary.md";
+export const MEMORY_SUMMARY_SCHEMA_VERSION = "v1";
+export const AD_HOC_EXTENSION_DIRNAME = "extensions/ad_hoc";
+export const AD_HOC_INSTRUCTIONS_FILENAME = "instructions.md";
 export const MANUAL_NOTE_DIRNAME = "extensions/ad_hoc/notes";
 export const LEGACY_MANUAL_NOTE_DIRNAME = "extensions/manual_notes";
+const APPROX_CHARS_PER_TOKEN = 4;
+const DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000;
+const MIN_PROMPT_CHAR_LIMIT = 24_000;
+const MAX_PROMPT_CHAR_LIMIT = 800_000;
 
 export function cleanToken(value: unknown, fallback: string | null = null): string | null {
   if (value == null) return fallback;
@@ -56,13 +63,86 @@ export function jsonForPrompt(payload: Record<string, unknown>, limit = 120_000)
   return text.slice(0, head) + "\n...[memory prompt truncated]...\n" + text.slice(-tail);
 }
 
+export function contextWindowTokensForModel(input: {
+  provider?: string | null;
+  model?: string | null;
+  fallbackTokens?: number;
+}): number {
+  const fallback = Math.max(1, input.fallbackTokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS);
+  const provider = String(input.provider ?? "").toLowerCase();
+  const model = String(input.model ?? "").toLowerCase();
+  if (!model) return fallback;
+
+  if (provider === "anthropic" || model.includes("claude")) return 200_000;
+  if (model.includes("gpt-5") || model.includes("gpt-4.1") || model.includes("gpt-4o")) return 128_000;
+  if (model.includes("o3") || model.includes("o4")) return 128_000;
+  if (model.includes("gpt-4")) return 128_000;
+  if (model.includes("gpt-3.5")) return 16_000;
+  return fallback;
+}
+
+export function promptCharLimitForModel(input: {
+  provider?: string | null;
+  model?: string | null;
+  contextPercent?: number;
+  reservedTokens?: number;
+  fallbackTokens?: number;
+  maxChars?: number;
+}): number {
+  const contextWindow = contextWindowTokensForModel(input);
+  const contextPercent = Math.min(0.9, Math.max(0.1, input.contextPercent ?? 0.7));
+  const reservedTokens = Math.max(0, input.reservedTokens ?? 4_000);
+  const budgetTokens = Math.max(1, Math.floor(contextWindow * contextPercent) - reservedTokens);
+  const maxChars = Math.max(MIN_PROMPT_CHAR_LIMIT, input.maxChars ?? MAX_PROMPT_CHAR_LIMIT);
+  return Math.min(maxChars, Math.max(MIN_PROMPT_CHAR_LIMIT, budgetTokens * APPROX_CHARS_PER_TOKEN));
+}
+
+const SECRET_FIELD_RE = /\b(api[_-]?key|secret|token|password|passphrase|authorization|cookie|access[_-]?token|refresh[_-]?token|client[_-]?secret)\b/i;
+
 export function redactSecrets(text: string): string {
   let redacted = text.replace(
-    /(api[_-]?key|secret|token|password|passphrase|authorization|cookie)("?\s*[:=]\s*"?)[^",}\s]+/gi,
-    "$1$2[REDACTED_SECRET]",
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    "[REDACTED_SECRET]",
   );
-  redacted = redacted.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [REDACTED_SECRET]");
+  redacted = redacted.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED_SECRET]");
+  redacted = redacted.replace(/Basic\s+[A-Za-z0-9+/=-]+/gi, "Basic [REDACTED_SECRET]");
+  redacted = redacted.replace(
+    /(["']?)((?:api[_-]?key|secret|token|password|passphrase|authorization|cookie|access[_-]?token|refresh[_-]?token|client[_-]?secret))\1(\s*[:=]\s*)(["'])([^"'\n\r]*)\4/gi,
+    "$1$2$1$3$4[REDACTED_SECRET]$4",
+  );
+  redacted = redacted.replace(
+    /(["']?)((?:api[_-]?key|secret|token|password|passphrase|authorization|cookie|access[_-]?token|refresh[_-]?token|client[_-]?secret))\1(\s*[:=]\s*)([^\s,}\]\n\r]+)/gi,
+    "$1$2$1$3[REDACTED_SECRET]",
+  );
   return redacted;
+}
+
+export function redactStructuredValue<T>(value: T): T {
+  if (typeof value === "string") return redactSecrets(value) as T;
+  if (Array.isArray(value)) return value.map((item) => redactStructuredValue(item)) as T;
+  if (value && typeof value === "object") {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return value;
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        SECRET_FIELD_RE.test(key) ? "[REDACTED_SECRET]" : redactStructuredValue(item),
+      ]),
+    ) as T;
+  }
+  return value;
+}
+
+export function memorySummaryHasCurrentSchema(content: string): boolean {
+  const firstLine = content.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? "";
+  return firstLine === MEMORY_SUMMARY_SCHEMA_VERSION;
+}
+
+export function normalizeMemorySummaryV1(content: string): string {
+  const clean = content.replace(/^\uFEFF/, "").trim();
+  if (!clean) return `${MEMORY_SUMMARY_SCHEMA_VERSION}\n`;
+  if (memorySummaryHasCurrentSchema(clean)) return clean.trimEnd() + "\n";
+  return `${MEMORY_SUMMARY_SCHEMA_VERSION}\n\n${clean}\n`;
 }
 
 export function readTextIfExists(filePath: string, limit = 80_000): string {

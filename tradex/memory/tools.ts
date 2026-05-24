@@ -1,7 +1,9 @@
 import { LocalMemoryBackend } from "./backend.js";
 import { ToolRegistry, jsonOutput } from "../agent/tools/registry.js";
 
-export function buildMemoryTools(memoryRoot?: string | null): ToolRegistry {
+export function buildMemoryTools(input: string | null | { root?: string | null; allowWriteNotes?: boolean } = null): ToolRegistry {
+  const memoryRoot = typeof input === "object" && input !== null ? input.root : input;
+  const allowWriteNotes = typeof input === "object" && input !== null ? input.allowWriteNotes === true : true;
   const backend = new LocalMemoryBackend(memoryRoot);
   const registry = new ToolRegistry();
   registry.register({
@@ -21,6 +23,23 @@ export function buildMemoryTools(memoryRoot?: string | null): ToolRegistry {
     description: "Search local memory files.",
     parameters: { type: "object", properties: { query: { type: "string" }, path: { type: ["string", "null"] }, limit: { type: "integer" } }, required: ["query"] },
     execute: ({ query, path, limit }) => jsonOutput({ matches: backend.search({ query: String(query), path: path ? String(path) : null, limit: Number(limit) || 50 }) }),
+  });
+  registry.register({
+    name: "write_memory_note",
+    description: "Write a user-requested ad-hoc memory note for future Phase 2 consolidation. Use only when the user explicitly asks to remember or update memory.",
+    parameters: {
+      type: "object",
+      properties: {
+        content: { type: "string", description: "The durable note content to remember. Do not include secrets." },
+        slug: { type: ["string", "null"], description: "Optional short filename slug." },
+      },
+      required: ["content"],
+    },
+    execute: ({ content, slug }) => jsonOutput(backend.writeAdHocNote({
+      allowWrite: allowWriteNotes,
+      content: String(content || ""),
+      slug: slug ? String(slug) : null,
+    })),
   });
   return registry;
 }

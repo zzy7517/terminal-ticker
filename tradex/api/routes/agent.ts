@@ -5,7 +5,7 @@ import { SessionManager } from "../../agent/session_manager.js";
 import { DEFAULT_AGENT_MODEL_REGISTRY } from "../../agent/model_registry.js";
 import { buildMarketTools } from "../../agent/tools/market.js";
 import { buildMemoryTools } from "../../memory/tools.js";
-import { buildMemoryDeveloperInstructions } from "../../memory/read/index.js";
+import { buildMemoryDeveloperInstructions, parseMemoryCitations } from "../../memory/read/index.js";
 import { buildNewsTools } from "../../agent/tools/news.js";
 import { buildSocialFeedTools } from "../../agent/tools/social.js";
 import { buildTradingTools } from "../../agent/tools/trading.js";
@@ -152,6 +152,19 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           const mcpRegistry = runtime.mcpManager
             ? await buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig())
             : null;
+          const externalContextToolNames = new Set([
+            "web_search",
+            "web_fetch",
+            "get_recent_news",
+            "refresh_news",
+            "refresh_x_following_feed",
+            "get_recent_social_feed",
+            "search_x_tweets",
+            "browser_open_page",
+            "browser_screenshot",
+            "browser_status",
+            ...(mcpRegistry?.listTools().map((tool) => tool.name) ?? []),
+          ]);
           const tools = mergeRegistries(
             buildMarketTools({
               quotes: runtime.controller.quotes,
@@ -176,7 +189,10 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                 product: typeof args.product === "string" ? args.product : undefined,
               })).items,
             }),
-            buildMemoryTools(runtime.config.memory.storagePath),
+            buildMemoryTools({
+              root: runtime.config.memory.storagePath,
+              allowWriteNotes: runtime.config.memory.enabled && runtime.config.memory.generateMemories,
+            }),
             buildTradingTools({
               tradeStore: runtime.tradeStore,
               exchangeRouter: runtime.exchangeRouter,
@@ -298,6 +314,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           let totalCost = 0;
           let currentAssistantTurnEntryId: string | null = null;
           let initialUserMessageSeen = false;
+          let externalContextRecorded = false;
 
           agent.subscribe((event) => {
             switch (event.type) {
@@ -384,9 +401,18 @@ export function agentRoutes(runtime: AppRuntime): Hono {
               case "tool_execution_start": {
                 const toolCall = { id: event.toolCallId, name: event.toolName, arguments: event.args };
                 toolCallsById.set(event.toolCallId, toolCall);
+                if (
+                  !externalContextRecorded &&
+                  externalContextToolNames.has(event.toolName)
+                ) {
+                  externalContextRecorded = true;
+                }
                 if (currentAssistantTurnEntryId) {
                   mgr.updateMessage(currentAssistantTurnEntryId, {
-                    metadata: { toolCalls: Array.from(toolCallsById.values()) },
+                    metadata: {
+                      toolCalls: Array.from(toolCallsById.values()),
+                      ...(externalContextRecorded ? { memoryExternalContext: true } : {}),
+                    },
                   });
                 }
                 sendFrame(controller, { type: "tool_execution_start", toolCall });
@@ -456,6 +482,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                     .filter((c): c is TextContent => c.type === "text")
                     .map((c) => c.text)
                     .join("");
+                  recordMemoryCitationUsage(runtime, turnContent);
                   finalError = assistant.errorMessage ?? null;
                   totalTokens += assistant.usage.totalTokens;
                   promptTokens += assistant.usage.input;
@@ -477,6 +504,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                     cacheWrite: assistant.usage.cacheWrite,
                     cost: assistant.usage.cost.total,
                     toolCalls: Array.from(toolCallsById.values()),
+                    ...(externalContextRecorded ? { memoryExternalContext: true } : {}),
                   };
                   const updated = mgr.updateMessage(currentAssistantTurnEntryId, {
                     content: turnContent,
@@ -625,4 +653,34 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   });
 
   return app;
+}
+
+function recordMemoryCitationUsage(runtime: AppRuntime, content: string): void {
+  const citations = parseMemoryCitations(content);
+  if (!citations || !runtime.memoryPipeline) return;
+
+  const seenPaths = new Set<string>();
+  for (const entry of citations.entries) {
+    if (seenPaths.has(entry.filePath)) continue;
+    seenPaths.add(entry.filePath);
+    try {
+      runtime.memoryPipeline.state.recordUsage({
+        filePath: entry.filePath,
+        usageKind: "citation",
+      });
+    } catch (error) {
+      console.warn("failed recording memory citation usage", error);
+    }
+  }
+
+  if (citations.rolloutIds.length > 0) {
+    try {
+      runtime.memoryPipeline.state.recordSourceRefUsage({
+        sourceRefs: citations.rolloutIds,
+        usageKind: "citation",
+      });
+    } catch (error) {
+      console.warn("failed recording memory rollout usage", error);
+    }
+  }
 }

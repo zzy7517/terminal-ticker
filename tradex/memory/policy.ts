@@ -3,12 +3,14 @@ export class MemoryRuntimePolicy {
   readonly generateMemories: boolean;
   readonly useMemories: boolean;
   readonly ephemeral: boolean;
+  readonly disableOnExternalContext: boolean;
 
-  private constructor(input: { enabled: boolean; generateMemories: boolean; useMemories: boolean; ephemeral: boolean }) {
+  private constructor(input: { enabled: boolean; generateMemories: boolean; useMemories: boolean; ephemeral: boolean; disableOnExternalContext?: boolean }) {
     this.enabled = input.enabled;
     this.generateMemories = input.generateMemories;
     this.useMemories = input.useMemories;
     this.ephemeral = input.ephemeral;
+    this.disableOnExternalContext = input.disableOnExternalContext ?? false;
   }
 
   static normal(): MemoryRuntimePolicy {

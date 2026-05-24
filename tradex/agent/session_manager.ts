@@ -89,6 +89,34 @@ export interface SessionInfo {
   firstMessage: string;
 }
 
+const EXTERNAL_CONTEXT_TOOL_NAMES = new Set([
+  "web_search",
+  "web_fetch",
+  "get_recent_news",
+  "refresh_news",
+  "refresh_x_following_feed",
+  "get_recent_social_feed",
+  "search_x_tweets",
+  "browser_open_page",
+  "browser_screenshot",
+  "browser_status",
+]);
+
+function toolNamePollutesMemory(toolName: unknown): boolean {
+  const name = String(toolName ?? "").trim();
+  return Boolean(name && (EXTERNAL_CONTEXT_TOOL_NAMES.has(name) || name.startsWith("mcp:")));
+}
+
+function messageHasExternalContext(msg: MessageEntry): boolean {
+  const metadata = msg.metadata ?? {};
+  if (metadata.memoryExternalContext === true) return true;
+  if (toolNamePollutesMemory(metadata.toolName)) return true;
+  const toolCalls = Array.isArray(metadata.toolCalls) ? metadata.toolCalls : [];
+  return toolCalls.some((toolCall) =>
+    toolCall && typeof toolCall === "object" && toolNamePollutesMemory((toolCall as Record<string, unknown>).name)
+  );
+}
+
 // Returns the directory where all session JSONL files are stored.
 function sessionsDir(): string {
   return path.join(defaultCacheDir(), SESSIONS_SUBDIR);
@@ -642,6 +670,7 @@ export class SessionManager {
     if (!header) return { session: null, messages: [] };
     const entries = this.getEntries();
     const messageEntries = entries.filter((e): e is MessageEntry => e.type === "message");
+    const hasMemoryExternalContext = messageEntries.some(messageHasExternalContext);
     return {
       session: {
         id: header.id,
@@ -654,6 +683,9 @@ export class SessionManager {
         apiMode: null,
         reasoningEffort: null,
         leafId: this.leafId,
+        memory: {
+          externalContext: hasMemoryExternalContext,
+        },
       },
       messages: messageEntries.map((msg) => ({
         id: msg.id,

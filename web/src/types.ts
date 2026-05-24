@@ -218,6 +218,7 @@ export interface MemoryConfig {
   enabled: boolean;
   useMemories: boolean;
   generateMemories: boolean;
+  disableOnExternalContext: boolean;
   storagePath: string | null;
   extractModel: string | null;
   consolidationModel: string | null;
@@ -233,6 +234,7 @@ export interface MemoryConfigUpdate {
   enabled?: boolean;
   useMemories?: boolean;
   generateMemories?: boolean;
+  disableOnExternalContext?: boolean;
   storagePath?: string | null;
   extractModel?: string | null;
   consolidationModel?: string | null;

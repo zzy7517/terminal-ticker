@@ -32,6 +32,7 @@ export function memoryRoutes(runtime: AppRuntime): Hono {
         enabled: runtime.config.memory.enabled,
         useMemories: runtime.config.memory.useMemories,
         generateMemories: runtime.config.memory.generateMemories,
+        disableOnExternalContext: runtime.config.memory.disableOnExternalContext,
         storagePath: runtime.config.memory.storagePath,
         extractModel: runtime.config.memory.extractModel,
         consolidationModel: runtime.config.memory.consolidationModel,

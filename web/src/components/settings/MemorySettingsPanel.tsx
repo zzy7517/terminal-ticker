@@ -411,6 +411,22 @@ export function MemorySettingsPanel() {
             </button>
           </label>
 
+          <label className="settings-toggle-row">
+            <div>
+              <strong>Skip external-context sessions</strong>
+              <small>Do not generate memory from sessions that used web, social, browser, or MCP tools.</small>
+            </div>
+            <button
+              className={`settings-toggle ${config.disableOnExternalContext ? 'on' : ''}`}
+              type="button"
+              disabled={saving || !config.enabled}
+              onClick={() => persistConfig({ disableOnExternalContext: !config.disableOnExternalContext })}
+              aria-pressed={config.disableOnExternalContext}
+            >
+              <span />
+            </button>
+          </label>
+
           <StoragePathInput
             value={config.storagePath}
             disabled={saving}

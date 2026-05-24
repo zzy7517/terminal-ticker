@@ -3,9 +3,32 @@ import path from "node:path";
 import { memoryHome } from "./paths.js";
 
 const VISIBLE_ROOT_FILES = new Set(["MEMORY.md", "memory_summary.md"]);
-const VISIBLE_ROOT_DIRS = new Set(["facts", "reviews", "rollout_summaries", "skills", "generated"]);
+const VISIBLE_ROOT_DIRS = new Set(["facts", "reviews", "rollout_summaries", "skills", "generated", "extensions"]);
 const INTERNAL_FILENAMES = new Set(["phase2_workspace_diff.md", ".phase2_baseline.json", ".gitkeep"]);
 const INTERNAL_SUFFIXES = [".sqlite3", ".sqlite3-shm", ".sqlite3-wal", ".db", ".lock", ".tmp"];
+
+function cleanNoteSlug(value: string): string {
+  const clean = value
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+  return clean.slice(0, 80) || "note";
+}
+
+function redactNoteSecrets(value: string): string {
+  let redacted = value.replace(
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    "[REDACTED_SECRET]",
+  );
+  redacted = redacted.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED_SECRET]");
+  redacted = redacted.replace(/Basic\s+[A-Za-z0-9+/=-]+/gi, "Basic [REDACTED_SECRET]");
+  redacted = redacted.replace(
+    /\b(api[_-]?key|secret|token|password|passphrase|authorization|cookie|access[_-]?token|refresh[_-]?token|client[_-]?secret)\b(\s*[:=]\s*)["']?[^"',}\]\s\n\r]+["']?/gi,
+    "$1$2[REDACTED_SECRET]",
+  );
+  return redacted;
+}
 
 export class MemoryAccessError extends Error {}
 
@@ -13,7 +36,7 @@ export class LocalMemoryBackend {
   readonly root: string;
 
   constructor(root?: string | null) {
-    this.root = memoryHome(root);
+    this.root = path.resolve(memoryHome(root));
   }
 
   list(input: { path?: string | null; limit?: number } = {}): Array<Record<string, unknown>> {
@@ -32,6 +55,7 @@ export class LocalMemoryBackend {
 
   read(input: { path: string; maxChars?: number; lineOffset?: number; maxLines?: number | null }): Record<string, unknown> {
     const target = this.resolveScopedPath(input.path);
+    this.assertVisiblePath(target, input.path);
     if (!fs.existsSync(target)) throw new MemoryAccessError(`path '${input.path}' was not found`);
     const stat = fs.lstatSync(target);
     if (stat.isSymbolicLink()) throw new MemoryAccessError("symlinks are not allowed");
@@ -44,10 +68,24 @@ export class LocalMemoryBackend {
 
   search(input: { query: string; path?: string | null; limit?: number }): Array<Record<string, unknown>> {
     const root = this.resolveScopedPath(input.path ?? null);
+    this.assertVisiblePath(root, input.path ?? null);
     const out: Array<Record<string, unknown>> = [];
     const query = input.query.toLowerCase();
+    const visitFile = (full: string) => {
+      try {
+        const text = fs.readFileSync(full, "utf8");
+        if (text.toLowerCase().includes(query)) out.push({ path: path.relative(this.root, full), preview: text.slice(0, 300) });
+      } catch { /* skip unreadable files */ }
+    };
     const walk = (dir: string) => {
       if (!fs.existsSync(dir)) return;
+      const stat = fs.lstatSync(dir);
+      if (stat.isSymbolicLink()) return;
+      if (stat.isFile()) {
+        if (!this.isInternal(path.basename(dir))) visitFile(dir);
+        return;
+      }
+      if (!stat.isDirectory()) return;
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (out.length >= (input.limit ?? 50)) return;
         if (entry.isSymbolicLink()) continue;
@@ -56,15 +94,35 @@ export class LocalMemoryBackend {
         if (entry.isDirectory()) {
           walk(full);
         } else if (entry.isFile()) {
-          try {
-            const text = fs.readFileSync(full, "utf8");
-            if (text.toLowerCase().includes(query)) out.push({ path: path.relative(this.root, full), preview: text.slice(0, 300) });
-          } catch { /* skip unreadable files */ }
+          visitFile(full);
         }
       }
     };
     if (fs.existsSync(root)) walk(root);
     return out;
+  }
+
+  writeAdHocNote(input: { content: string; slug?: string | null; allowWrite?: boolean }): Record<string, unknown> {
+    if (input.allowWrite === false) {
+      throw new MemoryAccessError("memory note writing is disabled by the current memory config");
+    }
+    const content = redactNoteSecrets(input.content.trim());
+    if (!content) throw new MemoryAccessError("note content must not be empty");
+    const stamp = new Date().toISOString().replace(/\.\d{3}Z$/, "Z").replace(/[:]/g, "-");
+    const slug = cleanNoteSlug(input.slug || content.slice(0, 60));
+    const relativePath = path.join("extensions", "ad_hoc", "notes", `${stamp}-${slug}.md`);
+    const target = path.join(this.root, relativePath);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, [
+      "---",
+      "type: ad_hoc_note",
+      `created_at: ${new Date().toISOString()}`,
+      "---",
+      "",
+      content,
+      "",
+    ].join("\n"));
+    return { path: relativePath.replace(/\\/g, "/") };
   }
 
   private resolveScopedPath(relativePath: string | null): string {
@@ -77,8 +135,29 @@ export class LocalMemoryBackend {
       throw new MemoryAccessError(`path '${relativePath}' was not found`);
     }
     const target = path.resolve(this.root, normalized);
-    if (!target.startsWith(this.root)) throw new MemoryAccessError("path escapes memory root");
+    if (target !== this.root && !target.startsWith(this.root + path.sep)) {
+      throw new MemoryAccessError("path escapes memory root");
+    }
     return target;
+  }
+
+  private assertVisiblePath(target: string, originalPath: string | null): void {
+    const relativePath = path.relative(this.root, target);
+    if (!relativePath || relativePath === ".") return;
+    const parts = relativePath.split(path.sep);
+    const top = parts[0];
+    if (this.isInternal(path.basename(target))) {
+      throw new MemoryAccessError(`path '${originalPath ?? ""}' was not found`);
+    }
+    if (parts.length === 1) {
+      const exists = fs.existsSync(target);
+      const isDir = exists && fs.lstatSync(target).isDirectory();
+      if (isDir ? VISIBLE_ROOT_DIRS.has(top) : VISIBLE_ROOT_FILES.has(top)) return;
+      throw new MemoryAccessError(`path '${originalPath ?? ""}' was not found`);
+    }
+    if (!VISIBLE_ROOT_DIRS.has(top)) {
+      throw new MemoryAccessError(`path '${originalPath ?? ""}' was not found`);
+    }
   }
 
   private isVisible(entry: fs.Dirent, relativePath: string): boolean {

@@ -78,6 +78,7 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       enabled: config.memory.enabled,
       useMemories: config.memory.useMemories,
       generateMemories: config.memory.generateMemories,
+      disableOnExternalContext: config.memory.disableOnExternalContext,
       storagePath: config.memory.storagePath,
       extractModel: config.memory.extractModel,
       consolidationModel: config.memory.consolidationModel,
