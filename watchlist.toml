@@ -1,7 +1,97 @@
-title = "Desk Quotes"
-symbols = ["AAPL", "NVDA", "BTC-USD", "ETH-USD", "GC=F", "^GSPC"]
+symbols = [
+  { symbol = "AAPLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "AAPL", group = "stocks", show_collapsed = true, analysis_interval = "5m"},
+  { symbol = "SPYUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SPY", group = "stocks", show_collapsed = false },
+  { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC", group = "crypto", analysis_interval = "15m" },
+  { symbol = "ETHUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "ETH", group = "crypto", analysis_interval = "15m" },
+  { symbol = "XAUUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "XAU", group = "crypto" },
+  { symbol = "MSFTUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "MSFT", group = "stocks", show_collapsed = true },
+  { symbol = "vntl:ANTHROPIC", source = "hyperliquid", label = "ANTHROPIC Perp (vntl)", group = "preipo", show_collapsed = true },
+  { symbol = "vntl:OPENAI", source = "hyperliquid", label = "OPENAI Perp (vntl)", group = "preipo", show_collapsed = true },
+  { symbol = "vntl:SPACEX", source = "hyperliquid", label = "SPACEX Perp (vntl)", group = "preipo", show_collapsed = true },
+  { symbol = "xyz:VIX", source = "hyperliquid", label = "VIX Perp (xyz)", group = "indices", show_collapsed = true },
+  { symbol = "xyz:SP500", source = "hyperliquid", label = "SP500 Perp (xyz)", group = "indices", show_collapsed = true },
+  { symbol = "xyz:XYZ100", source = "hyperliquid", label = "XYZ100 Perp (xyz)", group = "indices", show_collapsed = true },
+  { symbol = "xyz:MSTR", source = "hyperliquid", label = "MSTR Perp (xyz)", group = "stocks", show_collapsed = true },
+  { symbol = "xyz:GOLD", source = "hyperliquid", label = "GOLD Perp (xyz)", group = "commodities", show_collapsed = true },
+  { symbol = "SOLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SOLUSDT", group = "crypto", show_collapsed = true },
+  { symbol = "CBRSUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "CBRSUSDT", group = "crypto", show_collapsed = true },
+]
 
 [display]
 refresh_interval_ms = 1000
 stale_after_seconds = 20
 reconnect_delay_seconds = 3.0
+stock_poll_interval_seconds = 5
+
+[agent]
+enabled = true
+max_candles = 40
+
+[agent.providers.codex]
+enabled = true
+models = ["gpt-5.4-mini", "gpt-5.4"]
+model_efforts = {"gpt-5.5" = "high", "gpt-5.4-mini" = "medium", "gpt-5.4" = "high"}
+
+[agent.providers.anthropic]
+enabled = true
+base_url = "https://claude-proxy.p1.cn/api"
+models = ["global.anthropic.claude-opus-4-6-v1"]
+model_efforts = {"global.anthropic.claude-opus-4-6-v1" = "xhigh"}
+custom_models = ["global.anthropic.claude-opus-4-6-v1"]
+[analysis]
+enabled = true
+interval = "5m"
+lookback = 40
+poll_interval_seconds = 30
+stale_after_seconds = 420
+[news]
+enabled = true
+poll_interval_seconds = 30
+max_interval_seconds = 600
+reuters_url = "https://www.reuters.com/arc/outboundfeeds/news-sitemap/?outputType=xml"
+request_timeout_seconds = 10
+retention_days = 30
+recent_limit = 50
+[social_feed]
+enabled = true
+recent_limit = 100
+retention_days = 30
+max_items = 2000
+
+[trading]
+hyperliquid_mode = "off"   # "off" | "demo" | "live"
+bitget_mode = "demo"          # "off" | "demo" | "live"
+
+[memory]
+enabled = false
+use_memories = true
+generate_memories = true
+max_raw_memories_for_consolidation = 256
+max_unused_days = 180
+max_source_age_days = 180
+max_rollouts_per_startup = 5000
+min_session_idle_hours = 12
+extension_retention_days = 7
+extract_model = "codex:gpt-5.5"
+consolidation_model = "codex:gpt-5.5"
+
+[browser]
+enabled = true
+# socket_path = "/tmp/open-browser-use/example.sock"  # optional, auto-discovers by default
+# timeout_ms = 15000
+
+# -- Cron Jobs ---------------------------------------------------------------
+# Each [[cron_jobs]] defines a scheduled agent task. Cron expressions are
+# evaluated in local time.
+
+# -- Cron Jobs ---------------------------------------------------------------
+
+[[cron_jobs]]
+name = "盯盘"
+cron = "*/5 * * * *"
+system_prompt = "你是一名职业 trader。重点分析 eth xau的k线数据，如果你认为满足开单的条件，可以直接开单"
+enabled = true
+symbols = ["BTCUSDT", "ETHUSDT"]
+model = "codex:gpt-5.5"
+user_message = "开始"
+timezone = "Asia/Shanghai"

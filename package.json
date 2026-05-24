@@ -1,0 +1,53 @@
+{
+  "name": "tradex-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:backend": "tsx watch tradex/index.ts",
+    "dev:all": "concurrently -n api,web -c green,blue --kill-others-on-fail \"npm:dev:backend\" \"wait-on tcp:127.0.0.1:8765 && npm run dev\"",
+    "start:backend": "node dist/backend/tradex/index.js",
+    "build": "tsc -b web/tsconfig.json && vite build",
+    "build:backend": "tsc -p tsconfig.backend.json",
+    "typecheck": "tsc -b web/tsconfig.json && tsc -p tsconfig.backend.json",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.1",
+    "@hono/node-server": "^2.0.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@nktkas/hyperliquid": "^0.32.2",
+    "better-sqlite3": "^12.9.0",
+    "croner": "^10.0.1",
+    "hono": "^4.12.18",
+    "ignore": "^7.0.5",
+    "lucide-react": "^0.468.0",
+    "open-browser-use-sdk": "^0.1.40",
+    "pi-cursor-agent": "^0.4.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "smol-toml": "^1.6.1",
+    "viem": "^2.48.11",
+    "wreq-js": "^2.3.0",
+    "ws": "^8.20.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.6.2",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.2",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^4.1.5",
+    "wait-on": "^9.0.5"
+  }
+}
