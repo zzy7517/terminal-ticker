@@ -45,7 +45,7 @@ function defaultConvertToLlm(messages: AgentMessage[]): AgentMessage[] {
 // Constants
 // ============================================================================
 
-const EMPTY_USAGE: Usage = { input: 0, output: 0, totalTokens: 0 };
+const EMPTY_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
 const DEFAULT_MODEL: AgentModelDescriptor = {
   id: "unknown",

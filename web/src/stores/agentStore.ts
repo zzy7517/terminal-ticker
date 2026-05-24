@@ -5,6 +5,7 @@ import type {
   AgentModelOption,
   AgentSessionResponse,
   AgentSessionRun,
+  AgentSessionStats,
   AgentSessionSummary,
 } from '../types';
 import {
@@ -16,6 +17,7 @@ import {
   fetchProviderModels,
   steerAgentSession,
   streamAgentMessage,
+  type ImageAttachment,
 } from '../api';
 import { AGENT_PROVIDER_OPTIONS } from '../constants';
 
@@ -47,10 +49,12 @@ function persistProviderModel(provider: string, model: string): void {
 import { useMarketStore } from './marketStore';
 
 type ContextUsage = AgentContextUsage | null;
+type SessionStatsState = AgentSessionStats | null;
 
 interface SessionRunProjection extends AgentSessionRun {
   pendingToolCalls: Set<string>;
   contextUsage: ContextUsage;
+  sessionStats: SessionStatsState;
 }
 
 interface AgentState {
@@ -66,6 +70,7 @@ interface AgentState {
   pendingToolCalls: Set<string>;
   modelCache: Record<string, AgentModelOption[]>;
   contextUsage: ContextUsage;
+  sessionStats: SessionStatsState;
   activeAgentSessionId: string | null;
   agentSessionById: Record<string, AgentSessionResponse>;
   runStateBySessionId: Record<string, SessionRunProjection>;
@@ -74,12 +79,17 @@ interface AgentState {
   streamingMessage: AgentMessage | null;
   /** Number of steering messages queued and not yet processed by the agent. */
   steeringQueueCount: number;
+  /** Pending image attachments to send with the next message. */
+  pendingImages: ImageAttachment[];
 
   setAgentSession: (session: AgentSessionResponse | null) => void;
   setAgentSessionHistory: (history: AgentSessionSummary[]) => void;
   setAgentPrompt: (prompt: string) => void;
   setAgentProvider: (provider: string) => void;
   setAgentModel: (model: string) => void;
+  addPendingImage: (image: ImageAttachment) => void;
+  removePendingImage: (index: number) => void;
+  clearPendingImages: () => void;
   setModelCache: (updater: (prev: Record<string, AgentModelOption[]>) => Record<string, AgentModelOption[]>) => void;
   changeProviderModel: (provider: string, defaultModel: string) => void;
 
@@ -109,6 +119,7 @@ function idleRun(sessionId: string): SessionRunProjection {
     error: null,
     pendingToolCalls: new Set(),
     contextUsage: null,
+    sessionStats: null,
   };
 }
 
@@ -127,6 +138,7 @@ function mergeRunPayload(
     error: run?.error ?? previous?.error ?? null,
     pendingToolCalls: status === 'running' ? new Set(previous?.pendingToolCalls ?? []) : new Set(),
     contextUsage: previous?.contextUsage ?? null,
+    sessionStats: previous?.sessionStats ?? null,
   };
 }
 
@@ -142,7 +154,7 @@ function mergeHistoryRuns(
 }
 
 function sessionFromSummary(summary: AgentSessionSummary): AgentSessionResponse {
-  return { session: summary, messages: [], contextUsage: summary.contextUsage ?? null, run: summary.run };
+  return { session: summary, messages: [], contextUsage: summary.contextUsage ?? null, sessionStats: summary.sessionStats ?? null, run: summary.run };
 }
 
 function visibleSession(state: ActiveMirrorSource): AgentSessionResponse | null {
@@ -156,7 +168,7 @@ function visibleSession(state: ActiveMirrorSource): AgentSessionResponse | null 
 
 function activeFields(state: ActiveMirrorSource): Pick<
   AgentState,
-  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'contextUsage' | 'agentBusyKey'
+  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'contextUsage' | 'sessionStats' | 'agentBusyKey'
 > {
   const activeId = state.activeAgentSessionId;
   const run = activeId ? state.runStateBySessionId[activeId] : undefined;
@@ -166,6 +178,7 @@ function activeFields(state: ActiveMirrorSource): Pick<
     agentPrompt: activeId ? state.draftBySessionId[activeId] ?? '' : '',
     pendingToolCalls: new Set(run?.pendingToolCalls ?? []),
     contextUsage: run?.contextUsage ?? session?.contextUsage ?? null,
+    sessionStats: run?.sessionStats ?? session?.sessionStats ?? null,
     agentBusyKey: activeId && run?.status === 'running' ? activeId : null,
   };
 }
@@ -255,12 +268,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   pendingToolCalls: new Set(),
   modelCache: {},
   contextUsage: null,
+  sessionStats: null,
   activeAgentSessionId: null,
   agentSessionById: {},
   runStateBySessionId: {},
   draftBySessionId: {},
   streamingMessage: null,
   steeringQueueCount: 0,
+  pendingImages: [],
 
   setAgentSession: (session) => set((s) => {
     const activeAgentSessionId = session?.session?.id ?? null;
@@ -297,6 +312,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({ agentModel: model });
     persistProviderModel(get().agentProvider, model);
   },
+  addPendingImage: (image) => set((s) => ({ pendingImages: [...s.pendingImages, image] })),
+  removePendingImage: (index) => set((s) => ({ pendingImages: s.pendingImages.filter((_, i) => i !== index) })),
+  clearPendingImages: () => set({ pendingImages: [] }),
   setModelCache: (updater) => set((s) => ({ modelCache: updater(s.modelCache) })),
   changeProviderModel: (provider, defaultModel) => {
     set({ agentProvider: provider, agentModel: defaultModel });
@@ -401,7 +419,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   runAgentAnalysis: async () => {
-    const { agentSession, agentPrompt, agentProvider, agentModel } = get();
+    const { agentSession, agentPrompt, agentProvider, agentModel, pendingImages } = get();
+    const imagesToSend = pendingImages.length > 0 ? [...pendingImages] : undefined;
+    if (pendingImages.length > 0) set({ pendingImages: [] });
     let targetSessionId = agentSession?.session?.id ?? null;
     let idCounter = 0;
     const nextId = () => { idCounter += 1; return -(Date.now() * 100 + idCounter); };
@@ -445,7 +465,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           role: 'user',
           content: prompt,
           createdAt,
-          metadata: null,
+          metadata: imagesToSend ? { images: imagesToSend } : null,
           error: null,
         };
         const agentSessionById = appendSessionMessage(s, runSessionId, optimisticUserMessage);
@@ -472,7 +492,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       await streamAgentMessage(
         runSessionId,
         prompt,
-        { provider: agentProvider, model: agentModel },
+        { provider: agentProvider, model: agentModel, images: imagesToSend },
         (envelope) => {
           const sessionId = envelope.sessionId || runSessionId;
           const event = envelope.event;
@@ -581,12 +601,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           if (event.type === 'agent_end') {
             const totalTokens = typeof event.totalTokens === 'number' ? event.totalTokens : 0;
             const promptTokens = event.promptTokens ?? 0;
+            const stats = event.sessionStats ?? null;
             set((s) => {
               const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
               const runStateBySessionId = replaceRunState(
                 s.runStateBySessionId,
                 sessionId,
-                { ...previous, runId: envelope.runId, lastSeq: envelope.seq, contextUsage: { promptTokens, totalTokens } },
+                {
+                  ...previous,
+                  runId: envelope.runId,
+                  lastSeq: envelope.seq,
+                  contextUsage: { promptTokens, totalTokens },
+                  sessionStats: stats,
+                },
               );
               const next = { ...s, runStateBySessionId, streamingMessage: null };
               return { runStateBySessionId, streamingMessage: null, steeringQueueCount: 0, ...activeFields(next) };

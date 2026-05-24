@@ -1,4 +1,4 @@
-import { ToolRegistry, jsonOutput } from "./registry.js";
+import { ToolRegistry, jsonOutput, type RichContentBlock } from "./registry.js";
 import type { BrowserManager } from "../../browser/manager.js";
 import type { BrowserUseRequestParams } from "open-browser-use-sdk";
 
@@ -171,6 +171,63 @@ export function buildBrowserTools(browserManager: BrowserManager): ToolRegistry 
       } catch (e) {
         browser?.close();
         return jsonOutput({ error: e instanceof Error ? e.message : String(e), url: targetUrl });
+      }
+    },
+    richHandler: async ({ url, wait_seconds, clip }): Promise<RichContentBlock[]> => {
+      const targetUrl = String(url || "").trim();
+      if (!targetUrl) return [{ type: "text", text: JSON.stringify({ error: "url is required" }) }];
+
+      const { connectOpenBrowserUse } = await import("open-browser-use-sdk");
+      const socketPath = await resolveSocket(browserManager);
+      if (!socketPath) {
+        return [{ type: "text", text: JSON.stringify({ error: "Browser automation not available." }) }];
+      }
+
+      const waitMs = Math.min(Math.max(Number(wait_seconds) || 6, 1), 20) * 1000;
+
+      let browser: Awaited<ReturnType<typeof connectOpenBrowserUse>> | null = null;
+      try {
+        browser = await connectOpenBrowserUse({
+          socketPath,
+          sessionId: `tradex-screenshot-${Date.now()}`,
+          timeoutMs: browserManager.timeoutMs,
+        });
+
+        await browser.client.nameSession("Tradex Screenshot - OBU");
+        const tab = await browser.newTab({ url: targetUrl, waitUntil: "load" });
+        await browser.cdp.call(tab.id, "Page.bringToFront");
+        await waitForRender(browser, tab.id, waitMs);
+
+        const params: BrowserUseRequestParams = { format: "png" };
+        if (clip && typeof clip === "object") {
+          const c = clip as Record<string, number>;
+          params.clip = {
+            x: Number(c.x) || 0,
+            y: Number(c.y) || 0,
+            width: Number(c.width) || 1280,
+            height: Number(c.height) || 720,
+            scale: 2,
+          };
+        }
+
+        const result = await browser.cdp.call(tab.id, "Page.captureScreenshot", params);
+        const data = (result as Record<string, unknown>)?.data as string | undefined;
+        const title = await browser.cdp.evaluate(tab.id, "document.title") as string;
+
+        await browser.client.finalizeTabs([]);
+        browser.close();
+
+        if (!data) {
+          return [{ type: "text", text: JSON.stringify({ error: "Screenshot capture returned no data", url: targetUrl }) }];
+        }
+
+        return [
+          { type: "text", text: `Screenshot of ${targetUrl}${title ? ` - ${title}` : ""} (PNG, ~${Math.round(data.length * 0.75 / 1024)}KB)` },
+          { type: "image", data, mimeType: "image/png" },
+        ];
+      } catch (e) {
+        browser?.close();
+        return [{ type: "text", text: JSON.stringify({ error: e instanceof Error ? e.message : String(e), url: targetUrl }) }];
       }
     },
   });

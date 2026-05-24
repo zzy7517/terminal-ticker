@@ -1,10 +1,26 @@
 export type ToolHandler = (...args: unknown[]) => Promise<string> | string;
 
+/** Structured content block for rich tool results (text + images). */
+export interface RichContentBlock {
+  type: "text" | "image";
+  text?: string;
+  data?: string;      // base64 for images
+  mimeType?: string;  // e.g. "image/png"
+}
+
+/** Extended handler that returns structured content (text + images). */
+export type RichToolHandler = (args: Record<string, unknown>) => Promise<RichContentBlock[]> | RichContentBlock[];
+
 export interface ToolDefinition {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
   handler: (args: Record<string, unknown>) => Promise<string> | string;
+  /**
+   * Optional rich handler that returns structured content blocks.
+   * When present, the tool-adapter uses this instead of `handler` to preserve images.
+   */
+  richHandler?: RichToolHandler;
 }
 
 export interface ToolCall {

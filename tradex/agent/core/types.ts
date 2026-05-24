@@ -74,10 +74,21 @@ export interface CustomMessage {
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 
+export interface UsageCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
 export interface Usage {
   input: number;
   output: number;
+  cacheRead: number;
+  cacheWrite: number;
   totalTokens: number;
+  cost: UsageCost;
 }
 
 /**
@@ -152,6 +163,16 @@ export type ThinkingLevel = "off" | "low" | "medium" | "high" | "xhigh";
  * Model descriptor — pure data, no credentials baked in.
  * Credentials are resolved at call time via getApiKey.
  */
+/**
+ * Cost rates per million tokens for a model.
+ */
+export interface ModelCostRates {
+  input: number;       // $/million input tokens
+  output: number;      // $/million output tokens
+  cacheRead: number;   // $/million cache-read tokens
+  cacheWrite: number;  // $/million cache-write tokens
+}
+
 export interface AgentModelDescriptor {
   id: string;
   provider: string;
@@ -161,6 +182,8 @@ export interface AgentModelDescriptor {
   contextWindow?: number;
   maxTokens?: number;
   accountId?: string | null;
+  /** Cost rates per million tokens. Used to compute cumulative session cost. */
+  cost?: ModelCostRates;
 }
 
 /**

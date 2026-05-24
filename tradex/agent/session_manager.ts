@@ -667,7 +667,98 @@ export class SessionManager {
         parentId: msg.parentId,
         entryType: "message",
       })),
-      contextUsage: null,
+      contextUsage: this.computeContextUsage(),
+      sessionStats: this.computeSessionStats(),
+    };
+  }
+
+  /**
+   * Compute context usage from stored assistant message metadata.
+   * Uses the last assistant message's promptTokens (input tokens) as the
+   * context size estimate, since input tokens = context sent to the model.
+   */
+  computeContextUsage(): Record<string, unknown> | null {
+    const entries = this.getEntries();
+    const header = this.getHeader();
+    if (!header) return null;
+
+    // Find the last assistant message with token metadata
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (entry.type !== "message") continue;
+      const msg = entry as MessageEntry;
+      if (msg.role !== "assistant" || !msg.metadata) continue;
+      const meta = msg.metadata as Record<string, unknown>;
+      const promptTokens = Number(meta.promptTokens ?? meta.input ?? 0);
+      const totalTokens = Number(meta.totalTokens ?? 0);
+      if (promptTokens <= 0 && totalTokens <= 0) continue;
+
+      // Use promptTokens as the context window fill indicator
+      const tokens = promptTokens || totalTokens;
+      return { tokens, promptTokens, totalTokens };
+    }
+    return null;
+  }
+
+  /**
+   * Compute cumulative session statistics from all stored assistant messages.
+   * Matches pi's SessionStats shape.
+   */
+  computeSessionStats(): Record<string, unknown> {
+    const entries = this.getEntries();
+    const header = this.getHeader();
+    const sessionId = header?.id ?? "";
+
+    let userMessages = 0;
+    let assistantMessages = 0;
+    let toolCalls = 0;
+    let toolResults = 0;
+    let totalInput = 0;
+    let totalOutput = 0;
+    let totalCacheRead = 0;
+    let totalCacheWrite = 0;
+    let totalCost = 0;
+
+    for (const entry of entries) {
+      if (entry.type !== "message") continue;
+      const msg = entry as MessageEntry;
+      switch (msg.role) {
+        case "user":
+          userMessages++;
+          break;
+        case "assistant": {
+          assistantMessages++;
+          const meta = (msg.metadata ?? {}) as Record<string, unknown>;
+          const tcs = Array.isArray(meta.toolCalls) ? meta.toolCalls : [];
+          toolCalls += tcs.length;
+          totalInput += Number(meta.promptTokens ?? meta.input ?? 0);
+          totalOutput += Number(meta.completionTokens ?? meta.output ?? 0);
+          totalCacheRead += Number(meta.cacheRead ?? 0);
+          totalCacheWrite += Number(meta.cacheWrite ?? 0);
+          totalCost += Number(meta.cost ?? 0);
+          break;
+        }
+        case "toolResult":
+          toolResults++;
+          break;
+      }
+    }
+
+    return {
+      sessionId,
+      userMessages,
+      assistantMessages,
+      toolCalls,
+      toolResults,
+      totalMessages: entries.filter((e) => e.type === "message").length,
+      tokens: {
+        input: totalInput,
+        output: totalOutput,
+        cacheRead: totalCacheRead,
+        cacheWrite: totalCacheWrite,
+        total: totalInput + totalOutput + totalCacheRead + totalCacheWrite,
+      },
+      cost: totalCost,
     };
   }
 
@@ -688,7 +779,7 @@ export class SessionManager {
       leafId: null,
       messageCount: info.messageCount,
       preview: info.firstMessage,
-      contextUsage: null,
+      contextUsage: null, // Computed on-demand when full session is loaded
     }));
   }
 }

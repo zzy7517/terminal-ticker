@@ -54,7 +54,7 @@ export const streamAnthropic: ApiStreamFunction = async (model: AgentModel, inpu
       content,
       toolCalls: [],
       finishReason: "stop",
-      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 },
     };
   }
   const final = await stream.finalMessage();
@@ -62,11 +62,19 @@ export const streamAnthropic: ApiStreamFunction = async (model: AgentModel, inpu
   for (const block of final.content) {
     if (block.type === "tool_use") toolCalls.push({ id: block.id, name: block.name, arguments: (block.input || {}) as Record<string, unknown> });
   }
+  const cacheRead = (final.usage as unknown as Record<string, unknown>).cache_read_input_tokens as number ?? 0;
+  const cacheWrite = (final.usage as unknown as Record<string, unknown>).cache_creation_input_tokens as number ?? 0;
   return {
     content: content || final.content.filter((b) => b.type === "text").map((b) => b.text).join(""),
     toolCalls,
     finishReason: final.stop_reason || "stop",
-    usage: { prompt_tokens: final.usage.input_tokens, completion_tokens: final.usage.output_tokens, total_tokens: final.usage.input_tokens + final.usage.output_tokens },
+    usage: {
+      prompt_tokens: final.usage.input_tokens,
+      completion_tokens: final.usage.output_tokens,
+      total_tokens: final.usage.input_tokens + final.usage.output_tokens,
+      cache_read_tokens: cacheRead,
+      cache_write_tokens: cacheWrite,
+    },
   };
 };
 
@@ -133,19 +141,62 @@ function messagesToAnthropic(messages: Array<Record<string, unknown>>): { system
     }
 
     if (role === "tool") {
-      raw.push({
-        role: "user",
-        content: [{
-          type: "tool_result",
-          tool_use_id: String(msg.tool_call_id || ""),
-          content: String(msg.content || ""),
-        }],
-      });
+      const toolImages = Array.isArray(msg.images) ? msg.images as Array<{ data: string; mimeType: string }> : [];
+      if (toolImages.length > 0) {
+        const toolResultContent: Array<Record<string, unknown>> = [];
+        const toolText = String(msg.content || "").trim();
+        if (toolText) toolResultContent.push({ type: "text", text: toolText });
+        for (const img of toolImages) {
+          toolResultContent.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: img.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+              data: img.data,
+            },
+          });
+        }
+        raw.push({
+          role: "user",
+          content: [{
+            type: "tool_result",
+            tool_use_id: String(msg.tool_call_id || ""),
+            content: toolResultContent,
+          }],
+        });
+      } else {
+        raw.push({
+          role: "user",
+          content: [{
+            type: "tool_result",
+            tool_use_id: String(msg.tool_call_id || ""),
+            content: String(msg.content || ""),
+          }],
+        });
+      }
       continue;
     }
 
     if (role === "user") {
-      raw.push({ role: "user", content: String(msg.content || "") });
+      const images = Array.isArray(msg.images) ? msg.images as Array<{ data: string; mimeType: string }> : [];
+      if (images.length > 0) {
+        const contentBlocks: Array<Record<string, unknown>> = [];
+        const text = String(msg.content || "").trim();
+        if (text) contentBlocks.push({ type: "text", text });
+        for (const img of images) {
+          contentBlocks.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: img.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+              data: img.data,
+            },
+          });
+        }
+        raw.push({ role: "user", content: contentBlocks });
+      } else {
+        raw.push({ role: "user", content: String(msg.content || "") });
+      }
       continue;
     }
   }

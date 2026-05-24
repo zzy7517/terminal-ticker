@@ -197,16 +197,22 @@ export async function abortAgentSession(sessionId: string): Promise<void> {
   }
 }
 
+export interface ImageAttachment {
+  data: string;      // base64
+  mimeType: string;  // image/png, image/jpeg, etc.
+}
+
 export async function streamAgentMessage(
   key: string,
   message: string,
-  options: { provider?: string; model?: string; afterSeq?: number } | undefined,
+  options: { provider?: string; model?: string; afterSeq?: number; images?: ImageAttachment[] } | undefined,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<void> {
-  const body: Record<string, string | string[] | number> = { message };
+  const body: Record<string, unknown> = { message };
   if (options?.provider) body.provider = options.provider;
   if (options?.model) body.model = options.model;
   if (typeof options?.afterSeq === 'number') body.afterSeq = options.afterSeq;
+  if (options?.images && options.images.length > 0) body.images = options.images;
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

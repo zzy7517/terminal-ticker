@@ -16,7 +16,7 @@ import { mergeRegistries } from "../../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../../mcp/index.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../../agent/core/index.js";
-import type { AssistantMessage, TextContent, AgentModelDescriptor } from "../../agent/core/types.js";
+import type { AssistantMessage, TextContent, ImageContent, AgentModelDescriptor } from "../../agent/core/types.js";
 import { loadSkills, formatSkillsForPrompt } from "../../agent/skills.js";
 import type { AppRuntime } from "../runtime.js";
 import {
@@ -77,6 +77,17 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     if (!message) {
       return c.json({ detail: "message is required" }, 400);
     }
+
+    // Parse image attachments from request body
+    const rawImages = Array.isArray(body.images) ? body.images : [];
+    const requestImages: ImageContent[] = rawImages
+      .filter((img): img is { data: string; mimeType: string } =>
+        img != null && typeof img === "object" &&
+        typeof (img as Record<string, unknown>).data === "string" &&
+        typeof (img as Record<string, unknown>).mimeType === "string"
+      )
+      .map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
+
     const mgr = openSessionManager(sessionId, runtime);
     if (!mgr) {
       return c.json({ detail: "agent session not found" }, 404);
@@ -231,7 +242,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                 content: assistantContent,
                 provider: modelDescriptor.provider,
                 model: modelDescriptor.id,
-                usage: { input: 0, output: 0, totalTokens: 0 },
+                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
                 stopReason: "stop" as const,
                 timestamp: Date.now(),
               }];
@@ -255,6 +266,10 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           let finalError: string | null = null;
           let totalTokens = 0;
           let promptTokens = 0;
+          let totalOutput = 0;
+          let totalCacheRead = 0;
+          let totalCacheWrite = 0;
+          let totalCost = 0;
           let currentAssistantTurnEntryId: string | null = null;
           let initialUserMessageSeen = false;
 
@@ -357,15 +372,30 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                   .filter((c: { type: string }): c is TextContent => c.type === "text")
                   .map((c: TextContent) => c.text)
                   .join("\n");
+                // Extract images from tool result for frontend display
+                const toolResultImages = event.result.content
+                  .filter((c: { type: string }) => c.type === "image")
+                  .map((c) => ({ data: (c as ImageContent).data, mimeType: (c as ImageContent).mimeType }));
                 sendFrame(controller, {
                   type: "tool_execution_end",
                   toolCall: toolCallsById.get(event.toolCallId) ?? { id: event.toolCallId, name: event.toolName, arguments: {} },
-                  toolResult: { callId: event.toolCallId, name: event.toolName, output: toolOutput.slice(0, 2000), error: event.isError },
+                  toolResult: {
+                    callId: event.toolCallId,
+                    name: event.toolName,
+                    output: toolOutput.slice(0, 2000),
+                    error: event.isError,
+                    ...(toolResultImages.length > 0 ? { images: toolResultImages } : {}),
+                  },
                 });
                 const entryId = mgr.appendMessage({
                   role: "toolResult",
                   content: toolOutput,
-                  metadata: { toolCallId: event.toolCallId, toolName: event.toolName, error: event.isError },
+                  metadata: {
+                    toolCallId: event.toolCallId,
+                    toolName: event.toolName,
+                    error: event.isError,
+                    ...(toolResultImages.length > 0 ? { images: toolResultImages } : {}),
+                  },
                   error: event.isError ? toolOutput : null,
                 });
                 const toolEntry = mgr.getEntry(entryId);
@@ -377,7 +407,12 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                     role: "toolResult",
                     content: toolOutput,
                     createdAt: toolEntry?.timestamp ?? new Date().toISOString(),
-                    metadata: { toolCallId: event.toolCallId, toolName: event.toolName, error: event.isError },
+                    metadata: {
+                      toolCallId: event.toolCallId,
+                      toolName: event.toolName,
+                      error: event.isError,
+                      ...(toolResultImages.length > 0 ? { images: toolResultImages } : {}),
+                    },
                     error: event.isError ? toolOutput : null,
                     entryId,
                     parentId: toolEntry?.parentId ?? null,
@@ -404,9 +439,17 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                       toolCallsById.set(c.id, { id: c.id, name: c.name, arguments: c.arguments });
                     }
                   }
+                  totalOutput += assistant.usage.output;
+                  totalCacheRead += assistant.usage.cacheRead;
+                  totalCacheWrite += assistant.usage.cacheWrite;
+                  totalCost += assistant.usage.cost.total;
                   const turnMetadata = {
                     totalTokens: assistant.usage.totalTokens,
                     promptTokens: assistant.usage.input,
+                    completionTokens: assistant.usage.output,
+                    cacheRead: assistant.usage.cacheRead,
+                    cacheWrite: assistant.usage.cacheWrite,
+                    cost: assistant.usage.cost.total,
                     toolCalls: Array.from(toolCallsById.values()),
                   };
                   const updated = mgr.updateMessage(currentAssistantTurnEntryId, {
@@ -443,13 +486,23 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           runtime.activeAgents.set(sessionId, agent);
 
           // ---- Run the agent ----
-          await agent.prompt(message);
+          await agent.prompt(message, requestImages.length > 0 ? requestImages : undefined);
 
           sendFrame(controller, {
             type: "agent_end",
             error: finalError,
             totalTokens,
             promptTokens,
+            sessionStats: {
+              tokens: {
+                input: promptTokens,
+                output: totalOutput,
+                cacheRead: totalCacheRead,
+                cacheWrite: totalCacheWrite,
+                total: promptTokens + totalOutput + totalCacheRead + totalCacheWrite,
+              },
+              cost: totalCost,
+            },
           });
 
           sendFrame(controller, {
@@ -462,7 +515,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         } catch (error) {
           const errorText = error instanceof Error ? error.message : String(error);
           sendFrame(controller, { type: "error", error: errorText });
-          sendFrame(controller, { type: "agent_end", error: errorText, totalTokens: 0, promptTokens: 0 });
+          sendFrame(controller, { type: "agent_end", error: errorText, totalTokens: 0, promptTokens: 0, sessionStats: null });
         } finally {
           runtime.activeAgents.delete(sessionId);
           controller.close();

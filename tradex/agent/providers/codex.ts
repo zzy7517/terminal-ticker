@@ -198,20 +198,27 @@ function messagesToCodexInput(messages: Array<Record<string, unknown>>): Array<R
     const role = String(message.role || "");
     if (role === "system") continue;
     if (role === "user") {
-      out.push({ role: "user", content: [{ type: "input_text", text: String(message.content || "") }] });
+      const content: Array<Record<string, unknown>> = [{ type: "input_text", text: String(message.content || "") }];
+      const images = Array.isArray(message.images) ? message.images as Array<{ data: string; mimeType: string }> : [];
+      for (const img of images) {
+        content.push({ type: "input_image", image_url: `data:${img.mimeType};base64,${img.data}` });
+      }
+      out.push({ role: "user", content });
     } else if (role === "assistant") {
       const toolCalls = message.tool_calls;
       const renderedToolCalls = renderToolCallsForReplay(toolCalls);
       const text = [String(message.content || ""), renderedToolCalls].filter(Boolean).join("\n\n");
       out.push({ role: "assistant", content: [{ type: "output_text", text }] });
     } else if (role === "tool") {
-      out.push({
-        role: "user",
-        content: [{
-          type: "input_text",
-          text: `Tool result for ${String(message.tool_call_id || "")}:\n${String(message.content || "")}`,
-        }],
-      });
+      const toolContent: Array<Record<string, unknown>> = [{
+        type: "input_text",
+        text: `Tool result for ${String(message.tool_call_id || "")}:\n${String(message.content || "")}`,
+      }];
+      const toolImages = Array.isArray(message.images) ? message.images as Array<{ data: string; mimeType: string }> : [];
+      for (const img of toolImages) {
+        toolContent.push({ type: "input_image", image_url: `data:${img.mimeType};base64,${img.data}` });
+      }
+      out.push({ role: "user", content: toolContent });
     }
   }
   return out;
@@ -318,9 +325,14 @@ async function collectCodexResponse(response: Response, onDelta?: ((delta: strin
         : null;
       const inputTokens = Number(rawUsage?.input_tokens ?? rawUsage?.prompt_tokens ?? 0);
       const outputTokens = Number(rawUsage?.output_tokens ?? rawUsage?.completion_tokens ?? 0);
+      const inputDetails = rawUsage?.input_tokens_details && typeof rawUsage.input_tokens_details === "object" ? rawUsage.input_tokens_details as Record<string, unknown> : null;
+      const cacheReadTokens = Number(inputDetails?.cached_tokens ?? rawUsage?.cache_read_input_tokens ?? 0);
+      const cacheWriteTokens = Number(rawUsage?.cache_creation_input_tokens ?? 0);
       if (Number.isFinite(inputTokens)) usage.prompt_tokens = inputTokens;
       if (Number.isFinite(outputTokens)) usage.completion_tokens = outputTokens;
       usage.total_tokens = (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0);
+      usage.cache_read_tokens = Number.isFinite(cacheReadTokens) ? cacheReadTokens : 0;
+      usage.cache_write_tokens = Number.isFinite(cacheWriteTokens) ? cacheWriteTokens : 0;
     } else if (type === "response.failed" || type === "response.incomplete" || type === "error") {
       throw new Error(codexEventErrorMessage(event));
     }

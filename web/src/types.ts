@@ -82,12 +82,30 @@ export interface AgentSessionRun {
 export interface AgentContextUsage {
   promptTokens: number;
   totalTokens: number;
+  /** Estimated context tokens from last assistant response, or null if unknown. */
+  tokens?: number | null;
+}
+
+/**
+ * Cumulative session token and cost statistics.
+ * Mirrors pi's SessionStats.tokens + cost.
+ */
+export interface AgentSessionStats {
+  tokens: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+  cost: number;
 }
 
 export interface AgentSessionSummary extends AgentSession {
   messageCount: number;
   preview: string;
   contextUsage?: AgentContextUsage | null;
+  sessionStats?: AgentSessionStats | null;
   run?: AgentSessionRun;
 }
 
@@ -105,6 +123,7 @@ export interface AgentSessionResponse {
   session: AgentSession | null;
   messages: AgentMessage[];
   contextUsage?: AgentContextUsage | null;
+  sessionStats?: AgentSessionStats | null;
   run?: AgentSessionRun;
 }
 
@@ -126,7 +145,7 @@ export type AgentStreamPayload =
   | { type: 'message_start' | 'message_update' | 'message_end'; message: Partial<AgentMessage> & { clientId?: string; role: AgentMessage['role']; content: string; metadata?: AgentMessageMetadata | null; error?: string | null }; delta?: string }
   | { type: 'tool_execution_start'; toolCall: AgentToolCall }
   | { type: 'tool_execution_end'; toolCall: AgentToolCall; toolResult: LoopToolResult }
-  | { type: 'agent_end'; error: string | null; totalTokens?: number; promptTokens?: number }
+  | { type: 'agent_end'; error: string | null; totalTokens?: number; promptTokens?: number; sessionStats?: AgentSessionStats | null }
   | { type: 'error'; error: string }
   | { type: 'session_update'; session: AgentSessionResponse; history: AgentSessionHistoryResponse; state: MarketState };
 

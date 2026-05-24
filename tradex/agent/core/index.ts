@@ -3,6 +3,7 @@
  */
 
 export * from "./types.js";
+export * from "./context-usage.js";
 
 export * from "./agent-loop.js";
 export { Agent, type AgentOptions, type QueueMode } from "./agent.js";

@@ -6,8 +6,8 @@
  * This adapter converts between them so existing tool packs work unchanged.
  */
 
-import { ToolRegistry, type ToolDefinition } from "../tools/registry.js";
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback, TextContent } from "./types.js";
+import { ToolRegistry, type ToolDefinition, type RichContentBlock } from "../tools/registry.js";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback, ImageContent, TextContent } from "./types.js";
 
 /**
  * Convert a ToolRegistry into an AgentTool[].
@@ -31,6 +31,17 @@ export function toolDefinitionToAgentTool(def: ToolDefinition): AgentTool {
       _signal?: AbortSignal,
       _onUpdate?: AgentToolUpdateCallback,
     ): Promise<AgentToolResult> => {
+      // Use richHandler when available to preserve structured content (images)
+      if (def.richHandler) {
+        const blocks = await def.richHandler(args);
+        const content: (TextContent | ImageContent)[] = blocks.map((block: RichContentBlock) => {
+          if (block.type === "image" && block.data && block.mimeType) {
+            return { type: "image" as const, data: block.data, mimeType: block.mimeType };
+          }
+          return { type: "text" as const, text: block.text ?? "" };
+        });
+        return { content, details: {} };
+      }
       const output = await def.handler(args);
       return {
         content: [{ type: "text", text: output }],

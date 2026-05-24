@@ -7,10 +7,13 @@ import {
   ChevronRight,
   CircleDot,
   History,
+  ImageIcon,
   Loader2,
+  Paperclip,
   Search,
   Sparkles,
   Square,
+  X,
   Zap,
 } from 'lucide-react';
 import { ProviderIcon } from '../ProviderIcon';
@@ -18,6 +21,18 @@ import type { AgentMessage, AgentToolCall } from '../../types';
 import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useAgentStore } from '../../stores/agentStore';
 import { useMarketStore } from '../../stores/marketStore';
+import { processImageForUpload } from '../../utils/imageResize';
+
+/**
+ * Format token counts for compact display (pi-style).
+ */
+function formatTokenCount(count: number): string {
+  if (count < 1000) return String(count);
+  if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+  if (count < 1000000) return `${Math.round(count / 1000)}k`;
+  if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
+  return `${Math.round(count / 1000000)}M`;
+}
 
 type InstrumentMentionOption = {
   key: string;
@@ -85,6 +100,9 @@ function AgentToolStep({
             <div className={`tool-output ${hasError ? 'error' : ''}`}>
               <small>Output</small>
               <pre>{result.content}</pre>
+              {(result.metadata?.images as Array<{ data: string; mimeType: string }> | undefined)?.length ? (
+                <MessageImages images={result.metadata!.images as Array<{ data: string; mimeType: string }>} />
+              ) : null}
             </div>
           )}
         </div>
@@ -120,6 +138,25 @@ function AgentToolCalls({
   );
 }
 
+function MessageImages({ images }: { images: Array<{ data: string; mimeType: string }> }) {
+  const [expanded, setExpanded] = useState<number | null>(null);
+  if (!images || images.length === 0) return null;
+  return (
+    <div className="session-message-images">
+      {images.map((img, idx) => (
+        <div key={idx} className="message-image-thumb" onClick={() => setExpanded(expanded === idx ? null : idx)}>
+          <img src={`data:${img.mimeType};base64,${img.data}`} alt={`Image ${idx + 1}`} />
+        </div>
+      ))}
+      {expanded !== null && images[expanded] && (
+        <div className="message-image-lightbox" onClick={() => setExpanded(null)}>
+          <img src={`data:${images[expanded].mimeType};base64,${images[expanded].data}`} alt="Full size" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AgentTranscriptMessage({
   message,
   pendingToolCalls,
@@ -134,13 +171,17 @@ function AgentTranscriptMessage({
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
   const content = message.error || message.content || (message.role === 'assistant' ? '' : 'No content.');
   const toolCalls = message.role === 'assistant' ? message.metadata?.toolCalls ?? [] : [];
+  // Extract images from user message metadata (sent via the images attachment)
+  const messageImages = (message.metadata?.images ?? []) as Array<{ data: string; mimeType: string }>;
   return (
     <div className={`session-message ${message.role}${isQueued ? ' queued' : ''}`}>
       <div className="session-message-head">
         <span>{label}</span>
         {isQueued && <span className="badge sm warning">queued</span>}
+        {messageImages.length > 0 && <ImageIcon size={12} className="message-has-images-icon" />}
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
       </div>
+      {messageImages.length > 0 && <MessageImages images={messageImages} />}
       {toolCalls.length > 0 && (
         <AgentToolCalls
           pendingToolCalls={pendingToolCalls}
@@ -174,7 +215,12 @@ export function AgentSessionPanel({
   const pendingToolCalls = useAgentStore((s) => s.pendingToolCalls);
   const modelCache = useAgentStore((s) => s.modelCache);
   const contextUsage = useAgentStore((s) => s.contextUsage);
+  const sessionStats = useAgentStore((s) => s.sessionStats);
   const streamingMessage = useAgentStore((s) => s.streamingMessage);
+
+  const pendingImages = useAgentStore((s) => s.pendingImages);
+  const addPendingImage = useAgentStore((s) => s.addPendingImage);
+  const removePendingImage = useAgentStore((s) => s.removePendingImage);
 
   const setAgentPrompt = useAgentStore((s) => s.setAgentPrompt);
   const changeProviderModel = useAgentStore((s) => s.changeProviderModel);
@@ -335,6 +381,46 @@ export function AgentSessionPanel({
     setMentionPicker({ ...mentionPicker, activeIndex: nextIndex });
   }
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageFiles = useCallback(async (files: FileList | File[]) => {
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) continue;
+      const resized = await processImageForUpload(file);
+      if (resized) {
+        addPendingImage(resized);
+      }
+    }
+  }, [addPendingImage]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      void handleImageFiles(imageFiles);
+    }
+  }, [handleImageFiles]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      void handleImageFiles(files);
+    }
+  }, [handleImageFiles]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+  }, []);
+
   const contextProvider = agentSession?.session?.provider ?? agentProvider;
   const contextModel = agentSession?.session?.model ?? agentModel;
   const cachedModel = (modelCache[contextProvider] ?? []).find((m) => m.slug === contextModel);
@@ -348,6 +434,9 @@ export function AgentSessionPanel({
       ? '<1'
       : String(Math.round(rawContextPercent));
   const contextPercentLevel = rawContextPercent ?? 0;
+
+  // Token stats for display (pi-style footer)
+  const statsTokens = sessionStats?.tokens ?? null;
 
   return (
     <div className="agent-card agent-readout agent-session-card">
@@ -368,12 +457,21 @@ export function AgentSessionPanel({
         )}
         {contextPercentLabel !== null && (
           <span className={`badge mono${contextPercentLevel > 90 ? ' danger' : contextPercentLevel > 70 ? ' warning' : ''}`}>
-            <CircleDot size={10} /> {contextPercentLabel}% context
+            <CircleDot size={10} /> {contextPercentLabel}%{contextWindow ? `/${formatTokenCount(contextWindow)}` : ''}
           </span>
         )}
       </div>
       <div className="session-toolbar">
         <small>{sessionLoading ? 'Loading' : sessionTime}</small>
+        {statsTokens && (
+          <span className="session-token-stats">
+            {statsTokens.input > 0 && <span className="stat-item">↑{formatTokenCount(statsTokens.input)}</span>}
+            {statsTokens.output > 0 && <span className="stat-item">↓{formatTokenCount(statsTokens.output)}</span>}
+            {statsTokens.cacheRead > 0 && <span className="stat-item">R{formatTokenCount(statsTokens.cacheRead)}</span>}
+            {statsTokens.cacheWrite > 0 && <span className="stat-item">W{formatTokenCount(statsTokens.cacheWrite)}</span>}
+            {(sessionStats?.cost ?? 0) > 0 && <span className="stat-item">${sessionStats!.cost.toFixed(3)}</span>}
+          </span>
+        )}
       </div>
       <div className="session-pickers-row">
         <div className="session-model-picker" ref={pickerRef}>
@@ -495,7 +593,24 @@ export function AgentSessionPanel({
           </div>
         )}
       </div>
-      <div className="session-compose">
+      <div className="session-compose" onDrop={handleDrop} onDragOver={handleDragOver}>
+        {pendingImages.length > 0 && (
+          <div className="session-pending-images">
+            {pendingImages.map((img, idx) => (
+              <div key={idx} className="pending-image-thumb">
+                <img src={`data:${img.mimeType};base64,${img.data}`} alt={`Attachment ${idx + 1}`} />
+                <button
+                  type="button"
+                  className="pending-image-remove"
+                  onClick={() => removePendingImage(idx)}
+                  title="Remove image"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={promptTextareaRef}
           disabled={disabled || sessionLoading}
@@ -504,6 +619,7 @@ export function AgentSessionPanel({
             updateMentionPicker(event.target.value, event.target.selectionStart);
           }}
           onClick={(event) => updateMentionPicker(event.currentTarget.value, event.currentTarget.selectionStart)}
+          onPaste={handlePaste}
           onKeyDown={(event) => {
             if (mentionPicker) {
               if (event.key === 'ArrowDown') {
@@ -572,18 +688,40 @@ export function AgentSessionPanel({
             </div>
           </div>
         )}
-        <button
-          className="shell-button primary lg full-width"
-          type="button"
-          onClick={() => {
-            if (canSteer) void steerAgent();
-            else void runAgentAnalysis();
-          }}
-          disabled={!canSend && !canSteer}
-        >
-          {busy && !canSteer ? <Loader2 className="spin" size={16} /> : busy ? <Zap size={16} /> : <Bot size={16} />}
-          {busy ? (canSteer ? 'Steer Agent' : 'Analyzing') : 'Ask Agent'}
-        </button>
+        <div className="session-compose-actions">
+          <button
+            className="shell-button sm"
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || sessionLoading}
+            title="Attach image (or paste/drop)"
+          >
+            <Paperclip size={14} />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              if (e.target.files) void handleImageFiles(e.target.files);
+              e.target.value = '';
+            }}
+          />
+          <button
+            className="shell-button primary lg full-width"
+            type="button"
+            onClick={() => {
+              if (canSteer) void steerAgent();
+              else void runAgentAnalysis();
+            }}
+            disabled={!canSend && !canSteer}
+          >
+            {busy && !canSteer ? <Loader2 className="spin" size={16} /> : busy ? <Zap size={16} /> : <Bot size={16} />}
+            {busy ? (canSteer ? 'Steer Agent' : 'Analyzing') : 'Ask Agent'}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -23,7 +23,10 @@ import type {
   StreamOptions,
   ToolCallContent,
   ToolResultMessage,
+  Usage,
 } from "./types.js";
+
+const EMPTY_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
 // ============================================================================
 // Public API
@@ -241,7 +244,7 @@ async function streamAssistantResponse(
     content: [],
     provider: config.model.provider,
     model: config.model.id,
-    usage: { input: 0, output: 0, totalTokens: 0 },
+    usage: EMPTY_USAGE,
     stopReason: "stop",
     timestamp: Date.now(),
   };
@@ -507,7 +510,7 @@ function createErrorMessage(config: AgentLoopConfig, error: unknown): AssistantM
     content: [{ type: "text", text: "" }],
     provider: config.model.provider,
     model: config.model.id,
-    usage: { input: 0, output: 0, totalTokens: 0 },
+    usage: EMPTY_USAGE,
     stopReason: "error",
     errorMessage: error instanceof Error ? error.message : String(error),
     timestamp: Date.now(),
@@ -520,7 +523,7 @@ function createAbortedMessage(config: AgentLoopConfig): AssistantMessage {
     content: [{ type: "text", text: "" }],
     provider: config.model.provider,
     model: config.model.id,
-    usage: { input: 0, output: 0, totalTokens: 0 },
+    usage: EMPTY_USAGE,
     stopReason: "aborted",
     errorMessage: "Request was aborted",
     timestamp: Date.now(),
