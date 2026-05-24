@@ -5,10 +5,10 @@
   border-radius: var(--radius-lg);
   display: grid;
   gap: 0;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 250px minmax(0, 1fr);
   margin: 0 auto;
   max-width: 1600px;
-  min-height: calc(100vh - 28px);
+  min-height: calc(100vh - 32px);
 }
 
 .settings-nav {
@@ -17,8 +17,8 @@
   border-right: 1px solid var(--line-soft);
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px 14px 14px;
+  gap: 18px;
+  padding: 22px 14px 16px;
 }
 
 .settings-nav-top {
@@ -28,7 +28,7 @@
 
 .settings-nav-group {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .settings-nav-item {
@@ -39,22 +39,27 @@
   color: var(--text-secondary);
   cursor: pointer;
   display: flex;
+  font-size: 13px;
+  font-weight: 500;
   gap: 10px;
-  min-height: 44px;
+  min-height: 42px;
   padding: 0 12px;
-  transition: background 120ms, color 120ms;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
 }
 
 .settings-nav-item.active {
   background: var(--accent-tint-strong);
+  box-shadow: inset 3px 0 0 var(--accent);
   color: var(--accent);
+  font-weight: 600;
 }
 
-.settings-nav-item:hover {
+.settings-nav-item:hover:not(.active) {
   background: rgba(0, 0, 0, 0.03);
+  color: var(--text-primary);
 }
 
-:root[data-theme="dark"] .settings-nav-item:hover {
+:root[data-theme="dark"] .settings-nav-item:hover:not(.active) {
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -85,7 +90,7 @@
   cursor: pointer;
   display: inline-flex;
   font-size: var(--ctl-font);
-  font-weight: var(--ctl-weight);
+  font-weight: 500;
   gap: 8px;
   justify-content: center;
   margin-top: 6px;
@@ -107,10 +112,10 @@
 .settings-stage {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 28px);
+  height: calc(100vh - 32px);
   min-width: 0;
   overflow-y: auto;
-  padding: 24px;
+  padding: 28px;
 }
 
 .settings-stage > *:last-child {
@@ -123,7 +128,7 @@
   display: flex;
   gap: 12px;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 
 .settings-stage-actions {
