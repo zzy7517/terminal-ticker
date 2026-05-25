@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { Settings, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, Plus, Settings, X } from 'lucide-react';
 import { useMarketStore, useGroups } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
 import { GROUP_LABELS } from '../../constants';
+import { saveJin10Config, fetchJin10AvailableCodes } from '../../api';
 import { WatchlistRow } from './WatchlistRow';
 
 export function WatchlistDrawer() {
@@ -18,6 +19,46 @@ export function WatchlistDrawer() {
 
   const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Jin10 editing state
+  const isJin10Group = activeGroup === 'jin10';
+  const [jin10Editing, setJin10Editing] = useState(false);
+  const [jin10NewCode, setJin10NewCode] = useState('');
+  const [jin10Saving, setJin10Saving] = useState(false);
+  const [jin10AvailableCodes, setJin10AvailableCodes] = useState<Array<{ code: string; name: string }>>([]);
+  const jin10Codes = state?.config?.jin10?.quotesCodes ?? [];
+
+  // Load available codes from MCP resource when editing
+  useEffect(() => {
+    if (jin10Editing && jin10AvailableCodes.length === 0) {
+      fetchJin10AvailableCodes().then((res) => {
+        if (res.codes.length > 0) setJin10AvailableCodes(res.codes);
+      }).catch(() => {});
+    }
+  }, [jin10Editing, jin10AvailableCodes.length]);
+
+  const jin10RemoveCode = useCallback(async (code: string) => {
+    const next = jin10Codes.filter((c) => c !== code);
+    setJin10Saving(true);
+    try {
+      const nextState = await saveJin10Config({ quotes_codes: next });
+      useMarketStore.getState().setState(nextState);
+    } catch { /* ignore */ }
+    finally { setJin10Saving(false); }
+  }, [jin10Codes]);
+
+  const jin10AddCode = useCallback(async (code: string) => {
+    const normalized = code.trim().toUpperCase();
+    if (!normalized || jin10Codes.includes(normalized)) return;
+    const next = [...jin10Codes, normalized];
+    setJin10Saving(true);
+    setJin10NewCode('');
+    try {
+      const nextState = await saveJin10Config({ quotes_codes: next });
+      useMarketStore.getState().setState(nextState);
+    } catch { /* ignore */ }
+    finally { setJin10Saving(false); }
+  }, [jin10Codes]);
 
   // Keep the DOM mounted during exit transition
   const [mounted, setMounted] = useState(false);
@@ -136,10 +177,70 @@ export function WatchlistDrawer() {
                   quote={state.quotes[key]}
                   selected={selectedKey === key}
                   onSelect={() => setSelectedKey(key)}
+                  onRemove={isJin10Group ? () => jin10RemoveCode(instrument.symbol) : undefined}
                 />
               );
             })}
         </div>
+
+        {isJin10Group && (
+          <div className="jin10-watchlist-editor">
+            {jin10Editing ? (
+              <>
+                <div className="jin10-watchlist-add">
+                  <input
+                    className="input sm"
+                    value={jin10NewCode}
+                    onChange={(e) => setJin10NewCode(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); jin10AddCode(jin10NewCode); }
+                      if (e.key === 'Escape') { setJin10Editing(false); setJin10NewCode(''); }
+                    }}
+                    placeholder="输入品种代码回车添加"
+                    spellCheck={false}
+                    autoFocus
+                    disabled={jin10Saving}
+                  />
+                  <button
+                    className="shell-button sm muted"
+                    type="button"
+                    onClick={() => { setJin10Editing(false); setJin10NewCode(''); }}
+                  >
+                    <Check size={13} /> 完成
+                  </button>
+                </div>
+                {jin10AvailableCodes.length > 0 && (
+                  <div className="jin10-suggestions">
+                    {jin10AvailableCodes
+                      .filter((item) => !jin10Codes.includes(item.code))
+                      .filter((item) => !jin10NewCode || item.code.toUpperCase().includes(jin10NewCode.toUpperCase()) || item.name.includes(jin10NewCode))
+                      .slice(0, 20)
+                      .map((item) => (
+                        <button
+                          key={item.code}
+                          type="button"
+                          className="jin10-suggestion-chip"
+                          onClick={() => jin10AddCode(item.code)}
+                          disabled={jin10Saving}
+                          title={item.code}
+                        >
+                          {item.name}
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <button
+                className="shell-button sm jin10-add-btn"
+                type="button"
+                onClick={() => setJin10Editing(true)}
+              >
+                <Plus size={13} /> 添加品种
+              </button>
+            )}
+          </div>
+        )}
       </aside>
     </div>
   );

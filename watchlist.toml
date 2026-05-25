@@ -45,7 +45,7 @@ lookback = 40
 poll_interval_seconds = 30
 stale_after_seconds = 420
 [news]
-enabled = true
+enabled = false
 poll_interval_seconds = 30
 max_interval_seconds = 600
 reuters_url = "https://www.reuters.com/arc/outboundfeeds/news-sitemap/?outputType=xml"
@@ -75,6 +75,16 @@ extension_retention_days = 7
 extract_model = "codex:gpt-5.5"
 consolidation_model = "codex:gpt-5.5"
 
+[jin10]
+enabled = true
+token = "sk-3pXjs_Qr2RnkAMoaBI2a17ZPAwS0cQv5Qb2Tcfy5IJQ"
+flash_enabled = true
+flash_poll_interval_seconds = 60
+calendar_enabled = true
+calendar_poll_interval_seconds = 300
+quotes_enabled = true
+quotes_poll_interval_seconds = 30
+quotes_codes = ["XAUUSD", "XAGUSD", "USOIL", "EURUSD", "USDJPY", "USDCNH", "N225", "NGAS", "UKOILX", "DJI"]
 [browser]
 enabled = true
 # socket_path = "/tmp/open-browser-use/example.sock"  # optional, auto-discovers by default

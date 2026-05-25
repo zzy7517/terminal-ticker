@@ -1,6 +1,7 @@
 export const GROUP_LABELS: Record<string, string> = {
   bitget: 'Bitget',
   hyperliquid: 'Hyperliquid',
+  jin10: 'Jin10',
   crypto: 'Crypto',
   stocks: 'Stocks',
   indices: 'Indices',

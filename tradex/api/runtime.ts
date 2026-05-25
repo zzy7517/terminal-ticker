@@ -19,6 +19,7 @@ import { CronJobStore } from "../cron/job_store.js";
 import type { Agent } from "../agent/core/index.js";
 import { AgentModelRegistry } from "../agent/model_registry.js";
 import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
+import { Jin10Service } from "../jin10/index.js";
 import { BrowserManager } from "../browser/index.js";
 
 export class AppRuntime {
@@ -36,6 +37,7 @@ export class AppRuntime {
   readonly cronJobStore: CronJobStore;
   readonly cronScheduler: CronScheduler;
   readonly mcpManager: McpClientManager | null;
+  jin10Service: Jin10Service;
   readonly browserManager: BrowserManager;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
@@ -63,11 +65,38 @@ export class AppRuntime {
     // Wire MCP client manager
     if (config.mcp.enabled) {
       const mcpConfig = loadMcpConfig(config.mcp.configPath);
+      // Ensure jin10 server exists if jin10 is enabled; inject token from toml config
+      if (config.jin10.enabled && config.jin10.token) {
+        if (!mcpConfig.mcpServers.jin10) {
+          mcpConfig.mcpServers.jin10 = {
+            url: "https://mcp.jin10.com/mcp",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${config.jin10.token}`,
+            },
+          };
+        } else {
+          // Update token in existing jin10 server headers
+          const jin10Server = mcpConfig.mcpServers.jin10;
+          jin10Server.headers = {
+            ...(jin10Server.headers ?? {}),
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${config.jin10.token}`,
+          };
+        }
+      }
       const hasServers = Object.keys(mcpConfig.mcpServers).length > 0;
       this.mcpManager = hasServers ? new McpClientManager(mcpConfig) : null;
     } else {
       this.mcpManager = null;
     }
+
+    // Wire Jin10 service (uses MCP bridge)
+    this.jin10Service = new Jin10Service({
+      config: config.jin10,
+      mcpManager: this.mcpManager,
+      newsStore: this.newsService.store,
+    });
 
     // Wire browser automation manager
     this.browserManager = new BrowserManager(config.browser);
@@ -96,6 +125,7 @@ export class AppRuntime {
     const shouldRestart = this.running;
     await this.controller.stop();
     await this.newsService.stop();
+    await this.jin10Service.stop();
     this.config = config;
     this.instruments = await resolveInstruments(config.instruments);
     this.controller = new TickerController({ config, instruments: this.instruments });
@@ -105,9 +135,15 @@ export class AppRuntime {
       config: config.socialFeed,
       clientFactory: () => new XInternalClient(this.xAuthStore.load()),
     });
+    this.jin10Service = new Jin10Service({
+      config: config.jin10,
+      mcpManager: this.mcpManager,
+      newsStore: this.newsService.store,
+    });
     if (shouldRestart) {
       this.controller.start();
       await this.newsService.start();
+      await this.jin10Service.start();
     }
     this.cronScheduler.reload();
   }
@@ -119,6 +155,7 @@ export class AppRuntime {
     await this.newsService.start();
     this.cronScheduler.start();
     this.mcpManager?.start();
+    await this.jin10Service.start();
     this.memoryPipeline?.kickoffStartup();
   }
 
@@ -127,6 +164,7 @@ export class AppRuntime {
     this.running = false;
     await this.controller.stop();
     await this.newsService.stop();
+    await this.jin10Service.stop();
     await this.cronScheduler.stop();
     await this.mcpManager?.shutdown();
     await this.memoryPipeline?.shutdown();
@@ -152,6 +190,11 @@ export class AppRuntime {
         lastStatus: this.newsService.lastStatus,
         lastError: this.newsService.lastError,
         lastFetchedAtMs: this.newsService.lastFetchedAtMs,
+      },
+      jin10: {
+        status: this.jin10Service.getStatus(),
+        calendar: this.jin10Service.getCalendar(),
+        quotes: this.jin10Service.getQuotes(),
       },
     });
   }

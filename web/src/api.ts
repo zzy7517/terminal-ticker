@@ -15,6 +15,9 @@ import type {
   CronSessionEntry,
   InstrumentCatalogResponse,
   InstrumentSearchResult,
+  Jin10CalendarEvent,
+  Jin10Quote,
+  Jin10Status,
   Lesson,
   MarketState,
   MemoryBrowseListResult,
@@ -759,6 +762,62 @@ export async function updateBrowserSettings(settings: {
   });
   if (!response.ok) throw await responseError(response, 'update browser settings failed');
   return response.json();
+}
+
+// ─── Jin10 API ──────────────────────────────────────────────────────────────────
+
+export async function fetchJin10Status(): Promise<Jin10Status> {
+  const response = await fetch('/api/jin10/status');
+  if (!response.ok) throw await responseError(response, 'fetch jin10 status failed');
+  return response.json();
+}
+
+export async function fetchJin10Calendar(): Promise<{ events: Jin10CalendarEvent[] }> {
+  const response = await fetch('/api/jin10/calendar');
+  if (!response.ok) throw await responseError(response, 'fetch jin10 calendar failed');
+  return response.json();
+}
+
+export async function fetchJin10Quotes(): Promise<{ quotes: Jin10Quote[] }> {
+  const response = await fetch('/api/jin10/quotes');
+  if (!response.ok) throw await responseError(response, 'fetch jin10 quotes failed');
+  return response.json();
+}
+
+export async function fetchJin10AvailableCodes(): Promise<{ codes: Array<{ code: string; name: string }>; error?: string }> {
+  const response = await fetch('/api/jin10/available-codes');
+  if (!response.ok) throw await responseError(response, 'fetch jin10 codes failed');
+  return response.json();
+}
+
+export async function refreshJin10Flash(): Promise<{ inserted: number; error: string | null }> {
+  const response = await fetch('/api/jin10/flash/refresh', { method: 'POST' });
+  if (!response.ok) throw await responseError(response, 'jin10 flash refresh failed');
+  return response.json();
+}
+
+export async function refreshJin10Calendar(): Promise<{ count: number; error: string | null }> {
+  const response = await fetch('/api/jin10/calendar/refresh', { method: 'POST' });
+  if (!response.ok) throw await responseError(response, 'jin10 calendar refresh failed');
+  return response.json();
+}
+
+export async function saveJin10Config(config: {
+  enabled?: boolean;
+  token?: string;
+  flash_enabled?: boolean;
+  calendar_enabled?: boolean;
+  quotes_enabled?: boolean;
+  quotes_codes?: string[];
+}): Promise<MarketState> {
+  const response = await fetch('/api/jin10/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) throw await responseError(response, 'save jin10 config failed');
+  const payload = await response.json();
+  return payload.state;
 }
 
 

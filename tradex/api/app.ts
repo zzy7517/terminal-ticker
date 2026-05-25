@@ -8,6 +8,7 @@ import { memoryRoutes } from "./routes/memory.js";
 import { tradingRoutes } from "./routes/trading.js";
 import { cronRoutes } from "./routes/cron.js";
 import { mcpRoutes } from "./routes/mcp.js";
+import { jin10Routes } from "./routes/jin10.js";
 import { browserRoutes } from "./routes/browser.js";
 
 export interface CreateAppOptions {
@@ -26,6 +27,7 @@ export function createApp(options: CreateAppOptions): Hono {
   app.route("", tradingRoutes(runtime));
   app.route("", cronRoutes(runtime));
   app.route("", mcpRoutes(runtime));
+  app.route("", jin10Routes(runtime));
   app.route("", browserRoutes(runtime));
 
   return app;

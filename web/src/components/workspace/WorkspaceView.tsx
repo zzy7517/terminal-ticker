@@ -19,6 +19,7 @@ import { NewsPanel } from './NewsPanel';
 import { SocialFeedPanel } from './SocialFeedPanel';
 import { PositionsPanel } from './PositionsPanel';
 import { CronPanel } from './CronPanel';
+import { CalendarPanel } from './CalendarPanel';
 
 export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);
@@ -30,7 +31,9 @@ export function WorkspaceView() {
 
   const nextThemeName: ThemeName = nextTheme(theme);
 
-  const [activeTab, setActiveTab] = useState<'agent' | 'news' | 'social' | 'positions' | 'cron'>('agent');
+  const [activeTab, setActiveTab] = useState<'agent' | 'news' | 'social' | 'calendar' | 'positions' | 'cron'>('agent');
+
+  const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
 
   return (
     <main className="app-shell">
@@ -76,7 +79,7 @@ export function WorkspaceView() {
       </header>
 
       <div className="workspace-tabs" role="tablist">
-        {(['agent', 'news', 'social', 'positions', 'cron'] as const).map((tab) => (
+        {(['agent', 'news', 'social', ...(jin10Available ? ['calendar' as const] : []), 'positions', 'cron'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -85,7 +88,7 @@ export function WorkspaceView() {
             className={`workspace-tab ${activeTab === tab ? 'active' : ''}`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'calendar' ? 'Calendar' : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
@@ -110,11 +113,23 @@ export function WorkspaceView() {
                 items={state?.recentNews ?? []}
                 lastStatus={state?.newsStatus?.lastStatus}
                 lastError={state?.newsStatus?.lastError ?? null}
+                jin10Available={jin10Available}
               />
+
             </div>
           )}
 
           {activeTab === 'social' && <SocialFeedPanel />}
+
+          {activeTab === 'calendar' && (
+            <div className="calendar-tab-panel">
+              <CalendarPanel
+                events={state?.jin10?.calendar ?? []}
+                jin10Available={jin10Available}
+              />
+            </div>
+          )}
+
           {activeTab === 'positions' && <PositionsPanel />}
           {activeTab === 'cron' && <CronPanel />}
         </section>

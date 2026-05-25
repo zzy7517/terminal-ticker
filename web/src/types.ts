@@ -397,6 +397,75 @@ export interface NewsStatus {
   lastFetchedAtMs?: number | null;
 }
 
+// ── Jin10 types ──────────────────────────────────────────────────────────────
+
+export interface Jin10CalendarEvent {
+  pubTime: string;
+  star: number;
+  title: string;
+  country?: string;
+  previous: string;
+  consensus: string;
+  actual: string;
+  revised: string;
+  affectTxt: string;
+}
+
+export interface Jin10Quote {
+  code: string;
+  name: string;
+  time: string;
+  open: number;
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+  change: number;
+  changePercent: number;
+}
+
+export interface Jin10Status {
+  available: boolean;
+  connected: boolean;
+  enabled: boolean;
+  tokenConfigured: boolean;
+  flash: {
+    enabled: boolean;
+    lastFetchedAtMs: number | null;
+    lastError: string | null;
+    itemCount: number;
+  };
+  calendar: {
+    enabled: boolean;
+    lastFetchedAtMs: number | null;
+    lastError: string | null;
+    eventCount: number;
+  };
+  quotes: {
+    enabled: boolean;
+    lastFetchedAtMs: number | null;
+    lastError: string | null;
+    codes: string[];
+  };
+}
+
+export interface Jin10StatePayload {
+  status: Jin10Status;
+  calendar: Jin10CalendarEvent[];
+  quotes: Jin10Quote[];
+}
+
+export interface Jin10ConfigPayload {
+  enabled: boolean;
+  tokenConfigured: boolean;
+  flashEnabled: boolean;
+  calendarEnabled: boolean;
+  quotesEnabled: boolean;
+  quotesCodes: string[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface MarketState {
   type: 'state';
   updatedAt: string;
@@ -434,6 +503,7 @@ export interface MarketState {
       enabled: boolean;
       configPath: string | null;
     };
+    jin10: Jin10ConfigPayload;
     sourcePath: string | null;
   };
   instruments: Instrument[];
@@ -445,6 +515,7 @@ export interface MarketState {
   exchangeOrders: ExchangeOrder[];
   recentNews: NewsItem[];
   newsStatus: NewsStatus;
+  jin10: Jin10StatePayload | null;
 }
 
 export type TradeDirection = 'long' | 'short';

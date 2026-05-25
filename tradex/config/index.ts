@@ -187,6 +187,18 @@ export interface McpAppConfig {
   configPath: string | null;
 }
 
+export interface Jin10Config {
+  enabled: boolean;
+  token: string;
+  flashEnabled: boolean;
+  flashPollIntervalSeconds: number;
+  calendarEnabled: boolean;
+  calendarPollIntervalSeconds: number;
+  quotesEnabled: boolean;
+  quotesPollIntervalSeconds: number;
+  quotesCodes: string[];
+}
+
 export interface BrowserConfig {
   enabled: boolean;
   /** Path to the OBU socket. null = auto-discover from /tmp/open-browser-use/active.json */
@@ -207,6 +219,7 @@ export interface AppConfig {
   socialFeed: SocialFeedConfig;
   trading: TradingConfig;
   mcp: McpAppConfig;
+  jin10: Jin10Config;
   browser: BrowserConfig;
   cronJobs: CronJobConfig[];
 }
@@ -685,6 +698,26 @@ export function parseMcpConfig(rawMcpValue: unknown): McpAppConfig {
   };
 }
 
+const DEFAULT_JIN10_QUOTE_CODES = ["XAUUSD", "XAGUSD", "USOIL", "EURUSD", "USDJPY", "USDCNH"];
+
+export function parseJin10Config(rawJin10Value: unknown): Jin10Config {
+  const raw = asRecord(rawJin10Value, "jin10");
+  const quotesCodes = Array.isArray(raw.quotes_codes)
+    ? raw.quotes_codes.map((c: unknown) => String(c).trim().toUpperCase()).filter(Boolean)
+    : DEFAULT_JIN10_QUOTE_CODES;
+  return {
+    enabled: normalizeBool(raw.enabled, "jin10.enabled", true),
+    token: typeof raw.token === "string" ? raw.token.trim() : "",
+    flashEnabled: normalizeBool(raw.flash_enabled, "jin10.flash_enabled", true),
+    flashPollIntervalSeconds: coerceMinInt(raw.flash_poll_interval_seconds, "jin10.flash_poll_interval_seconds", 60, 10),
+    calendarEnabled: normalizeBool(raw.calendar_enabled, "jin10.calendar_enabled", true),
+    calendarPollIntervalSeconds: coerceMinInt(raw.calendar_poll_interval_seconds, "jin10.calendar_poll_interval_seconds", 300, 30),
+    quotesEnabled: normalizeBool(raw.quotes_enabled, "jin10.quotes_enabled", true),
+    quotesPollIntervalSeconds: coerceMinInt(raw.quotes_poll_interval_seconds, "jin10.quotes_poll_interval_seconds", 30, 10),
+    quotesCodes,
+  };
+}
+
 export function parseBrowserConfig(rawBrowserValue: unknown): BrowserConfig {
   const raw = asRecord(rawBrowserValue, "browser");
   const socketPath = typeof raw.socket_path === "string" && raw.socket_path.trim() ? raw.socket_path.trim() : null;
@@ -715,6 +748,7 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     socialFeed: parseSocialFeedConfig(data.social_feed),
     trading: parseTradingConfig(data.trading),
     mcp: parseMcpConfig(data.mcp),
+    jin10: parseJin10Config(data.jin10),
     browser: parseBrowserConfig(data.browser),
     cronJobs: parseCronJobsConfig(data.cron_jobs),
     sourcePath,
@@ -746,6 +780,7 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       socialFeed: parseSocialFeedConfig({}),
       trading: parseTradingConfig({}),
       mcp: parseMcpConfig({}),
+      jin10: parseJin10Config({}),
       browser: parseBrowserConfig({}),
       cronJobs: [],
       sourcePath: null,

@@ -7,6 +7,7 @@ import { buildMarketTools } from "../../agent/tools/market.js";
 import { buildMemoryTools } from "../../memory/tools.js";
 import { buildMemoryDeveloperInstructions, parseMemoryCitations } from "../../memory/read/index.js";
 import { buildNewsTools } from "../../agent/tools/news.js";
+import { buildJin10Tools } from "../../agent/tools/jin10.js";
 import { buildSocialFeedTools } from "../../agent/tools/social.js";
 import { buildTradingTools } from "../../agent/tools/trading.js";
 import { buildWebTools } from "../../agent/tools/web.js";
@@ -198,6 +199,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
               exchangeRouter: runtime.exchangeRouter,
               resolveSessionId: () => sessionId,
             }),
+            buildJin10Tools(runtime.jin10Service),
             buildWebTools(),
             ...(runtime.config.browser.enabled ? [buildBrowserTools(runtime.browserManager)] : []),
             createFilesystemRegistry({ allowedSkillPaths }),

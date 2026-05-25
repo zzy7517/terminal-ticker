@@ -8,6 +8,7 @@ import {
   CronJobConfig,
   GROUP_ALIASES,
   HYPERLIQUID_SOURCE,
+  Jin10Config,
   MemoryConfig,
   NewsConfig,
   SocialFeedConfig,
@@ -348,6 +349,22 @@ export async function updateTradingConfigInWatchlist(watchlistPath: string, conf
     `hyperliquid_mode = "${config.hyperliquidMode}"`,
     `bitget_mode = "${config.bitgetMode}"`,
   ]);
+}
+
+export async function updateJin10ConfigInWatchlist(watchlistPath: string, config: Jin10Config): Promise<boolean> {
+  const lines = [
+    "[jin10]",
+    `enabled = ${config.enabled ? "true" : "false"}`,
+    `token = ${tomlString(config.token)}`,
+    `flash_enabled = ${config.flashEnabled ? "true" : "false"}`,
+    `flash_poll_interval_seconds = ${config.flashPollIntervalSeconds}`,
+    `calendar_enabled = ${config.calendarEnabled ? "true" : "false"}`,
+    `calendar_poll_interval_seconds = ${config.calendarPollIntervalSeconds}`,
+    `quotes_enabled = ${config.quotesEnabled ? "true" : "false"}`,
+    `quotes_poll_interval_seconds = ${config.quotesPollIntervalSeconds}`,
+    `quotes_codes = [${config.quotesCodes.map(tomlString).join(", ")}]`,
+  ];
+  return replaceTable(watchlistPath, "jin10", lines);
 }
 
 async function replaceTable(watchlistPath: string, tableName: string, lines: string[]): Promise<boolean> {

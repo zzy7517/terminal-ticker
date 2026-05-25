@@ -4,6 +4,7 @@ import { MarketInstrument } from "../market_data/router.js";
 import { ExchangeOrder, ExchangePosition, orderToPayload, positionToPayload } from "../trading/exchange_models.js";
 import { Trade, tradeToPayload } from "../trading/models.js";
 import { NewsItem, newsItemToPayload } from "../news/types.js";
+import type { Jin10CalendarEvent, Jin10Quote, Jin10Status } from "../jin10/types.js";
 
 export function serializeState(input: {
   config: AppConfig;
@@ -15,34 +16,67 @@ export function serializeState(input: {
   exchangeOrders: ExchangeOrder[];
   recentNews: NewsItem[];
   newsStatus?: Record<string, unknown>;
+  jin10?: {
+    status: Jin10Status;
+    calendar: Jin10CalendarEvent[];
+    quotes: Jin10Quote[];
+  };
 }): Record<string, unknown> {
   const groups: Record<string, string[]> = {};
   for (const instrument of input.instruments) {
     const group = instrument.source || "other";
     groups[group] = [...(groups[group] ?? []), instrument.key];
   }
+
+  // Build base instruments and quotes
+  const instruments = input.instruments.map((instrument) => ({
+    key: instrument.key,
+    symbol: instrument.symbol,
+    label: instrument.label,
+    source: instrument.source,
+    instType: "instType" in instrument ? instrument.instType : null,
+    group: instrument.group,
+    analysisInterval: instrument.analysisInterval || input.config.analysis.interval,
+  }));
+  const quotes: Record<string, unknown> = Object.fromEntries(
+    Object.entries(input.quotes).map(([key, quote]) => [key, serializeQuote(quote, input.config.display.staleAfterSeconds)]),
+  );
+
+  // Inject Jin10 quotes into watchlist when available
+  if (input.jin10 && input.jin10.quotes.length > 0) {
+    const jin10Keys: string[] = [];
+    for (const q of input.jin10.quotes) {
+      const key = `jin10:${q.code}`;
+      jin10Keys.push(key);
+      instruments.push({
+        key,
+        symbol: q.code,
+        label: q.name || q.code,
+        source: "jin10",
+        instType: null,
+        group: "jin10",
+        analysisInterval: input.config.analysis.interval,
+      });
+      quotes[key] = serializeJin10Quote(q);
+    }
+    groups["jin10"] = jin10Keys;
+  }
+
   return {
     type: "state",
     updatedAt: new Date().toISOString(),
     streamStatus: input.streamStatus,
     config: serializeConfig(input.config),
-    instruments: input.instruments.map((instrument) => ({
-      key: instrument.key,
-      symbol: instrument.symbol,
-      label: instrument.label,
-      source: instrument.source,
-      instType: "instType" in instrument ? instrument.instType : null,
-      group: instrument.group,
-      analysisInterval: instrument.analysisInterval || input.config.analysis.interval,
-    })),
+    instruments,
     groups,
-    quotes: Object.fromEntries(Object.entries(input.quotes).map(([key, quote]) => [key, serializeQuote(quote, input.config.display.staleAfterSeconds)])),
+    quotes,
     agentAnalyses: {},
     openTrades: input.openTrades.map((trade) => tradeToPayload(trade)),
     exchangePositions: input.exchangePositions.map(positionToPayload),
     exchangeOrders: input.exchangeOrders.map(orderToPayload),
     recentNews: input.recentNews.map(newsItemToPayload),
     newsStatus: input.newsStatus ?? { enabled: input.config.news.enabled },
+    jin10: input.jin10 ?? null,
   };
 }
 
@@ -95,6 +129,14 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       enabled: config.mcp.enabled,
       configPath: config.mcp.configPath,
     },
+    jin10: {
+      enabled: config.jin10.enabled,
+      tokenConfigured: Boolean(config.jin10.token),
+      flashEnabled: config.jin10.flashEnabled,
+      calendarEnabled: config.jin10.calendarEnabled,
+      quotesEnabled: config.jin10.quotesEnabled,
+      quotesCodes: config.jin10.quotesCodes,
+    },
     sourcePath: config.sourcePath,
   };
 }
@@ -127,4 +169,37 @@ function serializeQuote(quote: QuoteState, staleAfterSeconds: number): Record<st
     lastError: quote.lastError,
     updateCount: quote.updateCount,
   };
+}
+
+function serializeJin10Quote(q: Jin10Quote): Record<string, unknown> {
+  const sign = q.change >= 0 ? "+" : "";
+  const pctSign = q.changePercent >= 0 ? "+" : "";
+  return {
+    symbol: q.code,
+    displayName: q.name || q.code,
+    price: q.close,
+    priceLabel: q.close ? formatJin10Price(q.close) : "-",
+    change: q.change,
+    changePercent: q.changePercent,
+    changeLabel: `${sign}${q.change.toFixed(2)}`,
+    percentLabel: `${pctSign}${q.changePercent.toFixed(2)}%`,
+    previousClose: null,
+    dayHigh: q.high,
+    dayLow: q.low,
+    volume: q.volume,
+    volumeLabel: q.volume ? String(q.volume) : "-",
+    currency: "",
+    exchange: "jin10",
+    status: q.time ? "active" : "idle",
+    ageLabel: q.time || "-",
+    stale: false,
+    lastError: null,
+    updateCount: 0,
+  };
+}
+
+function formatJin10Price(price: number): string {
+  if (price >= 100) return price.toFixed(2);
+  if (price >= 1) return price.toFixed(4);
+  return price.toFixed(5);
 }

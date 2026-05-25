@@ -38,10 +38,13 @@ import {
   addMcpServer,
   updateMcpServer,
   deleteMcpServer,
+  saveJin10Config,
+  fetchJin10AvailableCodes,
 } from '../../api';
+import { useMarketStore } from '../../stores/marketStore';
 
 type ServerFormMode = 'view' | 'edit' | 'create';
-type DetailTab = 'overview' | 'tools' | 'resources';
+type DetailTab = 'overview' | 'tools' | 'resources' | 'jin10-config';
 
 function statusBadge(status: McpServerInfo['status']) {
   switch (status) {
@@ -85,6 +88,77 @@ export function McpSettingsPanel() {
 
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
+  // ─── Jin10-specific state ──────────────────────────────────────────────────
+  const jin10Config = useMarketStore((s) => s.state?.config?.jin10);
+  const [jin10Token, setJin10Token] = useState('');
+  const [jin10TokenSaving, setJin10TokenSaving] = useState(false);
+  const [jin10AvailCodes, setJin10AvailCodes] = useState<Array<{ code: string; name: string }>>([]);
+  const [jin10AddingCode, setJin10AddingCode] = useState('');
+  const [jin10CodeSaving, setJin10CodeSaving] = useState(false);
+
+  // Sync token from config
+  useEffect(() => {
+    if (jin10Config?.tokenConfigured && !jin10Token) {
+      setJin10Token('••••••••'); // masked
+    }
+  }, [jin10Config?.tokenConfigured]);
+
+  // Load available codes when jin10 is selected
+  useEffect(() => {
+    if (selected === 'jin10' && jin10AvailCodes.length === 0) {
+      fetchJin10AvailableCodes().then((res) => {
+        if (res.codes.length > 0) setJin10AvailCodes(res.codes);
+      }).catch(() => {});
+    }
+  }, [selected]);
+
+  async function handleJin10TokenSave() {
+    if (jin10Token === '••••••••' || !jin10Token.trim()) return;
+    setJin10TokenSaving(true);
+    try {
+      const nextState = await saveJin10Config({ token: jin10Token.trim() });
+      useMarketStore.getState().setState(nextState);
+      setStatus('Jin10 Token 已保存');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Token save failed');
+    } finally {
+      setJin10TokenSaving(false);
+    }
+  }
+
+  async function handleJin10Toggle(field: 'enabled' | 'flash_enabled' | 'calendar_enabled' | 'quotes_enabled', value: boolean) {
+    try {
+      const nextState = await saveJin10Config({ [field]: value });
+      useMarketStore.getState().setState(nextState);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Toggle failed');
+    }
+  }
+
+  async function handleJin10AddCode(code: string) {
+    const normalized = code.trim().toUpperCase();
+    if (!normalized) return;
+    const current = jin10Config?.quotesCodes ?? [];
+    if (current.includes(normalized)) return;
+    setJin10CodeSaving(true);
+    setJin10AddingCode('');
+    try {
+      const nextState = await saveJin10Config({ quotes_codes: [...current, normalized] });
+      useMarketStore.getState().setState(nextState);
+    } catch { /* ignore */ }
+    finally { setJin10CodeSaving(false); }
+  }
+
+  async function handleJin10RemoveCode(code: string) {
+    const current = jin10Config?.quotesCodes ?? [];
+    setJin10CodeSaving(true);
+    try {
+      const nextState = await saveJin10Config({ quotes_codes: current.filter((c) => c !== code) });
+      useMarketStore.getState().setState(nextState);
+    } catch { /* ignore */ }
+    finally { setJin10CodeSaving(false); }
+  }
+
   useEffect(() => { loadStatus(); }, []);
 
   async function loadStatus() {
@@ -108,7 +182,7 @@ export function McpSettingsPanel() {
   function selectServer(name: string) {
     setSelected(name);
     setFormMode('view');
-    setDetailTab('overview');
+    setDetailTab(name === 'jin10' ? 'jin10-config' : 'overview');
     setTools([]); setToolsExpanded(false);
     setResources([]); setResourceTemplates([]); setReadResult(null);
     setDeleteConfirm(false);
@@ -336,6 +410,144 @@ export function McpSettingsPanel() {
     </>
   );
 
+  const renderJin10Config = () => {
+    const codes = jin10Config?.quotesCodes ?? [];
+    const codeNameMap = new Map(jin10AvailCodes.map((item) => [item.code, item.name]));
+    const suggestions = jin10AvailCodes.filter((item) => !codes.includes(item.code));
+    return (
+      <div className="jin10-mcp-config">
+        <div className="provider-section-head">
+          <strong>Jin10 数据配置</strong>
+        </div>
+
+        {/* Token */}
+        <div className="jin10-config-section">
+          <div className="provider-field">
+            <span className="provider-field-label">API Token</span>
+            <div className="jin10-token-row">
+              <input
+                className="input mono"
+                type="password"
+                value={jin10Token}
+                onChange={(e) => setJin10Token(e.target.value)}
+                onFocus={() => { if (jin10Token === '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022') setJin10Token(''); }}
+                placeholder="sk-xxxxxxxx"
+                spellCheck={false}
+              />
+              <button
+                className="shell-button primary sm"
+                type="button"
+                onClick={handleJin10TokenSave}
+                disabled={jin10TokenSaving || jin10Token === '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' || !jin10Token.trim()}
+              >
+                <Save size={13} /> 保存
+              </button>
+            </div>
+            <span className="provider-field-hint">
+              从 <a href="https://mcp.jin10.com/app/" target="_blank" rel="noreferrer">mcp.jin10.com</a> 获取 Token
+            </span>
+          </div>
+        </div>
+
+        {/* Module toggles */}
+        <div className="jin10-config-section">
+          <div className="provider-section-head"><strong>模块开关</strong></div>
+          <label className="settings-toggle-row">
+            <div><strong>总开关</strong><small>启用/禁用所有 Jin10 数据</small></div>
+            <button
+              className={`settings-toggle ${jin10Config?.enabled ? 'on' : ''}`}
+              type="button"
+              onClick={() => handleJin10Toggle('enabled', !jin10Config?.enabled)}
+              aria-pressed={!!jin10Config?.enabled}
+            ><span /></button>
+          </label>
+          <label className="settings-toggle-row">
+            <div><strong>快讯 (Flash)</strong><small>实时财经快讯推送到 News</small></div>
+            <button
+              className={`settings-toggle ${jin10Config?.flashEnabled ? 'on' : ''}`}
+              type="button"
+              onClick={() => handleJin10Toggle('flash_enabled', !jin10Config?.flashEnabled)}
+              aria-pressed={!!jin10Config?.flashEnabled}
+            ><span /></button>
+          </label>
+          <label className="settings-toggle-row">
+            <div><strong>财经日历 (Calendar)</strong><small>今日经济事件与数据发布</small></div>
+            <button
+              className={`settings-toggle ${jin10Config?.calendarEnabled ? 'on' : ''}`}
+              type="button"
+              onClick={() => handleJin10Toggle('calendar_enabled', !jin10Config?.calendarEnabled)}
+              aria-pressed={!!jin10Config?.calendarEnabled}
+            ><span /></button>
+          </label>
+          <label className="settings-toggle-row">
+            <div><strong>行情 (Quotes)</strong><small>商品/外汇/指数参考报价</small></div>
+            <button
+              className={`settings-toggle ${jin10Config?.quotesEnabled ? 'on' : ''}`}
+              type="button"
+              onClick={() => handleJin10Toggle('quotes_enabled', !jin10Config?.quotesEnabled)}
+              aria-pressed={!!jin10Config?.quotesEnabled}
+            ><span /></button>
+          </label>
+        </div>
+
+        {/* Quotes codes */}
+        {jin10Config?.quotesEnabled && (
+          <div className="jin10-config-section">
+            <div className="provider-section-head"><strong>行情品种</strong></div>
+            <div className="jin10-codes-list">
+              {codes.map((code) => (
+                <span key={code} className="jin10-code-chip">
+                  <span className="jin10-code-chip__label">{codeNameMap.get(code) || code}</span>
+                  <button
+                    className="jin10-code-chip__remove"
+                    type="button"
+                    onClick={() => handleJin10RemoveCode(code)}
+                    disabled={jin10CodeSaving}
+                    title="移除"
+                  ><X size={11} /></button>
+                </span>
+              ))}
+            </div>
+            <div className="jin10-codes-add-row">
+              <input
+                className="input sm mono"
+                value={jin10AddingCode}
+                onChange={(e) => setJin10AddingCode(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleJin10AddCode(jin10AddingCode); } }}
+                placeholder="输入品种代码回车添加"
+                spellCheck={false}
+                disabled={jin10CodeSaving}
+              />
+            </div>
+            {suggestions.length > 0 && (
+              <div className="jin10-codes-suggestions">
+                <span className="jin10-codes-suggestions__label">可选品种：</span>
+                <div className="jin10-codes-suggestions__list">
+                  {suggestions
+                    .filter((item) => {
+                      if (!jin10AddingCode) return true;
+                      const q = jin10AddingCode.toUpperCase();
+                      return item.code.includes(q) || item.name.includes(jin10AddingCode);
+                    })
+                    .map((item) => (
+                      <button
+                        key={item.code}
+                        type="button"
+                        className="jin10-suggestion-chip"
+                        onClick={() => handleJin10AddCode(item.code)}
+                        disabled={jin10CodeSaving}
+                        title={item.code}
+                      >{item.name}</button>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderServerView = () => {
     if (!activeServer) return null;
     return (
@@ -403,6 +615,11 @@ export function McpSettingsPanel() {
 
         {/* Tab navigation */}
         <div className="mcp-tabs">
+          {selected === 'jin10' && (
+            <button type="button" className={`mcp-tab${detailTab === 'jin10-config' ? ' active' : ''}`} onClick={() => setDetailTab('jin10-config')}>
+              ⚙️ 配置
+            </button>
+          )}
           <button type="button" className={`mcp-tab${detailTab === 'overview' ? ' active' : ''}`} onClick={() => switchDetailTab('overview')}>
             Info
           </button>
@@ -413,6 +630,9 @@ export function McpSettingsPanel() {
             <Database size={13} /> Resources
           </button>
         </div>
+
+        {/* Tab: Jin10 Config */}
+        {detailTab === 'jin10-config' && renderJin10Config()}
 
         {/* Tab: Tools */}
         {detailTab === 'tools' && (

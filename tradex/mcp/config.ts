@@ -10,22 +10,40 @@ import type { McpConfig, McpServerEntry } from "./types.js";
 
 const PROJECT_CONFIG_NAME = ".mcp.json";
 
+/** Built-in default MCP servers that are always available. */
+const BUILTIN_SERVERS: Record<string, McpServerEntry> = {
+  jin10: {
+    url: "https://mcp.jin10.com/mcp",
+    headers: { "Content-Type": "application/json" },
+  },
+};
+
 export function loadMcpConfig(configPath?: string | null): McpConfig {
   const paths = configPath
     ? [resolve(configPath)]
     : [resolve(process.cwd(), PROJECT_CONFIG_NAME)];
 
+  let config: McpConfig = { mcpServers: {} };
+
   for (const filePath of paths) {
     if (!existsSync(filePath)) continue;
     try {
       const raw = JSON.parse(readFileSync(filePath, "utf-8"));
-      return validateMcpConfig(raw);
+      config = validateMcpConfig(raw);
+      break;
     } catch (error) {
       console.warn(`[mcp] Failed to load config from ${filePath}:`, error instanceof Error ? error.message : error);
     }
   }
 
-  return { mcpServers: {} };
+  // Merge built-in servers (user config takes precedence)
+  for (const [name, entry] of Object.entries(BUILTIN_SERVERS)) {
+    if (!config.mcpServers[name]) {
+      config.mcpServers[name] = entry;
+    }
+  }
+
+  return config;
 }
 
 function validateMcpConfig(raw: unknown): McpConfig {
