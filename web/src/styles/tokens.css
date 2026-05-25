@@ -60,15 +60,15 @@
   --ui: "JetBrains Mono", "SF Mono", "Cascadia Mono", "Consolas", "Courier New", monospace;
 
   /* Control tokens — terminal-grade density, readable size */
-  --ctl-h-sm: 24px;
-  --ctl-h-md: 28px;
-  --ctl-h-lg: 34px;
-  --ctl-px-sm: 8px;
-  --ctl-px-md: 10px;
-  --ctl-px-lg: 12px;
+  --ctl-h-sm: 28px;
+  --ctl-h-md: 32px;
+  --ctl-h-lg: 38px;
+  --ctl-px-sm: 10px;
+  --ctl-px-md: 12px;
+  --ctl-px-lg: 16px;
   --ctl-radius: 0px;
   --ctl-radius-sm: 0px;
-  --ctl-font: 12px;
+  --ctl-font: 14px;
   --ctl-weight: 500;
   --ctl-weight-strong: 700;
   --ctl-disabled-opacity: 0.35;

@@ -8,7 +8,7 @@
   position: sticky;
   top: 0;
   transition: width 150ms linear;
-  width: 200px;
+  width: 260px;
   z-index: 50;
 }
 
@@ -30,9 +30,9 @@
 .sb-title {
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -82,10 +82,10 @@
   color: var(--text-muted);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  padding: 4px 7px;
+  padding: 5px 9px;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -119,9 +119,9 @@
   color: inherit;
   cursor: grab;
   display: flex;
-  gap: 4px;
+  gap: 8px;
   justify-content: space-between;
-  padding: 4px 8px;
+  padding: 6px 10px;
   position: relative;
   text-align: left;
   width: 100%;
@@ -154,7 +154,7 @@
   color: var(--accent);
   display: block;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.2;
@@ -168,8 +168,8 @@
   color: var(--text-muted);
   display: block;
   font-family: var(--mono);
-  font-size: 10px;
-  margin-top: 0px;
+  font-size: 12px;
+  margin-top: 1px;
 }
 
 .sb-row-right {
@@ -183,7 +183,7 @@
 .sb-row-price {
   color: var(--text-primary);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums lining-nums;
   font-weight: 600;
   line-height: 1.2;
@@ -191,7 +191,7 @@
 
 .sb-row-change {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums lining-nums;
   line-height: 1.2;
 }

@@ -20,10 +20,10 @@ body {
   background-color: #000000;
   color: #ffffff;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 400;
   letter-spacing: 0;
-  line-height: 1.4;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -50,7 +50,7 @@ p {
 /* ── Typography — monospace hierarchy ─────────────────────────────── */
 h1 {
   font-family: var(--mono);
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.2;
@@ -59,7 +59,7 @@ h1 {
 
 h2 {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.2;
@@ -68,7 +68,7 @@ h2 {
 
 h3 {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.01em;
   text-transform: uppercase;
@@ -106,9 +106,9 @@ textarea:focus-visible {
 .panel-label {
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 

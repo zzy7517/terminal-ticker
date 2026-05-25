@@ -22,6 +22,7 @@ import type { AgentMessage, AgentToolCall } from '../../types';
 import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useAgentStore } from '../../stores/agentStore';
 import { useMarketStore } from '../../stores/marketStore';
+import { contextUsagePercent, formatContextPercent, resolveContextWindow } from '../../utils/contextUsage';
 import { processImageForUpload } from '../../utils/imageResize';
 
 /**
@@ -424,16 +425,9 @@ export function AgentSessionPanel({
 
   const contextProvider = agentSession?.session?.provider ?? agentProvider;
   const contextModel = agentSession?.session?.model ?? agentModel;
-  const cachedModel = (modelCache[contextProvider] ?? []).find((m) => m.slug === contextModel);
-  const contextWindow = cachedModel?.contextWindow ?? null;
-  const rawContextPercent = contextUsage && contextWindow && contextWindow > 0
-    ? (contextUsage.promptTokens / contextWindow) * 100
-    : null;
-  const contextPercentLabel = rawContextPercent === null
-    ? null
-    : rawContextPercent > 0 && rawContextPercent < 1
-      ? '<1'
-      : String(Math.round(rawContextPercent));
+  const contextWindow = resolveContextWindow(contextProvider, contextModel, modelCache);
+  const rawContextPercent = contextUsagePercent(contextUsage, contextWindow);
+  const contextPercentLabel = formatContextPercent(rawContextPercent);
   const contextPercentLevel = rawContextPercent ?? 0;
 
   // Token stats for display (pi-style footer)

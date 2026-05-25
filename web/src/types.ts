@@ -80,10 +80,12 @@ export interface AgentSessionRun {
 }
 
 export interface AgentContextUsage {
-  promptTokens: number;
-  totalTokens: number;
+  promptTokens?: number;
+  totalTokens?: number;
   /** Estimated context tokens from last assistant response, or null if unknown. */
   tokens?: number | null;
+  contextWindow?: number | null;
+  percent?: number | null;
 }
 
 /**

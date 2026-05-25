@@ -104,12 +104,15 @@ export function WatchlistSidebar() {
   const state = useMarketStore((s) => s.state);
   const groups = useGroups();
 
-  const activeKeys = activeGroup && state ? state.groups[activeGroup] ?? [] : [];
-
   // Sidebar collapsed state (persisted in localStorage)
   const [collapsed, setCollapsed] = useState(() => {
     try { return window.localStorage.getItem('tradex_sidebar_collapsed') === '1'; } catch { return false; }
   });
+
+  // When collapsed, show ALL instruments across all groups for a full-market overview
+  const activeKeys = collapsed && state
+    ? state.instruments.map((i) => i.key)
+    : (activeGroup && state ? state.groups[activeGroup] ?? [] : []);
 
   const toggleCollapse = useCallback(() => {
     setCollapsed((prev) => {

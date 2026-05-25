@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { History, Loader2, SquarePen, Trash2 } from 'lucide-react';
 import type { AgentContextUsage } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
+import { contextUsagePercent, formatContextPercent, resolveContextWindow } from '../../utils/contextUsage';
 
 export function AgentSessionHistoryList() {
   const agentSession = useAgentStore((s) => s.agentSession);
@@ -41,10 +42,9 @@ export function AgentSessionHistoryList() {
     provider: string,
     model: string,
   ): string | null {
-    const contextWindow = (modelCache[provider] ?? []).find((item) => item.slug === model)?.contextWindow ?? null;
-    if (!usage || !contextWindow || contextWindow <= 0) return null;
-    const rawPercent = (usage.promptTokens / contextWindow) * 100;
-    const value = rawPercent > 0 && rawPercent < 1 ? '<1' : String(Math.round(rawPercent));
+    const contextWindow = resolveContextWindow(provider, model, modelCache);
+    const value = formatContextPercent(contextUsagePercent(usage, contextWindow));
+    if (!value) return null;
     return `${value}% ctx`;
   }
 
