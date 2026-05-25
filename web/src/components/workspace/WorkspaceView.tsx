@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  BarChart3,
   Moon,
   Settings,
   Sun,
@@ -12,7 +11,7 @@ import { THEME_LABELS } from '../../constants';
 import type { ThemeName } from '../../constants';
 import { nextTheme } from '../../utils';
 import { ConnectionBadge } from './ConnectionBadge';
-import { WatchlistDrawer } from './WatchlistDrawer';
+import { WatchlistSidebar } from './WatchlistSidebar';
 import { AgentSessionHistoryList } from './AgentSessionHistoryList';
 import { AgentSessionPanel } from './AgentSessionPanel';
 import { NewsPanel } from './NewsPanel';
@@ -26,7 +25,6 @@ export function WorkspaceView() {
   const socketStatus = useMarketStore((s) => s.socketStatus);
 
   const theme = useUiStore((s) => s.theme);
-  const toggleWatchlist = useUiStore((s) => s.toggleWatchlist);
   const openSettings = useUiStore((s) => s.openSettings);
 
   const nextThemeName: ThemeName = nextTheme(theme);
@@ -36,18 +34,13 @@ export function WorkspaceView() {
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
 
   return (
-    <main className="app-shell">
+    <main className="app-shell app-shell--with-sidebar">
+      {/* Left sidebar: persistent watchlist */}
+      <WatchlistSidebar />
+
+      <div className="app-main">
       <header className="topbar">
         <div className="topbar-left">
-          <button
-            aria-label="Toggle watchlist"
-            className="shell-button icon"
-            onClick={toggleWatchlist}
-            title="Watchlist (⌘B)"
-            type="button"
-          >
-            <BarChart3 size={18} />
-          </button>
           <div className="brand-lockup">
             <div className="brand-mark" aria-hidden="true">
               <Zap size={21} />
@@ -93,8 +86,6 @@ export function WorkspaceView() {
         ))}
       </div>
 
-      <WatchlistDrawer />
-
       <section className="workspace">
         <section className="main-content">
           {activeTab === 'agent' && (
@@ -134,6 +125,7 @@ export function WorkspaceView() {
           {activeTab === 'cron' && <CronPanel />}
         </section>
       </section>
+      </div>{/* end .app-main */}
     </main>
   );
 }

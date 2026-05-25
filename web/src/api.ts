@@ -132,6 +132,20 @@ export async function removeWatchlistInstrument(key: string): Promise<MarketStat
   return payload.state;
 }
 
+// Reorders instruments in the watchlist TOML by providing the desired key order.
+export async function reorderWatchlist(keys: string[]): Promise<MarketState> {
+  const response = await fetch('/api/watchlist/reorder', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keys }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'reorder failed');
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
 // Lists all saved agent sessions for the decoupled chat workspace.
 export async function fetchAgentSessions(): Promise<AgentSessionHistoryResponse> {
   const response = await fetch('/api/agent/sessions');

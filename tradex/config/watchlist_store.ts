@@ -223,6 +223,91 @@ function setInlineAnalysisInterval(line: string, interval: string): string {
   return hasTrailingComma ? `${updated},` : updated;
 }
 
+export async function reorderSymbolsInWatchlist(
+  watchlistPath: string,
+  orderedKeys: string[],
+): Promise<boolean> {
+  const sourcePath = path.resolve(expandUserPath(watchlistPath));
+  const text = await readFile(sourcePath, "utf8");
+  const lines = text.split(/\r?\n/);
+
+  // Find the symbols array bounds
+  const startIndex = lines.findIndex((line) => line.trim().startsWith("symbols") && line.includes("["));
+  if (startIndex < 0) return false;
+  const endIndex = lines.findIndex((line, index) => index > startIndex && line.trim() === "]");
+  if (endIndex < 0) return false;
+
+  // Extract all symbol entry lines (between `symbols = [` and `]`)
+  const entryLines: Array<{ line: string; key: string }> = [];
+  const nonEntryLines: string[] = [];
+  for (let i = startIndex + 1; i < endIndex; i++) {
+    const entry = parseInlineSymbolEntry(lines[i]);
+    if (entry) {
+      const source = entrySource(entry);
+      const rawSymbol = String(entry.symbol || "");
+      let normalizedSymbol = "";
+      try {
+        normalizedSymbol = normalizeSymbolForSourceStrict(source, rawSymbol);
+      } catch {
+        // If we can't normalize, keep the line in place
+        nonEntryLines.push(lines[i]);
+        continue;
+      }
+      const instType = entryInstType(entry);
+      // Build key matching the MarketInstrument.key format
+      let key: string;
+      if (source === "hyperliquid") {
+        key = `hyperliquid:${normalizedSymbol}`;
+      } else {
+        // Bitget key format: "INST_TYPE:SYMBOL"
+        key = instType ? `${instType}:${normalizedSymbol}` : normalizedSymbol;
+      }
+      entryLines.push({ line: lines[i], key });
+    } else if (lines[i].trim()) {
+      // Non-entry lines (comments etc.) — keep at end
+      nonEntryLines.push(lines[i]);
+    }
+  }
+
+  // Reorder entry lines based on orderedKeys
+  const entryMap = new Map<string, string>();
+  for (const { line, key } of entryLines) {
+    entryMap.set(key, line);
+  }
+
+  const reordered: string[] = [];
+  const usedKeys = new Set<string>();
+
+  // First, place entries in the requested order
+  for (const key of orderedKeys) {
+    const line = entryMap.get(key);
+    if (line) {
+      reordered.push(line);
+      usedKeys.add(key);
+    }
+  }
+
+  // Then append any entries not in the requested order (maintain their relative order)
+  for (const { line, key } of entryLines) {
+    if (!usedKeys.has(key)) {
+      reordered.push(line);
+    }
+  }
+
+  // Reconstruct the file
+  const newLines = [
+    ...lines.slice(0, startIndex + 1),
+    ...nonEntryLines,
+    ...reordered,
+    ...lines.slice(endIndex),
+  ];
+
+  const result = `${newLines.join("\n").replace(/\n*$/, "")}\n`;
+  if (result === text) return false;
+  await writeFile(sourcePath, result);
+  return true;
+}
+
 export async function updateInstrumentAnalysisIntervalInWatchlist(
   watchlistPath: string,
   input: { source: string; symbol: string; instType?: string | null; interval: string },

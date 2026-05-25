@@ -5,6 +5,7 @@ import {
   appendBitgetSymbolToWatchlist,
   appendHyperliquidSymbolToWatchlist,
   removeSymbolFromWatchlist,
+  reorderSymbolsInWatchlist,
 } from "../../config/watchlist_store.js";
 import type { AppRuntime } from "../runtime.js";
 import { catalogItem, requireConfigPath, reloadAndState } from "../helpers.js";
@@ -81,6 +82,18 @@ export function marketRoutes(runtime: AppRuntime): Hono {
       group: typeof body.group === "string" ? body.group : "crypto",
       showCollapsed: typeof body.showCollapsed === "boolean" ? body.showCollapsed : true,
     });
+    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+  });
+
+  // Reorders instruments in the watchlist TOML.
+  app.put("/api/watchlist/reorder", async (c) => {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    const keys = body.keys;
+    if (!Array.isArray(keys) || keys.length === 0) {
+      return c.json({ detail: "keys must be a non-empty array of instrument keys" }, 400);
+    }
+    const watchlistPath = requireConfigPath(runtime);
+    await reorderSymbolsInWatchlist(watchlistPath, keys as string[]);
     return c.json({ state: await reloadAndState(runtime, watchlistPath) });
   });
 

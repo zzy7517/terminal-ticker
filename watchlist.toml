@@ -1,10 +1,12 @@
 symbols = [
-  { symbol = "AAPLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "AAPL", group = "stocks", show_collapsed = true, analysis_interval = "5m"},
-  { symbol = "SPYUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SPY", group = "stocks", show_collapsed = false },
   { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC", group = "crypto", analysis_interval = "15m" },
+  { symbol = "AAPLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "AAPL", group = "stocks", show_collapsed = true, analysis_interval = "5m"},
   { symbol = "ETHUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "ETH", group = "crypto", analysis_interval = "15m" },
-  { symbol = "XAUUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "XAU", group = "crypto" },
+  { symbol = "SPYUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SPY", group = "stocks", show_collapsed = false },
   { symbol = "MSFTUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "MSFT", group = "stocks", show_collapsed = true },
+  { symbol = "XAUUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "XAU", group = "crypto" },
+  { symbol = "SOLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SOLUSDT", group = "crypto", show_collapsed = true },
+  { symbol = "CBRSUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "CBRSUSDT", group = "crypto", show_collapsed = true },
   { symbol = "vntl:ANTHROPIC", source = "hyperliquid", label = "ANTHROPIC Perp (vntl)", group = "preipo", show_collapsed = true },
   { symbol = "vntl:OPENAI", source = "hyperliquid", label = "OPENAI Perp (vntl)", group = "preipo", show_collapsed = true },
   { symbol = "vntl:SPACEX", source = "hyperliquid", label = "SPACEX Perp (vntl)", group = "preipo", show_collapsed = true },
@@ -13,8 +15,6 @@ symbols = [
   { symbol = "xyz:XYZ100", source = "hyperliquid", label = "XYZ100 Perp (xyz)", group = "indices", show_collapsed = true },
   { symbol = "xyz:MSTR", source = "hyperliquid", label = "MSTR Perp (xyz)", group = "stocks", show_collapsed = true },
   { symbol = "xyz:GOLD", source = "hyperliquid", label = "GOLD Perp (xyz)", group = "commodities", show_collapsed = true },
-  { symbol = "SOLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SOLUSDT", group = "crypto", show_collapsed = true },
-  { symbol = "CBRSUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "CBRSUSDT", group = "crypto", show_collapsed = true },
 ]
 
 [display]
@@ -84,7 +84,7 @@ calendar_enabled = true
 calendar_poll_interval_seconds = 300
 quotes_enabled = true
 quotes_poll_interval_seconds = 30
-quotes_codes = ["XAUUSD", "XAGUSD", "USOIL", "EURUSD", "USDJPY", "USDCNH", "N225", "NGAS", "UKOILX", "DJI"]
+quotes_codes = ["XAUUSD", "XAGUSD", "USOIL", "EURUSD", "USDJPY", "USDCNH", "N225", "NGAS", "UKOILX", "DJI", "SPX"]
 [browser]
 enabled = true
 # socket_path = "/tmp/open-browser-use/example.sock"  # optional, auto-discovers by default
