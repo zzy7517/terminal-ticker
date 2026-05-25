@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Plus, Settings, X } from 'lucide-react';
+import './WatchlistDrawer.css';
 import { useMarketStore, useGroups } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
 import { GROUP_LABELS } from '../../constants';

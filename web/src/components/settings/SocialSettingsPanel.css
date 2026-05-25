@@ -1,0 +1,166 @@
+/* ── Social Settings page ──────────────────────────────────────────── */
+.social-settings-layout {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+}
+
+.social-vault-card {
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.03), transparent 42%),
+    var(--panel);
+}
+
+:root[data-theme="dark"] .social-vault-card {
+  background:
+    linear-gradient(135deg, rgba(167, 139, 250, 0.06), transparent 42%),
+    var(--panel);
+}
+
+.social-auth-state {
+  align-items: center;
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: 0;
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+}
+
+.social-auth-state__icon {
+  align-items: center;
+  background: linear-gradient(135deg, var(--accent), color-mix(in oklch, var(--accent), #6d28d9 40%));
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--accent-contrast);
+  display: inline-flex;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.social-auth-state strong,
+.social-auth-state span {
+  display: block;
+}
+
+.social-auth-state strong {
+  font-size: 14px;
+}
+
+.social-auth-state span {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.social-auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.social-auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.social-cache-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.social-cache-form label {
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: 0;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.social-cache-form small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.settings-action-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shell-button.danger {
+  color: var(--down);
+}
+
+.shell-button.danger:hover:not(:disabled) {
+  background: var(--danger-tint);
+  border-color: rgba(255, 68, 102, 0.35);
+  color: var(--down);
+}
+
+.social-secret-note {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.social-test-panel {
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.social-test-count {
+  display: grid;
+  gap: 6px;
+}
+
+.social-test-count input {
+  width: min(180px, 100%);
+}
+
+.social-test-count small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.social-test-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.social-test-preview__item {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.social-test-preview__item strong {
+  font-size: 12px;
+}
+
+.social-test-preview__item span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 960px) {
+  .social-settings-layout {
+    grid-template-columns: 1fr;
+  }
+}
+

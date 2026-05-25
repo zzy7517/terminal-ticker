@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { EyeOff, Loader2, LockKeyhole, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
+import './SocialSettingsPanel.css';
 import type { SocialAuthStatus, SocialFeedItem } from '../../types';
 import { useMarketStore } from '../../stores/marketStore';
 import {

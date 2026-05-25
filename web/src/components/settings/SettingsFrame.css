@@ -1,121 +1,108 @@
-/* ── Settings frame ───────────────────────────────────────────────── */
+/* ── Settings frame — Bloomberg Terminal ───────────────────────────── */
 .settings-frame {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-lg);
+  background: #000000;
+  border: 1px solid var(--line-strong);
   display: grid;
   gap: 0;
-  grid-template-columns: 250px minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr);
   margin: 0 auto;
   max-width: 1600px;
-  min-height: calc(100vh - 32px);
+  min-height: calc(100vh - 20px);
 }
 
 .settings-nav {
-  background: var(--canvas);
-  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
-  border-right: 1px solid var(--line-soft);
+  background: #000000;
+  border-right: 1px solid var(--line-strong);
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 22px 14px 16px;
+  gap: 12px;
+  padding: 10px 8px;
 }
 
 .settings-nav-top {
   display: grid;
-  gap: 14px;
+  gap: 8px;
 }
 
 .settings-nav-group {
   display: grid;
-  gap: 4px;
+  gap: 1px;
 }
 
 .settings-nav-item {
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: var(--radius-md);
   color: var(--text-secondary);
   cursor: pointer;
   display: flex;
-  font-size: 13px;
-  font-weight: 500;
-  gap: 10px;
-  min-height: 42px;
-  padding: 0 12px;
-  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  gap: 6px;
+  letter-spacing: 0.02em;
+  min-height: 30px;
+  padding: 0 8px;
+  text-transform: uppercase;
 }
 
 .settings-nav-item.active {
-  background: var(--accent-tint-strong);
-  box-shadow: inset 3px 0 0 var(--accent);
-  color: var(--accent);
-  font-weight: 600;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
 }
 
 .settings-nav-item:hover:not(.active) {
-  background: rgba(0, 0, 0, 0.03);
-  color: var(--text-primary);
-}
-
-:root[data-theme="dark"] .settings-nav-item:hover:not(.active) {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--accent-tint);
+  color: var(--accent);
 }
 
 .settings-nav-meta {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--line-strong);
   display: grid;
-  gap: 6px;
+  gap: 4px;
   margin-top: auto;
-  padding: 12px;
+  padding: 8px;
 }
 
 .settings-nav-meta strong {
   color: var(--text-secondary);
   font-family: var(--mono);
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 10px;
+  line-height: 1.4;
   word-break: break-all;
 }
 
 .settings-back {
   align-items: center;
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--ctl-radius);
+  background: transparent;
+  border: 1px solid var(--line-strong);
   color: var(--text-secondary);
   cursor: pointer;
   display: inline-flex;
-  font-size: var(--ctl-font);
-  font-weight: 500;
-  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  gap: 4px;
   justify-content: center;
-  margin-top: 6px;
-  min-height: var(--ctl-h-md);
-  padding: 0 var(--ctl-px-md);
-  transition: var(--ctl-transition), transform 80ms ease;
+  margin-top: 4px;
+  min-height: var(--ctl-h-sm);
+  padding: 0 8px;
+  text-transform: uppercase;
 }
 
 .settings-back:hover {
-  background: var(--panel-raised);
-  border-color: var(--line-strong);
-  color: var(--text-primary);
-}
-
-.settings-back:active {
-  transform: scale(0.97);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .settings-stage {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 32px);
+  height: calc(100vh - 20px);
   min-width: 0;
   overflow-y: auto;
-  padding: 28px;
+  padding: 12px 16px;
 }
 
 .settings-stage > *:last-child {
@@ -125,14 +112,15 @@
 
 .settings-stage-head {
   align-items: center;
+  border-bottom: 1px solid var(--line-strong);
   display: flex;
-  gap: 12px;
+  gap: 8px;
   justify-content: space-between;
-  margin-bottom: 22px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
 }
 
 .settings-stage-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
-

@@ -41,18 +41,11 @@ export const SOCIAL_HASH = '#/settings/social';
 export const CRON_HASH = '#/settings/cron';
 export const MCP_HASH = '#/settings/mcp';
 export const BROWSER_HASH = '#/settings/browser';
-export const THEME_STORAGE_KEY = 'tradex-theme';
+
 export const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
 export type SettingsSection = 'providers' | 'agent-context' | 'watchlist' | 'news' | 'memory' | 'social' | 'cron' | 'mcp' | 'browser';
 export type SearchSource = 'bitget' | 'hyperliquid';
 export type SourceHint = SearchSource;
-export type ThemeName = 'light' | 'dark';
-
 export type AppRoute =
   | { view: 'workspace' }
   | { view: 'settings'; section: SettingsSection };
-
-export const THEME_LABELS: Record<ThemeName, string> = {
-  light: 'Light',
-  dark: 'Dark',
-};

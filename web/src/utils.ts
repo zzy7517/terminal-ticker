@@ -13,27 +13,13 @@ import {
   NEWS_HASH,
   PROVIDERS_HASH,
   SOCIAL_HASH,
-  THEME_STORAGE_KEY,
   WATCHLIST_HASH,
   type AppRoute,
-  type ThemeName,
 } from './constants';
 import {
   addBitgetSymbol,
   addHyperliquidSymbol,
 } from './api';
-
-export function readInitialTheme(): ThemeName {
-  try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
-  } catch {
-    return 'light';
-  }
-}
-
-export function nextTheme(theme: ThemeName): ThemeName {
-  return theme === 'dark' ? 'light' : 'dark';
-}
 
 export function readRouteFromHash(): AppRoute {
   if (window.location.hash.startsWith(BROWSER_HASH)) {

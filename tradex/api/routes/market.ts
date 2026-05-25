@@ -94,7 +94,16 @@ export function marketRoutes(runtime: AppRuntime): Hono {
     }
     const watchlistPath = requireConfigPath(runtime);
     await reorderSymbolsInWatchlist(watchlistPath, keys as string[]);
-    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+
+    // Reorder in-memory instruments to match without restarting data connections
+    const keyOrder = new Map((keys as string[]).map((k, i) => [k, i]));
+    runtime.instruments.sort((a, b) => {
+      const ai = keyOrder.get(a.key) ?? Infinity;
+      const bi = keyOrder.get(b.key) ?? Infinity;
+      return ai - bi;
+    });
+
+    return c.json({ state: await runtime.state() });
   });
 
   // Removes an instrument from the watchlist TOML by instrument key.

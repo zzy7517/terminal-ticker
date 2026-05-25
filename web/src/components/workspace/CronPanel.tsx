@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Clock, Play, Pause, ChevronRight, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import './CronPanel.css';
 import type { CronJobStatus, CronRunRecord, CronSessionEntry, CronStoragePaths } from '../../types';
 import {
   fetchCronJobs,

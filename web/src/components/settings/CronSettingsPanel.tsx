@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Clock, Plus, Trash2, Save, ChevronDown, Search, Check, Cpu } from 'lucide-react';
 import { ProviderIcon } from '../ProviderIcon';
+import './CronSettingsPanel.css';
 import type { AgentModelOption, CronJobStatus } from '../../types';
 import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useAgentStore } from '../../stores/agentStore';

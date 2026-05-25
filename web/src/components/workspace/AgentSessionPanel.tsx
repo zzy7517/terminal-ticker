@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import './AgentSessionPanel.css';
 import ReactMarkdown from 'react-markdown';
 import {
   Bot,

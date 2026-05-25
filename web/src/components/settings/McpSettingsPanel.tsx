@@ -42,6 +42,7 @@ import {
   fetchJin10AvailableCodes,
 } from '../../api';
 import { useMarketStore } from '../../stores/marketStore';
+import './McpSettingsPanel.css';
 
 type ServerFormMode = 'view' | 'edit' | 'create';
 type DetailTab = 'overview' | 'tools' | 'resources' | 'jin10-config';

@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
+import './CalendarPanel.css';
 import type { Jin10CalendarEvent } from '../../types';
 import { refreshJin10Calendar } from '../../api';
 
 function starIcons(count: number): string {
-  return '⭐'.repeat(Math.min(count, 5));
+  return '★'.repeat(Math.min(count, 5));
 }
 
 function formatEventTime(pubTime: string): string {

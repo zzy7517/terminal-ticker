@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Plus, Settings, X } from 'lucide-react';
+import './WatchlistSidebar.css';
 import { useMarketStore, useGroups } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
 import { GROUP_LABELS } from '../../constants';
@@ -50,8 +51,10 @@ function SidebarRow({
         onClick={onSelect}
         title={`${instrument.label} ${quote?.percentLabel ?? ''}`}
       >
-        <span className={`sb-dot ${cls}`} />
         <span className="sb-row-sym">{instrument.symbol.slice(0, 4)}</span>
+        <span className={`sb-row-collapsed-price ${cls}`}>
+          {quote?.priceLabel ?? '—'}
+        </span>
       </div>
     );
   }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import './NewsPanel.css';
 import type { NewsItem } from '../../types';
 import { triggerNewsRefresh, refreshJin10Flash } from '../../api';
 

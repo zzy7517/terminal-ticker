@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Eye, EyeOff, KeyRound, Loader2, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
 import { ProviderIcon } from '../ProviderIcon';
+import './ProviderSettingsPanel.css';
 import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
 import { useAgentStore } from '../../stores/agentStore';

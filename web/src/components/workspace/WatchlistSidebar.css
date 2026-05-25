@@ -1,0 +1,348 @@
+/* ── Watchlist Sidebar — Bloomberg Terminal Panel ─────────────────── */
+.watchlist-sidebar {
+  background: #000000;
+  border-right: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  transition: width 150ms linear;
+  width: 200px;
+  z-index: 50;
+}
+
+.watchlist-sidebar.collapsed {
+  width: 44px;
+}
+
+/* Sidebar header */
+.sb-head {
+  align-items: center;
+  border-bottom: 1px solid var(--line-strong);
+  display: flex;
+  gap: 4px;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 4px 8px;
+}
+
+.sb-title {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sb-head-actions {
+  align-items: center;
+  display: flex;
+  gap: 2px;
+}
+
+.sb-icon-btn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 3px;
+  height: 20px;
+  justify-content: center;
+  min-width: 20px;
+  padding: 0 2px;
+}
+
+.sb-icon-btn:hover {
+  color: var(--accent);
+}
+
+.sb-icon-btn span {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+/* Group tabs */
+.sb-groups {
+  border-bottom: 1px solid var(--line-strong);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  overflow-x: auto;
+  padding: 2px 4px;
+}
+
+.sb-group-btn {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 4px 7px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sb-group-btn:hover:not(.active) {
+  color: var(--text-primary);
+}
+
+.sb-group-btn.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+}
+
+/* Instrument list */
+.sb-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Row — expanded */
+.sb-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: inherit;
+  cursor: grab;
+  display: flex;
+  gap: 4px;
+  justify-content: space-between;
+  padding: 4px 8px;
+  position: relative;
+  text-align: left;
+  width: 100%;
+}
+
+.sb-row:active {
+  cursor: grabbing;
+}
+
+.sb-row:last-child {
+  border-bottom: 0;
+}
+
+.sb-row:hover {
+  background: var(--accent-tint);
+}
+
+.sb-row.selected {
+  background: var(--accent-tint-strong);
+  border-left: 2px solid var(--accent);
+  padding-left: 6px;
+}
+
+.sb-row-left {
+  min-width: 0;
+  flex: 1;
+}
+
+.sb-row-label {
+  color: var(--accent);
+  display: block;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sb-row-code {
+  color: var(--text-muted);
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  margin-top: 0px;
+}
+
+.sb-row-right {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 0px;
+}
+
+.sb-row-price {
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.sb-row-change {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums lining-nums;
+  line-height: 1.2;
+}
+
+.sb-row-change.up { color: var(--up); }
+.sb-row-change.down { color: var(--down); }
+.sb-row-change.neutral { color: var(--text-muted); }
+
+.sb-row-remove {
+  align-items: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: none;
+  height: 14px;
+  justify-content: center;
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+}
+
+.sb-row:hover .sb-row-remove {
+  display: flex;
+}
+
+.sb-row-remove:hover {
+  color: var(--down);
+}
+
+/* Row — collapsed */
+.sb-row--collapsed {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  justify-content: center;
+  padding: 4px 2px;
+  width: 100%;
+}
+
+.sb-row--collapsed:last-child {
+  border-bottom: 0;
+}
+
+.sb-row--collapsed:hover {
+  background: var(--accent-tint);
+}
+
+.sb-row--collapsed.selected {
+  background: var(--accent-tint-strong);
+}
+
+.sb-dot {
+  height: 4px;
+  width: 4px;
+}
+
+.sb-dot.up { background: var(--up); }
+.sb-dot.down { background: var(--down); }
+.sb-dot.neutral { background: var(--text-muted); }
+
+.sb-row-sym {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sb-row-collapsed-price {
+  font-family: var(--mono);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.sb-row-collapsed-price.up { color: var(--up); }
+.sb-row-collapsed-price.down { color: var(--down); }
+.sb-row-collapsed-price.neutral { color: var(--text-muted); }
+
+/* Jin10 editor */
+.sb-jin10-editor {
+  border-top: 1px solid var(--line-strong);
+  padding: 6px 8px;
+}
+
+.sb-jin10-add {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
+.sb-jin10-add .input.sm {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 4px;
+}
+
+.sb-jin10-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 4px;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.sb-jin10-chip {
+  background: var(--accent-tint);
+  border: 1px solid var(--line-strong);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 1px 4px;
+  text-transform: uppercase;
+}
+
+.sb-jin10-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sb-add-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── Drag-and-drop feedback ──────────────────────────────────────── */
+.sb-dragging {
+  opacity: 0.4;
+}
+
+.sb-drag-above {
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}
+
+.sb-drag-below {
+  box-shadow: inset 0 -2px 0 0 var(--accent);
+}
+
+[draggable="true"] {
+  -webkit-user-select: none;
+  user-select: none;
+}

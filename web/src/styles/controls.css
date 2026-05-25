@@ -1,0 +1,650 @@
+/* ═══════════════════════════════════════════════════════════════════
+   TRADEX — Shared Controls: Bloomberg Terminal Style
+   Zero radius · 1px borders · monospace · no shadows · dense
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Panel container ──────────────────────────────────────────────── */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  padding: 8px 10px;
+}
+
+/* ── Toolbar / flex header ────────────────────────────────────────── */
+.toolbar {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────── */
+.empty-state {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 4px;
+  justify-content: center;
+  line-height: 1.4;
+  min-height: 60px;
+  padding: 10px;
+  text-align: center;
+}
+
+.empty-state.sm {
+  font-size: 11px;
+  min-height: 32px;
+  padding: 6px 8px;
+}
+
+.empty-state.lg {
+  font-size: 13px;
+  min-height: 80px;
+  padding: 16px;
+}
+
+.empty-state.row {
+  flex-direction: row;
+}
+
+/* ── Badge — terminal tag ─────────────────────────────────────────── */
+.badge {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  gap: 3px;
+  letter-spacing: 0.02em;
+  min-height: 20px;
+  padding: 2px 6px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.badge.sm {
+  font-size: 10px;
+  min-height: 18px;
+  padding: 1px 5px;
+}
+
+.badge.success {
+  border-color: var(--up);
+  color: var(--up);
+}
+
+.badge.danger {
+  border-color: var(--down);
+  color: var(--down);
+}
+
+.badge.warning {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.badge.accent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.badge.solid {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+}
+
+.badge.mono {
+  font-family: var(--mono);
+}
+
+/* ── Button (shell-button) — terminal style ───────────────────────── */
+.shell-button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: var(--ctl-font);
+  font-weight: var(--ctl-weight);
+  gap: 4px;
+  justify-content: center;
+  letter-spacing: 0.02em;
+  min-height: var(--ctl-h-md);
+  padding: 0 var(--ctl-px-md);
+  text-transform: uppercase;
+}
+
+.shell-button > svg {
+  flex-shrink: 0;
+  height: 13px;
+  width: 13px;
+}
+
+.shell-button.sm > svg {
+  height: 11px;
+  width: 11px;
+}
+
+.shell-button.lg > svg {
+  height: 14px;
+  width: 14px;
+}
+
+.shell-button:hover:not(:disabled) {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.shell-button:active:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* Primary — Bloomberg orange fill */
+.shell-button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+}
+
+.shell-button.primary:hover:not(:disabled) {
+  background: #e68a00;
+  border-color: #e68a00;
+  color: var(--accent-contrast);
+}
+
+/* Ghost / Muted — no border */
+.shell-button.ghost,
+.shell-button.muted {
+  border-color: transparent;
+}
+
+.shell-button.ghost:hover:not(:disabled),
+.shell-button.muted:hover:not(:disabled) {
+  background: var(--accent-tint);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+/* Danger */
+.shell-button.danger {
+  border-color: var(--down);
+  color: var(--down);
+}
+
+.shell-button.danger:hover:not(:disabled) {
+  background: var(--danger-tint);
+  border-color: var(--down);
+  color: var(--down);
+}
+
+/* Sizes */
+.shell-button.sm {
+  font-size: 10px;
+  min-height: var(--ctl-h-sm);
+  padding: 0 var(--ctl-px-sm);
+}
+
+.shell-button.lg {
+  min-height: var(--ctl-h-lg);
+  padding: 0 var(--ctl-px-lg);
+}
+
+/* Icon-only */
+.shell-button.icon {
+  padding: 0;
+  width: var(--ctl-h-md);
+}
+
+.shell-button.icon.sm {
+  width: var(--ctl-h-sm);
+}
+
+.shell-button.icon.lg {
+  width: var(--ctl-h-lg);
+}
+
+.shell-button.full-width {
+  width: 100%;
+}
+
+/* Disabled states */
+.shell-button:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: var(--ctl-disabled-opacity);
+}
+
+.shell-button.primary:disabled {
+  background: var(--line-strong);
+  border-color: var(--line-strong);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.shell-button.ghost:disabled,
+.shell-button.muted:disabled {
+  background: transparent;
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ── Input — terminal style ───────────────────────────────────────── */
+.input {
+  background: #0a0a0a;
+  border: 1px solid var(--line-strong);
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: 12px;
+  min-height: var(--ctl-h-lg);
+  outline: 0;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+.input:hover:not(:disabled):not(:focus) {
+  border-color: var(--accent);
+}
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
+.input:disabled {
+  cursor: not-allowed;
+  opacity: var(--ctl-disabled-opacity);
+}
+
+.input.mono {
+  font-family: var(--mono);
+}
+
+.input.sm {
+  min-height: var(--ctl-h-md);
+  padding: 0 6px;
+}
+
+/* ── Switch — terminal toggle ─────────────────────────────────────── */
+.switch-row {
+  align-items: center;
+  color: var(--text-secondary);
+  display: inline-flex;
+  gap: 8px;
+  position: relative;
+}
+
+.switch-row input {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.switch-slider {
+  background: var(--line-strong);
+  display: inline-flex;
+  height: 14px;
+  position: relative;
+  width: 28px;
+}
+
+.switch-slider::after {
+  background: var(--text-muted);
+  content: "";
+  height: 10px;
+  left: 2px;
+  position: absolute;
+  top: 2px;
+  transition: transform 100ms linear;
+  width: 10px;
+}
+
+.switch-row input:checked + .switch-slider {
+  background: var(--accent);
+}
+
+.switch-row input:checked + .switch-slider::after {
+  background: var(--accent-contrast);
+  transform: translateX(14px);
+}
+
+/* ── Icon button — minimal ────────────────────────────────────────── */
+.icon-btn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  height: 22px;
+  justify-content: center;
+  min-width: 22px;
+  padding: 0 2px;
+}
+
+.icon-btn:hover {
+  color: var(--accent);
+}
+
+.icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: var(--ctl-disabled-opacity);
+}
+
+/* ── Dropdown panel ───────────────────────────────────────────────── */
+.dropdown-panel {
+  background: #0d0d0d;
+  border: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  left: 0;
+  max-height: min(360px, calc(100vh - 280px));
+  position: absolute;
+  top: calc(100% + 2px);
+  z-index: 200;
+}
+
+/* ── Dropdown search ──────────────────────────────────────────────── */
+.dropdown-search {
+  align-items: center;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--text-muted);
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.dropdown-search input {
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.dropdown-search input::placeholder {
+  color: var(--text-muted);
+}
+
+/* ── Dropdown option ──────────────────────────────────────────────── */
+.dropdown-option {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--mono);
+  font-size: 12px;
+  gap: 6px;
+  padding: 5px 10px 5px 22px;
+  text-align: left;
+  width: 100%;
+}
+
+.dropdown-option:hover {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.dropdown-option.active {
+  color: var(--accent);
+  font-weight: 700;
+  padding-left: 8px;
+}
+
+/* ── Dropdown list (scrollable body) ──────────────────────────────── */
+.dropdown-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+/* ── Section label ────────────────────────────────────────────────── */
+.section-label {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 6px 8px 3px;
+  text-transform: uppercase;
+}
+
+/* ── List row (interactive item) ──────────────────────────────────── */
+.list-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font-family: var(--mono);
+  font-size: 12px;
+  gap: 6px;
+  padding: 6px 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.list-row:last-child {
+  border-bottom: 0;
+}
+
+.list-row:hover {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.list-row.selected {
+  background: var(--accent-tint-strong);
+  border-left: 2px solid var(--accent);
+}
+
+/* ── Code tag (inline mono pill) ────────────────────────────────── */
+.code-tag {
+  background: var(--accent-tint);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 5px;
+}
+
+/* ── Settings toggle row ──────────────────────────────────────────── */
+.settings-toggle-row {
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+.settings-toggle-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-toggle-row strong {
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.settings-toggle-row small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Button-form of switch-slider */
+.settings-toggle {
+  background: var(--line-strong);
+  border: 0;
+  cursor: pointer;
+  height: 14px;
+  position: relative;
+  width: 28px;
+}
+
+.settings-toggle > span {
+  background: var(--text-muted);
+  height: 10px;
+  left: 2px;
+  position: absolute;
+  top: 2px;
+  transition: transform 100ms linear;
+  width: 10px;
+}
+
+.settings-toggle.on {
+  background: var(--accent);
+}
+
+.settings-toggle.on > span {
+  background: var(--accent-contrast);
+  transform: translateX(14px);
+}
+
+.settings-toggle:disabled {
+  cursor: not-allowed;
+  opacity: var(--ctl-disabled-opacity);
+}
+
+/* ── Settings utilities ───────────────────────────────────────────── */
+.settings-readonly-grid {
+  display: grid;
+  gap: 8px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  margin-top: 10px;
+}
+
+.settings-readonly-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.settings-readonly-grid strong {
+  color: var(--text-primary);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.settings-readonly-grid.compact {
+  margin-top: 4px;
+}
+
+.settings-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-top: 8px;
+}
+
+.settings-action-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-search {
+  align-items: center;
+  background: #0a0a0a;
+  border: 1px solid var(--line-strong);
+  display: flex;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+}
+
+.settings-search input {
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 11px;
+  min-height: 30px;
+  min-width: 0;
+  outline: 0;
+}
+
+/* ── Connection badge — terminal status ───────────────────────────── */
+.connection-badge {
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  color: var(--text-secondary);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 11px;
+  gap: 4px;
+  min-height: var(--ctl-h-sm);
+  padding: 0 8px;
+  text-transform: uppercase;
+}
+
+.connection-badge.live {
+  border-color: var(--up);
+  color: var(--up);
+}
+
+.connection-badge.live::before {
+  animation: pulse-dot 2s ease-in-out infinite;
+  background: var(--up);
+  content: "";
+  display: inline-block;
+  height: 5px;
+  margin-right: 4px;
+  width: 5px;
+}
+
+.connection-badge.offline {
+  border-color: var(--down);
+  color: var(--down);
+}
+
+/* ── Link button ──────────────────────────────────────────────────── */
+.link-btn {
+  background: none;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: inherit;
+  padding: 0;
+  text-decoration: none;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+/* ── Provider icon ────────────────────────────────────────────────── */
+.provider-icon {
+  object-fit: contain;
+  vertical-align: middle;
+  flex-shrink: 0;
+}

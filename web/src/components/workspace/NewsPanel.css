@@ -1,0 +1,181 @@
+/* ── News panel — Bloomberg Terminal ───────────────────────────────── */
+.news-panel {
+  background: #000000;
+  border: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  min-height: 0;
+  padding: 6px 8px;
+}
+
+.news-panel__head {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.news-panel__title {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.news-panel__feedback {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 0;
+}
+
+.news-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.news-item {
+  background: transparent;
+  border-bottom: 1px dashed var(--line-strong);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px;
+  text-decoration: none;
+}
+
+.news-item:last-child {
+  border-bottom: 0;
+}
+
+.news-item:hover {
+  background: var(--accent-tint);
+  border-left: 2px solid var(--accent);
+  padding-left: 4px;
+}
+
+.news-item__title {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+}
+
+.news-item__meta {
+  color: var(--text-muted);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 10px;
+  gap: 4px;
+}
+
+.news-item__keywords {
+  color: var(--text-muted);
+}
+
+.news-item__summary {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.35;
+  margin-top: 1px;
+  overflow: hidden;
+}
+
+/* ── News tab panel ──────────────────────────────────────────────── */
+.news-tab-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.news-tab-panel .news-panel {
+  border-top: 0;
+  margin-top: 0;
+  padding: 8px 10px;
+}
+
+.news-tab-panel .news-panel__list {
+  max-height: none;
+}
+
+/* ── News source tabs — function key style ───────────────────────── */
+.news-panel__sources {
+  border: 1px solid var(--line-strong);
+  display: flex;
+  gap: 0;
+  padding: 0;
+  width: fit-content;
+}
+
+.news-source-tab {
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 4px 10px;
+  text-transform: uppercase;
+}
+
+.news-source-tab:last-child {
+  border-right: 0;
+}
+
+.news-source-tab.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.news-source-tab:hover:not(.active) {
+  background: var(--accent-tint);
+  color: var(--text-primary);
+}
+
+/* ── News item badges ────────────────────────────────────────────── */
+.news-item__badge {
+  border: 1px solid;
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  margin-right: 3px;
+  padding: 1px 4px;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.news-item__badge.important {
+  border-color: var(--down);
+  color: var(--down);
+}
+
+.news-item__badge.source {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+  text-transform: none;
+}
+
+.news-item__badge.source.jin10 {
+  border-color: var(--warning);
+  color: var(--warning);
+}

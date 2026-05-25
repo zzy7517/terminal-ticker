@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import './SocialFeedPanel.css';
 import { Loader2, Sparkles } from 'lucide-react';
 import type { SocialFeedItem } from '../../types';
 import { useMarketStore } from '../../stores/marketStore';

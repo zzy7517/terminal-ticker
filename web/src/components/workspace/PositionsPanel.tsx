@@ -64,7 +64,7 @@ export function PositionsPanel() {
           <div><strong>挂单</strong> {orders.length}</div>
           <div>
             <strong>未实现盈亏</strong>{' '}
-            <span style={{ color: totalUnrealized >= 0 ? '#26a69a' : '#ef5350' }}>
+            <span style={{ color: totalUnrealized >= 0 ? 'var(--up)' : 'var(--down)' }}>
               {totalUnrealized >= 0 ? '+' : ''}{totalUnrealized.toFixed(2)}
             </span>
           </div>
@@ -72,7 +72,7 @@ export function PositionsPanel() {
         </div>
       </div>
 
-      {error && <div style={{ color: '#e06c75' }}>{error}</div>}
+      {error && <div style={{ color: 'var(--down)' }}>{error}</div>}
 
       <section>
         <h3 style={{ margin: '4px 0' }}>实时持仓</h3>
@@ -98,7 +98,7 @@ export function PositionsPanel() {
                 {items.map((p) => (
                   <tr key={`${p.exchange}:${p.symbol}:${p.side}`}>
                     <td>{p.symbol}</td>
-                    <td style={{ color: p.side === 'long' ? '#26a69a' : '#ef5350' }}>
+                    <td style={{ color: p.side === 'long' ? 'var(--up)' : 'var(--down)' }}>
                       {p.side === 'long' ? '多' : '空'}
                     </td>
                     <td style={{ textAlign: 'right' }}>{p.size}</td>
@@ -106,7 +106,7 @@ export function PositionsPanel() {
                     <td style={{ textAlign: 'right' }}>{p.markPrice.toFixed(2)}</td>
                     <td style={{
                       textAlign: 'right',
-                      color: p.unrealizedPnl >= 0 ? '#26a69a' : '#ef5350',
+                      color: p.unrealizedPnl >= 0 ? 'var(--up)' : 'var(--down)',
                     }}>
                       {p.unrealizedPnl >= 0 ? '+' : ''}{p.unrealizedPnl.toFixed(2)}
                     </td>
@@ -144,7 +144,7 @@ export function PositionsPanel() {
                 {items.map((o) => (
                   <tr key={`${o.exchange}:${o.orderId}`}>
                     <td>{o.symbol}</td>
-                    <td style={{ color: o.side === 'buy' ? '#26a69a' : '#ef5350' }}>
+                    <td style={{ color: o.side === 'buy' ? 'var(--up)' : 'var(--down)' }}>
                       {o.side}
                     </td>
                     <td>{o.orderType}</td>

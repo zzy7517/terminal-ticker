@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useMarketStore } from './stores/marketStore';
 import { useAgentStore } from './stores/agentStore';
 import { useUiStore } from './stores/uiStore';
-import { THEME_STORAGE_KEY } from './constants';
+
 import { orderedGroups, readRouteFromHash } from './utils';
 import { WorkspaceView } from './components/workspace';
 import {
@@ -20,14 +20,7 @@ import {
 
 export default function App() {
   const route = useUiStore((s) => s.route);
-  const theme = useUiStore((s) => s.theme);
   const state = useMarketStore((s) => s.state);
-
-  // Apply theme to DOM on mount and changes.
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try { window.localStorage.setItem(THEME_STORAGE_KEY, theme); } catch {}
-  }, [theme]);
 
   // Sync route from hash changes.
   useEffect(() => {

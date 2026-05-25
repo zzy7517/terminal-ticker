@@ -38,18 +38,18 @@
   align-items: center;
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: 0;
   display: inline-flex;
   gap: 8px;
   padding: 5px 6px 5px 12px;
   position: relative;
-  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+  transition: none;
 }
 
 .wl-chip:hover {
   border-color: var(--line-strong);
   transform: translateY(-1px);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
 }
 
 .wl-chip.is-busy {
@@ -87,14 +87,14 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--text-muted);
   cursor: pointer;
   display: inline-flex;
   height: 22px;
   justify-content: center;
   margin-left: 2px;
-  transition: background 120ms ease, color 120ms ease;
+  transition: none;
   width: 22px;
 }
 
@@ -111,12 +111,12 @@
 .wl-browse {
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius-lg);
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
 }
 
 .wl-browse-toolbar {
@@ -129,7 +129,7 @@
 .wl-source-tabs {
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
+  border-radius: 0;
   display: inline-flex;
   gap: 2px;
   padding: 3px;
@@ -139,7 +139,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: calc(var(--radius-md) - 2px);
+  border-radius: 0;
   color: var(--text-muted);
   cursor: pointer;
   display: inline-flex;
@@ -164,7 +164,7 @@
 
 .wl-source-tab-count {
   background: var(--accent-tint);
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--accent);
   font-family: var(--mono);
   font-size: 10px;
@@ -186,17 +186,17 @@
   align-items: center;
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
+  border-radius: 0;
   display: flex;
   gap: 8px;
   min-height: 38px;
   padding: 0 8px 0 12px;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  transition: none;
 }
 
 .wl-search:focus-within {
   border-color: var(--accent-ring);
-  box-shadow: 0 0 0 3px var(--accent-tint);
+  box-shadow: none;
 }
 
 .wl-search svg {
@@ -223,7 +223,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--text-muted);
   cursor: pointer;
   display: inline-flex;
@@ -263,14 +263,14 @@
 .wl-quote-pill {
   background: transparent;
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--text-secondary);
   cursor: pointer;
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.04em;
   padding: 4px 12px;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+  transition: none;
 }
 
 .wl-quote-pill:hover:not(:disabled) {
@@ -297,7 +297,7 @@
 .wl-errors div {
   background: rgba(255, 68, 102, 0.08);
   border: 1px solid rgba(255, 68, 102, 0.16);
-  border-radius: var(--radius-md);
+  border-radius: 0;
   display: grid;
   gap: 2px;
   padding: 8px 10px;
@@ -333,7 +333,7 @@
 .wl-alpha-key {
   background: transparent;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   color: var(--text-muted);
   cursor: pointer;
   font-family: var(--mono);
@@ -341,7 +341,7 @@
   font-weight: 600;
   height: 18px;
   padding: 0;
-  transition: background 100ms ease, color 100ms ease;
+  transition: none;
 }
 
 .wl-alpha-key:hover:not(:disabled) {
@@ -356,7 +356,7 @@
 
 .wl-catalog-scroller {
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
+  border-radius: 0;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -412,7 +412,7 @@
   gap: 12px;
   grid-template-columns: minmax(140px, 1.4fr) minmax(80px, 0.8fr) auto;
   padding: 10px 14px;
-  transition: background 120ms ease;
+  transition: none;
 }
 
 .wl-catalog-row:last-child {
@@ -464,7 +464,7 @@
   align-items: center;
   background: var(--accent);
   border: 1px solid var(--accent);
-  border-radius: var(--ctl-radius-sm);
+  border-radius: 0;
   color: var(--accent-contrast);
   cursor: pointer;
   display: inline-flex;
@@ -475,7 +475,7 @@
   min-height: 26px;
   padding: 0 10px;
   text-transform: uppercase;
-  transition: var(--ctl-transition), transform 80ms ease, filter 140ms ease;
+  transition: none;
 }
 
 .wl-catalog-action:hover:not(:disabled) {
@@ -510,7 +510,7 @@
 .wl-status {
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
+  border-radius: 0;
   color: var(--text-secondary);
   font-family: var(--mono);
   font-size: 11px;

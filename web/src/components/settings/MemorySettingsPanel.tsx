@@ -34,6 +34,7 @@ import {
   memoryRead,
   memorySearch,
 } from '../../api';
+import './MemorySettingsPanel.css';
 
 type BrowseMode = 'tree' | 'read' | 'search';
 

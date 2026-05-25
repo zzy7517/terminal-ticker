@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Newspaper, Plus } from 'lucide-react';
+import './NewsSettingsPanel.css';
 import type { NewsConfigUpdate } from '../../types';
 import { useMarketStore } from '../../stores/marketStore';
 import { saveNewsConfig } from '../../api';

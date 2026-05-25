@@ -1,0 +1,137 @@
+/* ── Calendar tab panel — Bloomberg Terminal ──────────────────────── */
+.calendar-tab-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.calendar-panel {
+  background: #000000;
+  border: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 8px 10px;
+}
+
+.calendar-panel__head {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.calendar-panel__title {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.calendar-panel__feedback {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.calendar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calendar-section__title {
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding-bottom: 2px;
+  text-transform: uppercase;
+}
+
+.calendar-event {
+  background: transparent;
+  border-left: 2px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px;
+}
+
+.calendar-event.star-3 {
+  background: var(--accent-tint);
+  border-left-color: var(--accent);
+}
+
+.calendar-event.star-2 {
+  border-left-color: var(--warning);
+}
+
+.calendar-event.star-1 {
+  border-left-color: var(--text-muted);
+}
+
+.calendar-event__head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.calendar-event__stars {
+  color: var(--accent);
+  font-size: 9px;
+  letter-spacing: -1px;
+}
+
+.calendar-event__time {
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.calendar-event__title {
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.calendar-event__values {
+  color: var(--text-secondary);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 11px;
+  gap: 10px;
+}
+
+.calendar-event__values strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.calendar-event__values strong.better {
+  color: var(--up);
+}
+
+.calendar-event__values strong.worse {
+  color: var(--down);
+}
+
+.calendar-event__values strong.pending {
+  color: var(--text-muted);
+}
+
+.calendar-event__affect {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-style: normal;
+}

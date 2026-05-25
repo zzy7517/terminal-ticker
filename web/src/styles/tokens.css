@@ -1,0 +1,78 @@
+/* ═══════════════════════════════════════════════════════════════════
+   TRADEX — Design Tokens
+   Bloomberg Terminal replica · pitch black · monospace · zero radius
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Light theme — not used; Bloomberg has no light mode ─────────── */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces — pitch black, terminal CRT */
+  --canvas: #000000;
+  --canvas-2: #0a0a0a;
+  --panel: #000000;
+  --panel-raised: #0d0d0d;
+
+  /* Borders — terminal grid lines */
+  --line-soft: #1a1a1a;
+  --line-strong: #333333;
+
+  /* Text — terminal phosphor white/gray */
+  --text-primary: #ffffff;
+  --text-secondary: #b3b3b3;
+  --text-muted: #666666;
+
+  /* Semantic — market (Bloomberg convention) */
+  --up: #00ff41;
+  --down: #ff3333;
+  --success: #00ff41;
+  --danger: #ff3333;
+  --warning: #ffb800;
+
+  /* Accent — Bloomberg Terminal Orange */
+  --accent: #ff9900;
+  --accent-contrast: #000000;
+  --accent-tint: rgba(255, 153, 0, 0.10);
+  --accent-tint-strong: rgba(255, 153, 0, 0.20);
+  --accent-ring: rgba(255, 153, 0, 0.50);
+
+  /* Tints */
+  --danger-tint: rgba(255, 51, 51, 0.10);
+  --danger-tint-strong: rgba(255, 51, 51, 0.18);
+  --warning-tint: rgba(255, 184, 0, 0.10);
+  --warning-tint-strong: rgba(255, 184, 0, 0.18);
+  --success-tint: rgba(0, 255, 65, 0.08);
+  --success-tint-strong: rgba(0, 255, 65, 0.15);
+
+  /* Elevation — Bloomberg uses NO shadows, only borders */
+  --shadow-soft: none;
+  --shadow-md: none;
+
+  /* Radii — ZERO everywhere. Bloomberg is pure rectangles */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+
+  /* Typography — monospace ONLY. Bloomberg Terminal is 100% mono */
+  --mono: "JetBrains Mono", "SF Mono", "Cascadia Mono", "Consolas", "Courier New", monospace;
+  --display: "JetBrains Mono", "SF Mono", "Cascadia Mono", "Consolas", "Courier New", monospace;
+  --ui: "JetBrains Mono", "SF Mono", "Cascadia Mono", "Consolas", "Courier New", monospace;
+
+  /* Control tokens — terminal-grade density, readable size */
+  --ctl-h-sm: 24px;
+  --ctl-h-md: 28px;
+  --ctl-h-lg: 34px;
+  --ctl-px-sm: 8px;
+  --ctl-px-md: 10px;
+  --ctl-px-lg: 12px;
+  --ctl-radius: 0px;
+  --ctl-radius-sm: 0px;
+  --ctl-font: 12px;
+  --ctl-weight: 500;
+  --ctl-weight-strong: 700;
+  --ctl-disabled-opacity: 0.35;
+  --ctl-transition: none;
+}
+
+/* Bloomberg Terminal is always dark — no alternate theme needed */

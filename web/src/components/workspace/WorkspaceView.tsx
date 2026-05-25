@@ -1,15 +1,12 @@
 import { useState } from 'react';
 import {
-  Moon,
   Settings,
-  Sun,
   Zap,
 } from 'lucide-react';
+import './WorkspaceView.css';
 import { useMarketStore } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
-import { THEME_LABELS } from '../../constants';
-import type { ThemeName } from '../../constants';
-import { nextTheme } from '../../utils';
+
 import { ConnectionBadge } from './ConnectionBadge';
 import { WatchlistSidebar } from './WatchlistSidebar';
 import { AgentSessionHistoryList } from './AgentSessionHistoryList';
@@ -24,10 +21,7 @@ export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);
   const socketStatus = useMarketStore((s) => s.socketStatus);
 
-  const theme = useUiStore((s) => s.theme);
   const openSettings = useUiStore((s) => s.openSettings);
-
-  const nextThemeName: ThemeName = nextTheme(theme);
 
   const [activeTab, setActiveTab] = useState<'agent' | 'news' | 'social' | 'calendar' | 'positions' | 'cron'>('agent');
 
@@ -46,24 +40,12 @@ export function WorkspaceView() {
               <Zap size={21} />
             </div>
             <div>
-              <div className="eyebrow">Local Price Action Agent</div>
               <h1>tradex</h1>
             </div>
           </div>
         </div>
         <div className="topbar-right">
           <ConnectionBadge socketStatus={socketStatus} streamStatus={state?.streamStatus ?? 'idle'} />
-          <button
-            aria-label={`Switch to ${THEME_LABELS[nextThemeName]} mode`}
-            aria-pressed={theme === 'dark'}
-            className="shell-button theme-toggle"
-            onClick={() => useUiStore.getState().toggleTheme()}
-            title={`Switch to ${THEME_LABELS[nextThemeName]}`}
-            type="button"
-          >
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-            <span>{THEME_LABELS[nextThemeName]}</span>
-          </button>
           <button className="shell-button" type="button" onClick={() => openSettings()}>
             <Settings size={16} />
             Settings
