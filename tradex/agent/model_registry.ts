@@ -62,15 +62,23 @@ export class AgentModelRegistry {
           messages: transformMessages(messages, descriptor),
           tools: [],
         };
-        const result = await streamFn(descriptor, context, {
+        const stream = streamFn(descriptor, context, {
           apiKey,
-          ...(onDelta ? { onDelta } : {}),
         });
-        const content = result.message.content
+        // Forward text deltas to legacy onDelta callback while awaiting final result
+        if (onDelta) {
+          for await (const evt of stream) {
+            if (evt.type === "text_delta" && evt.delta) {
+              onDelta(evt.delta);
+            }
+          }
+        }
+        const message = await stream.result();
+        const content = message.content
           .filter((c): c is TextContent => c.type === "text")
           .map((c) => c.text)
           .join("");
-        return { content, message: result.message };
+        return { content, message };
       },
     };
   }

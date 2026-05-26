@@ -71,6 +71,60 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     return c.json({ session: { session: null, messages: [] }, history: sessionHistory(runtime), state: await runtime.state() });
   });
 
+  // =========================================================================
+  // Session fork / clone endpoints
+  // =========================================================================
+
+  // Fork: creates a NEW session file from the active branch up to a specific
+  // user message. Returns the new session + the selected prompt text so the
+  // frontend can place it in the editor for modification.
+  app.post("/api/agent/sessions/:id/fork", async (c) => {
+    const sessionId = c.req.param("id");
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const entryId = String(body.entryId || "").trim();
+
+    if (!entryId) return c.json({ detail: "entryId is required" }, 400);
+
+    const mgr = openSessionManager(sessionId, runtime);
+    if (!mgr) return c.json({ detail: "session not found" }, 404);
+
+    try {
+      const { sessionId: newSessionId, prompt } = mgr.createForkedSession(entryId);
+      // Open the new session and return its response
+      const newMgr = openSessionManager(newSessionId, runtime);
+      if (!newMgr) return c.json({ detail: "failed to open forked session" }, 500);
+      runtime.pendingSessionManagers.set(newSessionId, newMgr);
+      return c.json({
+        ...sessionResponse(runtime, newSessionId),
+        prompt, // The user message text to place in the editor
+        history: sessionHistory(runtime),
+      });
+    } catch (err) {
+      return c.json({ detail: err instanceof Error ? err.message : "fork failed" }, 400);
+    }
+  });
+
+  // Clone: duplicates the current active branch into a new session file at
+  // the current position.
+  app.post("/api/agent/sessions/:id/clone", async (c) => {
+    const sessionId = c.req.param("id");
+    const mgr = openSessionManager(sessionId, runtime);
+    if (!mgr) return c.json({ detail: "session not found" }, 404);
+
+    try {
+      const { sessionId: newSessionId } = mgr.createClonedSession();
+      const newMgr = openSessionManager(newSessionId, runtime);
+      if (!newMgr) return c.json({ detail: "failed to open cloned session" }, 500);
+      runtime.pendingSessionManagers.set(newSessionId, newMgr);
+      return c.json({
+        ...sessionResponse(runtime, newSessionId),
+        history: sessionHistory(runtime),
+      });
+    } catch (err) {
+      return c.json({ detail: err instanceof Error ? err.message : "clone failed" }, 400);
+    }
+  });
+
   // Streams an agent run as SSE using the new stateful Agent from core/.
   app.post("/api/agent/sessions/:id/messages/stream", async (c) => {
     const sessionId = c.req.param("id");
@@ -384,18 +438,31 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
               case "message_update": {
                 if (event.message.role === "assistant") {
-                  const delta = event.delta ?? "";
-                  sendFrame(controller, {
-                    type: "message_update",
-                    message: {
-                      clientId: assistantClientId,
-                      role: "assistant",
-                      content: "",
-                      metadata: null,
-                      error: null,
-                    },
-                    delta,
-                  });
+                  // Extract text delta from the fine-grained event for SSE compatibility
+                  const evt = event.assistantMessageEvent;
+                  let delta = "";
+                  if (evt.type === "text_delta") {
+                    delta = evt.delta;
+                  } else if (evt.type === "thinking_delta") {
+                    // Optionally forward thinking deltas (currently not rendered by frontend)
+                    delta = "";
+                  } else if (evt.type === "toolcall_delta") {
+                    // Tool call argument deltas are not streamed to the frontend text
+                    delta = "";
+                  }
+                  if (delta) {
+                    sendFrame(controller, {
+                      type: "message_update",
+                      message: {
+                        clientId: assistantClientId,
+                        role: "assistant",
+                        content: "",
+                        metadata: null,
+                        error: null,
+                      },
+                      delta,
+                    });
+                  }
                 }
                 break;
               }

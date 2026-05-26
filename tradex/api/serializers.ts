@@ -28,6 +28,10 @@ export function serializeState(input: {
     groups[group] = [...(groups[group] ?? []), instrument.key];
   }
 
+  // Determine whether instruments from a given source support agent analysis
+  // (candles, multi-timeframe). Sources that only provide quote snapshots are not analysable.
+  const sourceAnalysable = resolveSourceAnalysable(input.config);
+
   // Build base instruments and quotes
   const instruments = input.instruments.map((instrument) => ({
     key: instrument.key,
@@ -37,6 +41,7 @@ export function serializeState(input: {
     instType: "instType" in instrument ? instrument.instType : null,
     group: instrument.group,
     analysisInterval: instrument.analysisInterval || input.config.analysis.interval,
+    analysable: sourceAnalysable(instrument.source),
   }));
   const quotes: Record<string, unknown> = Object.fromEntries(
     Object.entries(input.quotes).map(([key, quote]) => [key, serializeQuote(quote, input.config.display.staleAfterSeconds)]),
@@ -55,7 +60,8 @@ export function serializeState(input: {
         source: "jin10",
         instType: null,
         group: "jin10",
-        analysisInterval: input.config.analysis.interval,
+        analysisInterval: "",
+        analysable: sourceAnalysable("jin10"),
       });
       quotes[key] = serializeJin10Quote(q);
     }
@@ -202,4 +208,27 @@ function formatJin10Price(price: number): string {
   if (price >= 100) return price.toFixed(2);
   if (price >= 1) return price.toFixed(4);
   return price.toFixed(5);
+}
+
+/**
+ * Returns a predicate that determines whether instruments from a given source
+ * support agent analysis (candles, multi-timeframe context).
+ *
+ * Policy:
+ * - Sources with candle data (bitget, hyperliquid) default to true
+ * - Quote-only sources (jin10) default to false
+ * - Each source's config can override via `agent_analysis` field
+ */
+function resolveSourceAnalysable(config: AppConfig): (source: string) => boolean {
+  // Build a source → analysable lookup from config.
+  // Default is true for data sources that natively provide candles.
+  const overrides: Record<string, boolean> = {
+    jin10: config.jin10.agentAnalysis,
+  };
+
+  return (source: string): boolean => {
+    if (source in overrides) return overrides[source];
+    // Bitget, Hyperliquid, and any future candle-capable sources default to true
+    return true;
+  };
 }

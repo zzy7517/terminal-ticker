@@ -57,6 +57,8 @@ export interface Jin10Config {
   quotesEnabled: boolean;
   quotesPollIntervalSeconds: number;
   quotesCodes: string[];
+  /** Whether Jin10 instruments are included in agent analysis context. Default: false */
+  agentAnalysis: boolean;
 }
 
 // ── Service Status ────────────────────────────────────────────────────────────

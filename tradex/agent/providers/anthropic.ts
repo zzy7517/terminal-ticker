@@ -1,10 +1,7 @@
 /**
  * providers/anthropic.ts — Anthropic Messages API provider.
  *
- * Modeled after pi-mono's packages/ai/src/providers/anthropic.ts. Speaks the
- * core typed contract directly: receives an `AgentContext` containing typed
- * `Message[]` and returns a `StreamResult { message: AssistantMessage }`.
- * No intermediate stringly-typed shape.
+ * Returns an AssistantMessageEventStream with fine-grained streaming events.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -13,13 +10,15 @@ import type {
   AgentMessage,
   AgentModelDescriptor,
   AssistantMessage,
+  AssistantMessageEventStreamType,
   ImageContent,
   StreamFn,
   StreamOptions,
-  StreamResult,
   TextContent,
+  ThinkingContent,
   ToolCallContent,
 } from "../core/types.js";
+import { AssistantMessageEventStream } from "../core/event-stream.js";
 import { computeUsage } from "../core/usage.js";
 import type { ApiListModelsFunction } from "../api_registry.js";
 
@@ -38,103 +37,242 @@ function createClient(model: AgentModelDescriptor, apiKey: string): Anthropic {
   });
 }
 
-export const streamAnthropic: StreamFn = async (
+const EMPTY_USAGE = {
+  input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+export const streamAnthropic: StreamFn = (
   model: AgentModelDescriptor,
   context: AgentContext,
   options: StreamOptions,
-): Promise<StreamResult> => {
-  const apiKey = options.apiKey
-    || process.env.ANTHROPIC_API_KEY
-    || process.env.ANTHROPIC_AUTH_TOKEN
-    || "";
-  if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is required");
-  }
-  const client = createClient(model, apiKey);
-  const effort = coerceAnthropicEffort(model.reasoningEffort);
-  const { system, messages } = convertContextToAnthropic(context);
+): AssistantMessageEventStreamType => {
+  const eventStream = new AssistantMessageEventStream();
 
-  const requestOptions = {
-    ...(options.signal ? { signal: options.signal } : {}),
-  };
-  const stream = client.messages.stream({
-    model: model.id,
-    max_tokens: Number(process.env.ANTHROPIC_MAX_TOKENS || 4096),
-    system,
-    messages,
-    tools: (context.tools ?? []).map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      input_schema: tool.parameters as never,
-    })),
-    output_config: { effort },
-  } as never, requestOptions);
-
-  let collectedText = "";
-  for await (const event of stream) {
-    if (options.signal?.aborted) break;
-    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      collectedText += event.delta.text;
-      await options.onDelta?.(event.delta.text);
-    }
-  }
-
-  const aborted = options.signal?.aborted === true;
-
-  if (aborted) {
-    const message: AssistantMessage = {
+  (async () => {
+    const output: AssistantMessage = {
       role: "assistant",
-      content: collectedText ? [{ type: "text", text: collectedText }] : [],
+      content: [],
       provider: model.provider,
       model: model.id,
-      usage: computeUsage({ inputTokens: 0, outputTokens: 0, rates: model.cost }),
-      stopReason: "aborted",
-      errorMessage: "Request was aborted",
+      usage: { ...EMPTY_USAGE, cost: { ...EMPTY_USAGE.cost } },
+      stopReason: "stop",
       timestamp: Date.now(),
     };
-    return { message };
-  }
 
-  const final = await stream.finalMessage();
-  const finalText = final.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-  const text = collectedText || finalText;
+    try {
+      const apiKey = options.apiKey
+        || process.env.ANTHROPIC_API_KEY
+        || process.env.ANTHROPIC_AUTH_TOKEN
+        || "";
+      if (!apiKey) {
+        throw new Error("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is required");
+      }
+      const client = createClient(model, apiKey);
+      const effort = coerceAnthropicEffort(model.reasoningEffort);
+      const { system, messages } = convertContextToAnthropic(context);
 
-  const content: (TextContent | ToolCallContent)[] = [];
-  if (text) content.push({ type: "text", text });
-  for (const block of final.content) {
-    if (block.type === "tool_use") {
-      content.push({
-        type: "toolCall",
-        id: block.id,
-        name: block.name,
-        arguments: (block.input ?? {}) as Record<string, unknown>,
-      });
+      const requestOptions = {
+        ...(options.signal ? { signal: options.signal } : {}),
+      };
+      const stream = client.messages.stream({
+        model: model.id,
+        max_tokens: Number(process.env.ANTHROPIC_MAX_TOKENS || 4096),
+        system,
+        messages,
+        tools: (context.tools ?? []).map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          input_schema: tool.parameters as never,
+        })),
+        output_config: { effort },
+      } as never, requestOptions);
+
+      // Emit start event
+      eventStream.push({ type: "start", partial: output });
+
+      // Track content blocks by index for delta routing
+      type Block = (TextContent | ThinkingContent | (ToolCallContent & { partialJson: string })) & { blockIndex: number };
+      const blocks = output.content as unknown as Block[];
+
+      for await (const event of stream) {
+        if (options.signal?.aborted) break;
+
+        if (event.type === "message_start") {
+          // Capture initial usage
+          const msg = (event as unknown as { message: { usage?: Record<string, number> } }).message;
+          if (msg?.usage) {
+            output.usage.input = msg.usage.input_tokens || 0;
+            output.usage.output = msg.usage.output_tokens || 0;
+            output.usage.cacheRead = Number(msg.usage.cache_read_input_tokens ?? 0);
+            output.usage.cacheWrite = Number(msg.usage.cache_creation_input_tokens ?? 0);
+            output.usage.totalTokens = output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+          }
+        } else if (event.type === "content_block_start") {
+          const blockEvent = event as unknown as { index: number; content_block: { type: string; id?: string; name?: string; input?: unknown } };
+          if (blockEvent.content_block.type === "text") {
+            const block: Block = { type: "text", text: "", blockIndex: blockEvent.index };
+            blocks.push(block);
+            eventStream.push({ type: "text_start", contentIndex: blocks.length - 1, partial: output });
+          } else if (blockEvent.content_block.type === "thinking") {
+            const block: Block = { type: "thinking", thinking: "", blockIndex: blockEvent.index };
+            blocks.push(block);
+            eventStream.push({ type: "thinking_start", contentIndex: blocks.length - 1, partial: output });
+          } else if (blockEvent.content_block.type === "tool_use") {
+            const block: Block = {
+              type: "toolCall",
+              id: blockEvent.content_block.id || "",
+              name: blockEvent.content_block.name || "",
+              arguments: (blockEvent.content_block.input ?? {}) as Record<string, unknown>,
+              partialJson: "",
+              blockIndex: blockEvent.index,
+            };
+            blocks.push(block);
+            eventStream.push({ type: "toolcall_start", contentIndex: blocks.length - 1, partial: output });
+          }
+        } else if (event.type === "content_block_delta") {
+          const deltaEvent = event as unknown as { index: number; delta: { type: string; text?: string; thinking?: string; partial_json?: string } };
+          const blockIdx = blocks.findIndex((b) => b.blockIndex === deltaEvent.index);
+          const block = blocks[blockIdx];
+          if (!block) continue;
+
+          if (deltaEvent.delta.type === "text_delta" && block.type === "text") {
+            block.text += deltaEvent.delta.text || "";
+            eventStream.push({
+              type: "text_delta",
+              contentIndex: blockIdx,
+              delta: deltaEvent.delta.text || "",
+              partial: output,
+            });
+          } else if (deltaEvent.delta.type === "thinking_delta" && block.type === "thinking") {
+            block.thinking += deltaEvent.delta.thinking || "";
+            eventStream.push({
+              type: "thinking_delta",
+              contentIndex: blockIdx,
+              delta: deltaEvent.delta.thinking || "",
+              partial: output,
+            });
+          } else if (deltaEvent.delta.type === "input_json_delta" && block.type === "toolCall") {
+            (block as Block & { partialJson: string }).partialJson += deltaEvent.delta.partial_json || "";
+            try {
+              block.arguments = JSON.parse((block as Block & { partialJson: string }).partialJson);
+            } catch {
+              // Partial JSON, keep accumulating
+            }
+            eventStream.push({
+              type: "toolcall_delta",
+              contentIndex: blockIdx,
+              delta: deltaEvent.delta.partial_json || "",
+              partial: output,
+            });
+          }
+        } else if (event.type === "content_block_stop") {
+          const stopEvent = event as unknown as { index: number };
+          const blockIdx = blocks.findIndex((b) => b.blockIndex === stopEvent.index);
+          const block = blocks[blockIdx];
+          if (!block) continue;
+
+          // Clean up blockIndex before emitting end
+          delete (block as { blockIndex?: number }).blockIndex;
+
+          if (block.type === "text") {
+            eventStream.push({ type: "text_end", contentIndex: blockIdx, content: block.text, partial: output });
+          } else if (block.type === "thinking") {
+            eventStream.push({ type: "thinking_end", contentIndex: blockIdx, content: block.thinking, partial: output });
+          } else if (block.type === "toolCall") {
+            // Finalize JSON parsing
+            const partialJson = (block as unknown as { partialJson: string }).partialJson;
+            if (partialJson) {
+              try { block.arguments = JSON.parse(partialJson); } catch { /* keep last valid parse */ }
+            }
+            delete (block as unknown as { partialJson?: string }).partialJson;
+            eventStream.push({
+              type: "toolcall_end",
+              contentIndex: blockIdx,
+              toolCall: block as ToolCallContent,
+              partial: output,
+            });
+          }
+        } else if (event.type === "message_delta") {
+          const deltaEvent = event as unknown as { delta: { stop_reason?: string }; usage?: Record<string, number> };
+          if (deltaEvent.delta.stop_reason) {
+            output.stopReason = mapStopReason(deltaEvent.delta.stop_reason);
+          }
+          if (deltaEvent.usage) {
+            if (deltaEvent.usage.output_tokens != null) {
+              output.usage.output = deltaEvent.usage.output_tokens;
+            }
+            if (deltaEvent.usage.input_tokens != null) {
+              output.usage.input = deltaEvent.usage.input_tokens;
+            }
+            const usageAny = deltaEvent.usage as Record<string, unknown>;
+            if (usageAny.cache_read_input_tokens != null) {
+              output.usage.cacheRead = Number(usageAny.cache_read_input_tokens);
+            }
+            if (usageAny.cache_creation_input_tokens != null) {
+              output.usage.cacheWrite = Number(usageAny.cache_creation_input_tokens);
+            }
+            output.usage.totalTokens = output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+            // Recompute cost
+            const computed = computeUsage({
+              inputTokens: output.usage.input,
+              outputTokens: output.usage.output,
+              cacheReadTokens: output.usage.cacheRead,
+              cacheWriteTokens: output.usage.cacheWrite,
+              rates: model.cost,
+            });
+            output.usage.cost = computed.cost;
+          }
+        }
+      }
+
+      if (options.signal?.aborted) {
+        output.stopReason = "aborted";
+        output.errorMessage = "Request was aborted";
+        eventStream.push({ type: "error", reason: "aborted", error: output });
+        eventStream.end();
+        return;
+      }
+
+      // Clean up any remaining blockIndex fields
+      for (const block of blocks) {
+        delete (block as { blockIndex?: number }).blockIndex;
+        delete (block as { partialJson?: string }).partialJson;
+      }
+
+      // Determine final stop reason from content
+      const hasToolCalls = output.content.some((c) => c.type === "toolCall");
+      if (hasToolCalls && output.stopReason === "stop") {
+        output.stopReason = "toolUse";
+      }
+
+      eventStream.push({ type: "done", reason: output.stopReason as "stop" | "length" | "toolUse", message: output });
+      eventStream.end();
+    } catch (error) {
+      // Clean up content blocks
+      for (const block of output.content as unknown as Array<{ blockIndex?: number; partialJson?: string }>) {
+        delete block.blockIndex;
+        delete block.partialJson;
+      }
+      output.stopReason = options.signal?.aborted ? "aborted" : "error";
+      output.errorMessage = error instanceof Error ? error.message : String(error);
+      eventStream.push({ type: "error", reason: output.stopReason as "aborted" | "error", error: output });
+      eventStream.end();
     }
-  }
+  })();
 
-  const usageRaw = final.usage as unknown as Record<string, unknown>;
-  const cacheRead = Number(usageRaw.cache_read_input_tokens ?? 0);
-  const cacheWrite = Number(usageRaw.cache_creation_input_tokens ?? 0);
-  const usage = computeUsage({
-    inputTokens: final.usage.input_tokens,
-    outputTokens: final.usage.output_tokens,
-    cacheReadTokens: Number.isFinite(cacheRead) ? cacheRead : 0,
-    cacheWriteTokens: Number.isFinite(cacheWrite) ? cacheWrite : 0,
-    rates: model.cost,
-  });
-
-  const hasToolCalls = content.some((c) => c.type === "toolCall");
-  const message: AssistantMessage = {
-    role: "assistant",
-    content,
-    provider: model.provider,
-    model: model.id,
-    usage,
-    stopReason: hasToolCalls ? "toolUse" : "stop",
-    timestamp: Date.now(),
-  };
-  return { message };
+  return eventStream;
 };
+
+function mapStopReason(reason: string): "stop" | "length" | "toolUse" | "error" | "aborted" {
+  switch (reason) {
+    case "end_turn": return "stop";
+    case "max_tokens": return "length";
+    case "tool_use": return "toolUse";
+    case "stop_sequence": return "stop";
+    default: return "stop";
+  }
+}
 
 export const listAnthropicModels: ApiListModelsFunction = async (
   model: AgentModelDescriptor,
@@ -210,7 +348,7 @@ function convertMessages(messages: AgentMessage[]): Array<Record<string, unknown
             input: block.arguments ?? {},
           });
         }
-        // thinking blocks are not yet wired through tradex; skipped intentionally.
+        // thinking blocks are not yet wired through for replay; skipped.
       }
       if (blocks.length === 0) continue;
       out.push({ role: "assistant", content: blocks });
@@ -258,8 +396,7 @@ function convertUserMessage(content: string | (TextContent | ImageContent)[]): R
 
 /**
  * Convert tool-result content (text + images) into Anthropic's tool_result
- * content shape. Returns a string when only plain text is present so the
- * payload stays minimal.
+ * content shape. Returns a string when only plain text is present.
  */
 function convertContentBlocks(
   content: (TextContent | ImageContent)[],

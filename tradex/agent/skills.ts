@@ -1,7 +1,6 @@
 /**
  * skills.ts — Skill discovery, loading, and system-prompt formatting.
  *
- * Ported from pi-mono's packages/coding-agent/src/core/skills.ts.
  * Follows the Agent Skills spec (https://agentskills.io).
  *
  * Discovery rules:

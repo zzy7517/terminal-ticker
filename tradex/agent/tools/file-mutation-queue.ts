@@ -1,6 +1,5 @@
 /**
  * File mutation queue — serialize file write operations targeting the same file.
- * Ported from pi-mono packages/coding-agent/src/core/tools/file-mutation-queue.ts
  *
  * Operations for different files still run in parallel.
  */

@@ -5,13 +5,12 @@
  * to stateless stream functions. This is the central dispatch layer that
  * makes model switching a pointer swap rather than a provider rebuild.
  *
- * Modeled after pi-mono's api-registry. Provider stream functions speak the
- * same typed contract the core Agent expects: a typed `AgentContext` in,
- * a `StreamResult` out. There is no intermediate `ChatInput`/`ChatResponse`
- * stringly-typed bridge.
+ * Provider stream functions speak the same typed contract the core Agent
+ * expects: a typed `AgentContext` in, an `AssistantMessageEventStream` out.
+ * There is no intermediate `ChatInput`/`ChatResponse` stringly-typed bridge.
  */
 
-import type { AgentContext, StreamFn, StreamOptions, StreamResult, AgentModelDescriptor } from "./core/types.js";
+import type { AgentContext, StreamFn, StreamOptions, AgentModelDescriptor } from "./core/types.js";
 
 /**
  * Stateless stream function registered for a wire-format API.
@@ -75,4 +74,4 @@ export function getRegisteredApis(): string[] {
 }
 
 // Re-export the core types so call sites can import from one place.
-export type { StreamFn, StreamOptions, StreamResult, AgentContext };
+export type { StreamFn, StreamOptions, AgentContext };

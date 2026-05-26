@@ -1,6 +1,5 @@
 /**
  * Output accumulator for streaming bash output with bounded memory.
- * Ported from pi-mono packages/coding-agent/src/core/tools/output-accumulator.ts
  *
  * Appends decoded chunks, keeps only a tail for display snapshots, and opens
  * a temp file when the full output needs to be preserved.

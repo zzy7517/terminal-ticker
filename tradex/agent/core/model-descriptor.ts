@@ -4,32 +4,34 @@
  * to the pure-data AgentModelDescriptor consumed by the Agent core.
  *
  * Also owns the capability lookup that decides whether a given model accepts
- * image inputs. Modeled after pi's per-model `Model.input` field, but kept
- * simple here since tradex only ships codex + anthropic today.
+ * image inputs. Uses the models-metadata registry for accurate contextWindow,
+ * maxTokens, and cost data.
  */
 
 import type { AgentModel } from "../models.js";
 import type { AgentModelDescriptor } from "./types.js";
 import { ANTHROPIC_PROVIDER, CODEX_PROVIDER } from "../../config/agent_models.js";
+import { lookupModelMetadata } from "./models-metadata.js";
 
 /**
  * Decide which input modalities a given model accepts.
  *
- * Defaults are conservative: text-only unless the model is known to support
- * images. Add more entries as you onboard new vision-capable models. For
- * unknown models we play it safe and disable image support so the
- * capability transform downgrades images to a placeholder rather than
- * letting the provider reject the request.
+ * First checks the models-metadata registry. Falls back to provider-based
+ * heuristics for unknown models. Conservative: text-only unless the model
+ * is known to support images.
  */
 export function inputsForModel(provider: string, modelId: string): ("text" | "image")[] {
+  // Check registry first
+  const meta = lookupModelMetadata(modelId);
+  if (meta) return meta.inputs;
+
+  // Fallback heuristics
   if (provider === ANTHROPIC_PROVIDER) {
     // Every shipping Claude 3+ model accepts images.
     return ["text", "image"];
   }
 
   if (provider === CODEX_PROVIDER) {
-    // GPT-4o, GPT-4.1, GPT-5 families accept images. Reasoning-only
-    // (o1-mini / o3-mini / o4-mini) do not.
     const id = modelId.toLowerCase();
     const visionPatterns = ["gpt-4o", "gpt-4.1", "gpt-5", "gpt-4-vision", "o1", "o3", "o4"];
     const reasoningOnly = ["o1-mini", "o3-mini", "o4-mini"];
@@ -41,8 +43,13 @@ export function inputsForModel(provider: string, modelId: string): ("text" | "im
   return ["text"];
 }
 
-/** Convert an AgentModel into the pure-data descriptor passed to providers. */
+/**
+ * Convert an AgentModel into the pure-data descriptor passed to providers.
+ * Enriches with metadata from the models registry (contextWindow, maxTokens, cost).
+ */
 export function agentModelToDescriptor(model: AgentModel): AgentModelDescriptor {
+  const meta = lookupModelMetadata(model.id);
+
   return {
     id: model.id,
     provider: model.provider,
@@ -51,5 +58,8 @@ export function agentModelToDescriptor(model: AgentModel): AgentModelDescriptor 
     reasoningEffort: model.reasoningEffort,
     accountId: model.accountId,
     inputs: inputsForModel(model.provider, model.id),
+    contextWindow: meta?.contextWindow,
+    maxTokens: meta?.maxTokens,
+    cost: meta?.cost,
   };
 }

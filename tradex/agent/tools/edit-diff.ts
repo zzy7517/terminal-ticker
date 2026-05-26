@@ -1,6 +1,5 @@
 /**
  * Shared diff computation utilities for the edit tool.
- * Ported from pi-mono packages/coding-agent/src/core/tools/edit-diff.ts
  */
 
 import * as Diff from "diff";

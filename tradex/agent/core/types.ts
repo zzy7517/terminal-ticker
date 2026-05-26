@@ -1,7 +1,6 @@
 /**
  * core/types.ts — Agent core type definitions.
  *
- * Modeled after pi-mono's packages/agent/src/types.ts.
  * These types define the contract between the stateful Agent, the pure agentLoop,
  * and the tool/provider layers.
  */
@@ -73,6 +72,30 @@ export interface CustomMessage {
 }
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
+
+// ============================================================================
+// Assistant Message Streaming Events (Provider → Agent Loop)
+// ============================================================================
+
+/**
+ * Fine-grained streaming events emitted by providers.
+ *
+ * Each event carries the current `partial` AssistantMessage snapshot so
+ * consumers always have access to the latest accumulated state.
+ */
+export type AssistantMessageEvent =
+  | { type: "start"; partial: AssistantMessage }
+  | { type: "text_start"; contentIndex: number; partial: AssistantMessage }
+  | { type: "text_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
+  | { type: "text_end"; contentIndex: number; content: string; partial: AssistantMessage }
+  | { type: "thinking_start"; contentIndex: number; partial: AssistantMessage }
+  | { type: "thinking_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
+  | { type: "thinking_end"; contentIndex: number; content: string; partial: AssistantMessage }
+  | { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
+  | { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
+  | { type: "toolcall_end"; contentIndex: number; toolCall: ToolCallContent; partial: AssistantMessage }
+  | { type: "done"; reason: Extract<StopReason, "stop" | "length" | "toolUse">; message: AssistantMessage }
+  | { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 
 export interface UsageCost {
   input: number;
@@ -185,7 +208,7 @@ export interface AgentModelDescriptor {
   /** Cost rates per million tokens. Used to compute cumulative session cost. */
   cost?: ModelCostRates;
   /**
-   * Input modalities the model accepts. Mirrors pi's Model.input.
+   * Input modalities the model accepts.
    * If "image" is absent, transformMessages() downgrades image content to a
    * placeholder before the request is sent to the provider.
    * Defaults to ["text"] when unspecified.
@@ -195,7 +218,9 @@ export interface AgentModelDescriptor {
 
 /**
  * StreamFn — the provider-level function that makes LLM calls.
- * Returns an AssistantMessage (the final result after streaming completes).
+ *
+ * Returns an AssistantMessageEventStream (async iterable of fine-grained
+ * streaming events). The stream is returned synchronously; consumption is async.
  *
  * This is injected into the Agent so the loop doesn't import providers directly.
  */
@@ -203,15 +228,25 @@ export type StreamFn = (
   model: AgentModelDescriptor,
   context: AgentContext,
   options: StreamOptions,
-) => Promise<StreamResult>;
+) => AssistantMessageEventStreamType;
+
+/**
+ * Type-only reference to AssistantMessageEventStream to avoid circular imports.
+ * The actual class lives in event-stream.ts.
+ */
+export interface AssistantMessageEventStreamType extends AsyncIterable<AssistantMessageEvent> {
+  result(): Promise<AssistantMessage>;
+  push(event: AssistantMessageEvent): void;
+  end(result?: AssistantMessage): void;
+}
 
 export interface StreamOptions {
   apiKey: string;
   signal?: AbortSignal;
   reasoning?: ThinkingLevel;
-  onDelta?: (delta: string) => void | Promise<void>;
 }
 
+/** @deprecated Use AssistantMessageEventStream instead. Kept for gradual migration. */
 export interface StreamResult {
   message: AssistantMessage;
 }
@@ -299,9 +334,6 @@ export interface AgentLoopConfig {
 
   /** Stream function for making LLM calls. */
   streamFn: StreamFn;
-
-  /** Delta callback for streaming text to the UI. */
-  onDelta?: (delta: string) => void | Promise<void>;
 }
 
 // ============================================================================
@@ -314,7 +346,7 @@ export type AgentEvent =
   | { type: "turn_start" }
   | { type: "turn_end"; message: AssistantMessage; toolResults: ToolResultMessage[] }
   | { type: "message_start"; message: AgentMessage }
-  | { type: "message_update"; message: AgentMessage; delta?: string }
+  | { type: "message_update"; message: AgentMessage; assistantMessageEvent: AssistantMessageEvent }
   | { type: "message_end"; message: AgentMessage }
   | { type: "tool_execution_start"; toolCallId: string; toolName: string; args: Record<string, unknown> }
   | { type: "tool_execution_update"; toolCallId: string; toolName: string; partialResult: AgentToolResult }

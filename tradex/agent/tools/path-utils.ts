@@ -1,6 +1,5 @@
 /**
  * Path utilities for filesystem tools.
- * Ported from pi-mono packages/coding-agent/src/core/tools/path-utils.ts
  *
  * No sandbox restriction — paths resolve relative to the configured root (cwd).
  */

@@ -75,7 +75,7 @@ interface AgentState {
   agentSessionById: Record<string, AgentSessionResponse>;
   runStateBySessionId: Record<string, SessionRunProjection>;
   draftBySessionId: Record<string, string>;
-  /** The assistant message currently being streamed (pi-mono dual-zone pattern). */
+  /** The assistant message currently being streamed (dual-zone pattern). */
   streamingMessage: AgentMessage | null;
   /** Number of steering messages queued and not yet processed by the agent. */
   steeringQueueCount: number;

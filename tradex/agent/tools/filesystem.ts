@@ -1,5 +1,5 @@
 /**
- * Filesystem tools aligned with pi-mono's coding-agent tool pack.
+ * Filesystem tools for agent file operations.
  *
  * Provides: read_file, write_file, edit_file, list_directory, find_files, grep_search, run_command
  *

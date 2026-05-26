@@ -90,7 +90,6 @@ export interface AgentContextUsage {
 
 /**
  * Cumulative session token and cost statistics.
- * Mirrors pi's SessionStats.tokens + cost.
  */
 export interface AgentSessionStats {
   tokens: {
@@ -379,6 +378,8 @@ export interface Instrument {
   instType: string | null;
   group: string;
   analysisInterval: string;
+  /** Whether the instrument supports agent analysis (candles, multi-timeframe). False for quote-only sources like Jin10. */
+  analysable: boolean;
 }
 
 export interface NewsItem {

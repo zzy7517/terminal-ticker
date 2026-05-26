@@ -7,6 +7,7 @@ import type {
   AgentSessionHistoryResponse,
   AgentSessionMutationResponse,
   AgentSessionResponse,
+  AgentSessionSummary,
   CronJobCreate,
   CronJobsResponse,
   CronJobStatus,
@@ -188,6 +189,34 @@ export async function deleteAgentSessionById(sessionId: string): Promise<AgentSe
   });
   if (!response.ok) {
     throw await responseError(response, 'agent session delete failed');
+  }
+  return response.json();
+}
+
+// Forks the session at a user message entry: creates a NEW session file with
+// history up to (but not including) that message, and returns the message text
+// as `prompt` for the editor.
+export async function forkSession(sessionId: string, entryId: string): Promise<AgentSessionResponse & { prompt: string; history: { sessions: AgentSessionSummary[] } }> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/fork`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entryId }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'session fork failed');
+  }
+  return response.json();
+}
+
+// Clones the current active branch into a new session file at the current
+// position. Full history preserved.
+export async function cloneSession(sessionId: string): Promise<AgentSessionResponse & { history: { sessions: AgentSessionSummary[] } }> {
+  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/clone`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'session clone failed');
   }
   return response.json();
 }

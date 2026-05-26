@@ -1,9 +1,6 @@
 /**
  * core/context-usage.ts — Context window utilization and session statistics.
  *
- * Modeled after pi-mono's packages/coding-agent/src/core/compaction/compaction.ts
- * and packages/coding-agent/src/core/agent-session.ts SessionStats.
- *
  * Provides:
  * - ContextUsage: current context window fill percentage
  * - SessionStats: cumulative token/cost statistics for a session
@@ -18,7 +15,6 @@ import type { AgentMessage, AssistantMessage, Usage } from "./types.js";
 
 /**
  * Context window utilization for the current session.
- * Matches pi's ContextUsage interface.
  */
 export interface ContextUsage {
   /** Estimated context tokens, or null if unknown (e.g. right after compaction, before next LLM response). */
@@ -31,7 +27,6 @@ export interface ContextUsage {
 
 /**
  * Cumulative session statistics.
- * Matches pi's SessionStats interface.
  */
 export interface SessionStats {
   sessionId: string;
@@ -115,7 +110,7 @@ function getAssistantUsage(msg: AgentMessage): Usage | undefined {
  * Estimate context tokens from messages, using the last assistant usage when available.
  * If there are messages after the last usage, estimate their tokens with the chars/4 heuristic.
  *
- * This mirrors pi's estimateContextTokens logic.
+
  */
 export function estimateContextTokens(messages: AgentMessage[]): {
   tokens: number;
@@ -177,7 +172,6 @@ export function computeContextUsage(messages: AgentMessage[], contextWindow: num
 
 /**
  * Compute cumulative SessionStats from an array of messages.
- * Matches pi's getSessionStats() logic.
  */
 export function getSessionStats(
   sessionId: string,

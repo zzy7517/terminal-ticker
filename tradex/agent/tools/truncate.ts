@@ -1,6 +1,5 @@
 /**
  * Shared truncation utilities for tool outputs.
- * Ported from pi-mono packages/coding-agent/src/core/tools/truncate.ts
  *
  * Truncation is based on two independent limits - whichever is hit first wins:
  * - Line limit (default: 2000 lines)

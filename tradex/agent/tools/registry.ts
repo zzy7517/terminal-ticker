@@ -1,11 +1,9 @@
 /**
  * tools/registry.ts — Tool definition + registry.
  *
- * Design follows pi's AgentTool contract (packages/agent/src/types.ts):
- *   • Each tool has a single `execute` method (no handler / richHandler split).
- *   • The canonical result shape is { content, details?, terminate? } where
- *     `content` is an array of TextContent | ImageContent blocks.
- *   • Errors are signaled by throwing — they are not encoded into `content`.
+ * Each tool has a single `execute` method. The canonical result shape is
+ * { content, details?, terminate? } where `content` is an array of
+ * TextContent | ImageContent blocks. Errors are signaled by throwing.
  *
  * For pragmatic back-compat with tradex's existing 30+ tools, `execute` may
  * also return:
@@ -13,7 +11,7 @@
  *   • a bare ContentBlock[] (treated as { content, details: undefined }).
  *
  * The tool-adapter normalizes all three shapes before handing them to the
- * agent loop. New tools should prefer the canonical pi-style return value.
+ * agent loop. New tools should prefer the canonical result shape.
  */
 
 import type {
@@ -27,8 +25,7 @@ import type {
 export type ContentBlock = TextContent | ImageContent;
 
 /**
- * Canonical tool execution result. Matches pi's AgentToolResult shape and the
- * tradex AgentToolResult<T> interface in core/types.ts.
+ * Canonical tool execution result.
  */
 export interface ToolHandlerResult<TDetails = unknown> {
   /** Content blocks returned to the model. */
@@ -48,7 +45,7 @@ export interface ToolHandlerResult<TDetails = unknown> {
  *
  * The first two forms are convenience sugar for tools that only ever return
  * text or only ever return content blocks. The third form is the canonical
- * pi-style result that supports `details` and `terminate`.
+ * result that supports `details` and `terminate`.
  */
 export type ToolReturnValue<TDetails = unknown> =
   | string
@@ -56,8 +53,7 @@ export type ToolReturnValue<TDetails = unknown> =
   | ToolHandlerResult<TDetails>;
 
 /**
- * Tool execute signature. Matches pi's AgentTool.execute aside from the
- * dropped `toolCallId` first argument (tradex tools do not currently use it).
+ * Tool execute signature (without `toolCallId` first argument).
  */
 export type ToolExecuteFn<TDetails = unknown> = (
   args: Record<string, unknown>,

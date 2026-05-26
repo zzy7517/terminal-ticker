@@ -1,7 +1,6 @@
 /**
  * core/agent-loop.ts — Pure stateless agent loop.
  *
- * Modeled after pi-mono's packages/agent/src/agent-loop.ts.
  * This function does not own state. The caller (Agent class) passes a
  * COPIED context snapshot. The loop mutates context.messages on its own
  * copy (for building LLM context across turns) and emits events through
@@ -15,16 +14,27 @@
 
 import type {
   AgentContext,
+  AgentEvent,
   AgentEventSink,
   AgentLoopConfig,
   AgentMessage,
   AgentToolResult,
   AssistantMessage,
-  StreamOptions,
+  StreamFn,
   ToolCallContent,
   ToolResultMessage,
   Usage,
 } from "./types.js";
+import { EventStream } from "./event-stream.js";
+
+/**
+ * Maximum number of automatic continuations when the assistant response is
+ * truncated (stopReason: "length"). Prevents infinite continuation loops.
+ */
+const MAX_CONTINUATIONS = 3;
+
+/** System message injected to prompt the LLM to continue its truncated output. */
+const CONTINUATION_PROMPT = "Your previous response was truncated due to length limits. Please continue exactly where you left off.";
 
 const EMPTY_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
@@ -34,6 +44,72 @@ const EMPTY_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, t
 
 /**
  * Start an agent loop with new prompt messages.
+ * Returns an EventStream that can be consumed via `for await`.
+ *
+ */
+export function agentLoop(
+  prompts: AgentMessage[],
+  context: AgentContext,
+  config: AgentLoopConfig,
+  signal?: AbortSignal,
+  streamFn?: StreamFn,
+): EventStream<AgentEvent, AgentMessage[]> {
+  const stream = new EventStream<AgentEvent, AgentMessage[]>(
+    (event: AgentEvent) => event.type === "agent_end",
+    (event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
+  );
+
+  void runAgentLoop(
+    prompts,
+    context,
+    config,
+    async (event) => { stream.push(event); },
+    signal,
+    streamFn,
+  ).then((messages) => {
+    stream.end(messages);
+  });
+
+  return stream;
+}
+
+/**
+ * Continue an agent loop from current context without adding a new message.
+ * Returns an EventStream that can be consumed via `for await`.
+ */
+export function agentLoopContinue(
+  context: AgentContext,
+  config: AgentLoopConfig,
+  signal?: AbortSignal,
+  streamFn?: StreamFn,
+): EventStream<AgentEvent, AgentMessage[]> {
+  if (context.messages.length === 0) {
+    throw new Error("Cannot continue: no messages in context");
+  }
+  if (context.messages[context.messages.length - 1].role === "assistant") {
+    throw new Error("Cannot continue from message role: assistant");
+  }
+
+  const stream = new EventStream<AgentEvent, AgentMessage[]>(
+    (event: AgentEvent) => event.type === "agent_end",
+    (event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
+  );
+
+  void runAgentLoopContinue(
+    context,
+    config,
+    async (event) => { stream.push(event); },
+    signal,
+    streamFn,
+  ).then((messages) => {
+    stream.end(messages);
+  });
+
+  return stream;
+}
+
+/**
+ * Start an agent loop with new prompt messages (async, sink-based).
  * The prompts are added to context.messages and events are emitted.
  */
 export async function runAgentLoop(
@@ -42,6 +118,7 @@ export async function runAgentLoop(
   config: AgentLoopConfig,
   emit: AgentEventSink,
   signal?: AbortSignal,
+  streamFn?: StreamFn,
 ): Promise<AgentMessage[]> {
   const newMessages: AgentMessage[] = [...prompts];
 
@@ -59,7 +136,7 @@ export async function runAgentLoop(
     await emit({ type: "message_end", message: prompt });
   }
 
-  await runLoop(context, newMessages, config, signal, emit);
+  await runLoop(context, newMessages, config, signal, emit, streamFn);
   return newMessages;
 }
 
@@ -72,6 +149,7 @@ export async function runAgentLoopContinue(
   config: AgentLoopConfig,
   emit: AgentEventSink,
   signal?: AbortSignal,
+  streamFn?: StreamFn,
 ): Promise<AgentMessage[]> {
   if (context.messages.length === 0) {
     throw new Error("Cannot continue: no messages in context");
@@ -87,7 +165,7 @@ export async function runAgentLoopContinue(
   await emit({ type: "agent_start" });
   await emit({ type: "turn_start" });
 
-  await runLoop(context, newMessages, config, signal, emit);
+  await runLoop(context, newMessages, config, signal, emit, streamFn);
   return newMessages;
 }
 
@@ -101,6 +179,7 @@ async function runLoop(
   initialConfig: AgentLoopConfig,
   signal: AbortSignal | undefined,
   emit: AgentEventSink,
+  streamFn?: StreamFn,
 ): Promise<void> {
   let currentContext = initialContext;
   let config = initialConfig;
@@ -144,13 +223,49 @@ async function runLoop(
       }
 
       // Stream assistant response
-      const message = await streamAssistantResponse(currentContext, config, signal, emit);
+      let message = await streamAssistantResponse(currentContext, config, signal, emit, streamFn);
       newMessages.push(message);
 
       if (message.stopReason === "error" || message.stopReason === "aborted") {
         await emit({ type: "turn_end", message, toolResults: [] });
         await emit({ type: "agent_end", messages: newMessages });
         return;
+      }
+
+      // ── Output Guard: auto-continue on truncation ──────────────────────
+      // When the assistant's response is cut off (stopReason: "length") and
+      // there are no tool calls, automatically prompt the LLM to continue.
+      if (message.stopReason === "length" && !message.content.some((c) => c.type === "toolCall")) {
+        let continuations = 0;
+        let lastMsg = message;
+        while (lastMsg.stopReason === "length" && continuations < MAX_CONTINUATIONS) {
+          continuations++;
+          await emit({ type: "turn_end", message: lastMsg, toolResults: [] });
+
+          // Inject continuation prompt
+          const continuationMsg: AgentMessage = {
+            role: "user",
+            content: CONTINUATION_PROMPT,
+            timestamp: Date.now(),
+          };
+          currentContext.messages.push(continuationMsg);
+          newMessages.push(continuationMsg);
+          await emit({ type: "turn_start" });
+          await emit({ type: "message_start", message: continuationMsg });
+          await emit({ type: "message_end", message: continuationMsg });
+
+          // Stream the continuation response
+          lastMsg = await streamAssistantResponse(currentContext, config, signal, emit, streamFn);
+          newMessages.push(lastMsg);
+
+          if (lastMsg.stopReason === "error" || lastMsg.stopReason === "aborted") {
+            await emit({ type: "turn_end", message: lastMsg, toolResults: [] });
+            await emit({ type: "agent_end", messages: newMessages });
+            return;
+          }
+        }
+        // Update message reference to the final continuation
+        message = lastMsg;
       }
 
       // Check for tool calls
@@ -215,71 +330,108 @@ async function runLoop(
 // Assistant Response Streaming
 // ============================================================================
 
+/**
+ * Stream an assistant response from the LLM.
+ * Consumes the AssistantMessageEventStream via `for await`, emitting
+ * fine-grained AgentEvents for each provider event.
+ *
+ */
 async function streamAssistantResponse(
   context: AgentContext,
   config: AgentLoopConfig,
   signal: AbortSignal | undefined,
   emit: AgentEventSink,
+  streamFn?: StreamFn,
 ): Promise<AssistantMessage> {
+  // Apply context transform if configured (AgentMessage[] → AgentMessage[])
   let messages = context.messages;
   if (config.transformContext) {
     messages = await config.transformContext(messages, signal);
   }
 
+  // Convert to LLM-compatible messages (AgentMessage[] → Message[])
   const llmMessages = config.convertToLlm(messages);
+
+  // Build LLM context
   const llmContext: AgentContext = {
     systemPrompt: context.systemPrompt,
     messages: llmMessages,
     tools: context.tools,
   };
 
+  // Resolve API key (important for expiring tokens)
   const resolvedApiKey = (config.getApiKey
     ? await config.getApiKey(config.model.provider)
     : undefined) || config.apiKey;
 
-  // Emit message_start before streaming begins (pi-mono pattern).
-  // This lets subscribers know a new assistant turn is starting.
-  const partialMessage: AssistantMessage = {
-    role: "assistant",
-    content: [],
-    provider: config.model.provider,
-    model: config.model.id,
-    usage: EMPTY_USAGE,
-    stopReason: "stop",
-    timestamp: Date.now(),
-  };
-  await emit({ type: "message_start", message: partialMessage });
+  const streamFunction = streamFn || config.streamFn;
 
-  let accumulatedContent = "";
-  const streamOptions: StreamOptions = {
+  // Call provider — returns an AssistantMessageEventStream (async iterable)
+  const response = streamFunction(config.model, llmContext, {
     apiKey: resolvedApiKey,
     signal,
     reasoning: config.reasoning,
-    onDelta: async (delta: string) => {
-      accumulatedContent += delta;
-      await emit({
-        type: "message_update",
-        message: {
-          ...partialMessage,
-          content: [{ type: "text" as const, text: accumulatedContent }],
-        },
-        delta,
-      });
-      await config.onDelta?.(delta);
-    },
-  };
+  });
 
-  try {
-    const { message } = await config.streamFn(config.model, llmContext, streamOptions);
-    context.messages.push(message);
-    await emit({ type: "message_end", message });
-    return message;
-  } catch (error) {
-    const errorMsg = createErrorMessage(config, error);
-    context.messages.push(errorMsg);
-    await emit({ type: "message_end", message: errorMsg });
-    return errorMsg;
+  let partialMessage: AssistantMessage | null = null;
+  let addedPartial = false;
+
+  for await (const event of response) {
+    switch (event.type) {
+      case "start":
+        partialMessage = event.partial;
+        context.messages.push(partialMessage);
+        addedPartial = true;
+        await emit({ type: "message_start", message: { ...partialMessage } });
+        break;
+
+      case "text_start":
+      case "text_delta":
+      case "text_end":
+      case "thinking_start":
+      case "thinking_delta":
+      case "thinking_end":
+      case "toolcall_start":
+      case "toolcall_delta":
+      case "toolcall_end":
+        if (partialMessage) {
+          partialMessage = event.partial;
+          context.messages[context.messages.length - 1] = partialMessage;
+          await emit({
+            type: "message_update",
+            assistantMessageEvent: event,
+            message: { ...partialMessage },
+          });
+        }
+        break;
+
+      case "done":
+      case "error": {
+        const finalMessage = await response.result();
+        if (addedPartial) {
+          context.messages[context.messages.length - 1] = finalMessage;
+        } else {
+          context.messages.push(finalMessage);
+        }
+        if (!addedPartial) {
+          await emit({ type: "message_start", message: { ...finalMessage } });
+        }
+        await emit({ type: "message_end", message: finalMessage });
+        return finalMessage;
+      }
+    }
   }
+
+  // Fallback: stream ended without done/error event
+  const finalMessage = await response.result();
+  if (addedPartial) {
+    context.messages[context.messages.length - 1] = finalMessage;
+  } else {
+    context.messages.push(finalMessage);
+    await emit({ type: "message_start", message: { ...finalMessage } });
+  }
+  await emit({ type: "message_end", message: finalMessage });
+  return finalMessage;
 }
 
 // ============================================================================

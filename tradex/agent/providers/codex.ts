@@ -1,46 +1,303 @@
-import crypto from "node:crypto";
+/**
+ * providers/codex.ts — OpenAI Codex Responses API provider.
+ *
+ * Returns an AssistantMessageEventStream with fine-grained streaming events.
+ * Codex only supports text output and function calls (no thinking blocks).
+ */
+
 import { fetch as browserFetch } from "wreq-js";
 import type {
   AgentContext,
   AgentMessage,
   AgentModelDescriptor,
   AssistantMessage,
+  AssistantMessageEventStreamType,
   ImageContent,
   StreamFn,
   StreamOptions,
-  StreamResult,
   TextContent,
   ToolCallContent,
 } from "../core/types.js";
+import { AssistantMessageEventStream } from "../core/event-stream.js";
 import { computeUsage } from "../core/usage.js";
 import type { ApiListModelsFunction } from "../api_registry.js";
 
-export const streamCodex: StreamFn = async (
+const EMPTY_USAGE = {
+  input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+export const streamCodex: StreamFn = (
   model: AgentModelDescriptor,
   context: AgentContext,
   options: StreamOptions,
-): Promise<StreamResult> => {
-  const apiKey = options.apiKey || "";
-  if (!apiKey) throw new Error("CODEX_API_KEY or Codex CLI auth is required");
-  const payload = {
-    model: model.id,
-    input: contextToCodexInput(context),
-    instructions: context.systemPrompt ?? "",
-    store: false,
-    stream: true,
-    reasoning: {
-      effort: model.reasoningEffort,
-      summary: "auto",
-    },
-    tools: codexToolsPayload(context),
-  };
-  const response = await codexFetch(`${model.baseUrl}/responses`, {
-    method: "POST",
-    headers: codexHeaders(apiKey, model.accountId ?? null),
-    body: JSON.stringify(payload),
-    ...(options.signal ? { signal: options.signal } : {}),
-  });
-  return collectCodexResponse(response, model, options);
+): AssistantMessageEventStreamType => {
+  const eventStream = new AssistantMessageEventStream();
+
+  (async () => {
+    const output: AssistantMessage = {
+      role: "assistant",
+      content: [],
+      provider: model.provider,
+      model: model.id,
+      usage: { ...EMPTY_USAGE, cost: { ...EMPTY_USAGE.cost } },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    };
+
+    try {
+      const apiKey = options.apiKey || "";
+      if (!apiKey) throw new Error("CODEX_API_KEY or Codex CLI auth is required");
+
+      const payload = {
+        model: model.id,
+        input: contextToCodexInput(context),
+        instructions: context.systemPrompt ?? "",
+        store: false,
+        stream: true,
+        reasoning: {
+          effort: model.reasoningEffort,
+          summary: "auto",
+        },
+        tools: codexToolsPayload(context),
+      };
+
+      const response = await codexFetch(`${model.baseUrl}/responses`, {
+        method: "POST",
+        headers: codexHeaders(apiKey, model.accountId ?? null),
+        body: JSON.stringify(payload),
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+
+      // Emit start event
+      eventStream.push({ type: "start", partial: output });
+
+      // Track state for text accumulation
+      let textBlockStarted = false;
+      let textContentIndex = -1;
+      const toolCalls = new Map<string, { id: string; name: string; arguments: string; contentIndex: number }>();
+      const usage: Record<string, number> = {};
+
+      const consumeLine = (rawLine: string) => {
+        if (!rawLine.startsWith("data: ")) return;
+        const rawData = rawLine.slice("data: ".length).trim();
+        if (!rawData || rawData === "[DONE]") return;
+        let event: Record<string, unknown>;
+        try {
+          const parsed = JSON.parse(rawData) as unknown;
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+          event = parsed as Record<string, unknown>;
+        } catch {
+          return;
+        }
+        const type = String(event.type || "");
+
+        if (type === "response.output_text.delta" && typeof event.delta === "string") {
+          if (!textBlockStarted) {
+            // Start a new text block
+            textBlockStarted = true;
+            output.content.push({ type: "text", text: "" });
+            textContentIndex = output.content.length - 1;
+            eventStream.push({ type: "text_start", contentIndex: textContentIndex, partial: output });
+          }
+          const textBlock = output.content[textContentIndex] as TextContent;
+          textBlock.text += event.delta;
+          eventStream.push({
+            type: "text_delta",
+            contentIndex: textContentIndex,
+            delta: event.delta,
+            partial: output,
+          });
+        } else if (type === "response.output_text.done") {
+          if (textBlockStarted && textContentIndex >= 0) {
+            const textBlock = output.content[textContentIndex] as TextContent;
+            // Use the done text if no deltas arrived
+            if (typeof event.text === "string" && !textBlock.text) {
+              textBlock.text = event.text;
+            }
+            eventStream.push({
+              type: "text_end",
+              contentIndex: textContentIndex,
+              content: textBlock.text,
+              partial: output,
+            });
+          }
+        } else if (type === "response.function_call_arguments.delta") {
+          const key = functionCallEventKey(event);
+          if (!key) return;
+          let current = toolCalls.get(key);
+          if (!current) {
+            // Start a new tool call block
+            const tc: ToolCallContent = {
+              type: "toolCall",
+              id: String(event.call_id || key),
+              name: String(event.name || ""),
+              arguments: {},
+            };
+            output.content.push(tc);
+            const idx = output.content.length - 1;
+            current = { id: tc.id, name: tc.name, arguments: "", contentIndex: idx };
+            toolCalls.set(key, current);
+            eventStream.push({ type: "toolcall_start", contentIndex: idx, partial: output });
+          }
+          current.arguments += String(event.delta || "");
+          if (typeof event.call_id === "string") current.id = event.call_id;
+          if (typeof event.name === "string") current.name = event.name;
+          eventStream.push({
+            type: "toolcall_delta",
+            contentIndex: current.contentIndex,
+            delta: String(event.delta || ""),
+            partial: output,
+          });
+        } else if (type === "response.function_call_arguments.done") {
+          const key = functionCallEventKey(event);
+          if (!key) return;
+          let current = toolCalls.get(key);
+          if (!current) {
+            const tc: ToolCallContent = {
+              type: "toolCall",
+              id: String(event.call_id || key),
+              name: String(event.name || ""),
+              arguments: {},
+            };
+            output.content.push(tc);
+            const idx = output.content.length - 1;
+            current = { id: tc.id, name: tc.name, arguments: String(event.arguments || ""), contentIndex: idx };
+            toolCalls.set(key, current);
+            eventStream.push({ type: "toolcall_start", contentIndex: idx, partial: output });
+          } else {
+            if (typeof event.arguments === "string") current.arguments = event.arguments;
+          }
+          if (typeof event.call_id === "string") current.id = event.call_id;
+          if (typeof event.name === "string") current.name = event.name;
+          // Finalize the tool call
+          const tc = output.content[current.contentIndex] as ToolCallContent;
+          tc.id = current.id;
+          tc.name = current.name;
+          tc.arguments = parseArgs(current.arguments);
+          eventStream.push({
+            type: "toolcall_end",
+            contentIndex: current.contentIndex,
+            toolCall: tc,
+            partial: output,
+          });
+        } else if (type === "response.output_item.added" || type === "response.output_item.done") {
+          const item = event.item && typeof event.item === "object" && !Array.isArray(event.item)
+            ? event.item as Record<string, unknown>
+            : null;
+          if (item?.type !== "function_call") return;
+          const key = functionCallItemKey(item, event);
+          if (!key) return;
+          let current = toolCalls.get(key);
+          if (!current) {
+            const tc: ToolCallContent = {
+              type: "toolCall",
+              id: String(item.call_id || item.id || key),
+              name: String(item.name || ""),
+              arguments: parseArgs(item.arguments),
+            };
+            output.content.push(tc);
+            const idx = output.content.length - 1;
+            current = { id: tc.id, name: tc.name, arguments: String(item.arguments || ""), contentIndex: idx };
+            toolCalls.set(key, current);
+            eventStream.push({ type: "toolcall_start", contentIndex: idx, partial: output });
+          } else {
+            if (typeof item.call_id === "string") current.id = item.call_id;
+            if (typeof item.name === "string") current.name = item.name;
+            if (typeof item.arguments === "string") current.arguments = item.arguments;
+          }
+          // If done event, finalize
+          if (type === "response.output_item.done") {
+            const tc = output.content[current.contentIndex] as ToolCallContent;
+            tc.id = current.id;
+            tc.name = current.name;
+            tc.arguments = parseArgs(current.arguments);
+            eventStream.push({
+              type: "toolcall_end",
+              contentIndex: current.contentIndex,
+              toolCall: tc,
+              partial: output,
+            });
+          }
+        } else if (type === "response.completed") {
+          const resp = event.response && typeof event.response === "object" && !Array.isArray(event.response)
+            ? event.response as Record<string, unknown>
+            : null;
+          const rawUsage = resp?.usage && typeof resp.usage === "object" && !Array.isArray(resp.usage)
+            ? resp.usage as Record<string, unknown>
+            : null;
+          const inputTokens = Number(rawUsage?.input_tokens ?? rawUsage?.prompt_tokens ?? 0);
+          const outputTokens = Number(rawUsage?.output_tokens ?? rawUsage?.completion_tokens ?? 0);
+          const inputDetails = rawUsage?.input_tokens_details && typeof rawUsage.input_tokens_details === "object" ? rawUsage.input_tokens_details as Record<string, unknown> : null;
+          const cacheReadTokens = Number(inputDetails?.cached_tokens ?? rawUsage?.cache_read_input_tokens ?? 0);
+          const cacheWriteTokens = Number(rawUsage?.cache_creation_input_tokens ?? 0);
+          if (Number.isFinite(inputTokens)) usage.prompt_tokens = inputTokens;
+          if (Number.isFinite(outputTokens)) usage.completion_tokens = outputTokens;
+          usage.total_tokens = (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0);
+          usage.cache_read_tokens = Number.isFinite(cacheReadTokens) ? cacheReadTokens : 0;
+          usage.cache_write_tokens = Number.isFinite(cacheWriteTokens) ? cacheWriteTokens : 0;
+        } else if (type === "response.failed" || type === "response.incomplete" || type === "error") {
+          throw new Error(codexEventErrorMessage(event));
+        }
+      };
+
+      if (!response.body) {
+        throw new Error("Codex stream response body is empty");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const reader = response.body.getReader();
+
+      while (true) {
+        if (options.signal?.aborted) {
+          await reader.cancel();
+          break;
+        }
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() ?? "";
+        for (const line of lines) consumeLine(line);
+      }
+      buffer += decoder.decode();
+      for (const line of buffer.split(/\r?\n/)) {
+        if (line) consumeLine(line);
+      }
+
+      if (options.signal?.aborted) {
+        output.stopReason = "aborted";
+        output.errorMessage = "Request was aborted";
+        eventStream.push({ type: "error", reason: "aborted", error: output });
+        eventStream.end();
+        return;
+      }
+
+      // Finalize usage
+      output.usage = computeUsage({
+        inputTokens: Number(usage.prompt_tokens ?? 0),
+        outputTokens: Number(usage.completion_tokens ?? 0),
+        cacheReadTokens: Number(usage.cache_read_tokens ?? 0),
+        cacheWriteTokens: Number(usage.cache_write_tokens ?? 0),
+        rates: model.cost,
+      });
+
+      // Determine stop reason
+      const hasToolCalls = output.content.some((c) => c.type === "toolCall");
+      output.stopReason = hasToolCalls ? "toolUse" : "stop";
+
+      eventStream.push({ type: "done", reason: output.stopReason as "stop" | "length" | "toolUse", message: output });
+      eventStream.end();
+    } catch (error) {
+      output.stopReason = options.signal?.aborted ? "aborted" : "error";
+      output.errorMessage = error instanceof Error ? error.message : String(error);
+      eventStream.push({ type: "error", reason: output.stopReason as "aborted" | "error", error: output });
+      eventStream.end();
+    }
+  })();
+
+  return eventStream;
 };
 
 export const listCodexModels: ApiListModelsFunction = async (
@@ -68,14 +325,6 @@ export const listCodexModels: ApiListModelsFunction = async (
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 
-/**
- * Retry logic adapted from pi-mono's openai-codex-responses provider.
- * Retries on:
- *  - Network errors (connection reset, unexpected EOF, socket hang up, timeout)
- *  - HTTP 429 (rate limit) / 500 / 502 / 503 / 504
- * Does NOT retry on usage-limit errors (those won't resolve with time).
- * Exponential backoff: 1s, 2s, 4s.
- */
 async function codexFetch(url: string, init: Record<string, unknown>): Promise<Response> {
   let lastError: Error | undefined;
 
@@ -87,7 +336,6 @@ async function codexFetch(url: string, init: Record<string, unknown>): Promise<R
         ...init,
       } as never) as unknown as Response;
 
-      // Successful fetch — check if HTTP status is retryable
       if (response.ok) return response;
 
       const status = response.status;
@@ -98,17 +346,14 @@ async function codexFetch(url: string, init: Record<string, unknown>): Promise<R
         continue;
       }
 
-      // Non-retryable HTTP error or final attempt — throw with context
       throw new Error(`Codex API ${status}: ${errorText}`);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
 
-      // Don't retry usage limit or auth errors
       if (lastError.message.includes("usage limit") || lastError.message.includes("usage_limit")) {
         throw lastError;
       }
 
-      // Network-level errors are retryable
       if (attempt < MAX_RETRIES && isRetryableNetworkError(lastError)) {
         await sleep(BASE_DELAY_MS * 2 ** attempt);
         continue;
@@ -161,13 +406,13 @@ function normalizeCodexModelOption(item: unknown): Record<string, unknown> | nul
     defaultReasoningEffort: String(obj.default_reasoning_level || obj.default_reasoning_effort || obj.defaultReasoningEffort || "medium"),
     supportedReasoningEfforts: Array.isArray(obj.supported_reasoning_levels)
       ? obj.supported_reasoning_levels
-        .map((level) => level && typeof level === "object" && !Array.isArray(level) ? String((level as Record<string, unknown>).effort || "") : "")
-        .filter(Boolean)
+          .map((level) => level && typeof level === "object" && !Array.isArray(level) ? String((level as Record<string, unknown>).effort || "") : "")
+          .filter(Boolean)
       : Array.isArray(obj.supported_reasoning_efforts)
         ? obj.supported_reasoning_efforts
-      : Array.isArray(obj.supportedReasoningEfforts)
-        ? obj.supportedReasoningEfforts
-        : ["low", "medium", "high", "xhigh"],
+        : Array.isArray(obj.supportedReasoningEfforts)
+          ? obj.supportedReasoningEfforts
+          : ["low", "medium", "high", "xhigh"],
     contextWindow: typeof obj.context_window === "number" ? obj.context_window : typeof obj.contextWindow === "number" ? obj.contextWindow : null,
     preferWebsockets: Boolean(obj.prefer_websockets || obj.preferWebsockets),
   };
@@ -224,7 +469,6 @@ function contextToCodexInput(context: AgentContext): Array<Record<string, unknow
       out.push({ role: "user", content: toolResultToCodex(msg) });
       continue;
     }
-    // custom messages are not sent to the LLM
   }
   return out;
 }
@@ -243,7 +487,6 @@ function userContentToCodex(
       out.push({ type: "input_image", image_url: `data:${item.mimeType};base64,${item.data}` });
     }
   }
-  // Codex requires at least one input_text per user message; pad with empty text if needed.
   if (!out.some((b) => b.type === "input_text")) {
     out.unshift({ type: "input_text", text: "" });
   }
@@ -291,143 +534,6 @@ function codexToolsPayload(context: AgentContext): Array<Record<string, unknown>
   }
   if (hasLocalWebSearch) out.push({ type: "web_search", external_web_access: true });
   return out;
-}
-
-async function collectCodexResponse(
-  response: Response,
-  model: AgentModelDescriptor,
-  options: StreamOptions,
-): Promise<StreamResult> {
-  const onDelta = options.onDelta ?? null;
-  const signal = options.signal;
-  const textChunks: string[] = [];
-  let doneText: string | null = null;
-  const toolCalls = new Map<string, { id: string; name: string; arguments: string }>();
-  const usage: Record<string, number> = {};
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const consumeLine = async (rawLine: string) => {
-    if (!rawLine.startsWith("data: ")) return;
-    const rawData = rawLine.slice("data: ".length).trim();
-    if (!rawData || rawData === "[DONE]") return;
-    let event: Record<string, unknown>;
-    try {
-      const parsed = JSON.parse(rawData) as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
-      event = parsed as Record<string, unknown>;
-    } catch {
-      return;
-    }
-    const type = String(event.type || "");
-    if (type === "response.output_text.delta" && typeof event.delta === "string") {
-      textChunks.push(event.delta);
-      await onDelta?.(event.delta);
-    } else if (type === "response.output_text.done" && typeof event.text === "string") {
-      doneText = event.text;
-    } else if (type === "response.function_call_arguments.delta") {
-      const key = functionCallEventKey(event);
-      if (!key) return;
-      const current = toolCalls.get(key) ?? { id: String(event.call_id || key), name: String(event.name || ""), arguments: "" };
-      current.arguments += String(event.delta || "");
-      if (typeof event.call_id === "string") current.id = event.call_id;
-      if (typeof event.name === "string") current.name = event.name;
-      toolCalls.set(key, current);
-    } else if (type === "response.function_call_arguments.done") {
-      const key = functionCallEventKey(event);
-      if (!key) return;
-      const current = toolCalls.get(key) ?? { id: String(event.call_id || key), name: String(event.name || ""), arguments: "" };
-      if (typeof event.arguments === "string") current.arguments = event.arguments;
-      if (typeof event.call_id === "string") current.id = event.call_id;
-      if (typeof event.name === "string") current.name = event.name;
-      toolCalls.set(key, current);
-    } else if (type === "response.output_item.added" || type === "response.output_item.done") {
-      const item = event.item && typeof event.item === "object" && !Array.isArray(event.item)
-        ? event.item as Record<string, unknown>
-        : null;
-      if (item?.type !== "function_call") return;
-      const key = functionCallItemKey(item, event);
-      if (!key) return;
-      const current = toolCalls.get(key) ?? { id: String(item.call_id || item.id || key), name: String(item.name || ""), arguments: String(item.arguments || "") };
-      if (typeof item.call_id === "string") current.id = item.call_id;
-      if (typeof item.name === "string") current.name = item.name;
-      if (typeof item.arguments === "string") current.arguments = item.arguments;
-      toolCalls.set(key, current);
-    } else if (type === "response.completed") {
-      const resp = event.response && typeof event.response === "object" && !Array.isArray(event.response)
-        ? event.response as Record<string, unknown>
-        : null;
-      const rawUsage = resp?.usage && typeof resp.usage === "object" && !Array.isArray(resp.usage)
-        ? resp.usage as Record<string, unknown>
-        : null;
-      const inputTokens = Number(rawUsage?.input_tokens ?? rawUsage?.prompt_tokens ?? 0);
-      const outputTokens = Number(rawUsage?.output_tokens ?? rawUsage?.completion_tokens ?? 0);
-      const inputDetails = rawUsage?.input_tokens_details && typeof rawUsage.input_tokens_details === "object" ? rawUsage.input_tokens_details as Record<string, unknown> : null;
-      const cacheReadTokens = Number(inputDetails?.cached_tokens ?? rawUsage?.cache_read_input_tokens ?? 0);
-      const cacheWriteTokens = Number(rawUsage?.cache_creation_input_tokens ?? 0);
-      if (Number.isFinite(inputTokens)) usage.prompt_tokens = inputTokens;
-      if (Number.isFinite(outputTokens)) usage.completion_tokens = outputTokens;
-      usage.total_tokens = (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0);
-      usage.cache_read_tokens = Number.isFinite(cacheReadTokens) ? cacheReadTokens : 0;
-      usage.cache_write_tokens = Number.isFinite(cacheWriteTokens) ? cacheWriteTokens : 0;
-    } else if (type === "response.failed" || type === "response.incomplete" || type === "error") {
-      throw new Error(codexEventErrorMessage(event));
-    }
-  };
-  if (!response.body) {
-    throw new Error("Codex stream response body is empty");
-  }
-  const reader = response.body.getReader();
-  while (true) {
-    if (signal?.aborted) {
-      await reader.cancel();
-      break;
-    }
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? "";
-    for (const line of lines) await consumeLine(line);
-  }
-  buffer += decoder.decode();
-  for (const line of buffer.split(/\r?\n/)) {
-    if (line) await consumeLine(line);
-  }
-  const aborted = signal?.aborted === true;
-  const text = textChunks.join("").trim() || (doneText || "").trim();
-  if (onDelta && doneText && textChunks.length === 0) await onDelta(doneText);
-  const calls: ToolCallContent[] = [...toolCalls.values()]
-    .filter((call) => call.name.trim())
-    .map((call) => ({
-      type: "toolCall",
-      id: call.id,
-      name: call.name,
-      arguments: parseArgs(call.arguments),
-    }));
-
-  const messageContent: (TextContent | ToolCallContent)[] = [];
-  if (text) messageContent.push({ type: "text", text });
-  for (const call of calls) messageContent.push(call);
-
-  const resolvedUsage = computeUsage({
-    inputTokens: Number(usage.prompt_tokens ?? 0),
-    outputTokens: Number(usage.completion_tokens ?? 0),
-    cacheReadTokens: Number(usage.cache_read_tokens ?? 0),
-    cacheWriteTokens: Number(usage.cache_write_tokens ?? 0),
-    rates: model.cost,
-  });
-
-  const message: AssistantMessage = {
-    role: "assistant",
-    content: messageContent,
-    provider: model.provider,
-    model: model.id,
-    usage: resolvedUsage,
-    stopReason: aborted ? "aborted" : calls.length > 0 ? "toolUse" : "stop",
-    ...(aborted ? { errorMessage: "Request was aborted" } : {}),
-    timestamp: Date.now(),
-  };
-  return { message };
 }
 
 function functionCallEventKey(event: Record<string, unknown>): string {

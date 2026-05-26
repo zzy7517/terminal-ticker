@@ -1,13 +1,12 @@
 /**
  * core/agent.ts — Stateful Agent class.
  *
- * Modeled after pi-mono's packages/agent/src/agent.ts.
- *
  * The Agent owns the conversation transcript, emits lifecycle events, executes
  * tools, and exposes queueing APIs for steering and follow-up messages.
  */
 
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.js";
+import type { EventStream } from "./event-stream.js";
 import type {
   AfterToolCallResult,
   AgentContext,
@@ -30,6 +29,9 @@ import type {
   ToolExecutionMode,
   Usage,
 } from "./types.js";
+
+// Re-export for consumers
+export type { EventStream } from "./event-stream.js";
 
 // ============================================================================
 // Default convertToLlm
@@ -203,9 +205,6 @@ export interface AgentOptions {
 
   /** Tool execution mode. Default: "parallel". */
   toolExecution?: ToolExecutionMode;
-
-  /** Delta callback for streaming text. */
-  onDelta?: (delta: string) => void | Promise<void>;
 }
 
 // ============================================================================
@@ -247,7 +246,6 @@ export class Agent {
   public prepareNextTurn?: (context: ShouldStopContext) => AgentLoopTurnUpdate | undefined | Promise<AgentLoopTurnUpdate | undefined>;
   public shouldStopAfterTurn?: (context: ShouldStopContext) => boolean | Promise<boolean>;
   public toolExecution: ToolExecutionMode;
-  public onDelta?: (delta: string) => void | Promise<void>;
 
   // ---- Lifecycle ----
   private activeRun?: ActiveRun;
@@ -265,7 +263,6 @@ export class Agent {
     this.prepareNextTurn = options.prepareNextTurn;
     this.shouldStopAfterTurn = options.shouldStopAfterTurn;
     this.toolExecution = options.toolExecution ?? "parallel";
-    this.onDelta = options.onDelta;
 
     this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
     this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
@@ -537,7 +534,6 @@ export class Agent {
       prepareNextTurn: this.prepareNextTurn,
       shouldStopAfterTurn: this.shouldStopAfterTurn,
       streamFn: this.streamFn,
-      onDelta: this.onDelta,
       getSteeringMessages: async () => {
         if (skipInitialSteeringPoll) {
           skipInitialSteeringPoll = false;

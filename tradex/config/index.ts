@@ -197,6 +197,8 @@ export interface Jin10Config {
   quotesEnabled: boolean;
   quotesPollIntervalSeconds: number;
   quotesCodes: string[];
+  /** Whether Jin10 instruments are included in agent analysis context (mention, candles). Default: false */
+  agentAnalysis: boolean;
 }
 
 export interface BrowserConfig {
@@ -715,6 +717,7 @@ export function parseJin10Config(rawJin10Value: unknown): Jin10Config {
     quotesEnabled: normalizeBool(raw.quotes_enabled, "jin10.quotes_enabled", true),
     quotesPollIntervalSeconds: coerceMinInt(raw.quotes_poll_interval_seconds, "jin10.quotes_poll_interval_seconds", 30, 10),
     quotesCodes,
+    agentAnalysis: normalizeBool(raw.agent_analysis, "jin10.agent_analysis", false),
   };
 }
 

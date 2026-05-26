@@ -550,6 +550,109 @@ export class SessionManager {
     return this.appendBranchSummary(entryId, summary);
   }
 
+  // Creates a new session file from the active branch up to (but not including)
+  // `entryId`. The entry at `entryId` must be a user message; its content is
+  // returned so the frontend can place it in the editor for modification.
+  createForkedSession(entryId: string): { sessionId: string; prompt: string } {
+    const entry = this.byId.get(entryId);
+    if (!entry) throw new Error(`Entry ${entryId} not found`);
+    if (entry.type !== "message" || (entry as MessageEntry).role !== "user") {
+      throw new Error("Can only fork from a user message");
+    }
+
+    // Walk from entryId's parent back to root to get the path BEFORE this message
+    const parentBranch = entry.parentId ? this.getBranch(entry.parentId) : [];
+
+    const dir = this.sessionDirPath;
+    const newSessionId = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    const header = this.getHeader();
+    const newHeader: SessionHeader = {
+      type: "session",
+      version: CURRENT_SESSION_VERSION,
+      id: newSessionId,
+      timestamp,
+      title: null,
+      provider: header?.provider ?? "codex",
+      model: header?.model ?? "codex-mini",
+      parentSession: this.sessionFile ?? undefined,
+    } as SessionHeader & { parentSession?: string };
+
+    // Re-ID the entries for the new session so they don't collide
+    const newByIdSet = new Set<string>();
+    const idMap = new Map<string, string>(); // old id → new id
+    const newEntries: FileEntry[] = [newHeader];
+
+    for (const e of parentBranch) {
+      const newId = generateId(newByIdSet);
+      newByIdSet.add(newId);
+      idMap.set(e.id, newId);
+      const parentId = e.parentId ? (idMap.get(e.parentId) ?? null) : null;
+      newEntries.push({ ...e, id: newId, parentId } as SessionEntry);
+    }
+
+    // Write the new session file
+    const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+    const newFile = path.join(dir, `${fileTimestamp}_${newSessionId}.jsonl`);
+    const content = newEntries.map((e) => JSON.stringify(e)).join("\n") + "\n";
+    fs.writeFileSync(newFile, content);
+
+    // Update the index
+    if (this.index) {
+      const info = buildSessionInfoFromFile(newFile);
+      if (info) this.index.upsert(info);
+    }
+
+    return {
+      sessionId: newSessionId,
+      prompt: (entry as MessageEntry).content,
+    };
+  }
+
+  // Duplicates the current active branch (from root to current leaf) into a
+  // new session file.
+  createClonedSession(): { sessionId: string } {
+    const branch = this.getBranch();
+    const dir = this.sessionDirPath;
+    const newSessionId = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    const header = this.getHeader();
+    const newHeader: SessionHeader = {
+      type: "session",
+      version: CURRENT_SESSION_VERSION,
+      id: newSessionId,
+      timestamp,
+      title: null,
+      provider: header?.provider ?? "codex",
+      model: header?.model ?? "codex-mini",
+      parentSession: this.sessionFile ?? undefined,
+    } as SessionHeader & { parentSession?: string };
+
+    const newByIdSet = new Set<string>();
+    const idMap = new Map<string, string>();
+    const newEntries: FileEntry[] = [newHeader];
+
+    for (const e of branch) {
+      const newId = generateId(newByIdSet);
+      newByIdSet.add(newId);
+      idMap.set(e.id, newId);
+      const parentId = e.parentId ? (idMap.get(e.parentId) ?? null) : null;
+      newEntries.push({ ...e, id: newId, parentId } as SessionEntry);
+    }
+
+    const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+    const newFile = path.join(dir, `${fileTimestamp}_${newSessionId}.jsonl`);
+    const content = newEntries.map((e) => JSON.stringify(e)).join("\n") + "\n";
+    fs.writeFileSync(newFile, content);
+
+    if (this.index) {
+      const info = buildSessionInfoFromFile(newFile);
+      if (info) this.index.upsert(info);
+    }
+
+    return { sessionId: newSessionId };
+  }
+
   // =========================================================================
   // Tree traversal / queries
   // =========================================================================
@@ -734,7 +837,6 @@ export class SessionManager {
 
   /**
    * Compute cumulative session statistics from all stored assistant messages.
-   * Matches pi's SessionStats shape.
    */
   computeSessionStats(): Record<string, unknown> {
     const entries = this.getEntries();

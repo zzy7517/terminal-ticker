@@ -1,17 +1,17 @@
 /**
  * core/tool-adapter.ts — Bridges ToolRegistry/ToolDefinition to AgentTool[].
  *
- * The new core (mirroring pi's design) consumes AgentTool[] whose `execute`
- * always returns AgentToolResult { content, details, terminate? }.
+ * The core consumes AgentTool[] whose `execute` always returns
+ * AgentToolResult { content, details, terminate? }.
  *
  * Each tradex ToolDefinition.execute may return:
  *   • a string                                  → wrapped as text content
  *   • a ContentBlock[]                          → used as content directly
- *   • a { content, details?, terminate? }       → forwarded as-is (pi shape)
+ *   • a { content, details?, terminate? }       → forwarded as-is
  *
  * This adapter normalizes all three shapes. Errors thrown by tools surface as
  * AgentToolResult with isError=true semantics (the loop tags them via the
- * containing event), matching pi's "throw on failure" contract.
+ * containing event) — "throw on failure" contract.
  */
 
 import { ToolRegistry, normalizeToolReturn, type ToolDefinition } from "../tools/registry.js";
