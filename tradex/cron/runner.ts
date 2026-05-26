@@ -13,6 +13,7 @@ import { normalizeApiMode } from "../config/agent_models.js";
 import { resolveAgentModelFromConfig } from "../agent/models.js";
 import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../agent/core/index.js";
 import type { TextContent, ShouldStopContext } from "../agent/core/types.js";
+import { CRON_AGENT_PROMPT } from "../agent/prompts.js";
 import { agentModelToDescriptor } from "../agent/core/model-descriptor.js";
 import { SessionManager } from "../agent/session_manager.js";
 import { buildMarketTools } from "../agent/tools/market.js";
@@ -145,8 +146,8 @@ export async function executeCronJob(input: {
   let iterations = 0;
 
   try {
-    // Build system prompt: job-specific prompt + skills
-    let systemPrompt = job.systemPrompt || "";
+    // Build system prompt: base cron prompt + job-specific prompt + skills
+    let systemPrompt = [CRON_AGENT_PROMPT, job.systemPrompt || ""].filter(Boolean).join("\n\n");
     const skillsConfig = runtime.config.agent.skills;
     if (skillsConfig.enabled) {
       const { skills: loadedSkills } = loadSkills({

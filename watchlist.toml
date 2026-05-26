@@ -99,7 +99,7 @@ enabled = true
 [[cron_jobs]]
 name = "盯盘"
 cron = "*/5 * * * *"
-system_prompt = "你是一名职业 trader。重点分析 eth xau的k线数据，如果你认为满足开单的条件，可以直接开单"
+system_prompt = "本轮重点关注 ETH 和 XAU（黄金）。优先分析这两个标的的 15m/1H K线结构和技术指标，其他标的快速扫一眼即可。"
 enabled = true
 symbols = ["BTCUSDT", "ETHUSDT"]
 model = "codex:gpt-5.5"

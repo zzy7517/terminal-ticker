@@ -20,6 +20,7 @@ import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../../a
 import type { AssistantMessage, TextContent, ImageContent } from "../../agent/core/types.js";
 import { agentModelToDescriptor } from "../../agent/core/model-descriptor.js";
 import { loadSkills, formatSkillsForPrompt } from "../../agent/skills.js";
+import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
 import type { AppRuntime } from "../runtime.js";
 import {
   idleRun,
@@ -269,7 +270,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             ? buildMemoryDeveloperInstructions(runtime.config.memory.storagePath)
             : null;
 
-          const systemPrompt = [memoryInstructions ?? "", skillsPromptBlock].filter(Boolean).join("\n");
+          const systemPrompt = [MAIN_AGENT_PROMPT, memoryInstructions ?? "", skillsPromptBlock].filter(Boolean).join("\n");
 
           const agent = new Agent({
             initialState: {
