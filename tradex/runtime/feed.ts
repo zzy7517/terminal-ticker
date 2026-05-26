@@ -63,6 +63,8 @@ export class FeedWorker {
   private tasks: Array<Promise<void>> = [];
   private bitgetSocket: BitgetPublicWebSocket | null = null;
   private hyperliquidSocket: HyperliquidAllMidsWebSocket | null = null;
+  /** Keys excluded from candle polling (removed at runtime without feed restart). */
+  private readonly excludedKeys = new Set<string>();
 
   constructor(input: { config: AppConfig; instruments: readonly MarketInstrument[]; emit: EventHandler; candleCache?: CandleCache | null }) {
     this.config = input.config;
@@ -71,6 +73,15 @@ export class FeedWorker {
     this.hyperliquidInstruments = input.instruments.filter((instrument): instrument is HyperliquidInstrument => instrument instanceof HyperliquidInstrument);
     this.emit = input.emit;
     this.candleCache = input.candleCache ?? (this.config.cache.enabled ? CandleCache.fromConfig(this.config.cache) : null);
+  }
+
+  /**
+   * Mark an instrument key as excluded — the candle polling loop will skip it.
+   * WebSocket streams are left running; quote events for excluded keys are
+   * harmlessly dropped by TickerController (quotes[key] is already deleted).
+   */
+  excludeInstrument(key: string): void {
+    this.excludedKeys.add(key);
   }
 
   start(): void {
@@ -139,6 +150,7 @@ export class FeedWorker {
     while (!signal.aborted) {
       for (const instrument of [...this.bitgetInstruments, ...this.hyperliquidInstruments]) {
         if (signal.aborted) break;
+        if (this.excludedKeys.has(instrument.key)) continue;
         const interval = instrument.analysisInterval || this.config.analysis.interval;
         let candles: Candle[] = [];
         const multiTimeframeCandles: Record<string, Candle[]> = {};

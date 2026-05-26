@@ -107,6 +107,8 @@ export function marketRoutes(runtime: AppRuntime): Hono {
   });
 
   // Removes an instrument from the watchlist TOML by instrument key.
+  // Unlike add (which needs feed subscription), removal only evicts the key
+  // from memory and skips it in candle polling — no full reload required.
   app.delete("/api/watchlist/instruments/:key", async (c) => {
     const key = decodeURIComponent(c.req.param("key"));
     const instrument = runtime.instruments.find((item) => item.key === key);
@@ -117,7 +119,8 @@ export function marketRoutes(runtime: AppRuntime): Hono {
       symbol: instrument.symbol,
       instType: "instType" in instrument ? instrument.instType : null,
     });
-    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+    runtime.removeInstrument(key);
+    return c.json({ state: await runtime.state() });
   });
 
   return app;

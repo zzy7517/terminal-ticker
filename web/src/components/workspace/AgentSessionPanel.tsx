@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } fr
 import './AgentSessionPanel.css';
 
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Bot,
   Check,
@@ -183,7 +184,7 @@ function AgentTranscriptMessage({
       )}
       {content && (
         <div className="session-message-text markdown-body">
-          <ReactMarkdown>{content}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
       )}
     </div>
@@ -595,8 +596,8 @@ export function AgentSessionPanel({
           )}
         </div>
       </div>
-      {/* Fork selector: shows user messages on active branch to pick a fork point */}
-      {forkSelectorOpen && sessionId && (() => {
+      {/* Fork selector: replaces transcript when open */}
+      {forkSelectorOpen && sessionId ? (() => {
         const userMsgs = (agentSession?.messages ?? []).filter(m => m.role === 'user');
         return (
           <div className="fork-selector-panel">
@@ -637,8 +638,7 @@ export function AgentSessionPanel({
             </div>
           </div>
         );
-      })()}
-      <div
+      })() : <div
         className="session-transcript"
         ref={transcriptRef}
         onScroll={(event) => {
@@ -670,7 +670,7 @@ export function AgentSessionPanel({
             </div>
             {streamingMessage.content && (
               <div className="session-message-text markdown-body">
-                <ReactMarkdown>{streamingMessage.content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingMessage.content}</ReactMarkdown>
               </div>
             )}
             {!streamingMessage.content && (
@@ -684,7 +684,7 @@ export function AgentSessionPanel({
             <span>No turns in this agent session.</span>
           </div>
         )}
-      </div>
+      </div>}
       <div className="session-compose" onDrop={handleDrop} onDragOver={handleDragOver}>
         {pendingImages.length > 0 && (
           <div className="session-pending-images">

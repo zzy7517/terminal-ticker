@@ -19,6 +19,8 @@ export class TickerController {
   readonly config: AppConfig;
   readonly instruments: readonly MarketInstrument[];
   readonly quotes: Record<string, QuoteState>;
+  /** Explicit registry of active instrument keys. Events for keys outside this set are dropped. */
+  private readonly activeKeys: Set<string>;
   streamStatus = "idle";
   lastMessageAt: Date | null = null;
   readonly eventQueue: FeedEvent[] = [];
@@ -28,12 +30,29 @@ export class TickerController {
     this.config = input.config;
     this.instruments = input.instruments;
     this.quotes = Object.fromEntries(input.instruments.map((instrument) => [instrument.key, QuoteState.placeholder(instrument.label)]));
+    this.activeKeys = new Set(input.instruments.map((i) => i.key));
     const Factory = input.workerFactory ?? FeedWorker;
     this.feedWorker = new Factory({
       config: input.config,
       instruments: input.instruments,
       emit: (event) => this.eventQueue.push(event),
     });
+  }
+
+  /**
+   * Deregister an instrument: removes it from the active set, cleans up its
+   * quote state, and excludes it from candle polling. The WebSocket feed
+   * continues running — events for deregistered keys are explicitly rejected
+   * at the activeKeys gate, not by accidental null fallthrough.
+   */
+  deregister(key: string): void {
+    this.activeKeys.delete(key);
+    delete this.quotes[key];
+    this.feedWorker.excludeInstrument(key);
+  }
+
+  isActive(key: string): boolean {
+    return this.activeKeys.has(key);
   }
 
   start(): void {
@@ -59,8 +78,8 @@ export class TickerController {
     if (event.kind === "quote") {
       const payload = event.payload as Record<string, unknown>;
       const key = String(payload.id || "");
+      if (!this.activeKeys.has(key)) return false;
       const quote = this.quotes[key];
-      if (!quote) return false;
       const previousPrice = quote.price;
       quote.applyPayload(payload);
       const direction = TickerController.flashDirection(previousPrice, quote.price);
@@ -73,8 +92,9 @@ export class TickerController {
       let dirty = false;
       const payload = event.payload as Record<string, Record<string, unknown>>;
       for (const [key, item] of Object.entries(payload)) {
+        if (!this.activeKeys.has(key)) continue;
         const quote = this.quotes[key];
-        if (quote && quote.updateCount === 0) {
+        if (quote.updateCount === 0) {
           quote.applySnapshot(item);
           dirty = true;
         }
@@ -92,7 +112,9 @@ export class TickerController {
         const detail = String((payload as Record<string, unknown>).message || "");
         const ids = (payload as Record<string, unknown>).ids;
         if (detail && Array.isArray(ids)) {
-          for (const key of ids) this.quotes[String(key)]?.markError(detail);
+          for (const key of ids) {
+            if (this.activeKeys.has(String(key))) this.quotes[String(key)].markError(detail);
+          }
         }
       }
       return true;
@@ -100,8 +122,8 @@ export class TickerController {
     if (event.kind === "candles") {
       const payload = event.payload as Record<string, unknown>;
       const key = String(payload.id || "");
+      if (!this.activeKeys.has(key)) return false;
       const quote = this.quotes[key];
-      if (!quote) return false;
       const incoming = Array.isArray(payload.candles) ? payload.candles : [];
       const multiRaw = payload.multi_timeframe_candles;
       quote.applyCandles({

@@ -148,6 +148,18 @@ export class AppRuntime {
     this.cronScheduler.reload();
   }
 
+  /**
+   * Remove a single instrument from the live runtime without restarting feeds.
+   * The TOML file should already be updated before calling this.
+   * The controller deregisters the key from its active set — subsequent
+   * WebSocket events are explicitly rejected at the gate, and candle polling
+   * skips the excluded key on its next iteration.
+   */
+  removeInstrument(key: string): void {
+    this.instruments = this.instruments.filter((i) => i.key !== key);
+    this.controller.deregister(key);
+  }
+
   // Starts background market data streaming, news polling, cron scheduler, MCP, and memory pipeline.
   async start(): Promise<void> {
     this.running = true;

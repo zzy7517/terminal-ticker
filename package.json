@@ -29,6 +29,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "smol-toml": "^1.6.1",
     "viem": "^2.48.11",
     "wreq-js": "^2.3.0",

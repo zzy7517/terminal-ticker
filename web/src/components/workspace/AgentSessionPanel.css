@@ -845,9 +845,12 @@
     min-height: 200px;
   }
 }
-/* Fork Selector Panel */
+/* Fork Selector Panel — replaces transcript when open */
 .fork-selector-panel {
-  border-bottom: 1px solid var(--border-color, #2a2a2a);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--surface-bg, #1a1a1a);
   font-size: 12px;
 }
@@ -878,7 +881,7 @@
 }
 
 .fork-selector-list {
-  max-height: 220px;
+  flex: 1;
   overflow-y: auto;
   padding: 4px;
 }
