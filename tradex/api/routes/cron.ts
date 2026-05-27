@@ -11,7 +11,7 @@ export function cronRoutes(runtime: AppRuntime): Hono {
     return c.json({
       jobs: runtime.cronScheduler.listJobs(),
       storagePaths: {
-        db: runtime.cronJobStore.dbPath,
+        config: runtime.cronJobStore.filePath,
         sessions: cronSessionsDir(),
       },
     });
@@ -81,6 +81,7 @@ export function cronRoutes(runtime: AppRuntime): Hono {
       name,
       cron,
       systemPrompt: typeof body.systemPrompt === "string" ? body.systemPrompt : "",
+      useMainPrompt: body.useMainPrompt === true,
       enabled: body.enabled !== false,
       symbols: Array.isArray(body.symbols) ? body.symbols.filter((s): s is string => typeof s === "string") : [],
       model: typeof body.model === "string" && body.model.trim() ? body.model.trim() : null,
@@ -114,6 +115,7 @@ export function cronRoutes(runtime: AppRuntime): Hono {
       name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : current.name,
       cron: typeof body.cron === "string" && body.cron.trim() ? body.cron.trim() : current.cron,
       systemPrompt: typeof body.systemPrompt === "string" ? body.systemPrompt : current.systemPrompt,
+      useMainPrompt: typeof body.useMainPrompt === "boolean" ? body.useMainPrompt : current.useMainPrompt,
       enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
       symbols: Array.isArray(body.symbols) ? body.symbols.filter((s): s is string => typeof s === "string") : current.symbols,
       model: body.model === null ? null : typeof body.model === "string" ? (body.model.trim() || null) : current.model,
