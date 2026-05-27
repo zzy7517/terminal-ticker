@@ -615,6 +615,17 @@ export async function fetchCronSession(sessionId: string): Promise<{ jobName: st
   return response.json();
 }
 
+export async function deleteCronRun(sessionId: string): Promise<void> {
+  const response = await fetch(`/api/cron/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+  if (!response.ok) throw await responseError(response, 'cron run delete failed');
+}
+
+export async function clearCronJobRuns(jobName: string): Promise<{ deleted: number }> {
+  const response = await fetch(`/api/cron/jobs/${encodeURIComponent(jobName)}/sessions`, { method: 'DELETE' });
+  if (!response.ok) throw await responseError(response, 'cron job runs clear failed');
+  return response.json();
+}
+
 // Manually triggers a cron job.
 export async function triggerCronJob(jobName: string): Promise<{ ok: boolean; result?: unknown; detail?: string }> {
   const response = await fetch(`/api/cron/jobs/${encodeURIComponent(jobName)}/trigger`, { method: 'POST' });

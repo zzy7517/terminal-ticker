@@ -43,7 +43,7 @@
 }
 
 .agent-bias {
-  background: #0d0d0d;
+  background: var(--panel-raised);
   border: 1px solid var(--line-strong);
   font-family: var(--mono);
   font-size: 12px;
@@ -191,38 +191,19 @@
   font-weight: 700;
 }
 
-.session-history-delete {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: inline-flex;
-  flex-shrink: 0;
-  height: 20px;
-  justify-content: center;
-  opacity: 0;
-  padding: 0;
-  width: 20px;
-}
-
-.session-history-row:hover .session-history-delete,
-.session-history-delete.confirming {
+.session-history-row:hover .row-delete,
+.row-delete.confirming {
   opacity: 1;
 }
 
-.session-history-delete:hover:not(:disabled) {
-  color: var(--down);
-}
-
-.session-history-delete.confirming {
+.row-delete.confirming {
   background: var(--danger-tint);
   border: 1px solid var(--down);
   color: var(--down);
   width: 50px;
 }
 
-.session-history-delete.confirming:hover:not(:disabled) {
+.row-delete.confirming:hover:not(:disabled) {
   background: var(--danger-tint-strong);
 }
 
@@ -234,12 +215,7 @@
   text-transform: uppercase;
 }
 
-.session-history-delete:disabled {
-  cursor: not-allowed;
-  opacity: 0;
-}
-
-.session-history-delete.deleting:disabled {
+.row-delete.deleting:disabled {
   cursor: wait;
   opacity: 1;
 }
@@ -254,7 +230,7 @@
 }
 
 .session-message {
-  background: #0a0a0a;
+  background: var(--canvas-2);
   border: 1px solid var(--line-soft);
   display: grid;
   gap: 4px;
@@ -323,7 +299,7 @@
 }
 
 .session-compose textarea {
-  background: #0a0a0a;
+  background: var(--canvas-2);
   border: 1px solid var(--line-strong);
   color: var(--text-primary);
   font-family: var(--mono);
@@ -350,7 +326,7 @@
 
 /* Slash command autocomplete picker */
 .slash-command-picker {
-  background: #0d0d0d;
+  background: var(--panel-raised);
   border: 1px solid var(--line-strong);
   overflow: hidden;
 }
@@ -359,7 +335,7 @@
   border-bottom: 1px solid var(--line-strong);
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
   padding: 3px 8px;
@@ -400,7 +376,7 @@
 
 .slash-command-desc {
   color: var(--text-muted, #888);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .slash-command-option.active .slash-command-desc,
@@ -519,7 +495,7 @@
 }
 
 .agent-tool-step {
-  background: #0a0a0a;
+  background: var(--canvas-2);
   border: 1px solid var(--line-soft);
   overflow: hidden;
 }
@@ -584,7 +560,7 @@
 }
 
 .tool-step-detail pre {
-  background: #000000;
+  background: var(--canvas);
   border: 1px solid var(--line-soft);
   color: var(--text-secondary);
   font-family: var(--mono);
@@ -687,7 +663,7 @@
 
 .session-model-trigger {
   align-items: center;
-  background: #0a0a0a;
+  background: var(--canvas-2);
   border: 1px solid var(--line-strong);
   color: inherit;
   cursor: pointer;
@@ -709,7 +685,7 @@
 }
 
 .session-model-dropdown {
-  background: #0d0d0d;
+  background: var(--panel-raised);
   border: 1px solid var(--line-strong);
   left: 0;
   min-width: 240px;
@@ -860,7 +836,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--accent-color, #58a6ff);
   border-bottom: 1px solid var(--border-color, #2a2a2a);
 }
@@ -894,7 +870,7 @@
   background: transparent;
   color: var(--text-primary, #ddd);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   text-align: left;
   border-radius: 4px;
   transition: background 0.12s;

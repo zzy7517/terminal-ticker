@@ -91,23 +91,18 @@ export function NewsSettingsPanel() {
             <strong>Module</strong>
           </div>
 
-          <label className="settings-toggle-row">
+          <div className="settings-toggle-row">
             <div>
               <strong>Enable news ingestion</strong>
               <small>
                 Controls the [news] block in watchlist.toml and start/stops the background poller.
               </small>
             </div>
-            <button
-              className={`settings-toggle ${draft.enabled ? 'on' : ''}`}
-              type="button"
-              disabled={saving}
-              onClick={() => persistConfig(!draft.enabled)}
-              aria-pressed={!!draft.enabled}
-            >
-              <span />
-            </button>
-          </label>
+            <label className="switch-row">
+              <input type="checkbox" checked={!!draft.enabled} disabled={saving} onChange={() => persistConfig(!draft.enabled)} />
+              <span className="switch-slider" />
+            </label>
+          </div>
 
           <div className="settings-readonly-grid">
             <div>

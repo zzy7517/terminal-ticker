@@ -453,42 +453,34 @@ export function McpSettingsPanel() {
         {/* Module toggles */}
         <div className="jin10-config-section">
           <div className="provider-section-head"><strong>模块开关</strong></div>
-          <label className="settings-toggle-row">
+          <div className="settings-toggle-row">
             <div><strong>总开关</strong><small>启用/禁用所有 Jin10 数据</small></div>
-            <button
-              className={`settings-toggle ${jin10Config?.enabled ? 'on' : ''}`}
-              type="button"
-              onClick={() => handleJin10Toggle('enabled', !jin10Config?.enabled)}
-              aria-pressed={!!jin10Config?.enabled}
-            ><span /></button>
-          </label>
-          <label className="settings-toggle-row">
+            <label className="switch-row">
+              <input type="checkbox" checked={!!jin10Config?.enabled} onChange={() => handleJin10Toggle('enabled', !jin10Config?.enabled)} />
+              <span className="switch-slider" />
+            </label>
+          </div>
+          <div className="settings-toggle-row">
             <div><strong>快讯 (Flash)</strong><small>实时财经快讯推送到 News</small></div>
-            <button
-              className={`settings-toggle ${jin10Config?.flashEnabled ? 'on' : ''}`}
-              type="button"
-              onClick={() => handleJin10Toggle('flash_enabled', !jin10Config?.flashEnabled)}
-              aria-pressed={!!jin10Config?.flashEnabled}
-            ><span /></button>
-          </label>
-          <label className="settings-toggle-row">
+            <label className="switch-row">
+              <input type="checkbox" checked={!!jin10Config?.flashEnabled} onChange={() => handleJin10Toggle('flash_enabled', !jin10Config?.flashEnabled)} />
+              <span className="switch-slider" />
+            </label>
+          </div>
+          <div className="settings-toggle-row">
             <div><strong>财经日历 (Calendar)</strong><small>今日经济事件与数据发布</small></div>
-            <button
-              className={`settings-toggle ${jin10Config?.calendarEnabled ? 'on' : ''}`}
-              type="button"
-              onClick={() => handleJin10Toggle('calendar_enabled', !jin10Config?.calendarEnabled)}
-              aria-pressed={!!jin10Config?.calendarEnabled}
-            ><span /></button>
-          </label>
-          <label className="settings-toggle-row">
+            <label className="switch-row">
+              <input type="checkbox" checked={!!jin10Config?.calendarEnabled} onChange={() => handleJin10Toggle('calendar_enabled', !jin10Config?.calendarEnabled)} />
+              <span className="switch-slider" />
+            </label>
+          </div>
+          <div className="settings-toggle-row">
             <div><strong>行情 (Quotes)</strong><small>商品/外汇/指数参考报价</small></div>
-            <button
-              className={`settings-toggle ${jin10Config?.quotesEnabled ? 'on' : ''}`}
-              type="button"
-              onClick={() => handleJin10Toggle('quotes_enabled', !jin10Config?.quotesEnabled)}
-              aria-pressed={!!jin10Config?.quotesEnabled}
-            ><span /></button>
-          </label>
+            <label className="switch-row">
+              <input type="checkbox" checked={!!jin10Config?.quotesEnabled} onChange={() => handleJin10Toggle('quotes_enabled', !jin10Config?.quotesEnabled)} />
+              <span className="switch-slider" />
+            </label>
+          </div>
         </div>
 
         {/* Quotes codes */}
@@ -810,7 +802,26 @@ export function McpSettingsPanel() {
                   <strong>{server.name}</strong>
                   <small>{server.type === 'http' ? server.url : server.command}{server.status === 'connected' ? ` \u00b7 ${server.toolCount} tools` : ''}</small>
                 </div>
-                <span className={`provider-item-dot${server.status === 'connected' ? '' : ' inactive'}`} />
+                <label className="switch-row" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={server.status === 'connected'}
+                    disabled={server.status === 'connecting'}
+                    onChange={async () => {
+                      try {
+                        if (server.status === 'connected') {
+                          await disconnectMcpServer(server.name);
+                        } else {
+                          await connectMcpServer(server.name);
+                        }
+                        await loadStatus();
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Toggle failed');
+                      }
+                    }}
+                  />
+                  <span className="switch-slider" />
+                </label>
               </button>
             ))}
           </div>

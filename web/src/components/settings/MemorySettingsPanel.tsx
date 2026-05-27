@@ -364,69 +364,49 @@ export function MemorySettingsPanel() {
             )}
           </div>
 
-          <label className="settings-toggle-row">
+          <div className="settings-toggle-row">
             <div>
               <strong>Enable memory system</strong>
               <small>Controls the [memory] block in watchlist.toml.</small>
             </div>
-            <button
-              className={`settings-toggle ${config.enabled ? 'on' : ''}`}
-              type="button"
-              disabled={saving}
-              onClick={() => persistConfig({ enabled: !config.enabled })}
-              aria-pressed={config.enabled}
-            >
-              <span />
-            </button>
-          </label>
+            <label className="switch-row">
+              <input type="checkbox" checked={config.enabled} disabled={saving} onChange={() => persistConfig({ enabled: !config.enabled })} />
+              <span className="switch-slider" />
+            </label>
+          </div>
 
-          <label className="settings-toggle-row">
+          <div className="settings-toggle-row">
             <div>
               <strong>Use memories (read)</strong>
               <small>Inject memory_summary.md into agent prompts.</small>
             </div>
-            <button
-              className={`settings-toggle ${config.useMemories ? 'on' : ''}`}
-              type="button"
-              disabled={saving || !config.enabled}
-              onClick={() => persistConfig({ useMemories: !config.useMemories })}
-              aria-pressed={config.useMemories}
-            >
-              <span />
-            </button>
-          </label>
+            <label className="switch-row">
+              <input type="checkbox" checked={config.useMemories} disabled={saving || !config.enabled} onChange={() => persistConfig({ useMemories: !config.useMemories })} />
+              <span className="switch-slider" />
+            </label>
+          </div>
 
-          <label className="settings-toggle-row">
+          <div className="settings-toggle-row">
             <div>
               <strong>Generate memories (write)</strong>
               <small>Run Phase 1 extraction + Phase 2 consolidation.</small>
             </div>
-            <button
-              className={`settings-toggle ${config.generateMemories ? 'on' : ''}`}
-              type="button"
-              disabled={saving || !config.enabled}
-              onClick={() => persistConfig({ generateMemories: !config.generateMemories })}
-              aria-pressed={config.generateMemories}
-            >
-              <span />
-            </button>
-          </label>
+            <label className="switch-row">
+              <input type="checkbox" checked={config.generateMemories} disabled={saving || !config.enabled} onChange={() => persistConfig({ generateMemories: !config.generateMemories })} />
+              <span className="switch-slider" />
+            </label>
+          </div>
 
-          <label className="settings-toggle-row">
+          <div className="settings-toggle-row">
             <div>
               <strong>Skip external-context sessions</strong>
               <small>Do not generate memory from sessions that used web, social, browser, or MCP tools.</small>
             </div>
-            <button
-              className={`settings-toggle ${config.disableOnExternalContext ? 'on' : ''}`}
-              type="button"
-              disabled={saving || !config.enabled}
-              onClick={() => persistConfig({ disableOnExternalContext: !config.disableOnExternalContext })}
-              aria-pressed={config.disableOnExternalContext}
-            >
-              <span />
-            </button>
-          </label>
+            <label className="switch-row">
+              <input type="checkbox" checked={config.disableOnExternalContext} disabled={saving || !config.enabled} onChange={() => persistConfig({ disableOnExternalContext: !config.disableOnExternalContext })} />
+              <span className="switch-slider" />
+            </label>
+          </div>
 
           <StoragePathInput
             value={config.storagePath}

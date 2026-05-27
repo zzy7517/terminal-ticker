@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clock, Play, Pause, ChevronRight, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Clock, Play, Pause, ChevronRight, AlertCircle, CheckCircle2, Loader2, Trash2 } from 'lucide-react';
 import './CronPanel.css';
 import type { CronJobStatus, CronRunRecord, CronSessionEntry, CronStoragePaths } from '../../types';
 import {
@@ -8,6 +8,8 @@ import {
   fetchCronSession,
   triggerCronJob,
   setCronJobEnabled,
+  deleteCronRun,
+  clearCronJobRuns,
 } from '../../api';
 
 type PanelView = 'jobs' | 'history' | 'detail';
@@ -85,6 +87,24 @@ export function CronPanel() {
     }
   }
 
+  async function handleDeleteRun(sessionId: string) {
+    try {
+      await deleteCronRun(sessionId);
+      setRuns((prev) => prev.filter((r) => r.sessionId !== sessionId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed');
+    }
+  }
+
+  async function handleClearRuns(jobName: string) {
+    try {
+      await clearCronJobRuns(jobName);
+      setRuns([]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Clear failed');
+    }
+  }
+
   function goBack() {
     if (view === 'detail') {
       setView('history');
@@ -118,7 +138,7 @@ export function CronPanel() {
       )}
 
       {view === 'jobs' && <JobsList jobs={jobs} storagePaths={storagePaths} triggering={triggering} onToggle={handleToggle} onTrigger={handleTrigger} onViewHistory={openHistory} />}
-      {view === 'history' && <HistoryList jobName={selectedJob!} runs={runs} onBack={goBack} onViewDetail={openDetail} />}
+      {view === 'history' && <HistoryList jobName={selectedJob!} runs={runs} onBack={goBack} onViewDetail={openDetail} onDeleteRun={handleDeleteRun} onClearAll={handleClearRuns} />}
       {view === 'detail' && <SessionDetail jobName={detailJobName} entries={sessionEntries} onBack={goBack} />}
     </div>
   );
@@ -238,8 +258,10 @@ function HistoryList(props: {
   runs: CronRunRecord[];
   onBack: () => void;
   onViewDetail: (run: CronRunRecord) => void;
+  onDeleteRun: (sessionId: string) => void;
+  onClearAll: (jobName: string) => void;
 }) {
-  const { jobName, runs, onBack, onViewDetail } = props;
+  const { jobName, runs, onBack, onViewDetail, onDeleteRun, onClearAll } = props;
 
   return (
     <div className="cron-history">
@@ -249,6 +271,16 @@ function HistoryList(props: {
         </button>
         <h3>{jobName}</h3>
         <span className="cron-count">{runs.length} runs</span>
+        {runs.length > 0 && (
+          <button
+            type="button"
+            className="cron-btn cron-btn-clear"
+            onClick={() => onClearAll(jobName)}
+          >
+            <Trash2 size={12} />
+            <span>Clear</span>
+          </button>
+        )}
       </div>
       {runs.length === 0 ? (
         <div className="cron-empty">
@@ -257,12 +289,7 @@ function HistoryList(props: {
       ) : (
         <div className="cron-runs-list">
           {runs.map((run) => (
-            <button
-              key={run.sessionId}
-              type="button"
-              className="cron-run-row"
-              onClick={() => onViewDetail(run)}
-            >
+            <div key={run.sessionId} className="cron-run-row">
               <div className="cron-run-status">
                 {run.status === 'ok' ? (
                   <CheckCircle2 size={14} className="cron-status-ok" />
@@ -272,12 +299,24 @@ function HistoryList(props: {
                   <Loader2 size={14} className="cron-spinner" />
                 )}
               </div>
-              <div className="cron-run-info">
+              <button
+                type="button"
+                className="cron-run-body"
+                onClick={() => onViewDetail(run)}
+              >
                 <span className="cron-run-time">{formatTime(run.startedAt)}</span>
                 <span className="cron-run-preview">{run.preview || '(no output)'}</span>
-              </div>
+              </button>
+              <button
+                type="button"
+                className="row-delete"
+                title="Delete this run"
+                onClick={() => onDeleteRun(run.sessionId)}
+              >
+                <Trash2 size={13} />
+              </button>
               <ChevronRight size={14} className="cron-run-chevron" />
-            </button>
+            </div>
           ))}
         </div>
       )}

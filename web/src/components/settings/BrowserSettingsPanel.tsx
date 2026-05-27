@@ -143,7 +143,15 @@ export function BrowserSettingsPanel() {
                 <strong>Open Browser Use</strong>
                 <small>Chrome · Local socket</small>
               </div>
-              <span className={`provider-item-dot${isConnected ? '' : ' inactive'}`} />
+              <label className="switch-row" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={isEnabled}
+                  disabled={saving}
+                  onChange={handleToggle}
+                />
+                <span className="switch-slider" />
+              </label>
             </button>
           </div>
 
@@ -167,23 +175,18 @@ export function BrowserSettingsPanel() {
         {/* Right: Settings */}
         <section className="provider-detail">
           {/* Enable toggle — instant save */}
-          <label className="settings-toggle-row">
+          <div className="settings-toggle-row">
             <div>
               <strong>Enable browser automation</strong>
               <small>
                 Connect to Open Browser Use for chart screenshots and page scraping via your local Chrome.
               </small>
             </div>
-            <button
-              className={`settings-toggle ${isEnabled ? 'on' : ''}`}
-              type="button"
-              disabled={saving}
-              onClick={handleToggle}
-              aria-pressed={isEnabled}
-            >
-              <span />
-            </button>
-          </label>
+            <label className="switch-row">
+              <input type="checkbox" checked={isEnabled} disabled={saving} onChange={handleToggle} />
+              <span className="switch-slider" />
+            </label>
+          </div>
 
           {/* Connection status */}
           {isEnabled && status && (

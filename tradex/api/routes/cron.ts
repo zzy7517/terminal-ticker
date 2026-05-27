@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppRuntime } from "../runtime.js";
 import type { CronJobConfig } from "../../config/index.js";
-import { findRunBySessionId, readSessionEntries, cronSessionsDir } from "../../cron/store.js";
+import { findRunBySessionId, readSessionEntries, cronSessionsDir, deleteRun, clearJobRuns } from "../../cron/store.js";
 
 export function cronRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
@@ -31,6 +31,21 @@ export function cronRoutes(runtime: AppRuntime): Hono {
     if (!found) return c.json({ detail: "cron session not found" }, 404);
     const entries = readSessionEntries(found.filePath);
     return c.json({ jobName: found.jobName, sessionId, entries });
+  });
+
+  // Deletes a single cron run by session ID.
+  app.delete("/api/cron/sessions/:id", (c) => {
+    const sessionId = c.req.param("id");
+    const deleted = deleteRun(sessionId);
+    if (!deleted) return c.json({ detail: "cron session not found" }, 404);
+    return c.json({ ok: true });
+  });
+
+  // Clears all run history for a specific job.
+  app.delete("/api/cron/jobs/:name/sessions", (c) => {
+    const name = decodeURIComponent(c.req.param("name"));
+    const count = clearJobRuns(name);
+    return c.json({ ok: true, deleted: count });
   });
 
   // Manually triggers a cron job. Returns the run result.

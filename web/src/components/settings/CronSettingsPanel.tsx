@@ -12,6 +12,7 @@ import {
   createCronJob,
   updateCronJob,
   deleteCronJob,
+  setCronJobEnabled,
 } from '../../api';
 import {
   cronToHuman,
@@ -31,6 +32,7 @@ interface JobDraft {
   userMessage: string;
   model: string | null;
   enabled: boolean;
+  useMainPrompt: boolean;
   maxIterations: number | null;
   maxCandles: number | null;
   tradingEnabled: boolean;
@@ -46,6 +48,7 @@ const EMPTY_DRAFT: JobDraft = {
   userMessage: '开始定时看盘分析',
   model: null,
   enabled: true,
+  useMainPrompt: false,
   maxIterations: null,
   maxCandles: null,
   tradingEnabled: false,
@@ -192,6 +195,7 @@ export function CronSettingsPanel() {
       userMessage: job.userMessage,
       model: job.model,
       enabled: job.enabled,
+      useMainPrompt: job.useMainPrompt ?? false,
       maxIterations: job.maxIterations,
       maxCandles: job.maxCandles,
       tradingEnabled: job.tradingEnabled,
@@ -246,6 +250,7 @@ export function CronSettingsPanel() {
         userMessage: draft.userMessage || '开始定时看盘分析',
         model: draft.model,
         enabled: draft.enabled,
+        useMainPrompt: draft.useMainPrompt,
         maxIterations: draft.maxIterations,
         maxCandles: draft.maxCandles,
         tradingEnabled: draft.tradingEnabled,
@@ -334,7 +339,22 @@ export function CronSettingsPanel() {
                   <strong>{job.name}</strong>
                   <small>{cronToHuman(job.cron, job.timezone)}</small>
                 </div>
-                <span className={`provider-item-dot${job.enabled ? '' : ' inactive'}`} />
+                <label className="switch-row" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={job.enabled}
+                    onChange={async () => {
+                      try {
+                        const updated = await setCronJobEnabled(job.name, !job.enabled);
+                        setJobs(updated);
+                        if (selected === job.name) setDraft((d) => ({ ...d, enabled: !job.enabled }));
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Toggle failed');
+                      }
+                    }}
+                  />
+                  <span className="switch-slider" />
+                </label>
               </button>
             ))}
           </div>
@@ -531,69 +551,53 @@ export function CronSettingsPanel() {
                   <span className="provider-field-hint">传给 LLM 的 OHLCV 数据条数上限</span>
                 </div>
 
-                {/* Enabled toggle */}
-                <label className="settings-toggle-row">
-                  <div>
-                    <strong>启用</strong>
-                    <small>开启后将按计划自动执行</small>
-                  </div>
-                  <button
-                    className={`settings-toggle ${draft.enabled ? 'on' : ''}`}
-                    type="button"
-                    onClick={() => setDraft((d) => ({ ...d, enabled: !d.enabled }))}
-                    aria-pressed={draft.enabled}
-                  >
-                    <span />
-                  </button>
-                </label>
-
                 {/* Use main system prompt toggle */}
-                <label className="settings-toggle-row">
+                <div className="settings-toggle-row">
                   <div>
                     <strong>系统提示词</strong>
                     <small>使用主系统提示词（多方法论分析框架 + 交易执行权限）</small>
                   </div>
-                  <button
-                    className={`settings-toggle ${draft.useMainPrompt ? 'on' : ''}`}
-                    type="button"
-                    onClick={() => setDraft((d) => ({ ...d, useMainPrompt: !d.useMainPrompt }))}
-                    aria-pressed={draft.useMainPrompt}
-                  >
-                    <span />
-                  </button>
-                </label>
+                  <label className="switch-row">
+                    <input type="checkbox" checked={draft.useMainPrompt} onChange={() => setDraft((d) => ({ ...d, useMainPrompt: !d.useMainPrompt }))} />
+                    <span className="switch-slider" />
+                  </label>
+                </div>
+
+                {/* Use main system prompt toggle */}
+                <div className="settings-toggle-row">
+                  <div>
+                    <strong>系统提示词</strong>
+                    <small>使用主系统提示词（多方法论分析框架 + 交易执行权限）</small>
+                  </div>
+                  <label className="switch-row">
+                    <input type="checkbox" checked={draft.useMainPrompt} onChange={() => setDraft((d) => ({ ...d, useMainPrompt: !d.useMainPrompt }))} />
+                    <span className="switch-slider" />
+                  </label>
+                </div>
 
                 {/* Trading tools toggle */}
-                <label className="settings-toggle-row">
+                <div className="settings-toggle-row">
                   <div>
                     <strong>交易工具</strong>
                     <small>允许 Agent 执行下单、查看持仓等操作</small>
                   </div>
-                  <button
-                    className={`settings-toggle ${draft.tradingEnabled ? 'on' : ''}`}
-                    type="button"
-                    onClick={() => setDraft((d) => ({ ...d, tradingEnabled: !d.tradingEnabled }))}
-                    aria-pressed={draft.tradingEnabled}
-                  >
-                    <span />
-                  </button>
-                </label>
+                  <label className="switch-row">
+                    <input type="checkbox" checked={draft.tradingEnabled} onChange={() => setDraft((d) => ({ ...d, tradingEnabled: !d.tradingEnabled }))} />
+                    <span className="switch-slider" />
+                  </label>
+                </div>
 
                 {/* Social tools toggle */}
-                <label className="settings-toggle-row">
+                <div className="settings-toggle-row">
                   <div>
                     <strong>社交数据</strong>
                     <small>允许 Agent 获取 X/Twitter 动态</small>
                   </div>
-                  <button
-                    className={`settings-toggle ${draft.socialEnabled ? 'on' : ''}`}
-                    type="button"
-                    onClick={() => setDraft((d) => ({ ...d, socialEnabled: !d.socialEnabled }))}
-                    aria-pressed={draft.socialEnabled}
-                  >
-                    <span />
-                  </button>
-                </label>
+                  <label className="switch-row">
+                    <input type="checkbox" checked={draft.socialEnabled} onChange={() => setDraft((d) => ({ ...d, socialEnabled: !d.socialEnabled }))} />
+                    <span className="switch-slider" />
+                  </label>
+                </div>
               </div>
 
               {/* Actions */}

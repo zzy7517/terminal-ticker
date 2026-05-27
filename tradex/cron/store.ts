@@ -109,6 +109,23 @@ export function findRunBySessionId(sessionId: string): { jobName: string; filePa
   return null;
 }
 
+/** Deletes a single cron run by sessionId. Returns true if found and deleted. */
+export function deleteRun(sessionId: string): boolean {
+  const found = findRunBySessionId(sessionId);
+  if (!found) return false;
+  fs.unlinkSync(found.filePath);
+  return true;
+}
+
+/** Deletes all run files for a specific job. Returns the number of files removed. */
+export function clearJobRuns(jobName: string): number {
+  const dir = jobDir(jobName);
+  if (!fs.existsSync(dir)) return 0;
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
+  for (const f of files) fs.unlinkSync(path.join(dir, f));
+  return files.length;
+}
+
 /** Reads a JSONL cron session file and returns all parsed entries. */
 export function readSessionEntries(filePath: string): Array<Record<string, unknown>> {
   if (!fs.existsSync(filePath)) return [];

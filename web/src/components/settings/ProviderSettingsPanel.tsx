@@ -207,7 +207,21 @@ export function ProviderSettingsPanel() {
                     <strong>{o.label}</strong>
                     <small>{o.description}</small>
                   </div>
-                  <span className={`provider-item-dot ${isEnabled ? '' : 'inactive'}`} />
+                  <label className="switch-row" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isEnabled}
+                      onChange={async () => {
+                        try {
+                          const nextState = await saveProviderProfile(o.provider, { enabled: !isEnabled });
+                          useMarketStore.getState().setState(nextState);
+                        } catch (err) {
+                          // Silently fail — detail panel will show error if opened
+                        }
+                      }}
+                    />
+                    <span className="switch-slider" />
+                  </label>
                 </button>
               );
             })}

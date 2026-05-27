@@ -191,7 +191,7 @@
 
 /* Sizes */
 .shell-button.sm {
-  font-size: 10px;
+  font-size: 12px;
   min-height: var(--ctl-h-sm);
   padding: 0 var(--ctl-px-sm);
 }
@@ -244,7 +244,7 @@
 
 /* ── Input — terminal style ───────────────────────────────────────── */
 .input {
-  background: #0a0a0a;
+  background: var(--canvas-2);
   border: 1px solid var(--line-strong);
   color: var(--text-primary);
   font-family: var(--mono);
@@ -350,7 +350,7 @@
 
 /* ── Dropdown panel ───────────────────────────────────────────────── */
 .dropdown-panel {
-  background: #0d0d0d;
+  background: var(--panel-raised);
   border: 1px solid var(--line-strong);
   display: flex;
   flex-direction: column;
@@ -499,36 +499,8 @@
   font-size: 13px;
 }
 
-/* Button-form of switch-slider */
-.settings-toggle {
-  background: var(--line-strong);
-  border: 0;
-  cursor: pointer;
-  height: 14px;
-  position: relative;
-  width: 28px;
-}
-
-.settings-toggle > span {
-  background: var(--text-muted);
-  height: 10px;
-  left: 2px;
-  position: absolute;
-  top: 2px;
-  transition: transform 100ms linear;
-  width: 10px;
-}
-
-.settings-toggle.on {
-  background: var(--accent);
-}
-
-.settings-toggle.on > span {
-  background: var(--accent-contrast);
-  transform: translateX(14px);
-}
-
-.settings-toggle:disabled {
+/* Toggle disabled state (switch-row) */
+.switch-row input:disabled + .switch-slider {
   cursor: not-allowed;
   opacity: var(--ctl-disabled-opacity);
 }
@@ -549,7 +521,7 @@
 
 .settings-readonly-grid strong {
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: 12px;
   word-break: break-all;
 }
 
@@ -559,7 +531,7 @@
 
 .settings-hint {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 8px;
 }
 
@@ -572,7 +544,7 @@
 
 .settings-search {
   align-items: center;
-  background: #0a0a0a;
+  background: var(--canvas-2);
   border: 1px solid var(--line-strong);
   display: flex;
   gap: 6px;
@@ -586,7 +558,7 @@
   color: var(--text-primary);
   flex: 1;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   min-height: 30px;
   min-width: 0;
   outline: 0;
@@ -640,6 +612,32 @@
 
 .link-btn:hover {
   text-decoration: underline;
+}
+
+/* ── Row delete — hover-reveal trash button ──────────────────────── */
+.row-delete {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 20px;
+  justify-content: center;
+  opacity: 0;
+  padding: 0;
+  transition: opacity 80ms;
+  width: 20px;
+}
+
+.row-delete:hover:not(:disabled) {
+  color: var(--down);
+}
+
+.row-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0;
 }
 
 /* ── Provider icon ────────────────────────────────────────────────── */

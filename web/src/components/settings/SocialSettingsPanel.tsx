@@ -346,23 +346,18 @@ export function SocialSettingsPanel() {
             <strong>Reader</strong>
           </div>
 
-          <label className="settings-toggle-row">
+          <div className="settings-toggle-row">
             <div>
               <strong>Enable X Following reader</strong>
               <small>
                 Controls the [social_feed] block in watchlist.toml. Agent tools stay disabled while this is off.
               </small>
             </div>
-            <button
-              className={`settings-toggle ${config.enabled ? 'on' : ''}`}
-              type="button"
-              disabled={savingConfig}
-              onClick={() => persistSocialEnabled(!config.enabled)}
-              aria-pressed={config.enabled}
-            >
-              <span />
-            </button>
-          </label>
+            <label className="switch-row">
+              <input type="checkbox" checked={config.enabled} disabled={savingConfig} onChange={() => persistSocialEnabled(!config.enabled)} />
+              <span className="switch-slider" />
+            </label>
+          </div>
 
           <div className="social-cache-form">
             <label>

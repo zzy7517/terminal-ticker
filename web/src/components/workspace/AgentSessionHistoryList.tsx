@@ -91,7 +91,7 @@ export function AgentSessionHistoryList() {
               ? 'Confirm delete session'
               : 'Delete session';
           const deleteButtonClass = [
-            'session-history-delete',
+            'row-delete',
             isConfirmingDelete ? 'confirming' : '',
             isDeleteBusy ? 'deleting' : '',
           ].filter(Boolean).join(' ');
