@@ -27,6 +27,7 @@ interface JobDraft {
   name: string;
   cron: string;
   systemPrompt: string;
+  useMainPrompt: boolean;
   userMessage: string;
   model: string | null;
   enabled: boolean;
@@ -41,6 +42,7 @@ const EMPTY_DRAFT: JobDraft = {
   name: '',
   cron: '0 8 * * 1-5',
   systemPrompt: '',
+  useMainPrompt: true,
   userMessage: '开始定时看盘分析',
   model: null,
   enabled: true,
@@ -186,6 +188,7 @@ export function CronSettingsPanel() {
       name: job.name,
       cron: job.cron,
       systemPrompt: job.systemPrompt,
+      useMainPrompt: job.useMainPrompt,
       userMessage: job.userMessage,
       model: job.model,
       enabled: job.enabled,
@@ -239,6 +242,7 @@ export function CronSettingsPanel() {
         name: draft.name.trim(),
         cron: draft.cron.trim(),
         systemPrompt: draft.systemPrompt,
+        useMainPrompt: draft.useMainPrompt,
         userMessage: draft.userMessage || '开始定时看盘分析',
         model: draft.model,
         enabled: draft.enabled,
@@ -538,6 +542,22 @@ export function CronSettingsPanel() {
                     type="button"
                     onClick={() => setDraft((d) => ({ ...d, enabled: !d.enabled }))}
                     aria-pressed={draft.enabled}
+                  >
+                    <span />
+                  </button>
+                </label>
+
+                {/* Use main system prompt toggle */}
+                <label className="settings-toggle-row">
+                  <div>
+                    <strong>系统提示词</strong>
+                    <small>使用主系统提示词（多方法论分析框架 + 交易执行权限）</small>
+                  </div>
+                  <button
+                    className={`settings-toggle ${draft.useMainPrompt ? 'on' : ''}`}
+                    type="button"
+                    onClick={() => setDraft((d) => ({ ...d, useMainPrompt: !d.useMainPrompt }))}
+                    aria-pressed={draft.useMainPrompt}
                   >
                     <span />
                   </button>

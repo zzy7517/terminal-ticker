@@ -223,7 +223,7 @@ function JobsList(props: {
       ))}
       {storagePaths && (
         <div className="cron-storage-paths">
-          <span>DB: {storagePaths.db}</span>
+          <span>Config: {storagePaths.config}</span>
           <span>Sessions: {storagePaths.sessions}</span>
         </div>
       )}

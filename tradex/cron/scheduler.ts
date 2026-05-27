@@ -1,8 +1,8 @@
 /**
  * Cron job scheduler.
  *
- * Uses `croner` to manage per-job timers. Each CronJobConfig from the SQLite
- * store maps to one Cron instance. The scheduler owns the lifecycle: start/stop/reload.
+ * Uses `croner` to manage per-job timers. Each CronJobConfig from the JSON
+ * file store maps to one Cron instance. The scheduler owns the lifecycle: start/stop/reload.
  *
  * Concurrency: a running job is tracked in `runningJobs`. If a job's cron fires
  * while a previous run is still in progress, the new fire is skipped with a warning.
@@ -28,6 +28,7 @@ export interface CronJobStatus {
   lastStatus: "ok" | "error" | null;
   lastError: string | null;
   systemPrompt: string;
+  useMainPrompt: boolean;
   model: string | null;
   userMessage: string;
   maxIterations: number | null;
@@ -99,6 +100,7 @@ export class CronScheduler {
         lastStatus: this.lastStatus.get(name) ?? null,
         lastError: this.lastError.get(name) ?? null,
         systemPrompt: config.systemPrompt,
+        useMainPrompt: config.useMainPrompt,
         model: config.model,
         userMessage: config.userMessage,
         maxIterations: config.maxIterations,

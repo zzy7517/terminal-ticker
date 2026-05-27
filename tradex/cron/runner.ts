@@ -13,6 +13,7 @@ import { normalizeApiMode } from "../config/agent_models.js";
 import { resolveAgentModelFromConfig } from "../agent/models.js";
 import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../agent/core/index.js";
 import type { TextContent, ShouldStopContext } from "../agent/core/types.js";
+
 import { agentModelToDescriptor } from "../agent/core/model-descriptor.js";
 import { SessionManager } from "../agent/session_manager.js";
 import { buildMarketTools } from "../agent/tools/market.js";
@@ -25,6 +26,7 @@ import { buildBrowserTools } from "../agent/tools/browser.js";
 import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../mcp/index.js";
 import { loadSkills, formatSkillsForPrompt } from "../agent/skills.js";
+import { MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { newCronSessionPath } from "./store.js";
 import type { AppRuntime } from "../api/runtime.js";
 
@@ -145,8 +147,16 @@ export async function executeCronJob(input: {
   let iterations = 0;
 
   try {
-    // Build system prompt: job-specific prompt + skills
-    let systemPrompt = job.systemPrompt || "";
+    // Build system prompt: optionally prepend MAIN_AGENT_PROMPT + job-specific prompt + skills
+    let systemPrompt = "";
+    if (job.useMainPrompt) {
+      systemPrompt = MAIN_AGENT_PROMPT;
+      if (job.systemPrompt) {
+        systemPrompt += "\n\n" + job.systemPrompt;
+      }
+    } else {
+      systemPrompt = job.systemPrompt || "";
+    }
     const skillsConfig = runtime.config.agent.skills;
     if (skillsConfig.enabled) {
       const { skills: loadedSkills } = loadSkills({

@@ -90,18 +90,4 @@ enabled = true
 # socket_path = "/tmp/open-browser-use/example.sock"  # optional, auto-discovers by default
 # timeout_ms = 15000
 
-# -- Cron Jobs ---------------------------------------------------------------
-# Each [[cron_jobs]] defines a scheduled agent task. Cron expressions are
-# evaluated in local time.
 
-# -- Cron Jobs ---------------------------------------------------------------
-
-[[cron_jobs]]
-name = "盯盘"
-cron = "*/5 * * * *"
-system_prompt = "你是一名职业 trader。重点分析 eth xau的k线数据，如果你认为满足开单的条件，可以直接开单"
-enabled = true
-symbols = ["BTCUSDT", "ETHUSDT"]
-model = "codex:gpt-5.5"
-user_message = "开始"
-timezone = "Asia/Shanghai"

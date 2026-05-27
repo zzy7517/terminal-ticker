@@ -171,6 +171,7 @@ export interface CronJobConfig {
   name: string;
   cron: string;
   systemPrompt: string;
+  useMainPrompt: boolean;
   enabled: boolean;
   symbols: string[];
   model: string | null;
@@ -223,7 +224,7 @@ export interface AppConfig {
   mcp: McpAppConfig;
   jin10: Jin10Config;
   browser: BrowserConfig;
-  cronJobs: CronJobConfig[];
+
 }
 
 export function expandUserPath(inputPath: string): string {
@@ -655,29 +656,7 @@ export function parseTradingConfig(rawTradingValue: unknown): TradingConfig {
   };
 }
 
-export function parseCronJobsConfig(rawCronJobs: unknown): CronJobConfig[] {
-  if (rawCronJobs === undefined || rawCronJobs === null) return [];
-  if (!Array.isArray(rawCronJobs)) throw new Error("cron_jobs must be an array of job entries");
-  return rawCronJobs.map((raw, i) => {
-    if (typeof raw !== "object" || raw === null) throw new Error(`cron_jobs[${i}] must be an object`);
-    const entry = raw as Record<string, unknown>;
-    const name = typeof entry.name === "string" ? entry.name.trim() : "";
-    if (!name) throw new Error(`cron_jobs[${i}].name is required`);
-    const cron = typeof entry.cron === "string" ? entry.cron.trim() : "";
-    if (!cron) throw new Error(`cron_jobs[${i}].cron is required`);
-    const systemPrompt = typeof entry.system_prompt === "string" ? entry.system_prompt : "";
-    const enabled = entry.enabled !== undefined ? normalizeBool(entry.enabled, `cron_jobs[${i}].enabled`, true) : true;
-    const symbols = Array.isArray(entry.symbols) ? entry.symbols.filter((s): s is string => typeof s === "string") : [];
-    const model = typeof entry.model === "string" && entry.model.trim() ? entry.model.trim() : null;
-    const userMessage = typeof entry.user_message === "string" ? entry.user_message : "开始定时看盘分析";
-    const maxIterations = typeof entry.max_iterations === "number" && entry.max_iterations > 0 ? entry.max_iterations : null;
-    const maxCandles = typeof entry.max_candles === "number" && entry.max_candles > 0 ? entry.max_candles : null;
-    const tradingEnabled = entry.trading_enabled !== undefined ? normalizeBool(entry.trading_enabled, `cron_jobs[${i}].trading_enabled`, false) : false;
-    const socialEnabled = entry.social_enabled !== undefined ? normalizeBool(entry.social_enabled, `cron_jobs[${i}].social_enabled`, false) : false;
-    const timezone = typeof entry.timezone === "string" && entry.timezone.trim() ? entry.timezone.trim() : null;
-    return { name, cron, systemPrompt, enabled, symbols, model, userMessage, maxIterations, maxCandles, tradingEnabled, socialEnabled, timezone };
-  });
-}
+
 
 export function parseCacheConfig(rawCacheValue: unknown): CacheConfig {
   const raw = asRecord(rawCacheValue, "cache");
@@ -753,7 +732,7 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     mcp: parseMcpConfig(data.mcp),
     jin10: parseJin10Config(data.jin10),
     browser: parseBrowserConfig(data.browser),
-    cronJobs: parseCronJobsConfig(data.cron_jobs),
+
     sourcePath,
   };
 }
@@ -785,7 +764,7 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       mcp: parseMcpConfig({}),
       jin10: parseJin10Config({}),
       browser: parseBrowserConfig({}),
-      cronJobs: [],
+
       sourcePath: null,
     } satisfies AppConfig);
   const instruments = cliSymbols && cliSymbols.length > 0 ? normalizeInstruments(cliSymbols) : base.instruments;

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "盯盘",
+    "cron": "*/5 * * * *",
+    "system_prompt": "重点关注btc和eth",
+    "enabled": true,
+    "symbols": ["BTCUSDT", "ETHUSDT"],
+    "model": "codex:gpt-5.5",
+    "user_message": "开始",
+    "max_iterations": null,
+    "max_candles": null,
+    "trading_enabled": false,
+    "social_enabled": false,
+    "timezone": "Asia/Shanghai"
+  }
+]

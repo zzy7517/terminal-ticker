@@ -645,6 +645,7 @@ export interface CronJobStatus {
   lastStatus: 'ok' | 'error' | null;
   lastError: string | null;
   systemPrompt: string;
+  useMainPrompt: boolean;
   model: string | null;
   userMessage: string;
   maxIterations: number | null;
@@ -682,6 +683,7 @@ export interface CronJobCreate {
   name: string;
   cron: string;
   systemPrompt?: string;
+  useMainPrompt?: boolean;
   userMessage?: string;
   model?: string | null;
   symbols?: string[];
@@ -697,6 +699,7 @@ export interface CronJobUpdate {
   name?: string;
   cron?: string;
   systemPrompt?: string;
+  useMainPrompt?: boolean;
   userMessage?: string;
   model?: string | null;
   symbols?: string[];
@@ -709,7 +712,7 @@ export interface CronJobUpdate {
 }
 
 export interface CronStoragePaths {
-  db: string;
+  config: string;
   sessions: string;
 }
 

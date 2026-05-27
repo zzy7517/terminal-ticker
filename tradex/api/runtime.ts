@@ -104,10 +104,6 @@ export class AppRuntime {
     // Wire trade closure → memory pipeline enqueue
     this.tradeStore.onTradeClosed((tradeId) => this.enqueueTradeForMemory(tradeId));
     this.cronJobStore = new CronJobStore();
-    if (this.cronJobStore.isEmpty() && config.cronJobs.length > 0) {
-      const count = this.cronJobStore.importFromToml(config.cronJobs);
-      if (count > 0) console.log(`[cron] Migrated ${count} job(s) from watchlist.toml → ${this.cronJobStore.dbPath}`);
-    }
     this.cronScheduler = new CronScheduler(this, this.cronJobStore);
     SessionManager.reconcileIndex(this.sessionIndex);
   }

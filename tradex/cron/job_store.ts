@@ -1,165 +1,147 @@
-import Database from "better-sqlite3";
-import { BaseStore, defaultCacheDir, jsonDumps, jsonLoads, nowMs } from "../db.js";
-import type { CronJobConfig } from "../config/index.js";
+/**
+ * JSON-file-backed cron job store.
+ *
+ * All cron job configurations live in a single JSON file (default: project
+ * root `cron_jobs.json`). The file is read on startup and written on every
+ * mutation. No SQLite dependency.
+ */
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import type { CronJobConfig } from "../config/index.js";
 
-export const DEFAULT_CRON_DB_FILENAME = "cron.sqlite3";
+export const DEFAULT_CRON_JOBS_FILENAME = "cron_jobs.json";
 
-export function defaultCronDbPath(): string {
-  return path.join(defaultCacheDir(), DEFAULT_CRON_DB_FILENAME);
-}
-
-interface CronJobRow {
+/**
+ * Persistent on-disk representation — matches CronJobConfig but uses
+ * snake_case keys for consistency with the rest of the config surface.
+ */
+interface CronJobJson {
   name: string;
   cron: string;
   system_prompt: string;
-  enabled: number;
-  symbols_json: string;
+  use_main_prompt: boolean;
+  enabled: boolean;
+  symbols: string[];
   model: string | null;
   user_message: string;
   max_iterations: number | null;
   max_candles: number | null;
-  trading_enabled: number;
-  social_enabled: number;
+  trading_enabled: boolean;
+  social_enabled: boolean;
   timezone: string | null;
-  created_at_ms: number;
-  updated_at_ms: number;
 }
 
-function rowToConfig(row: CronJobRow): CronJobConfig {
-  const symbols = jsonLoads(row.symbols_json);
+function toJson(job: CronJobConfig): CronJobJson {
   return {
-    name: row.name,
-    cron: row.cron,
-    systemPrompt: row.system_prompt,
-    enabled: row.enabled === 1,
-    symbols: Array.isArray(symbols) ? symbols.filter((s): s is string => typeof s === "string") : [],
-    model: row.model,
-    userMessage: row.user_message,
-    maxIterations: row.max_iterations,
-    maxCandles: row.max_candles,
-    tradingEnabled: row.trading_enabled === 1,
-    socialEnabled: row.social_enabled === 1,
-    timezone: row.timezone,
+    name: job.name,
+    cron: job.cron,
+    system_prompt: job.systemPrompt,
+    use_main_prompt: job.useMainPrompt,
+    enabled: job.enabled,
+    symbols: job.symbols,
+    model: job.model,
+    user_message: job.userMessage,
+    max_iterations: job.maxIterations,
+    max_candles: job.maxCandles,
+    trading_enabled: job.tradingEnabled,
+    social_enabled: job.socialEnabled,
+    timezone: job.timezone,
   };
 }
 
-export class CronJobStore extends BaseStore {
-  constructor(dbPath: string | null = null) {
-    super(dbPath ?? defaultCronDbPath());
+function fromJson(raw: CronJobJson): CronJobConfig {
+  return {
+    name: raw.name,
+    cron: raw.cron,
+    systemPrompt: raw.system_prompt ?? "",
+    useMainPrompt: raw.use_main_prompt === true,
+    enabled: raw.enabled !== false,
+    symbols: Array.isArray(raw.symbols) ? raw.symbols : [],
+    model: raw.model ?? null,
+    userMessage: raw.user_message ?? "开始定时看盘分析",
+    maxIterations: raw.max_iterations ?? null,
+    maxCandles: raw.max_candles ?? null,
+    tradingEnabled: raw.trading_enabled === true,
+    socialEnabled: raw.social_enabled === true,
+    timezone: raw.timezone ?? null,
+  };
+}
+
+export class CronJobStore {
+  readonly filePath: string;
+  private jobs: Map<string, CronJobConfig> = new Map();
+
+  constructor(filePath?: string) {
+    this.filePath = filePath ?? path.resolve(process.cwd(), DEFAULT_CRON_JOBS_FILENAME);
+    this.load();
   }
 
-  protected override initSchema(conn: Database.Database): void {
-    conn.exec(`
-      CREATE TABLE IF NOT EXISTS cron_jobs (
-        name TEXT PRIMARY KEY,
-        cron TEXT NOT NULL,
-        system_prompt TEXT NOT NULL DEFAULT '',
-        enabled INTEGER NOT NULL DEFAULT 1,
-        symbols_json TEXT NOT NULL DEFAULT '[]',
-        model TEXT,
-        user_message TEXT NOT NULL DEFAULT '开始定时看盘分析',
-        max_iterations INTEGER,
-        max_candles INTEGER,
-        trading_enabled INTEGER NOT NULL DEFAULT 0,
-        social_enabled INTEGER NOT NULL DEFAULT 0,
-        timezone TEXT,
-        created_at_ms INTEGER NOT NULL,
-        updated_at_ms INTEGER NOT NULL
-      );
-    `);
-  }
+  // ---- Read ----
 
   listAll(): CronJobConfig[] {
-    const rows = this.getConn()
-      .prepare("SELECT * FROM cron_jobs ORDER BY created_at_ms ASC")
-      .all() as CronJobRow[];
-    return rows.map(rowToConfig);
+    return Array.from(this.jobs.values());
   }
 
   get(name: string): CronJobConfig | null {
-    const row = this.getConn()
-      .prepare("SELECT * FROM cron_jobs WHERE name = ?")
-      .get(name) as CronJobRow | undefined;
-    return row ? rowToConfig(row) : null;
-  }
-
-  upsert(job: CronJobConfig): void {
-    const now = nowMs();
-    this.getConn()
-      .prepare(`
-        INSERT INTO cron_jobs (name, cron, system_prompt, enabled, symbols_json, model,
-          user_message, max_iterations, max_candles, trading_enabled, social_enabled,
-          timezone, created_at_ms, updated_at_ms)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(name) DO UPDATE SET
-          cron = excluded.cron,
-          system_prompt = excluded.system_prompt,
-          enabled = excluded.enabled,
-          symbols_json = excluded.symbols_json,
-          model = excluded.model,
-          user_message = excluded.user_message,
-          max_iterations = excluded.max_iterations,
-          max_candles = excluded.max_candles,
-          trading_enabled = excluded.trading_enabled,
-          social_enabled = excluded.social_enabled,
-          timezone = excluded.timezone,
-          updated_at_ms = excluded.updated_at_ms
-      `)
-      .run(
-        job.name,
-        job.cron,
-        job.systemPrompt,
-        job.enabled ? 1 : 0,
-        jsonDumps(job.symbols),
-        job.model,
-        job.userMessage,
-        job.maxIterations,
-        job.maxCandles,
-        job.tradingEnabled ? 1 : 0,
-        job.socialEnabled ? 1 : 0,
-        job.timezone,
-        now,
-        now,
-      );
-  }
-
-  remove(name: string): boolean {
-    const result = this.getConn()
-      .prepare("DELETE FROM cron_jobs WHERE name = ?")
-      .run(name);
-    return result.changes > 0;
-  }
-
-  setEnabled(name: string, enabled: boolean): void {
-    const result = this.getConn()
-      .prepare("UPDATE cron_jobs SET enabled = ?, updated_at_ms = ? WHERE name = ?")
-      .run(enabled ? 1 : 0, nowMs(), name);
-    if (result.changes === 0) throw new Error(`Cron job not found: ${name}`);
-  }
-
-  rename(oldName: string, newName: string): void {
-    const now = nowMs();
-    this.getConn()
-      .prepare("UPDATE cron_jobs SET name = ?, updated_at_ms = ? WHERE name = ?")
-      .run(newName, now, oldName);
+    return this.jobs.get(name) ?? null;
   }
 
   isEmpty(): boolean {
-    const row = this.getConn().prepare("SELECT COUNT(*) as cnt FROM cron_jobs").get() as { cnt: number };
-    return row.cnt === 0;
+    return this.jobs.size === 0;
   }
 
-  importFromToml(jobs: CronJobConfig[]): number {
-    let imported = 0;
-    const tx = this.getConn().transaction((items: CronJobConfig[]) => {
-      for (const job of items) {
-        if (this.get(job.name)) continue;
-        this.upsert(job);
-        imported += 1;
+  // ---- Write ----
+
+  upsert(job: CronJobConfig): void {
+    this.jobs.set(job.name, job);
+    this.persist();
+  }
+
+  remove(name: string): boolean {
+    const existed = this.jobs.delete(name);
+    if (existed) this.persist();
+    return existed;
+  }
+
+  setEnabled(name: string, enabled: boolean): void {
+    const job = this.jobs.get(name);
+    if (!job) throw new Error(`Cron job not found: ${name}`);
+    job.enabled = enabled;
+    this.persist();
+  }
+
+  rename(oldName: string, newName: string): void {
+    const job = this.jobs.get(oldName);
+    if (!job) throw new Error(`Cron job not found: ${oldName}`);
+    this.jobs.delete(oldName);
+    job.name = newName;
+    this.jobs.set(newName, job);
+    this.persist();
+  }
+
+  // ---- Internal ----
+
+  private load(): void {
+    if (!existsSync(this.filePath)) return;
+    try {
+      const text = readFileSync(this.filePath, "utf8");
+      const arr = JSON.parse(text);
+      if (!Array.isArray(arr)) return;
+      for (const raw of arr) {
+        if (typeof raw !== "object" || raw === null || !raw.name) continue;
+        const job = fromJson(raw as CronJobJson);
+        this.jobs.set(job.name, job);
       }
-    });
-    tx(jobs);
-    return imported;
+    } catch {
+      // Corrupted or empty file — start fresh
+      console.warn(`[cron] Failed to parse ${this.filePath}, starting with empty job list`);
+    }
+  }
+
+  private persist(): void {
+    const dir = path.dirname(this.filePath);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const arr = Array.from(this.jobs.values()).map(toJson);
+    writeFileSync(this.filePath, JSON.stringify(arr, null, 2) + "\n", "utf8");
   }
 }
