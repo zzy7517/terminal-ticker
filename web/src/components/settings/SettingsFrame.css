@@ -1,6 +1,6 @@
 /* ── Settings frame — Bloomberg Terminal ───────────────────────────── */
 .settings-frame {
-  background: #000000;
+  background: var(--canvas);
   border: 1px solid var(--line-strong);
   display: grid;
   gap: 0;
@@ -11,7 +11,7 @@
 }
 
 .settings-nav {
-  background: #000000;
+  background: var(--canvas);
   border-right: 1px solid var(--line-strong);
   display: flex;
   flex-direction: column;
@@ -37,12 +37,12 @@
   cursor: pointer;
   display: flex;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
   gap: 6px;
   letter-spacing: 0.02em;
-  min-height: 30px;
-  padding: 0 8px;
+  min-height: 32px;
+  padding: 0 10px;
   text-transform: uppercase;
 }
 
@@ -68,7 +68,7 @@
 .settings-nav-meta strong {
   color: var(--text-secondary);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.4;
   word-break: break-all;
 }
@@ -81,7 +81,7 @@
   cursor: pointer;
   display: inline-flex;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   gap: 4px;
   justify-content: center;

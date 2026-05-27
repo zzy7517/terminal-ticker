@@ -14,7 +14,7 @@
 .memory-model-picker-label {
   color: var(--text-secondary);
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.02em;
   margin-bottom: 5px;
@@ -24,21 +24,20 @@
 .memory-model-trigger {
   align-items: center;
   background: var(--canvas);
-  border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border: 1px solid var(--line-strong);
   color: var(--text-primary);
   cursor: pointer;
   display: flex;
+  font-family: var(--mono);
   font-size: 13px;
   gap: 7px;
   padding: 8px 12px;
-  transition: border-color 120ms, box-shadow 120ms;
   width: 100%;
 }
 
 .memory-model-trigger:hover:not(:disabled) {
   border-color: var(--accent);
-  box-shadow: none;
+  background: var(--accent-tint);
 }
 
 .memory-model-trigger:disabled {
@@ -110,7 +109,7 @@
   align-items: center;
   color: var(--text-muted);
   display: flex;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   gap: 5px;
   letter-spacing: 0.04em;
@@ -125,11 +124,11 @@
   color: var(--text-primary);
   cursor: pointer;
   display: flex;
+  font-family: var(--mono);
   font-size: 13px;
   gap: 8px;
   padding: 6px 12px 6px 28px;
   text-align: left;
-  transition: background 80ms;
   width: 100%;
 }
 
@@ -146,7 +145,7 @@
 .memory-model-option-hint {
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   margin-left: auto;
 }
 
@@ -167,7 +166,7 @@
   font-size: 13px;
   gap: 8px;
   padding: 8px 12px;
-  transition: border-color 120ms, box-shadow 120ms;
+  transition: none;
   width: 100%;
 }
 
@@ -255,28 +254,28 @@
 
 .memory-browser-btn {
   align-items: center;
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: 0;
+  background: transparent;
+  border: 1px solid var(--line-strong);
   color: var(--text-secondary);
   cursor: pointer;
   display: inline-flex;
-  font-size: 11px;
-  font-weight: 500;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
   gap: 4px;
-  min-height: 26px;
-  padding: 0 8px;
-  transition: background 120ms, border-color 120ms, color 120ms;
+  min-height: var(--ctl-h-sm);
+  padding: 0 var(--ctl-px-sm);
+  text-transform: uppercase;
 }
 
 .memory-browser-btn:hover {
-  background: var(--panel-raised);
-  border-color: var(--line-strong);
-  color: var(--text-primary);
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .memory-browser-btn:disabled {
-  opacity: 0.5;
+  opacity: var(--ctl-disabled-opacity);
   pointer-events: none;
 }
 
@@ -327,7 +326,7 @@
   min-height: 34px;
   padding: 4px 10px;
   text-align: left;
-  transition: background 100ms;
+  transition: none;
   width: 100%;
 }
 
@@ -371,7 +370,7 @@
   color: var(--text-secondary);
   flex: 1;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -385,7 +384,7 @@
   color: var(--text-primary);
   flex: 1;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
   margin: 0;
   min-height: 0;
@@ -427,7 +426,7 @@
   gap: 4px;
   padding: 10px 12px;
   text-align: left;
-  transition: border-color 120ms, background 120ms;
+  transition: none;
   width: 100%;
 }
 
@@ -441,7 +440,7 @@
   color: var(--text-secondary);
   display: flex;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   gap: 6px;
 }
 
@@ -449,7 +448,7 @@
   background: var(--accent-tint-strong);
   border-radius: 0;
   color: var(--accent);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   margin-left: auto;
   padding: 1px 5px;
@@ -458,7 +457,7 @@
 .memory-search-hit-body {
   color: var(--text-primary);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
   margin: 0;
   max-height: 120px;

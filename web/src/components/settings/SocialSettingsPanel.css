@@ -82,25 +82,8 @@
 
 .social-cache-form small {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.45;
-}
-
-.settings-action-row {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.shell-button.danger {
-  color: var(--down);
-}
-
-.shell-button.danger:hover:not(:disabled) {
-  background: var(--danger-tint);
-  border-color: rgba(255, 68, 102, 0.35);
-  color: var(--down);
 }
 
 .social-secret-note {
@@ -130,7 +113,7 @@
 
 .social-test-count small {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.45;
 }
 

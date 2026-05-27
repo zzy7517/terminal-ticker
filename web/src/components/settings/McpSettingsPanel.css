@@ -58,7 +58,7 @@
 
 .mcp-info-label {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -102,7 +102,7 @@
 .mcp-tool-original {
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .mcp-tool-desc {
@@ -133,7 +133,7 @@
   font-weight: 500;
   gap: 5px;
   padding: 8px 14px;
-  transition: color 120ms, border-color 120ms;
+  transition: none;
 }
 
 .mcp-tab:hover {
@@ -177,7 +177,7 @@
   border: 1px solid var(--line-soft);
   border-radius: 0;
   padding: 10px 12px;
-  transition: border-color 100ms;
+  transition: none;
 }
 
 .mcp-resource-item:hover {
@@ -210,7 +210,7 @@
 
 .mcp-resource-desc {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.4;
   margin-top: 4px;
 }
@@ -227,7 +227,7 @@
   border-radius: 0;
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   padding: 2px 5px;
 }
 
@@ -266,23 +266,13 @@
 .mcp-read-viewer-pre {
   color: var(--text-primary);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
 }
 
-
-.link-btn {
-  background: none;
-  border: 0;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: inherit;
-  padding: 0;
-  text-decoration: underline;
-}
 
 /* ── Jin10 MCP Config Panel ────────────────────────────────────────── */
 .jin10-mcp-config {
@@ -315,7 +305,7 @@
 }
 .jin10-codes-add-row .input.sm {
   flex: 1;
-  font-size: 11px;
+  font-size: 13px;
   padding: 5px 8px;
 }
 .jin10-codes-suggestions {
@@ -325,7 +315,7 @@
   margin-top: 4px;
 }
 .jin10-codes-suggestions__label {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 .jin10-codes-suggestions__list {

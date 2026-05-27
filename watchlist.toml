@@ -1,11 +1,12 @@
 symbols = [
   { symbol = "BTCUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BTC", group = "crypto", analysis_interval = "15m" },
-  { symbol = "ETHUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "ETH", group = "crypto", analysis_interval = "15m" },
+  { symbol = "ETHUSD", source = "bitget", inst_type = "COIN-FUTURES", label = "ETHUSD", group = "crypto", show_collapsed = true },
   { symbol = "SOLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SOLUSDT", group = "crypto", show_collapsed = true },
   { symbol = "XAUUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "XAU", group = "crypto" },
   { symbol = "AAPLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "AAPL", group = "stocks", show_collapsed = true, analysis_interval = "5m"},
   { symbol = "SPYUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SPY", group = "stocks", show_collapsed = false },
   { symbol = "MSFTUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "MSFT", group = "stocks", show_collapsed = true },
+  { symbol = "CLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "CLUSDT", group = "crypto", show_collapsed = true },
   { symbol = "vntl:ANTHROPIC", source = "hyperliquid", label = "ANTHROPIC Perp (vntl)", group = "preipo", show_collapsed = true },
   { symbol = "vntl:OPENAI", source = "hyperliquid", label = "OPENAI Perp (vntl)", group = "preipo", show_collapsed = true },
   { symbol = "vntl:SPACEX", source = "hyperliquid", label = "SPACEX Perp (vntl)", group = "preipo", show_collapsed = true },
@@ -13,7 +14,6 @@ symbols = [
   { symbol = "xyz:SP500", source = "hyperliquid", label = "SP500 Perp (xyz)", group = "indices", show_collapsed = true },
   { symbol = "xyz:XYZ100", source = "hyperliquid", label = "XYZ100 Perp (xyz)", group = "indices", show_collapsed = true },
   { symbol = "xyz:MSTR", source = "hyperliquid", label = "MSTR Perp (xyz)", group = "stocks", show_collapsed = true },
-  { symbol = "CLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "CLUSDT", group = "crypto", show_collapsed = true },
 ]
 
 [display]
@@ -89,5 +89,3 @@ quotes_codes = ["XAUUSD", "XAGUSD", "USOIL", "EURUSD", "USDJPY", "USDCNH", "N225
 enabled = true
 # socket_path = "/tmp/open-browser-use/example.sock"  # optional, auto-discovers by default
 # timeout_ms = 15000
-
-

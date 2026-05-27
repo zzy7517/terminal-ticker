@@ -29,7 +29,7 @@
   justify-content: space-between;
   padding: 8px 14px;
   text-align: left;
-  transition: background 80ms;
+  transition: none;
   width: 100%;
 }
 
@@ -45,12 +45,12 @@
 .cron-preset-option code {
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .cron-preset-group-head {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.04em;
   padding: 8px 14px 4px;
@@ -72,7 +72,7 @@
 
 .cron-visual-field label {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
   text-align: center;
 }
 

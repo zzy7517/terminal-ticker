@@ -20,7 +20,7 @@
 .wl-active-eyebrow {
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -65,7 +65,7 @@
 .wl-chip-symbol {
   color: var(--text-secondary);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .wl-chip-meta {
@@ -73,7 +73,7 @@
   color: var(--text-muted);
   display: inline-flex;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   gap: 4px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -167,7 +167,7 @@
   border-radius: 0;
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
   padding: 1px 7px;
 }
@@ -244,7 +244,7 @@
   display: flex;
   flex-wrap: wrap;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   gap: 12px;
   justify-content: space-between;
 }
@@ -267,7 +267,7 @@
   color: var(--text-secondary);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0.04em;
   padding: 4px 12px;
   transition: none;
@@ -337,7 +337,7 @@
   color: var(--text-muted);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   height: 18px;
   padding: 0;
@@ -387,14 +387,14 @@
 
 .wl-catalog-group-head span {
   color: var(--text-primary);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.16em;
 }
 
 .wl-catalog-group-head small {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .wl-catalog-list {
@@ -446,13 +446,13 @@
 
 .wl-catalog-label {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .wl-catalog-venue {
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -468,7 +468,7 @@
   color: var(--accent-contrast);
   cursor: pointer;
   display: inline-flex;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: var(--ctl-weight-strong);
   gap: 5px;
   letter-spacing: 0.04em;
@@ -513,7 +513,7 @@
   border-radius: 0;
   color: var(--text-secondary);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 13px;
   margin-top: 4px;
   padding: 8px 12px;
 }

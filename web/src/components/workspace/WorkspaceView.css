@@ -40,7 +40,7 @@
 /* ── Workspace tabs — Bloomberg function key style ────────────────── */
 .workspace-tabs {
   align-items: center;
-  background: #0d0d0d;
+  background: var(--panel-raised);
   border: 1px solid var(--line-strong);
   display: flex;
   gap: 0;

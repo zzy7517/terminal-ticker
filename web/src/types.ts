@@ -648,6 +648,7 @@ export interface CronJobStatus {
   useMainPrompt: boolean;
   model: string | null;
   userMessage: string;
+  useMainPrompt?: boolean;
   maxIterations: number | null;
   maxCandles: number | null;
   tradingEnabled: boolean;
@@ -688,6 +689,7 @@ export interface CronJobCreate {
   model?: string | null;
   symbols?: string[];
   enabled?: boolean;
+  useMainPrompt?: boolean;
   maxIterations?: number | null;
   maxCandles?: number | null;
   tradingEnabled?: boolean;
@@ -704,6 +706,7 @@ export interface CronJobUpdate {
   model?: string | null;
   symbols?: string[];
   enabled?: boolean;
+  useMainPrompt?: boolean;
   maxIterations?: number | null;
   maxCandles?: number | null;
   tradingEnabled?: boolean;
