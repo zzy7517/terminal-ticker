@@ -232,6 +232,7 @@ export class PipelineOrchestrator {
         durationMs: Date.now() - new Date(startedAt).getTime(),
       };
       this.lastRun = run;
+      this.deps.onComplete?.(run);
       throw e;
     } finally {
       this.running = false;

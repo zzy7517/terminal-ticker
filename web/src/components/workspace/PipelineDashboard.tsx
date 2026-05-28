@@ -4,6 +4,8 @@
 
 import { useState, useEffect } from "react";
 import { usePipelineStore } from "../../stores/pipelineStore";
+import { useMarketStore } from "../../stores/marketStore";
+import { useUiStore } from "../../stores/uiStore";
 import type { PipelineRunSummary } from "../../types";
 
 const ACTION_ICONS: Record<string, string> = {
@@ -63,17 +65,20 @@ function RunDetail({ run }: { run: PipelineRunSummary }) {
       {/* Modules */}
       <div className="space-y-1">
         <div className="text-zinc-500 font-medium">L2 Modules:</div>
-        {run.moduleResults.map((m) => (
-          <div key={m.moduleId} className="flex items-center gap-2">
-            <span className="w-28 text-zinc-400">{m.moduleId}</span>
-            <span className={`w-14 ${SIGNAL_COLORS[m.signal]}`}>
-              {m.signal === "LONG" ? "▶" : m.signal === "SHORT" ? "◀" : "•"} {m.signal}
-            </span>
-            <ConvictionBar value={m.conviction} signal={m.signal} />
-            <span className="text-zinc-600">{m.conviction}%</span>
-            <span className="text-zinc-700">w={m.darwinWeight.toFixed(1)}</span>
-          </div>
-        ))}
+        {run.moduleResults.map((m) => {
+          const signal = m.output.signal;
+          return (
+            <div key={m.moduleId} className="flex items-center gap-2">
+              <span className="w-28 text-zinc-400">{m.moduleId}</span>
+              <span className={`w-14 ${SIGNAL_COLORS[signal]}`}>
+                {signal === "LONG" ? "▶" : signal === "SHORT" ? "◀" : "•"} {signal}
+              </span>
+              <ConvictionBar value={m.output.conviction} signal={signal} />
+              <span className="text-zinc-600">{m.output.conviction}%</span>
+              <span className="text-zinc-700">w={m.darwinWeight.toFixed(1)}</span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Decision */}
@@ -101,6 +106,8 @@ function RunDetail({ run }: { run: PipelineRunSummary }) {
 
 export function PipelineDashboard() {
   const recentRuns = usePipelineStore((s) => s.recentRuns);
+  const marketState = useMarketStore((s) => s.state);
+  const selectedKey = useUiStore((s) => s.selectedKey);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -119,12 +126,15 @@ export function PipelineDashboard() {
   const selectedRun = recentRuns.find((r) => r.id === selectedId);
 
   const handleTrigger = async () => {
-    // Trigger pipeline for first instrument in watchlist
+    const instrumentKey = selectedKey && marketState?.quotes[selectedKey]
+      ? selectedKey
+      : marketState?.instruments.find((instrument) => instrument.analysable)?.key;
+    if (!instrumentKey) return;
     try {
       await fetch("/api/pipeline/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instrumentKey: "USDT-FUTURES:BTCUSDT" }),
+        body: JSON.stringify({ instrumentKey }),
       });
       // Refresh after a delay
       setTimeout(() => {

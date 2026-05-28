@@ -80,9 +80,9 @@ export class ModuleRunner {
         moduleId,
         signal: this.validateSignal(parsed.signal),
         conviction: Math.max(0, Math.min(100, Number(parsed.conviction) || 0)),
-        entry: parsed.entry ?? null,
-        stopLoss: parsed.stop_loss ?? parsed.stopLoss ?? null,
-        takeProfit: parsed.take_profit ?? parsed.takeProfit ?? null,
+        entry: this.optionalNumber(parsed.entry),
+        stopLoss: this.optionalNumber(parsed.stop_loss ?? parsed.stopLoss),
+        takeProfit: this.optionalNumber(parsed.take_profit ?? parsed.takeProfit),
         keyLevels: {
           support: Array.isArray(parsed.key_levels?.support) ? parsed.key_levels.support : [],
           resistance: Array.isArray(parsed.key_levels?.resistance) ? parsed.key_levels.resistance : [],
@@ -93,6 +93,12 @@ export class ModuleRunner {
       // If JSON parsing fails, return neutral
       return this.neutralOutput(moduleId);
     }
+  }
+
+  private optionalNumber(raw: unknown): number | null {
+    if (raw === null || raw === undefined || raw === "") return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
   }
 
   private validateSignal(raw: unknown): "LONG" | "SHORT" | "NEUTRAL" {

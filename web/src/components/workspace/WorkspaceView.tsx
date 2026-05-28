@@ -16,6 +16,10 @@ import { SocialFeedPanel } from './SocialFeedPanel';
 import { PositionsPanel } from './PositionsPanel';
 import { CronPanel } from './CronPanel';
 import { CalendarPanel } from './CalendarPanel';
+import { RegimeHUD } from './RegimeHUD';
+import { FeedStatusBar } from './FeedStatusBar';
+import { PipelineDashboard } from './PipelineDashboard';
+import { EvolutionPanel } from './EvolutionPanel';
 
 export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);
@@ -23,7 +27,7 @@ export function WorkspaceView() {
 
   const openSettings = useUiStore((s) => s.openSettings);
 
-  const [activeTab, setActiveTab] = useState<'agent' | 'news' | 'social' | 'calendar' | 'positions' | 'cron'>('agent');
+  const [activeTab, setActiveTab] = useState<'agent' | 'news' | 'social' | 'calendar' | 'positions' | 'cron' | 'pipeline' | 'evolution'>('agent');
 
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
 
@@ -53,8 +57,10 @@ export function WorkspaceView() {
         </div>
       </header>
 
+      <RegimeHUD />
+
       <div className="workspace-tabs" role="tablist">
-        {(['agent', 'news', 'social', ...(jin10Available ? ['calendar' as const] : []), 'positions', 'cron'] as const).map((tab) => (
+        {(['agent', 'pipeline', 'evolution', 'news', 'social', ...(jin10Available ? ['calendar' as const] : []), 'positions', 'cron'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -103,10 +109,13 @@ export function WorkspaceView() {
             </div>
           )}
 
+          {activeTab === 'pipeline' && <PipelineDashboard />}
+          {activeTab === 'evolution' && <EvolutionPanel />}
           {activeTab === 'positions' && <PositionsPanel />}
           {activeTab === 'cron' && <CronPanel />}
         </section>
       </section>
+      <FeedStatusBar />
       </div>{/* end .app-main */}
     </main>
   );

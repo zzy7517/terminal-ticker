@@ -45,10 +45,10 @@ export function pipelineRoutes(runtime: AppRuntime): Hono {
       return c.json({ error: "pipeline already running" }, 409);
     }
     try {
-      const run = await runtime.pipelineOrchestrator.run(instrumentKey, "manual");
+      const run = await runtime.runPipeline(instrumentKey, "manual");
       return c.json({ run });
     } catch (e) {
-      return c.json({ error: String(e) }, 500);
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
     }
   });
 

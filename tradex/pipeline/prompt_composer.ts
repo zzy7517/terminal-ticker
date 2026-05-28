@@ -11,7 +11,10 @@ import { fileURLToPath } from "url";
 import type { RegimeSignal } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROMPTS_DIR = join(__dirname, "..", "prompts");
+const PROMPT_DIR_CANDIDATES = [
+  join(__dirname, "..", "prompts"),
+  join(process.cwd(), "tradex", "prompts"),
+];
 
 export interface ComposedPrompt {
   systemPrompt: string;
@@ -123,9 +126,11 @@ export class PromptComposer {
   }
 
   private loadFile(relativePath: string): string {
-    const fullPath = join(PROMPTS_DIR, relativePath);
-    if (!existsSync(fullPath)) return `[Prompt file not found: ${relativePath}]`;
-    return readFileSync(fullPath, "utf-8");
+    for (const dir of PROMPT_DIR_CANDIDATES) {
+      const fullPath = join(dir, relativePath);
+      if (existsSync(fullPath)) return readFileSync(fullPath, "utf-8");
+    }
+    return `[Prompt file not found: ${relativePath}]`;
   }
 
   /** Reload prompts from disk (after autoresearch modifies them). */

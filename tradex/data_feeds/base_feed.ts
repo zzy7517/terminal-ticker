@@ -44,6 +44,10 @@ export abstract class BaseFeed<T> implements DataFeed<T> {
     return this.history.slice(-n);
   }
 
+  getLastError(): string | null {
+    return this.lastError;
+  }
+
   subscribe(cb: (data: T) => void): () => void {
     this.subscribers.push(cb);
     return () => {

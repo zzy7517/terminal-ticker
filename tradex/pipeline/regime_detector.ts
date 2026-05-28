@@ -30,9 +30,9 @@ export class RegimeDetector {
     const vix = this.deps.getVIX();
     const adx = this.deps.getADX(instrumentKey);
     const fearGreed = this.deps.dataFeeds.get<FearGreedData>("fear_greed")?.getLatest();
-    const funding = this.deps.dataFeeds.get<FundingSnapshot>("funding")?.getLatest();
-    const ls = this.deps.dataFeeds.get<LongShortRatioData>("long_short_ratio")?.getLatest();
-    const oi = this.deps.dataFeeds.get<OIDeltaData>("oi_delta")?.getLatest();
+    const funding = this.latestForInstrument<FundingSnapshot>("funding", instrumentKey);
+    const ls = this.latestForInstrument<LongShortRatioData>("long_short_ratio", instrumentKey);
+    const oi = this.latestForInstrument<OIDeltaData>("oi_delta", instrumentKey);
     const dxy = this.deps.dataFeeds.get<DXYData>("dxy")?.getLatest();
 
     const indicators: RegimeIndicators = {
@@ -52,6 +52,13 @@ export class RegimeDetector {
       indicators,
       detectedAt: new Date().toISOString(),
     };
+  }
+
+  private latestForInstrument<T extends { instrumentKey: string }>(feedName: string, instrumentKey: string): T | null {
+    const feed = this.deps.dataFeeds.get<T>(feedName);
+    if (!feed) return null;
+    const history = feed.getHistory(200).filter((item) => item.instrumentKey === instrumentKey);
+    return history.length > 0 ? history[history.length - 1] : null;
   }
 
   private detectMarketRegime(ind: RegimeIndicators): MarketRegime {

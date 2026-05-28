@@ -27,9 +27,17 @@ import { FundingHistoryFeed } from "../data_feeds/funding_history.js";
 import { LongShortRatioFeed } from "../data_feeds/long_short_ratio.js";
 import { OIDeltaFeed } from "../data_feeds/oi_delta.js";
 import { DXYFeed } from "../data_feeds/dxy.js";
+import type { FundingSnapshot, LongShortRatioData, OIDeltaData, DXYData } from "../data_feeds/types.js";
 import { PipelineStore } from "../pipeline/store.js";
+import { PipelineOrchestrator } from "../pipeline/orchestrator.js";
+import { PipelineScheduler } from "../pipeline/scheduler.js";
+import { RegimeDetector } from "../pipeline/regime_detector.js";
+import { PromptComposer } from "../pipeline/prompt_composer.js";
+import type { PipelineRun, PipelineTrigger } from "../pipeline/types.js";
 import { EvolutionStore } from "../evolution/store.js";
-import type { PipelineOrchestrator } from "../pipeline/orchestrator.js";
+import { RecommendationTracker } from "../evolution/recommendation_tracker.js";
+import { DarwinWeightUpdater } from "../evolution/darwin_weights.js";
+import type { Candle } from "../domain/price_action.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -48,10 +56,13 @@ export class AppRuntime {
   readonly mcpManager: McpClientManager | null;
   jin10Service: Jin10Service;
   readonly browserManager: BrowserManager;
-  readonly dataFeeds: DataFeedRegistry;
+  dataFeeds: DataFeedRegistry;
   pipelineOrchestrator: PipelineOrchestrator | null = null;
   readonly pipelineStore: PipelineStore;
   readonly evolutionStore: EvolutionStore;
+  readonly recommendationTracker: RecommendationTracker;
+  readonly darwinWeightUpdater: DarwinWeightUpdater;
+  readonly pipelineScheduler: PipelineScheduler;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
   readonly activeAgents = new Map<string, Agent>();
@@ -120,6 +131,10 @@ export class AppRuntime {
     // Wire pipeline + evolution stores
     this.pipelineStore = new PipelineStore();
     this.evolutionStore = new EvolutionStore();
+    this.recommendationTracker = new RecommendationTracker(this.evolutionStore);
+    this.darwinWeightUpdater = new DarwinWeightUpdater(this.evolutionStore);
+    this.pipelineOrchestrator = this._buildPipelineOrchestrator(config);
+    this.pipelineScheduler = new PipelineScheduler(this);
 
     // Wire trade closure → memory pipeline enqueue
     this.tradeStore.onTradeClosed((tradeId) => this.enqueueTradeForMemory(tradeId));
@@ -142,6 +157,8 @@ export class AppRuntime {
     await this.controller.stop();
     await this.newsService.stop();
     await this.jin10Service.stop();
+    this.dataFeeds.stopAll();
+    this.pipelineScheduler.stop();
     this.config = config;
     this.instruments = await resolveInstruments(config.instruments);
     this.controller = new TickerController({ config, instruments: this.instruments });
@@ -156,10 +173,16 @@ export class AppRuntime {
       mcpManager: this.mcpManager,
       newsStore: this.newsService.store,
     });
+    this.dataFeeds = this._buildDataFeeds(config);
+    this.pipelineOrchestrator = this._buildPipelineOrchestrator(config);
     if (shouldRestart) {
       this.controller.start();
       await this.newsService.start();
       await this.jin10Service.start();
+      if (this.config.dataFeeds.enabled) {
+        await this.dataFeeds.startAll();
+      }
+      this.pipelineScheduler.start();
     }
     this.cronScheduler.reload();
   }
@@ -188,6 +211,7 @@ export class AppRuntime {
     if (this.config.dataFeeds.enabled) {
       await this.dataFeeds.startAll();
     }
+    this.pipelineScheduler.start();
   }
 
   // Gracefully stops all background tasks; called on process shutdown or before reload.
@@ -199,6 +223,7 @@ export class AppRuntime {
     await this.cronScheduler.stop();
     await this.mcpManager?.shutdown();
     await this.memoryPipeline?.shutdown();
+    this.pipelineScheduler.stop();
     this.dataFeeds.stopAll();
   }
 
@@ -255,6 +280,28 @@ export class AppRuntime {
     this.memoryPipeline.enqueueTradeEvent({ tradeId });
   }
 
+  /** Run the structured pipeline for one instrument. Used by API and scheduler. */
+  async runPipeline(instrumentKey: string, trigger: PipelineTrigger): Promise<PipelineRun> {
+    if (!this.config.pipeline.enabled) throw new Error("pipeline disabled");
+    if (!this.pipelineOrchestrator) throw new Error("pipeline not configured");
+    if (!this.instruments.some((instrument) => instrument.key === instrumentKey)) {
+      throw new Error(`unknown instrumentKey: ${instrumentKey}`);
+    }
+    return this.pipelineOrchestrator.run(instrumentKey, trigger);
+  }
+
+  /** Update Darwin weights using the configured recommendation threshold. */
+  updateDarwinWeights(): ReturnType<DarwinWeightUpdater["update"]> {
+    if (!this.config.evolution.enabled) return [];
+    return this.darwinWeightUpdater.update(this.config.evolution.minRecommendationsForEval);
+  }
+
+  /** Back-fill forward returns for stored module recommendations. */
+  async backfillRecommendationReturns(): Promise<number> {
+    if (!this.config.evolution.enabled) return 0;
+    return this.recommendationTracker.backfillReturns((instrumentKey) => this.getCurrentPrice(instrumentKey));
+  }
+
   // Builds the memory pipeline from current config; returns null when disabled.
   private _buildMemoryPipeline(config: AppConfig): MemoryPipeline | null {
     if (!config.memory.enabled) return null;
@@ -296,6 +343,176 @@ export class AppRuntime {
         ? MemoryRuntimePolicy.normal()
         : MemoryRuntimePolicy.disabled(),
     });
+  }
+
+  // Builds the structured pipeline orchestrator when enabled.
+  private _buildPipelineOrchestrator(config: AppConfig): PipelineOrchestrator | null {
+    if (!config.pipeline.enabled) return null;
+
+    const regimeDetector = new RegimeDetector({
+      dataFeeds: this.dataFeeds,
+      getVIX: () => this.getVIX(),
+      getADX: (instrumentKey) => this.getADX(instrumentKey),
+      getPrimaryFunding: (instrumentKey) => this.getFundingRate(instrumentKey),
+    });
+
+    return new PipelineOrchestrator({
+      regimeDetector,
+      promptComposer: new PromptComposer(),
+      llmCall: (systemPrompt, userPrompt) => this.callPipelineLLM(systemPrompt, userPrompt),
+      getCandleData: (instrumentKey) => this.formatCandleData(instrumentKey),
+      getCurrentPrice: (instrumentKey) => this.getCurrentPrice(instrumentKey),
+      getDarwinWeights: () => this.evolutionStore.getDarwinWeights(),
+      getFundamentalContext: (instrumentKey) => this.getFundamentalContext(instrumentKey),
+      getFundingRate: (instrumentKey) => this.getFundingRate(instrumentKey),
+      getLongShortRatio: (instrumentKey) => this.getLongShortRatio(instrumentKey),
+      getOIDelta: (instrumentKey) => this.getOIDelta(instrumentKey),
+      onComplete: (run) => {
+        this.pipelineStore.insert(run);
+        if (!this.config.evolution.enabled || run.status !== "completed") return;
+        const currentPrice = this.getCurrentPrice(run.instrumentKey);
+        if (currentPrice === null) return;
+        this.recommendationTracker.recordFromPipelineRun(run.moduleResults, run.instrumentKey, currentPrice);
+      },
+    });
+  }
+
+  private async callPipelineLLM(systemPrompt: string, userPrompt: string): Promise<{ content: string; tokensUsed: number }> {
+    if (!this.config.agent.enabled) throw new Error("agent provider disabled");
+    const provider = new AgentModelRegistry().createProvider(this.config.agent);
+    const response = await provider.chat({
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt, timestamp: Date.now() }],
+      onDelta: null,
+    });
+    return {
+      content: response.content,
+      tokensUsed: response.message.usage?.totalTokens ?? 0,
+    };
+  }
+
+  private getCurrentPrice(instrumentKey: string): number | null {
+    return this.controller.quotes[instrumentKey]?.price ?? null;
+  }
+
+  private getVIX(): number | null {
+    const direct = this.controller.quotes["hyperliquid:xyz:VIX"]?.price;
+    if (direct !== undefined && direct !== null) return direct;
+    for (const [key, quote] of Object.entries(this.controller.quotes)) {
+      if (key.toUpperCase().includes("VIX") || quote.symbol.toUpperCase().includes("VIX") || quote.displayName.toUpperCase().includes("VIX")) {
+        if (quote.price !== null) return quote.price;
+      }
+    }
+    return null;
+  }
+
+  private getADX(instrumentKey: string, period = 14): number | null {
+    const candles = this.controller.quotes[instrumentKey]?.candles ?? [];
+    if (candles.length < period * 2) return null;
+
+    const dxValues: number[] = [];
+    for (let end = period + 1; end <= candles.length; end += 1) {
+      const window = candles.slice(end - period - 1, end);
+      const sums = this.sumDirectionalMovement(window);
+      if (sums.tr === 0) continue;
+      const plusDI = (100 * sums.plusDM) / sums.tr;
+      const minusDI = (100 * sums.minusDM) / sums.tr;
+      const denom = plusDI + minusDI;
+      if (denom === 0) continue;
+      dxValues.push((100 * Math.abs(plusDI - minusDI)) / denom);
+    }
+
+    const recent = dxValues.slice(-period);
+    if (recent.length === 0) return null;
+    const adx = recent.reduce((sum, value) => sum + value, 0) / recent.length;
+    return Math.round(adx * 10) / 10;
+  }
+
+  private sumDirectionalMovement(candles: Candle[]): { tr: number; plusDM: number; minusDM: number } {
+    let tr = 0;
+    let plusDM = 0;
+    let minusDM = 0;
+    for (let index = 1; index < candles.length; index += 1) {
+      const current = candles[index];
+      const previous = candles[index - 1];
+      const trueRange = Math.max(
+        current.high - current.low,
+        Math.abs(current.high - previous.close),
+        Math.abs(current.low - previous.close),
+      );
+      const upMove = current.high - previous.high;
+      const downMove = previous.low - current.low;
+      tr += trueRange;
+      if (upMove > downMove && upMove > 0) plusDM += upMove;
+      if (downMove > upMove && downMove > 0) minusDM += downMove;
+    }
+    return { tr, plusDM, minusDM };
+  }
+
+  private formatCandleData(instrumentKey: string): string {
+    const quote = this.controller.quotes[instrumentKey];
+    const candles = quote?.candles ?? [];
+    if (candles.length === 0) return "No candle data available yet.";
+    const limit = Math.max(10, Math.min(this.config.agent.maxCandles, 120));
+    return candles.slice(-limit).map((candle) => [
+      new Date(candle.openTimeMs).toISOString(),
+      `O:${candle.open}`,
+      `H:${candle.high}`,
+      `L:${candle.low}`,
+      `C:${candle.close}`,
+      `V:${candle.volume}`,
+    ].join(" ")).join("\n");
+  }
+
+  private getFundamentalContext(instrumentKey: string): string {
+    const parts: string[] = [];
+    const quote = this.controller.quotes[instrumentKey];
+    if (quote) {
+      parts.push(`Price: ${quote.price ?? "unknown"}`);
+      parts.push(`24h Change: ${quote.changePercent ?? "unknown"}%`);
+      parts.push(`Volume: ${quote.volume ?? "unknown"}`);
+    }
+    const funding = this.getFundingSnapshot(instrumentKey);
+    if (funding) parts.push(`Funding Rate: ${(funding.rate * 100).toFixed(4)}%`);
+    const ls = this.getLongShortSnapshot(instrumentKey);
+    if (ls) parts.push(`Long/Short Ratio: ${ls.ratio.toFixed(2)} (long ${ls.longPct.toFixed(1)}%, short ${ls.shortPct.toFixed(1)}%)`);
+    const oi = this.getOIDeltaSnapshot(instrumentKey);
+    if (oi) parts.push(`OI: ${oi.oi}, OI Delta 1h: ${oi.delta1h}, 4h: ${oi.delta4h}, 24h: ${oi.delta24h}`);
+    const dxy = this.dataFeeds.get<DXYData>("dxy")?.getLatest();
+    if (dxy) parts.push(`DXY proxy: ${dxy.value} (EURUSD ${dxy.eurusd})`);
+    return parts.length > 0 ? parts.join("\n") : "No additional context available.";
+  }
+
+  private getFundingRate(instrumentKey: string): number | null {
+    return this.getFundingSnapshot(instrumentKey)?.rate ?? null;
+  }
+
+  private getLongShortRatio(instrumentKey: string): number | null {
+    return this.getLongShortSnapshot(instrumentKey)?.ratio ?? null;
+  }
+
+  private getOIDelta(instrumentKey: string): number | null {
+    return this.getOIDeltaSnapshot(instrumentKey)?.delta1h ?? null;
+  }
+
+  private getFundingSnapshot(instrumentKey: string): FundingSnapshot | null {
+    return this.latestFeedItemForInstrument<FundingSnapshot>("funding", instrumentKey);
+  }
+
+  private getLongShortSnapshot(instrumentKey: string): LongShortRatioData | null {
+    return this.latestFeedItemForInstrument<LongShortRatioData>("long_short_ratio", instrumentKey);
+  }
+
+  private getOIDeltaSnapshot(instrumentKey: string): OIDeltaData | null {
+    return this.latestFeedItemForInstrument<OIDeltaData>("oi_delta", instrumentKey);
+  }
+
+  private latestFeedItemForInstrument<T extends { instrumentKey: string; timestamp?: string }>(name: string, instrumentKey: string): T | null {
+    const feed = this.dataFeeds.get<T>(name);
+    if (!feed) return null;
+    const history = feed.getHistory(200).filter((item) => item.instrumentKey === instrumentKey);
+    if (history.length === 0) return null;
+    return history[history.length - 1];
   }
 
   // Builds the DataFeedRegistry with configured feeds.

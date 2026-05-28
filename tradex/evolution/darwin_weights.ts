@@ -20,20 +20,21 @@ export class DarwinWeightUpdater {
   }
 
   /** Run daily weight update. Returns the updated scores. */
-  update(): { moduleId: string; oldWeight: number; newWeight: number; sharpe: number }[] {
+  update(minRecommendationsForEval = 0): { moduleId: string; oldWeight: number; newWeight: number; sharpe: number }[] {
     const scores = this.scorecard.computeAll(30);
     const changes: { moduleId: string; oldWeight: number; newWeight: number; sharpe: number }[] = [];
+    const eligible = scores.filter((score) => score.totalRecommendations >= minRecommendationsForEval);
 
-    if (scores.length < 2) return changes;
+    if (eligible.length < 2) return changes;
 
     // Sort by Sharpe descending
-    const sorted = [...scores].sort((a, b) => b.sharpe30d - a.sharpe30d);
+    const sorted = [...eligible].sort((a, b) => b.sharpe30d - a.sharpe30d);
     const quarter = Math.max(1, Math.ceil(sorted.length / 4));
 
     const topIds = new Set(sorted.slice(0, quarter).map((s) => s.moduleId));
     const bottomIds = new Set(sorted.slice(-quarter).map((s) => s.moduleId));
 
-    for (const score of scores) {
+    for (const score of eligible) {
       const oldWeight = score.darwinWeight;
       let newWeight = oldWeight;
 

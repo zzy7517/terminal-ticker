@@ -3,15 +3,7 @@
  */
 
 import { create } from "zustand";
-import type { RegimeSignal, PipelineRunSummary, DarwinWeightEntry } from "../types";
-
-interface FeedsSnapshot {
-  fear_greed?: { value: number; classification: string; timestamp: string } | null;
-  funding?: { instrumentKey: string; rate: number; timestamp: string } | null;
-  long_short_ratio?: { instrumentKey: string; ratio: number; longPct: number; shortPct: number } | null;
-  oi_delta?: { instrumentKey: string; oi: number; delta1h: number; timestamp: string } | null;
-  dxy?: { value: number; eurusd: number; timestamp: string } | null;
-}
+import type { RegimeSignal, PipelineRunSummary, DarwinWeightEntry, FeedsSnapshot } from "../types";
 
 interface PipelineState {
   regime: RegimeSignal | null;

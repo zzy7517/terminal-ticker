@@ -9,6 +9,7 @@ export interface DataFeed<T> {
   stop(): void;
   getLatest(): T | null;
   getHistory(n: number): T[];
+  getLastError(): string | null;
   subscribe(cb: (data: T) => void): () => void;
 }
 

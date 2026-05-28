@@ -68,7 +68,7 @@ export class DataFeedRegistry {
       out.push({
         name,
         lastFetchedAt: ts,
-        lastError: null, // individual feeds track their own errors
+        lastError: feed.getLastError(),
         dataAge: age,
       });
     }

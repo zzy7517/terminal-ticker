@@ -18,16 +18,9 @@ export class Synthesizer {
 
     // Weighted voting
     const votes = { LONG: 0, SHORT: 0, NEUTRAL: 0 };
-    let totalWeight = 0;
-    let weightedConviction = 0;
-
     for (const r of validResults) {
       const w = r.darwinWeight;
       votes[r.output.signal] += w;
-      totalWeight += w;
-      if (r.output.signal !== "NEUTRAL") {
-        weightedConviction += r.output.conviction * w;
-      }
     }
 
     // Determine dominant signal
@@ -39,6 +32,7 @@ export class Synthesizer {
 
     // Weighted conviction (normalized by weight of agreeing modules)
     const agreeingWeight = agreeing.reduce((s, r) => s + r.darwinWeight, 0);
+    const weightedConviction = agreeing.reduce((s, r) => s + (r.output.conviction * r.darwinWeight), 0);
     const normalizedConviction = agreeingWeight > 0
       ? weightedConviction / agreeingWeight
       : 0;
