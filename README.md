@@ -96,3 +96,4 @@ npm run build:backend
 - [**earendil-works/pi**](https://github.com/earendil-works/pi) 
 - [**openai/codex**](https://github.com/openai/codex)
 - [**iFurySt/open-browser-use**](https://github.com/iFurySt/open-browser-use)
+- [**chrisworsey55/atlas-gic**](https://github.com/chrisworsey55/atlas-gic) — 多智能体交易流水线和 Darwinian evolution 架构参考
