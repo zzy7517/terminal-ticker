@@ -163,7 +163,7 @@ export class AppRuntime {
     await this.newsService.stop();
     await this.jin10Service.stop();
     this.dataFeeds.stopAll();
-    this.pipelineScheduler.stop();
+    await this.pipelineScheduler.stop();
     if (this.activePipelineRun) {
       await this.activePipelineRun.catch(() => undefined);
     }
@@ -231,7 +231,7 @@ export class AppRuntime {
     await this.cronScheduler.stop();
     await this.mcpManager?.shutdown();
     await this.memoryPipeline?.shutdown();
-    this.pipelineScheduler.stop();
+    await this.pipelineScheduler.stop();
     this.dataFeeds.stopAll();
   }
 

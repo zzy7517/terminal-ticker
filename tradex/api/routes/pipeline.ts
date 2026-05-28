@@ -3,7 +3,15 @@
  */
 
 import { Hono } from "hono";
-import type { AppRuntime } from "../runtime.js";
+
+interface PipelineRuntimeLike {
+  pipelineOrchestrator?: { currentRegime: unknown; isRunning: boolean } | null;
+  pipelineStore?: {
+    listRuns(opts: { instrumentKey?: string; limit?: number; offset?: number }): unknown[];
+    getRun(id: string): unknown | null;
+  };
+  runPipeline(instrumentKey: string, trigger: "manual"): Promise<unknown>;
+}
 
 function boundedInt(raw: string | null | undefined, fallback: number, min: number, max: number): number {
   const value = raw === undefined || raw === null ? fallback : Number.parseInt(raw, 10);
@@ -11,7 +19,7 @@ function boundedInt(raw: string | null | undefined, fallback: number, min: numbe
   return Math.max(min, Math.min(max, value));
 }
 
-export function pipelineRoutes(runtime: AppRuntime): Hono {
+export function pipelineRoutes(runtime: PipelineRuntimeLike): Hono {
   const app = new Hono();
 
   // GET /api/pipeline/regime — current regime

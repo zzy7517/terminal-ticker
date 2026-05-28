@@ -11,7 +11,7 @@ import type { PipelineRun } from "./types.js";
 export class PipelineScheduler {
   private runtime: AppRuntime;
   private jobs = new Map<string, Cron>();
-  private runningJobs = new Set<string>();
+  private runningTasks = new Map<string, Promise<void>>();
   private started = false;
 
   constructor(runtime: AppRuntime) {
@@ -24,17 +24,18 @@ export class PipelineScheduler {
     this.scheduleAll();
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.started = false;
-    for (const [, cron] of this.jobs) cron.stop();
-    this.jobs.clear();
-    this.runningJobs.clear();
+    this.stopTimers();
+    await this.awaitRunningTasks();
   }
 
-  reload(): void {
-    for (const [, cron] of this.jobs) cron.stop();
-    this.jobs.clear();
-    this.runningJobs.clear();
+  async reload(): Promise<void> {
+    const shouldRestart = this.started;
+    this.started = false;
+    this.stopTimers();
+    await this.awaitRunningTasks();
+    this.started = shouldRestart;
     if (this.started) this.scheduleAll();
   }
 
@@ -75,18 +76,32 @@ export class PipelineScheduler {
   }
 
   private async runExclusive(name: string, task: () => Promise<unknown>): Promise<void> {
-    if (this.runningJobs.has(name)) {
+    if (this.runningTasks.has(name)) {
       console.warn(`[pipeline] skipping ${name} — previous run still in progress`);
       return;
     }
-    this.runningJobs.add(name);
-    try {
-      await task();
-    } catch (error) {
-      console.error(`[pipeline] ${name} failed:`, error);
-    } finally {
-      this.runningJobs.delete(name);
-    }
+    const run = (async () => {
+      try {
+        await task();
+      } catch (error) {
+        console.error(`[pipeline] ${name} failed:`, error);
+      } finally {
+        this.runningTasks.delete(name);
+      }
+    })();
+    this.runningTasks.set(name, run);
+    await run;
+  }
+
+  private stopTimers(): void {
+    for (const [, cron] of this.jobs) cron.stop();
+    this.jobs.clear();
+  }
+
+  private async awaitRunningTasks(): Promise<void> {
+    const tasks = [...this.runningTasks.values()];
+    if (tasks.length === 0) return;
+    await Promise.allSettled(tasks);
   }
 
   private async runPipelineTick(): Promise<void> {

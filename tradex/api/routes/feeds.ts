@@ -3,7 +3,19 @@
  */
 
 import { Hono } from "hono";
-import type { AppRuntime } from "../runtime.js";
+
+interface FeedLike {
+  getLatest(): unknown;
+  getHistory(limit: number): unknown[];
+}
+
+interface FeedsRuntimeLike {
+  dataFeeds?: {
+    statuses(): unknown[];
+    snapshot(): Record<string, unknown>;
+    get(name: string): FeedLike | null;
+  };
+}
 
 function boundedInt(raw: string | null | undefined, fallback: number, min: number, max: number): number {
   const value = raw === undefined || raw === null ? fallback : Number.parseInt(raw, 10);
@@ -11,7 +23,7 @@ function boundedInt(raw: string | null | undefined, fallback: number, min: numbe
   return Math.max(min, Math.min(max, value));
 }
 
-export function feedsRoutes(runtime: AppRuntime): Hono {
+export function feedsRoutes(runtime: FeedsRuntimeLike): Hono {
   const app = new Hono();
 
   // GET /api/feeds/status — all feed statuses

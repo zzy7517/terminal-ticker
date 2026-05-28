@@ -3,7 +3,15 @@
  */
 
 import { Hono } from "hono";
-import type { AppRuntime } from "../runtime.js";
+
+interface EvolutionRuntimeLike {
+  evolutionStore?: {
+    getDarwinWeights(): unknown[];
+    getWeightHistory(moduleId: string, limit: number): unknown[];
+    listModifications(limit: number): unknown[];
+    getModuleRecommendations(moduleId: string, days: number): unknown[];
+  };
+}
 
 function boundedInt(raw: string | null | undefined, fallback: number, min: number, max: number): number {
   const value = raw === undefined || raw === null ? fallback : Number.parseInt(raw, 10);
@@ -11,7 +19,7 @@ function boundedInt(raw: string | null | undefined, fallback: number, min: numbe
   return Math.max(min, Math.min(max, value));
 }
 
-export function evolutionRoutes(runtime: AppRuntime): Hono {
+export function evolutionRoutes(runtime: EvolutionRuntimeLike): Hono {
   const app = new Hono();
 
   // GET /api/evolution/scorecard — all module scores + weights
