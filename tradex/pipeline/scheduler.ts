@@ -1,6 +1,16 @@
 import { Cron } from "croner";
-import type { AppRuntime } from "../api/runtime.js";
 import type { PipelineRun } from "./types.js";
+
+interface PipelineSchedulerRuntime {
+  config: {
+    pipeline: { enabled: boolean; instruments: string[]; cronExpression: string };
+    evolution: { enabled: boolean; weightUpdateCron: string; returnTrackingCron: string };
+  };
+  pipelineOrchestrator: unknown | null;
+  runPipeline(instrumentKey: string, trigger: "cron"): Promise<PipelineRun>;
+  updateDarwinWeights(): Array<unknown>;
+  backfillRecommendationReturns(): Promise<number>;
+}
 
 /**
  * Lightweight scheduler for the structured ATLAS-style pipeline.
@@ -9,12 +19,12 @@ import type { PipelineRun } from "./types.js";
  * sessions, while this scheduler runs deterministic pipeline/evolution jobs.
  */
 export class PipelineScheduler {
-  private runtime: AppRuntime;
+  private runtime: PipelineSchedulerRuntime;
   private jobs = new Map<string, Cron>();
   private runningTasks = new Map<string, Promise<void>>();
   private started = false;
 
-  constructor(runtime: AppRuntime) {
+  constructor(runtime: PipelineSchedulerRuntime) {
     this.runtime = runtime;
   }
 
