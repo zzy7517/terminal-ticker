@@ -20,7 +20,7 @@ export class Scorecard {
 
     return DEFAULT_MODULE_IDS.map((moduleId) => {
       const recs = this.store.getModuleRecommendations(moduleId, days);
-      const scored = recs.filter((r) => r.return5d !== null);
+      const scored = recs.filter((r) => r.return5d !== null && r.signal !== "NEUTRAL");
       const sharpe = this.computeSharpe(scored);
       const hitRate = this.computeHitRate(scored);
       const existing = weightMap.get(moduleId);
@@ -69,7 +69,6 @@ export class Scorecard {
       const ret = r.return5d!;
       if (r.signal === "LONG" && ret > 0) hits++;
       else if (r.signal === "SHORT" && ret < 0) hits++;
-      else if (r.signal === "NEUTRAL") hits++; // neutral is always "correct"
     }
     return hits / recs.length;
   }

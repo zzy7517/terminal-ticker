@@ -90,6 +90,13 @@ export class PipelineStore {
     return this.deserialize(row);
   }
 
+  sumCostSince(startedAtIso: string): number {
+    const row = this.db.prepare(
+      "SELECT COALESCE(SUM(total_cost_usd), 0) AS total FROM pipeline_runs WHERE started_at >= ? AND status = 'completed'"
+    ).get(startedAtIso) as { total?: number } | undefined;
+    return Number(row?.total ?? 0);
+  }
+
   private deserialize(row: Record<string, unknown>): PipelineRun {
     return {
       id: row.id as string,

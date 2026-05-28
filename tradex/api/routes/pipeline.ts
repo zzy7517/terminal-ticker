@@ -5,6 +5,12 @@
 import { Hono } from "hono";
 import type { AppRuntime } from "../runtime.js";
 
+function boundedInt(raw: string | null | undefined, fallback: number, min: number, max: number): number {
+  const value = raw === undefined || raw === null ? fallback : Number.parseInt(raw, 10);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
 export function pipelineRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
 
@@ -17,8 +23,8 @@ export function pipelineRoutes(runtime: AppRuntime): Hono {
   // GET /api/pipeline/runs — list recent runs
   app.get("/api/pipeline/runs", (c) => {
     const instrumentKey = c.req.query("instrument") ?? undefined;
-    const limit = Number(c.req.query("limit") ?? 50);
-    const offset = Number(c.req.query("offset") ?? 0);
+    const limit = boundedInt(c.req.query("limit"), 50, 1, 100);
+    const offset = boundedInt(c.req.query("offset"), 0, 0, 10_000);
     const runs = runtime.pipelineStore?.listRuns({ instrumentKey, limit, offset }) ?? [];
     return c.json({ runs });
   });

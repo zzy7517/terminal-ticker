@@ -7,8 +7,15 @@ import type { OIDeltaData } from "./types.js";
 
 const BITGET_OI_URL = "https://api.bitget.com/api/v2/mix/market/open-interest";
 
+export interface OIDeltaFeedTarget {
+  instrumentKey: string;
+  symbol: string;
+  productType: string;
+}
+
 export interface OIDeltaFeedConfig {
-  symbols: string[];
+  targets?: OIDeltaFeedTarget[];
+  symbols?: string[];
   productType?: string;
   pollIntervalMs?: number;
 }
@@ -21,16 +28,19 @@ interface OIRecord {
 export class OIDeltaFeed extends BaseFeed<OIDeltaData> {
   readonly name = "oi_delta";
   readonly pollIntervalMs: number;
-  private symbols: string[];
-  private productType: string;
+  private targets: OIDeltaFeedTarget[];
   /** Ring buffer of OI samples per symbol for delta calculation. */
   private samples = new Map<string, OIRecord[]>();
   private maxSamples = 300; // ~5h at 1m intervals
 
   constructor(config: OIDeltaFeedConfig) {
     super();
-    this.symbols = config.symbols;
-    this.productType = config.productType ?? "USDT-FUTURES";
+    const productType = config.productType ?? "USDT-FUTURES";
+    this.targets = config.targets ?? (config.symbols ?? []).map((symbol) => ({
+      instrumentKey: `${productType}:${symbol}`,
+      symbol,
+      productType,
+    }));
     this.pollIntervalMs = config.pollIntervalMs ?? 60_000;
   }
 
@@ -38,22 +48,24 @@ export class OIDeltaFeed extends BaseFeed<OIDeltaData> {
     const results: OIDeltaData[] = [];
     const now = Date.now();
 
-    for (const symbol of this.symbols) {
+    for (const target of this.targets) {
       try {
-        const url = `${BITGET_OI_URL}?symbol=${symbol}&productType=${this.productType}`;
+        const url = new URL(BITGET_OI_URL);
+        url.searchParams.set("symbol", target.symbol);
+        url.searchParams.set("productType", target.productType);
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 10_000);
         try {
           const res = await globalThis.fetch(url, { signal: controller.signal });
           if (!res.ok) continue;
           const json = (await res.json()) as {
-            data?: { openInterest?: string };
+            data?: { openInterest?: string; openInterestList?: Array<{ symbol?: string; size?: string }>; ts?: string };
           };
-          const oi = Number(json.data?.openInterest ?? 0);
+          const oi = Number(json.data?.openInterest ?? json.data?.openInterestList?.[0]?.size ?? 0);
           if (!oi) continue;
 
           // Store sample
-          const key = `${this.productType}:${symbol}`;
+          const key = target.instrumentKey;
           if (!this.samples.has(key)) this.samples.set(key, []);
           const buf = this.samples.get(key)!;
           buf.push({ oi, timestamp: now });

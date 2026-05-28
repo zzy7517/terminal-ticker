@@ -89,9 +89,8 @@ export class ModuleRunner {
         },
         reasoning: String(parsed.reasoning ?? "").slice(0, 500),
       };
-    } catch {
-      // If JSON parsing fails, return neutral
-      return this.neutralOutput(moduleId);
+    } catch (e) {
+      throw new Error(`failed to parse module output: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

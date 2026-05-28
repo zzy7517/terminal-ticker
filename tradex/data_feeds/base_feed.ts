@@ -12,20 +12,14 @@ export abstract class BaseFeed<T> implements DataFeed<T> {
   private maxHistory = 200;
   private timer: NodeJS.Timeout | null = null;
   private subscribers: Array<(data: T) => void> = [];
+  private inFlight = false;
   protected lastError: string | null = null;
 
   async start(): Promise<void> {
-    // Initial fetch (don't let it crash startup)
-    try {
-      await this.fetchAndStore();
-    } catch (e) {
-      this.lastError = String(e);
-    }
-    // Start polling
+    // Initial fetch is intentionally non-blocking so optional feeds cannot delay backend startup.
+    void this.fetchAndStoreGuarded();
     this.timer = setInterval(() => {
-      void this.fetchAndStore().catch((e) => {
-        this.lastError = String(e);
-      });
+      void this.fetchAndStoreGuarded();
     }, this.pollIntervalMs);
   }
 
@@ -68,16 +62,24 @@ export abstract class BaseFeed<T> implements DataFeed<T> {
   /** Subclasses implement the actual data fetching. */
   protected abstract fetch(): Promise<T | T[] | null>;
 
-  private async fetchAndStore(): Promise<void> {
-    const result = await this.fetch();
-    if (result === null) return;
-    if (Array.isArray(result)) {
-      for (const item of result) {
-        this.push(item);
+  private async fetchAndStoreGuarded(): Promise<void> {
+    if (this.inFlight) return;
+    this.inFlight = true;
+    try {
+      const result = await this.fetch();
+      if (result === null) return;
+      if (Array.isArray(result)) {
+        for (const item of result) {
+          this.push(item);
+        }
+      } else {
+        this.push(result);
       }
-    } else {
-      this.push(result);
+      this.lastError = null;
+    } catch (e) {
+      this.lastError = e instanceof Error ? e.message : String(e);
+    } finally {
+      this.inFlight = false;
     }
-    this.lastError = null;
   }
 }

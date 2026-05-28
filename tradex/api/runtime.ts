@@ -58,6 +58,7 @@ export class AppRuntime {
   readonly browserManager: BrowserManager;
   dataFeeds: DataFeedRegistry;
   pipelineOrchestrator: PipelineOrchestrator | null = null;
+  private activePipelineRun: Promise<PipelineRun> | null = null;
   readonly pipelineStore: PipelineStore;
   readonly evolutionStore: EvolutionStore;
   readonly recommendationTracker: RecommendationTracker;
@@ -159,6 +160,9 @@ export class AppRuntime {
     await this.jin10Service.stop();
     this.dataFeeds.stopAll();
     this.pipelineScheduler.stop();
+    if (this.activePipelineRun) {
+      await this.activePipelineRun.catch(() => undefined);
+    }
     this.config = config;
     this.instruments = await resolveInstruments(config.instruments);
     this.controller = new TickerController({ config, instruments: this.instruments });
@@ -284,10 +288,29 @@ export class AppRuntime {
   async runPipeline(instrumentKey: string, trigger: PipelineTrigger): Promise<PipelineRun> {
     if (!this.config.pipeline.enabled) throw new Error("pipeline disabled");
     if (!this.pipelineOrchestrator) throw new Error("pipeline not configured");
+    if (this.activePipelineRun || this.pipelineOrchestrator.isRunning) throw new Error("pipeline already running");
     if (!this.instruments.some((instrument) => instrument.key === instrumentKey)) {
       throw new Error(`unknown instrumentKey: ${instrumentKey}`);
     }
-    return this.pipelineOrchestrator.run(instrumentKey, trigger);
+    this.enforcePipelineBudget();
+    const runPromise = this.pipelineOrchestrator.run(instrumentKey, trigger);
+    this.activePipelineRun = runPromise;
+    try {
+      return await runPromise;
+    } finally {
+      if (this.activePipelineRun === runPromise) this.activePipelineRun = null;
+    }
+  }
+
+  private enforcePipelineBudget(): void {
+    const budget = this.config.pipeline.costBudgetDailyUsd;
+    if (budget <= 0) return;
+    const now = new Date();
+    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+    const spent = this.pipelineStore.sumCostSince(dayStart);
+    if (spent >= budget) {
+      throw new Error(`pipeline daily budget exceeded: spent $${spent.toFixed(4)} / $${budget.toFixed(2)}`);
+    }
   }
 
   /** Update Darwin weights using the configured recommendation threshold. */
@@ -523,21 +546,26 @@ export class AppRuntime {
     // Fear & Greed
     registry.register(new FearGreedFeed(feedCfg.fearGreedIntervalSeconds * 1000));
 
-    // Funding rate (for the primary futures symbols)
-    const futuresSymbols = config.instruments
-      .filter((i) => i.source === "bitget" && i.instType?.includes("FUTURES"))
-      .map((i) => i.symbol);
-    if (futuresSymbols.length > 0) {
+    // Funding rate / positioning for resolved Bitget futures symbols.
+    const bitgetTargets = this.instruments.flatMap((instrument) => {
+      if (instrument.source !== "bitget" || !("instType" in instrument) || !instrument.instType.includes("FUTURES")) return [];
+      return [{
+        instrumentKey: instrument.key,
+        symbol: instrument.symbol,
+        productType: instrument.instType,
+      }];
+    });
+    if (bitgetTargets.length > 0) {
       registry.register(new FundingHistoryFeed({
-        symbols: futuresSymbols,
+        targets: bitgetTargets,
         pollIntervalMs: feedCfg.fundingIntervalSeconds * 1000,
       }));
       registry.register(new LongShortRatioFeed({
-        symbols: futuresSymbols,
+        targets: bitgetTargets,
         pollIntervalMs: feedCfg.longShortIntervalSeconds * 1000,
       }));
       registry.register(new OIDeltaFeed({
-        symbols: futuresSymbols,
+        targets: bitgetTargets,
         pollIntervalMs: feedCfg.oiDeltaIntervalSeconds * 1000,
       }));
     }
