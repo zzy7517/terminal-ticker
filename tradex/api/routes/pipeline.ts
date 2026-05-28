@@ -54,7 +54,10 @@ export function pipelineRoutes(runtime: AppRuntime): Hono {
       const run = await runtime.runPipeline(instrumentKey, "manual");
       return c.json({ run });
     } catch (e) {
-      return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+      const message = e instanceof Error ? e.message : String(e);
+      if (message.includes("cooldown")) return c.json({ error: message }, 429);
+      if (message.includes("budget exceeded")) return c.json({ error: message }, 429);
+      return c.json({ error: message }, 500);
     }
   });
 

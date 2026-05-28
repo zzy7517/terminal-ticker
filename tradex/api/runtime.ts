@@ -39,6 +39,9 @@ import { RecommendationTracker } from "../evolution/recommendation_tracker.js";
 import { DarwinWeightUpdater } from "../evolution/darwin_weights.js";
 import type { Candle } from "../domain/price_action.js";
 
+const PIPELINE_LLM_TIMEOUT_MS = 90_000;
+const MANUAL_PIPELINE_COOLDOWN_MS = 30_000;
+
 export class AppRuntime {
   config: AppConfig;
   instruments: MarketInstrument[];
@@ -59,6 +62,7 @@ export class AppRuntime {
   dataFeeds: DataFeedRegistry;
   pipelineOrchestrator: PipelineOrchestrator | null = null;
   private activePipelineRun: Promise<PipelineRun> | null = null;
+  private lastManualPipelineTriggerAt = 0;
   readonly pipelineStore: PipelineStore;
   readonly evolutionStore: EvolutionStore;
   readonly recommendationTracker: RecommendationTracker;
@@ -288,6 +292,7 @@ export class AppRuntime {
   async runPipeline(instrumentKey: string, trigger: PipelineTrigger): Promise<PipelineRun> {
     if (!this.config.pipeline.enabled) throw new Error("pipeline disabled");
     if (!this.pipelineOrchestrator) throw new Error("pipeline not configured");
+    if (trigger === "manual") this.enforceManualPipelineCooldown();
     if (this.activePipelineRun || this.pipelineOrchestrator.isRunning) throw new Error("pipeline already running");
     if (!this.instruments.some((instrument) => instrument.key === instrumentKey)) {
       throw new Error(`unknown instrumentKey: ${instrumentKey}`);
@@ -300,6 +305,16 @@ export class AppRuntime {
     } finally {
       if (this.activePipelineRun === runPromise) this.activePipelineRun = null;
     }
+  }
+
+  private enforceManualPipelineCooldown(): void {
+    const now = Date.now();
+    const elapsed = now - this.lastManualPipelineTriggerAt;
+    if (elapsed < MANUAL_PIPELINE_COOLDOWN_MS) {
+      const retryAfterSeconds = Math.ceil((MANUAL_PIPELINE_COOLDOWN_MS - elapsed) / 1000);
+      throw new Error(`pipeline manual trigger cooldown active: retry after ${retryAfterSeconds}s`);
+    }
+    this.lastManualPipelineTriggerAt = now;
   }
 
   private enforcePipelineBudget(): void {
@@ -403,15 +418,25 @@ export class AppRuntime {
   private async callPipelineLLM(systemPrompt: string, userPrompt: string): Promise<{ content: string; tokensUsed: number }> {
     if (!this.config.agent.enabled) throw new Error("agent provider disabled");
     const provider = new AgentModelRegistry().createProvider(this.config.agent);
-    const response = await provider.chat({
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt, timestamp: Date.now() }],
-      onDelta: null,
-    });
-    return {
-      content: response.content,
-      tokensUsed: response.message.usage?.totalTokens ?? 0,
-    };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), PIPELINE_LLM_TIMEOUT_MS);
+    try {
+      const response = await provider.chat({
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt, timestamp: Date.now() }],
+        onDelta: null,
+        signal: controller.signal,
+      });
+      return {
+        content: response.content,
+        tokensUsed: response.message.usage?.totalTokens ?? 0,
+      };
+    } catch (e) {
+      if (controller.signal.aborted) throw new Error(`pipeline LLM call timed out after ${PIPELINE_LLM_TIMEOUT_MS}ms`);
+      throw e;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private getCurrentPrice(instrumentKey: string): number | null {

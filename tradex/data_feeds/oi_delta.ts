@@ -25,6 +25,15 @@ interface OIRecord {
   timestamp: number;
 }
 
+export function parseOpenInterest(raw: unknown): number | null {
+  const payload = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const data = payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
+    ? payload.data as Record<string, unknown>
+    : {};
+  const oi = Number(data.openInterest ?? (Array.isArray(data.openInterestList) ? (data.openInterestList[0] as Record<string, unknown> | undefined)?.size : undefined) ?? 0);
+  return Number.isFinite(oi) && oi > 0 ? oi : null;
+}
+
 export class OIDeltaFeed extends BaseFeed<OIDeltaData> {
   readonly name = "oi_delta";
   readonly pollIntervalMs: number;
@@ -58,11 +67,8 @@ export class OIDeltaFeed extends BaseFeed<OIDeltaData> {
         try {
           const res = await globalThis.fetch(url, { signal: controller.signal });
           if (!res.ok) continue;
-          const json = (await res.json()) as {
-            data?: { openInterest?: string; openInterestList?: Array<{ symbol?: string; size?: string }>; ts?: string };
-          };
-          const oi = Number(json.data?.openInterest ?? json.data?.openInterestList?.[0]?.size ?? 0);
-          if (!oi) continue;
+          const oi = parseOpenInterest(await res.json());
+          if (oi === null) continue;
 
           // Store sample
           const key = target.instrumentKey;

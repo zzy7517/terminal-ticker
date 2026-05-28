@@ -34,5 +34,6 @@ export interface LLMChatClient {
     system?: string;
     messages: AgentMessage[];
     onDelta?: StreamDeltaHandler | null;
+    signal?: AbortSignal;
   }): Promise<ChatResponse>;
 }

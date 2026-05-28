@@ -56,7 +56,7 @@ export class AgentModelRegistry {
     return {
       name: descriptor.provider,
       model: descriptor.id,
-      async chat({ system, messages, onDelta }): Promise<ChatResponse> {
+      async chat({ system, messages, onDelta, signal }): Promise<ChatResponse> {
         const context: AgentContext = {
           systemPrompt: system ?? "",
           messages: transformMessages(messages, descriptor),
@@ -64,6 +64,7 @@ export class AgentModelRegistry {
         };
         const stream = streamFn(descriptor, context, {
           apiKey,
+          signal,
         });
         // Forward text deltas to legacy onDelta callback while awaiting final result
         if (onDelta) {

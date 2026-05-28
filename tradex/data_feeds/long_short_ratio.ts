@@ -20,6 +20,27 @@ export interface LongShortFeedConfig {
   pollIntervalMs?: number;
 }
 
+export function parseLongShortRatioData(raw: unknown, target: LongShortFeedTarget): LongShortRatioData | null {
+  const payload = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const data = Array.isArray(payload.data) ? payload.data : [];
+  const latest = data[0];
+  if (!latest || typeof latest !== "object" || Array.isArray(latest)) return null;
+  const row = latest as Record<string, unknown>;
+  const ratioRaw = row.longShortRatio ?? row.longShortAccountRatio;
+  if (ratioRaw === null || ratioRaw === undefined || ratioRaw === "") return null;
+  const ratio = Number(ratioRaw);
+  if (!Number.isFinite(ratio)) return null;
+  const longPct = Number(row.longRate ?? row.longAccountRatio ?? 0) * 100;
+  const shortPct = Number(row.shortRate ?? row.shortAccountRatio ?? 0) * 100;
+  return {
+    instrumentKey: target.instrumentKey,
+    ratio,
+    longPct: Number.isFinite(longPct) ? longPct : 0,
+    shortPct: Number.isFinite(shortPct) ? shortPct : 0,
+    timestamp: row.ts ? new Date(Number(row.ts)).toISOString() : new Date().toISOString(),
+  };
+}
+
 export class LongShortRatioFeed extends BaseFeed<LongShortRatioData> {
   readonly name = "long_short_ratio";
   readonly pollIntervalMs: number;
@@ -49,27 +70,8 @@ export class LongShortRatioFeed extends BaseFeed<LongShortRatioData> {
         try {
           const res = await globalThis.fetch(url, { signal: controller.signal });
           if (!res.ok) continue;
-          const json = (await res.json()) as {
-            data?: Array<{
-              longShortRatio?: string;
-              longRate?: string;
-              shortRate?: string;
-              longShortAccountRatio?: string;
-              longAccountRatio?: string;
-              shortAccountRatio?: string;
-              ts?: string;
-            }>;
-          };
-          const latest = json.data?.[0];
-          const ratio = latest?.longShortRatio ?? latest?.longShortAccountRatio;
-          if (!ratio) continue;
-          results.push({
-            instrumentKey: target.instrumentKey,
-            ratio: Number(ratio),
-            longPct: Number(latest?.longRate ?? latest?.longAccountRatio ?? 0) * 100,
-            shortPct: Number(latest?.shortRate ?? latest?.shortAccountRatio ?? 0) * 100,
-            timestamp: latest?.ts ? new Date(Number(latest.ts)).toISOString() : new Date().toISOString(),
-          });
+          const parsed = parseLongShortRatioData(await res.json(), target);
+          if (parsed) results.push(parsed);
         } finally {
           clearTimeout(timeout);
         }

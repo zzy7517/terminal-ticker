@@ -20,6 +20,24 @@ export interface FundingFeedConfig {
   pollIntervalMs?: number;  // default 60s
 }
 
+export function parseFundingSnapshot(raw: unknown, target: FundingFeedTarget, timestamp = new Date().toISOString()): FundingSnapshot | null {
+  const payload = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const data = payload.data;
+  const d = Array.isArray(data) ? data[0] : data;
+  if (!d || typeof d !== "object" || Array.isArray(d)) return null;
+  const row = d as Record<string, unknown>;
+  const fundingRate = row.fundingRate;
+  if (fundingRate === null || fundingRate === undefined || fundingRate === "") return null;
+  const rate = Number(fundingRate);
+  if (!Number.isFinite(rate)) return null;
+  return {
+    instrumentKey: target.instrumentKey,
+    rate,
+    nextFundingTime: String(row.nextUpdate ?? row.nextFundingTime ?? ""),
+    timestamp,
+  };
+}
+
 export class FundingHistoryFeed extends BaseFeed<FundingSnapshot> {
   readonly name = "funding";
   readonly pollIntervalMs: number;
@@ -48,17 +66,8 @@ export class FundingHistoryFeed extends BaseFeed<FundingSnapshot> {
         try {
           const res = await globalThis.fetch(url, { signal: controller.signal });
           if (!res.ok) continue;
-          const json = (await res.json()) as {
-            data?: Array<{ symbol?: string; fundingRate?: string; nextUpdate?: string; nextFundingTime?: string }> | { symbol?: string; fundingRate?: string; nextUpdate?: string; nextFundingTime?: string };
-          };
-          const d = Array.isArray(json.data) ? json.data[0] : json.data;
-          if (!d?.fundingRate) continue;
-          results.push({
-            instrumentKey: target.instrumentKey,
-            rate: Number(d.fundingRate),
-            nextFundingTime: d.nextUpdate ?? d.nextFundingTime ?? "",
-            timestamp: new Date().toISOString(),
-          });
+          const parsed = parseFundingSnapshot(await res.json(), target);
+          if (parsed) results.push(parsed);
         } finally {
           clearTimeout(timeout);
         }
