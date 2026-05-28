@@ -2,6 +2,7 @@
  * RegimeHUD — always-visible regime status indicator bar.
  */
 
+import { useMarketStore } from "../../stores/marketStore";
 import { usePipelineStore } from "../../stores/pipelineStore";
 import "./PipelinePanels.css";
 
@@ -28,9 +29,14 @@ const TREND_ARROWS: Record<string, string> = {
 export function RegimeHUD() {
   const regime = usePipelineStore((s) => s.regime);
   const feeds = usePipelineStore((s) => s.feeds);
+  const pipelineEnabled = useMarketStore((s) => s.state?.config.pipeline.enabled ?? false);
+
+  if (!pipelineEnabled) {
+    return <div className="pipeline-hud pipeline-hud--empty">Pipeline: disabled</div>;
+  }
 
   if (!regime) {
-    return <div className="pipeline-hud pipeline-hud--empty">Pipeline: No regime data</div>;
+    return <div className="pipeline-hud pipeline-hud--empty">Pipeline: enabled, waiting for first run</div>;
   }
 
   const { market, volatility, trend, indicators } = regime;

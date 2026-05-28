@@ -101,6 +101,7 @@ export function PipelineDashboard() {
   const recentRuns = usePipelineStore((s) => s.recentRuns);
   const lastRunId = usePipelineStore((s) => s.lastRunId);
   const marketState = useMarketStore((s) => s.state);
+  const pipelineEnabled = useMarketStore((s) => s.state?.config.pipeline.enabled ?? false);
   const selectedKey = useUiStore((s) => s.selectedKey);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -137,6 +138,10 @@ export function PipelineDashboard() {
     : marketState?.instruments.find((instrument) => instrument.analysable)?.key;
 
   const handleTrigger = async () => {
+    if (!pipelineEnabled) {
+      setError("Pipeline is disabled in watchlist.toml");
+      return;
+    }
     if (!triggerInstrumentKey || triggering) return;
     setTriggering(true);
     setError(null);
@@ -163,7 +168,7 @@ export function PipelineDashboard() {
         <span className="pipeline-panel-title">Pipeline Runs</span>
         <div className="pipeline-panel-actions">
           {triggerInstrumentKey && <span className="pipeline-trigger-target">{triggerInstrumentKey}</span>}
-          <button type="button" onClick={handleTrigger} className="pipeline-panel-action" disabled={!triggerInstrumentKey || triggering}>
+          <button type="button" onClick={handleTrigger} className="pipeline-panel-action" disabled={!pipelineEnabled || !triggerInstrumentKey || triggering}>
             {triggering ? "Running…" : "Trigger ▶"}
           </button>
         </div>
@@ -176,7 +181,9 @@ export function PipelineDashboard() {
           <RunCard key={run.id} run={run} onClick={() => setSelectedId(run.id === selectedId ? null : run.id)} />
         ))}
         {!loading && recentRuns.length === 0 && (
-          <div className="pipeline-empty">No pipeline runs yet. Trigger one or wait for cron.</div>
+          <div className="pipeline-empty">
+            {pipelineEnabled ? "No pipeline runs yet. Trigger one or wait for cron." : "Pipeline is disabled. Enable [pipeline] in watchlist.toml to run analysis."}
+          </div>
         )}
       </div>
 
