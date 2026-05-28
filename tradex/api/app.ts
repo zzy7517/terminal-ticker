@@ -10,6 +10,9 @@ import { cronRoutes } from "./routes/cron.js";
 import { mcpRoutes } from "./routes/mcp.js";
 import { jin10Routes } from "./routes/jin10.js";
 import { browserRoutes } from "./routes/browser.js";
+import { pipelineRoutes } from "./routes/pipeline.js";
+import { evolutionRoutes } from "./routes/evolution.js";
+import { feedsRoutes } from "./routes/feeds.js";
 
 export interface CreateAppOptions {
   runtime: AppRuntime;
@@ -29,6 +32,9 @@ export function createApp(options: CreateAppOptions): Hono {
   app.route("", mcpRoutes(runtime));
   app.route("", jin10Routes(runtime));
   app.route("", browserRoutes(runtime));
+  app.route("", pipelineRoutes(runtime));
+  app.route("", evolutionRoutes(runtime));
+  app.route("", feedsRoutes(runtime));
 
   return app;
 }

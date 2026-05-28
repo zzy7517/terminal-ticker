@@ -467,6 +467,29 @@ export interface Jin10ConfigPayload {
   quotesCodes: string[];
 }
 
+export interface PipelineConfigPayload {
+  enabled: boolean;
+  cronExpression: string;
+  instruments: string[];
+  autoExecute: boolean;
+  costBudgetDailyUsd: number;
+}
+
+export interface EvolutionConfigPayload {
+  enabled: boolean;
+  weightUpdateCron: string;
+  returnTrackingCron: string;
+  minRecommendationsForEval: number;
+}
+
+export interface DataFeedsConfigPayload {
+  enabled: boolean;
+  fearGreedIntervalSeconds: number;
+  fundingIntervalSeconds: number;
+  longShortIntervalSeconds: number;
+  oiDeltaIntervalSeconds: number;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface MarketState {
@@ -507,6 +530,9 @@ export interface MarketState {
       configPath: string | null;
     };
     jin10: Jin10ConfigPayload;
+    pipeline: PipelineConfigPayload;
+    evolution: EvolutionConfigPayload;
+    dataFeeds: DataFeedsConfigPayload;
     sourcePath: string | null;
   };
   instruments: Instrument[];
@@ -519,6 +545,10 @@ export interface MarketState {
   recentNews: NewsItem[];
   newsStatus: NewsStatus;
   jin10: Jin10StatePayload | null;
+  regime?: RegimeSignal | null;
+  feeds?: FeedsSnapshot;
+  darwinWeights?: DarwinWeightEntry[];
+  lastPipelineRun?: LastPipelineRunSummary | null;
 }
 
 export type TradeDirection = 'long' | 'short';
@@ -648,7 +678,6 @@ export interface CronJobStatus {
   useMainPrompt: boolean;
   model: string | null;
   userMessage: string;
-  useMainPrompt?: boolean;
   maxIterations: number | null;
   maxCandles: number | null;
   tradingEnabled: boolean;
@@ -689,7 +718,6 @@ export interface CronJobCreate {
   model?: string | null;
   symbols?: string[];
   enabled?: boolean;
-  useMainPrompt?: boolean;
   maxIterations?: number | null;
   maxCandles?: number | null;
   tradingEnabled?: boolean;
@@ -706,7 +734,6 @@ export interface CronJobUpdate {
   model?: string | null;
   symbols?: string[];
   enabled?: boolean;
-  useMainPrompt?: boolean;
   maxIterations?: number | null;
   maxCandles?: number | null;
   tradingEnabled?: boolean;
@@ -835,4 +862,112 @@ export interface McpServerEntry {
   url?: string;
   headers?: Record<string, string>;
   idleTimeout?: number;
+}
+
+
+// ============================================================================
+// Pipeline & Evolution types
+// ============================================================================
+
+export type MarketRegime = "RISK_ON" | "RISK_OFF" | "NEUTRAL";
+export type VolatilityRegime = "LOW" | "MEDIUM" | "HIGH" | "EXTREME";
+export type TrendRegime = "STRONG_UP" | "UP" | "RANGE" | "DOWN" | "STRONG_DOWN";
+
+export interface RegimeIndicators {
+  vix: number | null;
+  adx: number | null;
+  fearGreed: number | null;
+  fundingRate: number | null;
+  longShortRatio: number | null;
+  oiDelta1h: number | null;
+  dxy: number | null;
+}
+
+export interface RegimeSignal {
+  market: MarketRegime;
+  volatility: VolatilityRegime;
+  trend: TrendRegime;
+  indicators: RegimeIndicators;
+  detectedAt: string;
+}
+
+export type SignalDirection = "LONG" | "SHORT" | "NEUTRAL";
+
+export interface ModuleOutputSummary {
+  moduleId: string;
+  signal: SignalDirection;
+  conviction: number;
+  entry: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  keyLevels: {
+    support: number[];
+    resistance: number[];
+  };
+  reasoning: string;
+}
+
+export interface ModuleRunResultSummary {
+  moduleId: string;
+  darwinWeight: number;
+  output: ModuleOutputSummary;
+  tokensUsed: number;
+  durationMs: number;
+  error: string | null;
+}
+
+export interface TradeDecisionSummary {
+  action: string;
+  instrumentKey: string;
+  entry: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  confidence: number;
+  modulesAgreeing: number;
+  modulesTotal: number;
+  survivedCRO: boolean;
+  croObjections: string[];
+  reflexivityFlags: string[];
+  reasoning: string;
+}
+
+export interface PipelineRunSummary {
+  id: string;
+  triggeredBy: string;
+  instrumentKey: string;
+  regime: RegimeSignal;
+  startedAt: string;
+  completedAt: string | null;
+  status: string;
+  moduleResults: ModuleRunResultSummary[];
+  decision: TradeDecisionSummary | null;
+  totalTokens: number;
+  totalCostUsd?: number;
+  durationMs: number;
+}
+
+export interface LastPipelineRunSummary {
+  id: string;
+  status: string;
+  decision: string;
+  modulesAgreeing: number;
+  durationMs: number;
+  completedAt: string | null;
+}
+
+export interface FeedsSnapshot {
+  fear_greed?: { value: number; classification: string; timestamp: string } | null;
+  funding?: { instrumentKey: string; rate: number; nextFundingTime?: string; timestamp: string } | null;
+  long_short_ratio?: { instrumentKey: string; ratio: number; longPct: number; shortPct: number; timestamp?: string } | null;
+  oi_delta?: { instrumentKey: string; oi: number; delta1h: number; delta4h?: number; delta24h?: number; timestamp: string } | null;
+  dxy?: { value: number; eurusd: number; timestamp: string } | null;
+  [name: string]: unknown;
+}
+
+export interface DarwinWeightEntry {
+  moduleId: string;
+  weight: number;
+  sharpe30d: number | null;
+  hitRate30d: number | null;
+  updatedAt: string;
 }

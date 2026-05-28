@@ -143,6 +143,9 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       quotesEnabled: config.jin10.quotesEnabled,
       quotesCodes: config.jin10.quotesCodes,
     },
+    pipeline: config.pipeline,
+    evolution: config.evolution,
+    dataFeeds: config.dataFeeds,
     sourcePath: config.sourcePath,
   };
 }

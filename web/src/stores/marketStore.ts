@@ -7,6 +7,7 @@ import {
   fetchState,
 } from '../api';
 import { orderedGroups } from '../utils';
+import { usePipelineStore } from './pipelineStore';
 
 const SOCKET_RECONNECT_DELAY_MS = 1500;
 const SOCKET_TEARDOWN_GRACE_MS = 250;
@@ -57,12 +58,17 @@ export const useMarketStore = create<MarketStoreState>((set, get) => {
     }, SOCKET_RECONNECT_DELAY_MS);
   };
 
+  const applyState = (state: MarketState) => {
+    set({ state });
+    usePipelineStore.getState().updateFromSnapshot(state as unknown as Record<string, unknown>);
+  };
+
   const openSocket = () => {
     if (!initialized || activeSubscribers === 0) return;
     const generation = ++socketGeneration;
     set({ socketStatus: 'connecting' });
     socket = connectStateSocket(
-      (state) => set({ state }),
+      (state) => applyState(state),
       (status) => {
         if (generation !== socketGeneration) return;
         set({ socketStatus: status });
@@ -76,7 +82,7 @@ export const useMarketStore = create<MarketStoreState>((set, get) => {
   const start = () => {
     if (initialized) return;
     initialized = true;
-    fetchState().then((state) => set({ state })).catch(() => set({ socketStatus: 'error' }));
+    fetchState().then((state) => applyState(state)).catch(() => set({ socketStatus: 'error' }));
     set({ catalogStatus: 'loading' });
     fetchInstrumentCatalog()
       .then((payload) => get().setInstrumentCatalog(payload))
@@ -101,7 +107,7 @@ export const useMarketStore = create<MarketStoreState>((set, get) => {
     catalogStatus: 'idle',
     socketStatus: 'connecting',
 
-    setState: (state) => set({ state }),
+    setState: (state) => applyState(state),
     setInstrumentCatalog: (payload) => set({
       instrumentCatalog: payload.items,
       catalogLoadedAt: payload.loadedAt,
