@@ -7,6 +7,7 @@ import { usePipelineStore } from "../../stores/pipelineStore";
 import { useMarketStore } from "../../stores/marketStore";
 import { useUiStore } from "../../stores/uiStore";
 import type { PipelineRunSummary } from "../../types";
+import "./PipelinePanels.css";
 
 const ACTION_ICONS: Record<string, string> = {
   OPEN_LONG: "✅ LONG",
@@ -16,18 +17,18 @@ const ACTION_ICONS: Record<string, string> = {
   PASS: "⏸ PASS",
 };
 
-const SIGNAL_COLORS: Record<string, string> = {
-  LONG: "text-green-400",
-  SHORT: "text-red-400",
-  NEUTRAL: "text-zinc-500",
+const SIGNAL_CLASSES: Record<string, string> = {
+  LONG: "pipeline-signal--long",
+  SHORT: "pipeline-signal--short",
+  NEUTRAL: "pipeline-signal--neutral",
 };
 
 function ConvictionBar({ value, signal }: { value: number; signal: string }) {
-  const color = signal === "LONG" ? "bg-green-500" : signal === "SHORT" ? "bg-red-500" : "bg-zinc-600";
+  const tone = signal === "LONG" ? "long" : signal === "SHORT" ? "short" : "neutral";
   return (
-    <div className="w-20 h-2 bg-zinc-800 rounded overflow-hidden">
-      <div className={`h-full ${color} rounded`} style={{ width: `${value}%` }} />
-    </div>
+    <span className="pipeline-meter" aria-label={`conviction ${value}%`}>
+      <span className={`pipeline-meter-fill pipeline-meter-fill--${tone}`} style={{ width: `${value}%` }} />
+    </span>
   );
 }
 
@@ -38,66 +39,58 @@ function RunCard({ run, onClick }: { run: PipelineRunSummary; onClick: () => voi
   const duration = (run.durationMs / 1000).toFixed(1);
 
   return (
-    <div
-      className="flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-800/50 cursor-pointer rounded text-xs"
-      onClick={onClick}
-    >
-      <span className="text-zinc-500 w-12">{time}</span>
-      <span className="text-zinc-400 w-10">{run.instrumentKey.split(":").pop()}</span>
-      <span className="text-zinc-600 w-10">{run.triggeredBy}</span>
-      <span className="flex-1 font-medium">{label}</span>
+    <button className="pipeline-row" type="button" onClick={onClick}>
+      <span className="pipeline-row-cell-time">{time}</span>
+      <span className="pipeline-row-cell-symbol">{run.instrumentKey.split(":").pop()}</span>
+      <span className="pipeline-row-cell-trigger">{run.triggeredBy}</span>
+      <span className="pipeline-row-cell-action">{label}</span>
       {run.decision && (
-        <span className="text-zinc-500">{run.decision.modulesAgreeing}/{run.decision.modulesTotal}</span>
+        <span className="pipeline-row-cell-count">{run.decision.modulesAgreeing}/{run.decision.modulesTotal}</span>
       )}
-      <span className="text-zinc-600">{duration}s</span>
-    </div>
+      <span className="pipeline-row-cell-duration">{duration}s</span>
+    </button>
   );
 }
 
 function RunDetail({ run }: { run: PipelineRunSummary }) {
   return (
-    <div className="px-3 py-2 border border-zinc-800 rounded bg-zinc-900/50 text-xs space-y-2">
-      {/* Regime */}
-      <div className="text-zinc-500">
+    <div className="pipeline-detail">
+      <div className="pipeline-muted">
         L1 Regime: {run.regime.market} │ Vol:{run.regime.volatility} │ {run.regime.trend}
       </div>
 
-      {/* Modules */}
-      <div className="space-y-1">
-        <div className="text-zinc-500 font-medium">L2 Modules:</div>
+      <div className="pipeline-module-list">
+        <div className="pipeline-muted pipeline-strong">L2 Modules</div>
         {run.moduleResults.map((m) => {
           const signal = m.output.signal;
           return (
-            <div key={m.moduleId} className="flex items-center gap-2">
-              <span className="w-28 text-zinc-400">{m.moduleId}</span>
-              <span className={`w-14 ${SIGNAL_COLORS[signal]}`}>
+            <div key={m.moduleId} className="pipeline-module-row">
+              <span className="pipeline-module-name">{m.moduleId}</span>
+              <span className={`pipeline-module-signal ${SIGNAL_CLASSES[signal]}`}>
                 {signal === "LONG" ? "▶" : signal === "SHORT" ? "◀" : "•"} {signal}
               </span>
               <ConvictionBar value={m.output.conviction} signal={signal} />
-              <span className="text-zinc-600">{m.output.conviction}%</span>
-              <span className="text-zinc-700">w={m.darwinWeight.toFixed(1)}</span>
+              <span className="pipeline-module-conviction">{m.output.conviction}%</span>
+              <span className="pipeline-module-weight">w={m.darwinWeight.toFixed(1)}</span>
             </div>
           );
         })}
       </div>
 
-      {/* Decision */}
       {run.decision && (
-        <div className="border-t border-zinc-800 pt-2 space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="font-medium">{run.decision.action}</span>
+        <div className="pipeline-decision">
+          <div className="pipeline-decision-head">
+            <span className="pipeline-strong">{run.decision.action}</span>
             {run.decision.survivedCRO ? (
-              <span className="text-green-500">CRO ✓</span>
+              <span className="pipeline-status--ok">CRO ✓</span>
             ) : (
-              <span className="text-red-400">CRO ✗</span>
+              <span className="pipeline-status--bad">CRO ✗</span>
             )}
           </div>
           {run.decision.croObjections.length > 0 && (
-            <div className="text-yellow-500/80">
-              ⚠️ {run.decision.croObjections[0]}
-            </div>
+            <div className="pipeline-warning">⚠ {run.decision.croObjections[0]}</div>
           )}
-          <div className="text-zinc-500">{run.decision.reasoning}</div>
+          <div className="pipeline-muted">{run.decision.reasoning}</div>
         </div>
       )}
     </div>
@@ -111,7 +104,6 @@ export function PipelineDashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Fetch runs on mount
   useEffect(() => {
     setLoading(true);
     fetch("/api/pipeline/runs?limit=20")
@@ -136,7 +128,6 @@ export function PipelineDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instrumentKey }),
       });
-      // Refresh after a delay
       setTimeout(() => {
         fetch("/api/pipeline/runs?limit=20")
           .then((r) => r.json())
@@ -146,34 +137,26 @@ export function PipelineDashboard() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
-        <span className="text-sm font-medium text-zinc-300">Pipeline Runs</span>
-        <button
-          onClick={handleTrigger}
-          className="text-xs px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
-        >
+    <div className="pipeline-panel">
+      <div className="pipeline-panel-header">
+        <span className="pipeline-panel-title">Pipeline Runs</span>
+        <button type="button" onClick={handleTrigger} className="pipeline-panel-action">
           Trigger ▶
         </button>
       </div>
 
-      {/* Run list */}
-      <div className="flex-1 overflow-y-auto">
-        {loading && <div className="text-xs text-zinc-500 px-3 py-2">Loading...</div>}
+      <div className="pipeline-list">
+        {loading && <div className="pipeline-loading">Loading...</div>}
         {recentRuns.map((run) => (
           <RunCard key={run.id} run={run} onClick={() => setSelectedId(run.id === selectedId ? null : run.id)} />
         ))}
         {!loading && recentRuns.length === 0 && (
-          <div className="text-xs text-zinc-600 px-3 py-4 text-center">
-            No pipeline runs yet. Trigger one or wait for cron.
-          </div>
+          <div className="pipeline-empty">No pipeline runs yet. Trigger one or wait for cron.</div>
         )}
       </div>
 
-      {/* Detail panel */}
       {selectedRun && (
-        <div className="border-t border-zinc-800 p-2 max-h-64 overflow-y-auto">
+        <div className="pipeline-detail-wrap">
           <RunDetail run={selectedRun} />
         </div>
       )}

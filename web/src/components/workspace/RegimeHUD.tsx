@@ -3,11 +3,12 @@
  */
 
 import { usePipelineStore } from "../../stores/pipelineStore";
+import "./PipelinePanels.css";
 
-const MARKET_COLORS: Record<string, string> = {
-  RISK_ON: "text-green-400",
-  RISK_OFF: "text-red-400",
-  NEUTRAL: "text-yellow-400",
+const MARKET_CLASSES: Record<string, string> = {
+  RISK_ON: "pipeline-chip--risk-on",
+  RISK_OFF: "pipeline-chip--risk-off",
+  NEUTRAL: "pipeline-chip--neutral",
 };
 
 const MARKET_ICONS: Record<string, string> = {
@@ -29,11 +30,7 @@ export function RegimeHUD() {
   const feeds = usePipelineStore((s) => s.feeds);
 
   if (!regime) {
-    return (
-      <div className="px-3 py-1 text-xs text-zinc-500 border-b border-zinc-800">
-        Pipeline: No regime data
-      </div>
-    );
+    return <div className="pipeline-hud pipeline-hud--empty">Pipeline: No regime data</div>;
   }
 
   const { market, volatility, trend, indicators } = regime;
@@ -42,51 +39,41 @@ export function RegimeHUD() {
   const ls = feeds.long_short_ratio;
 
   return (
-    <div className="px-3 py-1.5 text-xs border-b border-zinc-800 flex items-center gap-3 flex-wrap bg-zinc-900/50">
-      {/* Market regime */}
-      <span className={`font-medium ${MARKET_COLORS[market] ?? "text-zinc-400"}`}>
+    <div className="pipeline-hud">
+      <span className={`pipeline-chip ${MARKET_CLASSES[market] ?? "pipeline-chip--primary"}`}>
         {MARKET_ICONS[market]} {market.replace("_", " ")}
       </span>
 
-      {/* Volatility */}
-      <span className={volatility === "EXTREME" ? "text-red-400 animate-pulse" : "text-zinc-400"}>
+      <span className={`pipeline-chip ${volatility === "EXTREME" ? "pipeline-chip--down pipeline-chip--pulse" : ""}`}>
         Vol: {volatility}
       </span>
 
-      {/* Trend */}
-      <span className="text-zinc-400">
+      <span className="pipeline-chip">
         Trend: {TREND_ARROWS[trend] ?? "?"}{trend}
       </span>
 
-      {/* Key indicators */}
       {indicators.vix !== null && (
-        <span className={indicators.vix > 30 ? "text-red-400" : "text-zinc-500"}>
+        <span className={`pipeline-chip ${indicators.vix > 30 ? "pipeline-chip--down" : ""}`}>
           VIX: {indicators.vix.toFixed(1)}
         </span>
       )}
 
       {fg && (
-        <span className={fg.value < 25 ? "text-red-400" : fg.value > 75 ? "text-green-400" : "text-zinc-500"}>
+        <span className={`pipeline-chip ${fg.value < 25 ? "pipeline-chip--down" : fg.value > 75 ? "pipeline-chip--up" : ""}`}>
           FG: {fg.value}
         </span>
       )}
 
       {funding && (
-        <span className={Math.abs(funding.rate) > 0.0005 ? "text-yellow-400" : "text-zinc-500"}>
+        <span className={`pipeline-chip ${Math.abs(funding.rate) > 0.0005 ? "pipeline-chip--warn" : ""}`}>
           FR: {(funding.rate * 100).toFixed(3)}%
         </span>
       )}
 
-      {ls && (
-        <span className="text-zinc-500">
-          LS: {ls.ratio.toFixed(2)}
-        </span>
-      )}
+      {ls && <span className="pipeline-chip">LS: {ls.ratio.toFixed(2)}</span>}
 
       {indicators.dxy !== null && (
-        <span className="text-zinc-500">
-          DXY: {indicators.dxy.toFixed(1)}
-        </span>
+        <span className="pipeline-chip">DXY: {indicators.dxy.toFixed(1)}</span>
       )}
     </div>
   );
