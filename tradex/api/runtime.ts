@@ -21,6 +21,15 @@ import { AgentModelRegistry } from "../agent/model_registry.js";
 import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 import { Jin10Service } from "../jin10/index.js";
 import { BrowserManager } from "../browser/index.js";
+import { DataFeedRegistry } from "../data_feeds/registry.js";
+import { FearGreedFeed } from "../data_feeds/fear_greed.js";
+import { FundingHistoryFeed } from "../data_feeds/funding_history.js";
+import { LongShortRatioFeed } from "../data_feeds/long_short_ratio.js";
+import { OIDeltaFeed } from "../data_feeds/oi_delta.js";
+import { DXYFeed } from "../data_feeds/dxy.js";
+import { PipelineStore } from "../pipeline/store.js";
+import { EvolutionStore } from "../evolution/store.js";
+import type { PipelineOrchestrator } from "../pipeline/orchestrator.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -39,6 +48,10 @@ export class AppRuntime {
   readonly mcpManager: McpClientManager | null;
   jin10Service: Jin10Service;
   readonly browserManager: BrowserManager;
+  readonly dataFeeds: DataFeedRegistry;
+  pipelineOrchestrator: PipelineOrchestrator | null = null;
+  readonly pipelineStore: PipelineStore;
+  readonly evolutionStore: EvolutionStore;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
   readonly activeAgents = new Map<string, Agent>();
@@ -100,6 +113,13 @@ export class AppRuntime {
 
     // Wire browser automation manager
     this.browserManager = new BrowserManager(config.browser);
+
+    // Wire data feeds
+    this.dataFeeds = this._buildDataFeeds(config);
+
+    // Wire pipeline + evolution stores
+    this.pipelineStore = new PipelineStore();
+    this.evolutionStore = new EvolutionStore();
 
     // Wire trade closure → memory pipeline enqueue
     this.tradeStore.onTradeClosed((tradeId) => this.enqueueTradeForMemory(tradeId));
@@ -165,6 +185,9 @@ export class AppRuntime {
     this.mcpManager?.start();
     await this.jin10Service.start();
     this.memoryPipeline?.kickoffStartup();
+    if (this.config.dataFeeds.enabled) {
+      await this.dataFeeds.startAll();
+    }
   }
 
   // Gracefully stops all background tasks; called on process shutdown or before reload.
@@ -176,6 +199,7 @@ export class AppRuntime {
     await this.cronScheduler.stop();
     await this.mcpManager?.shutdown();
     await this.memoryPipeline?.shutdown();
+    this.dataFeeds.stopAll();
   }
 
   // Drains pending controller events, fetches live exchange positions/orders,
@@ -184,7 +208,7 @@ export class AppRuntime {
   async state(): Promise<Record<string, unknown>> {
     this.controller.drainEvents();
     const [positions, orders] = await Promise.all([this.exchangeRouter.getAllPositions(), this.exchangeRouter.getAllOrders()]);
-    return serializeState({
+    const result = serializeState({
       config: this.config,
       instruments: this.instruments,
       quotes: this.controller.quotes,
@@ -205,6 +229,24 @@ export class AppRuntime {
         quotes: this.jin10Service.getQuotes(),
       },
     });
+
+    // Inject pipeline/feeds/evolution data for frontend consumption
+    const state = result as Record<string, unknown>;
+    state.regime = this.pipelineOrchestrator?.currentRegime ?? null;
+    state.feeds = this.dataFeeds.snapshot();
+    state.darwinWeights = this.evolutionStore.getDarwinWeights();
+    if (this.pipelineOrchestrator?.lastRun) {
+      const lr = this.pipelineOrchestrator.lastRun;
+      state.lastPipelineRun = {
+        id: lr.id,
+        status: lr.status,
+        decision: lr.decision?.action ?? "PASS",
+        modulesAgreeing: lr.decision?.modulesAgreeing ?? 0,
+        durationMs: lr.durationMs,
+        completedAt: lr.completedAt,
+      };
+    }
+    return state;
   }
 
   // Enqueue a closed trade into the memory pipeline for automatic extraction.
@@ -254,5 +296,45 @@ export class AppRuntime {
         ? MemoryRuntimePolicy.normal()
         : MemoryRuntimePolicy.disabled(),
     });
+  }
+
+  // Builds the DataFeedRegistry with configured feeds.
+  private _buildDataFeeds(config: AppConfig): DataFeedRegistry {
+    const registry = new DataFeedRegistry();
+    const feedCfg = config.dataFeeds;
+
+    // Fear & Greed
+    registry.register(new FearGreedFeed(feedCfg.fearGreedIntervalSeconds * 1000));
+
+    // Funding rate (for the primary futures symbols)
+    const futuresSymbols = config.instruments
+      .filter((i) => i.source === "bitget" && i.instType?.includes("FUTURES"))
+      .map((i) => i.symbol);
+    if (futuresSymbols.length > 0) {
+      registry.register(new FundingHistoryFeed({
+        symbols: futuresSymbols,
+        pollIntervalMs: feedCfg.fundingIntervalSeconds * 1000,
+      }));
+      registry.register(new LongShortRatioFeed({
+        symbols: futuresSymbols,
+        pollIntervalMs: feedCfg.longShortIntervalSeconds * 1000,
+      }));
+      registry.register(new OIDeltaFeed({
+        symbols: futuresSymbols,
+        pollIntervalMs: feedCfg.oiDeltaIntervalSeconds * 1000,
+      }));
+    }
+
+    // DXY (derived from Jin10 EURUSD quote)
+    registry.register(new DXYFeed({
+      getEURUSD: () => {
+        const quotes = this.jin10Service.getQuotes();
+        const eurusd = quotes.find((q) => q.code === "EURUSD");
+        return eurusd?.close ?? null;
+      },
+      pollIntervalMs: 30_000,
+    }));
+
+    return registry;
   }
 }

@@ -836,3 +836,76 @@ export interface McpServerEntry {
   headers?: Record<string, string>;
   idleTimeout?: number;
 }
+
+
+// ============================================================================
+// Pipeline & Evolution types
+// ============================================================================
+
+export type MarketRegime = "RISK_ON" | "RISK_OFF" | "NEUTRAL";
+export type VolatilityRegime = "LOW" | "MEDIUM" | "HIGH" | "EXTREME";
+export type TrendRegime = "STRONG_UP" | "UP" | "RANGE" | "DOWN" | "STRONG_DOWN";
+
+export interface RegimeIndicators {
+  vix: number | null;
+  adx: number | null;
+  fearGreed: number | null;
+  fundingRate: number | null;
+  longShortRatio: number | null;
+  oiDelta1h: number | null;
+  dxy: number | null;
+}
+
+export interface RegimeSignal {
+  market: MarketRegime;
+  volatility: VolatilityRegime;
+  trend: TrendRegime;
+  indicators: RegimeIndicators;
+  detectedAt: string;
+}
+
+export interface ModuleRunResultSummary {
+  moduleId: string;
+  darwinWeight: number;
+  signal: "LONG" | "SHORT" | "NEUTRAL";
+  conviction: number;
+  reasoning: string;
+  error: string | null;
+}
+
+export interface TradeDecisionSummary {
+  action: string;
+  instrumentKey: string;
+  entry: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  confidence: number;
+  modulesAgreeing: number;
+  modulesTotal: number;
+  survivedCRO: boolean;
+  croObjections: string[];
+  reflexivityFlags: string[];
+  reasoning: string;
+}
+
+export interface PipelineRunSummary {
+  id: string;
+  triggeredBy: string;
+  instrumentKey: string;
+  regime: RegimeSignal;
+  startedAt: string;
+  completedAt: string | null;
+  status: string;
+  moduleResults: ModuleRunResultSummary[];
+  decision: TradeDecisionSummary | null;
+  totalTokens: number;
+  durationMs: number;
+}
+
+export interface DarwinWeightEntry {
+  moduleId: string;
+  weight: number;
+  sharpe30d: number | null;
+  hitRate30d: number | null;
+  updatedAt: string;
+}

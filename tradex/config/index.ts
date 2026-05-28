@@ -210,6 +210,29 @@ export interface BrowserConfig {
   timeoutMs: number;
 }
 
+export interface PipelineConfig {
+  enabled: boolean;
+  cronExpression: string;
+  instruments: string[];        // instrument keys to run pipeline on
+  autoExecute: boolean;         // whether to auto-execute trades
+  costBudgetDailyUsd: number;
+}
+
+export interface EvolutionConfig {
+  enabled: boolean;
+  weightUpdateCron: string;
+  returnTrackingCron: string;
+  minRecommendationsForEval: number;
+}
+
+export interface DataFeedsConfig {
+  enabled: boolean;
+  fearGreedIntervalSeconds: number;
+  fundingIntervalSeconds: number;
+  longShortIntervalSeconds: number;
+  oiDeltaIntervalSeconds: number;
+}
+
 export interface AppConfig {
   instruments: InstrumentConfig[];
   display: DisplayConfig;
@@ -224,7 +247,9 @@ export interface AppConfig {
   mcp: McpAppConfig;
   jin10: Jin10Config;
   browser: BrowserConfig;
-
+  pipeline: PipelineConfig;
+  evolution: EvolutionConfig;
+  dataFeeds: DataFeedsConfig;
 }
 
 export function expandUserPath(inputPath: string): string {
@@ -710,6 +735,38 @@ export function parseBrowserConfig(rawBrowserValue: unknown): BrowserConfig {
   };
 }
 
+export function parsePipelineConfig(rawValue: unknown): PipelineConfig {
+  const raw = asRecord(rawValue, "pipeline");
+  return {
+    enabled: normalizeBool(raw.enabled, "pipeline.enabled", false),
+    cronExpression: typeof raw.cron === "string" ? raw.cron : "*/15 * * * *",
+    instruments: Array.isArray(raw.instruments) ? raw.instruments.map(String) : [],
+    autoExecute: normalizeBool(raw.auto_execute, "pipeline.auto_execute", false),
+    costBudgetDailyUsd: coerceFloat(raw.cost_budget_daily_usd, "pipeline.cost_budget_daily_usd", 5.0),
+  };
+}
+
+export function parseEvolutionConfig(rawValue: unknown): EvolutionConfig {
+  const raw = asRecord(rawValue, "evolution");
+  return {
+    enabled: normalizeBool(raw.enabled, "evolution.enabled", false),
+    weightUpdateCron: typeof raw.weight_update_cron === "string" ? raw.weight_update_cron : "0 0 * * *",
+    returnTrackingCron: typeof raw.return_tracking_cron === "string" ? raw.return_tracking_cron : "0 */4 * * *",
+    minRecommendationsForEval: coerceInt(raw.min_recommendations_for_eval, "evolution.min_recommendations_for_eval", 20),
+  };
+}
+
+export function parseDataFeedsConfig(rawValue: unknown): DataFeedsConfig {
+  const raw = asRecord(rawValue, "data_feeds");
+  return {
+    enabled: normalizeBool(raw.enabled, "data_feeds.enabled", false),
+    fearGreedIntervalSeconds: coerceInt(raw.fear_greed_interval_seconds, "data_feeds.fear_greed_interval_seconds", 3600),
+    fundingIntervalSeconds: coerceInt(raw.funding_interval_seconds, "data_feeds.funding_interval_seconds", 60),
+    longShortIntervalSeconds: coerceInt(raw.long_short_interval_seconds, "data_feeds.long_short_interval_seconds", 900),
+    oiDeltaIntervalSeconds: coerceInt(raw.oi_delta_interval_seconds, "data_feeds.oi_delta_interval_seconds", 60),
+  };
+}
+
 export function parseConfig(data: Record<string, unknown>, sourcePath: string | null = null): AppConfig {
   const rawSymbols = data.symbols;
   if (!Array.isArray(rawSymbols)) throw new Error("symbols must be a list of symbol entries");
@@ -732,7 +789,9 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     mcp: parseMcpConfig(data.mcp),
     jin10: parseJin10Config(data.jin10),
     browser: parseBrowserConfig(data.browser),
-
+    pipeline: parsePipelineConfig(data.pipeline),
+    evolution: parseEvolutionConfig(data.evolution),
+    dataFeeds: parseDataFeedsConfig(data.data_feeds),
     sourcePath,
   };
 }
@@ -764,7 +823,9 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       mcp: parseMcpConfig({}),
       jin10: parseJin10Config({}),
       browser: parseBrowserConfig({}),
-
+      pipeline: parsePipelineConfig({}),
+      evolution: parseEvolutionConfig({}),
+      dataFeeds: parseDataFeedsConfig({}),
       sourcePath: null,
     } satisfies AppConfig);
   const instruments = cliSymbols && cliSymbols.length > 0 ? normalizeInstruments(cliSymbols) : base.instruments;
