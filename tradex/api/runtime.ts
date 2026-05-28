@@ -292,12 +292,12 @@ export class AppRuntime {
   async runPipeline(instrumentKey: string, trigger: PipelineTrigger): Promise<PipelineRun> {
     if (!this.config.pipeline.enabled) throw new Error("pipeline disabled");
     if (!this.pipelineOrchestrator) throw new Error("pipeline not configured");
-    if (trigger === "manual") this.enforceManualPipelineCooldown();
     if (this.activePipelineRun || this.pipelineOrchestrator.isRunning) throw new Error("pipeline already running");
     if (!this.instruments.some((instrument) => instrument.key === instrumentKey)) {
       throw new Error(`unknown instrumentKey: ${instrumentKey}`);
     }
     this.enforcePipelineBudget();
+    if (trigger === "manual") this.enforceManualPipelineCooldown();
     const runPromise = this.pipelineOrchestrator.run(instrumentKey, trigger);
     this.activePipelineRun = runPromise;
     try {

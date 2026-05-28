@@ -26,6 +26,22 @@
   text-transform: uppercase;
 }
 
+.pipeline-panel-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.pipeline-trigger-target {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pipeline-panel-action {
   background: transparent;
   border: 1px solid var(--line-strong);
@@ -176,6 +192,15 @@
 }
 
 .pipeline-loading { padding: 8px 10px; text-align: left; }
+
+.pipeline-error {
+  background: var(--danger-tint);
+  border-bottom: 1px solid var(--down);
+  color: var(--down);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 10px;
+}
 
 .pipeline-hud {
   align-items: center;

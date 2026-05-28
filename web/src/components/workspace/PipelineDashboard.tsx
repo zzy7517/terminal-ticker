@@ -103,49 +103,68 @@ export function PipelineDashboard() {
   const selectedKey = useUiStore((s) => s.selectedKey);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [triggering, setTriggering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadRuns = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/pipeline/runs?limit=20");
+      if (!response.ok) throw new Error(`Load failed (${response.status})`);
+      const data = await response.json();
+      usePipelineStore.getState().setRecentRuns(data.runs ?? []);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load pipeline runs");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setLoading(true);
-    fetch("/api/pipeline/runs?limit=20")
-      .then((r) => r.json())
-      .then((data) => {
-        usePipelineStore.getState().setRecentRuns(data.runs ?? []);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    void loadRuns();
   }, []);
 
   const selectedRun = recentRuns.find((r) => r.id === selectedId);
+  const triggerInstrumentKey = selectedKey && marketState?.quotes[selectedKey]
+    ? selectedKey
+    : marketState?.instruments.find((instrument) => instrument.analysable)?.key;
 
   const handleTrigger = async () => {
-    const instrumentKey = selectedKey && marketState?.quotes[selectedKey]
-      ? selectedKey
-      : marketState?.instruments.find((instrument) => instrument.analysable)?.key;
-    if (!instrumentKey) return;
+    if (!triggerInstrumentKey || triggering) return;
+    setTriggering(true);
+    setError(null);
     try {
-      await fetch("/api/pipeline/trigger", {
+      const response = await fetch("/api/pipeline/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instrumentKey }),
+        body: JSON.stringify({ instrumentKey: triggerInstrumentKey }),
       });
-      setTimeout(() => {
-        fetch("/api/pipeline/runs?limit=20")
-          .then((r) => r.json())
-          .then((data) => usePipelineStore.getState().setRecentRuns(data.runs ?? []));
-      }, 10000);
-    } catch {}
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(data.error ?? `Trigger failed (${response.status})`));
+      if (data.run?.id) setSelectedId(data.run.id);
+      await loadRuns();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Trigger failed");
+    } finally {
+      setTriggering(false);
+    }
   };
 
   return (
     <div className="pipeline-panel">
       <div className="pipeline-panel-header">
         <span className="pipeline-panel-title">Pipeline Runs</span>
-        <button type="button" onClick={handleTrigger} className="pipeline-panel-action">
-          Trigger ▶
-        </button>
+        <div className="pipeline-panel-actions">
+          {triggerInstrumentKey && <span className="pipeline-trigger-target">{triggerInstrumentKey}</span>}
+          <button type="button" onClick={handleTrigger} className="pipeline-panel-action" disabled={!triggerInstrumentKey || triggering}>
+            {triggering ? "Running…" : "Trigger ▶"}
+          </button>
+        </div>
       </div>
 
       <div className="pipeline-list">
+        {error && <div className="pipeline-error">⚠ {error}</div>}
         {loading && <div className="pipeline-loading">Loading...</div>}
         {recentRuns.map((run) => (
           <RunCard key={run.id} run={run} onClick={() => setSelectedId(run.id === selectedId ? null : run.id)} />
