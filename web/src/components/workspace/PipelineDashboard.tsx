@@ -99,6 +99,7 @@ function RunDetail({ run }: { run: PipelineRunSummary }) {
 
 export function PipelineDashboard() {
   const recentRuns = usePipelineStore((s) => s.recentRuns);
+  const lastRunId = usePipelineStore((s) => s.lastRunId);
   const marketState = useMarketStore((s) => s.state);
   const selectedKey = useUiStore((s) => s.selectedKey);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -124,6 +125,11 @@ export function PipelineDashboard() {
   useEffect(() => {
     void loadRuns();
   }, []);
+
+  useEffect(() => {
+    if (!lastRunId) return;
+    void loadRuns();
+  }, [lastRunId]);
 
   const selectedRun = recentRuns.find((r) => r.id === selectedId);
   const triggerInstrumentKey = selectedKey && marketState?.quotes[selectedKey]
