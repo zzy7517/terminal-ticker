@@ -1,0 +1,179 @@
+/**
+ * Options & GEX Analysis - Domain Types
+ *
+ * Pure types and interfaces. No I/O.
+ */
+
+// ============================================================================
+// Core Option Data
+// ============================================================================
+
+export interface OptionQuote {
+  symbol: string;           // Contract symbol (e.g., "SPY260601C00590000")
+  underlying: string;       // Underlying symbol (e.g., "SPY")
+  strike: number;
+  expiration: string;       // ISO date "YYYY-MM-DD"
+  type: "call" | "put";
+  bid: number;
+  ask: number;
+  mid: number;
+  openInterest: number;
+  volume: number;
+  impliedVol: number | null;  // Annualized IV (decimal, e.g., 0.25 = 25%)
+  // Greeks (null if provider doesn't supply them — we calculate locally)
+  delta: number | null;
+  gamma: number | null;
+  vega: number | null;
+  theta: number | null;
+}
+
+export interface OptionChain {
+  underlying: string;
+  spotPrice: number;
+  expiration: string;
+  contracts: OptionQuote[];
+  timestamp: number;        // Unix ms
+  provider: string;
+}
+
+// ============================================================================
+// GEX Calculation Results
+// ============================================================================
+
+export type GammaRegime = "long_gamma" | "short_gamma" | "neutral";
+
+export interface StrikeGex {
+  strike: number;
+  callGex: number;
+  putGex: number;
+  netGex: number;
+  callOi: number;
+  putOi: number;
+}
+
+export interface KeyLevels {
+  callWall: number;         // Highest call OI strike above spot
+  putWall: number;          // Highest put OI strike below spot
+  maxGammaStrike: number;   // Strike with max |GEX|
+  zeroGammaLevel: number;   // Price where cumulative GEX = 0
+  zglCrossingFound: boolean;
+}
+
+export interface CharmVannaFlow {
+  charmFlow: number;        // $ flow from time decay (+ = dealers buy, - = sell)
+  vannaFlow: number;        // $ flow from IV change (+ = dealers buy, - = sell)
+  netHiddenFlow: number;    // charm + vanna combined
+  charmByStrike: Record<number, number>;
+  vannaByStrike: Record<number, number>;
+}
+
+export interface GexSnapshot {
+  timestamp: number;          // Unix ms
+  symbol: string;
+  spotPrice: number;
+  netGex: number;
+  netGexBillions: number;
+  totalCallGex: number;
+  totalPutGex: number;
+  zeroGammaLevel: number;
+  regime: GammaRegime;
+  regimeDescription: string;
+  dominantStrike: number;
+  keyLevels: KeyLevels;
+  gexByStrike: StrikeGex[];
+  charmVanna: CharmVannaFlow | null;
+  provider: string;
+}
+
+// ============================================================================
+// Unusual Activity Detection
+// ============================================================================
+
+export type ActivitySignal = "opening" | "closing" | "sweep" | "block" | "unknown";
+
+export interface UnusualActivity {
+  symbol: string;
+  strike: number;
+  type: "call" | "put";
+  expiration: string;
+  timestampMs: number;
+  oiChange: number;
+  volume: number;
+  volumeOiRatio: number;    // volume / OI
+  premiumEstimate: number;  // $ estimate
+  signal: ActivitySignal;
+}
+
+// ============================================================================
+// OI History (for tracking changes)
+// ============================================================================
+
+export interface OiRecord {
+  symbol: string;
+  strike: number;
+  type: "call" | "put";
+  expiration: string;
+  timestampMs: number;
+  openInterest: number;
+  volume: number;
+  impliedVol: number | null;
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+export interface OptionsConfig {
+  enabled: boolean;
+  provider: "yfinance" | "tradier" | "deribit";
+  symbols: string[];
+  pollIntervalSeconds: number;
+  strikeRangePercent: number;
+  riskFreeRate: number;
+  dividendYield: number;
+  tradier?: {
+    apiKey: string;
+    baseUrl: string;
+  };
+  deribit?: {
+    enabled: boolean;
+    currencies: string[];
+  };
+  alerts: {
+    minOiChange: number;
+    minVolumeOiRatio: number;
+    minPremium: number;
+  };
+}
+
+export const DEFAULT_OPTIONS_CONFIG: OptionsConfig = {
+  enabled: false,
+  provider: "yfinance",
+  symbols: ["SPY", "QQQ"],
+  pollIntervalSeconds: 60,
+  strikeRangePercent: 0.15,
+  riskFreeRate: 0.0363,
+  dividendYield: 0.015,
+  deribit: {
+    enabled: false,
+    currencies: ["BTC", "ETH"],
+  },
+  alerts: {
+    minOiChange: 1000,
+    minVolumeOiRatio: 3.0,
+    minPremium: 100_000,
+  },
+};
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+export const CONTRACT_MULTIPLIER = 100;
+export const ONE_PERCENT_MOVE = 0.01;
+export const MIN_IV = 0.01;   // 1%
+export const MAX_IV = 5.0;    // 500%
+
+/** Regime thresholds in raw GEX dollars */
+export const LONG_GAMMA_THRESHOLD = 1e9;   // +$1B
+export const SHORT_GAMMA_THRESHOLD = -1e9; // -$1B

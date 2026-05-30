@@ -21,6 +21,7 @@ import { AgentModelRegistry } from "../agent/model_registry.js";
 import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 import { Jin10Service } from "../jin10/index.js";
 import { BrowserManager } from "../browser/index.js";
+import { OptionsService } from "../options/service.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -39,6 +40,7 @@ export class AppRuntime {
   readonly mcpManager: McpClientManager | null;
   jin10Service: Jin10Service;
   readonly browserManager: BrowserManager;
+  readonly optionsService: OptionsService | null;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
   readonly activeAgents = new Map<string, Agent>();
@@ -100,6 +102,11 @@ export class AppRuntime {
 
     // Wire browser automation manager
     this.browserManager = new BrowserManager(config.browser);
+
+    // Wire options/GEX service
+    this.optionsService = config.options.enabled
+      ? new OptionsService(config.options)
+      : null;
 
     // Wire trade closure → memory pipeline enqueue
     this.tradeStore.onTradeClosed((tradeId) => this.enqueueTradeForMemory(tradeId));
@@ -164,6 +171,7 @@ export class AppRuntime {
     this.cronScheduler.start();
     this.mcpManager?.start();
     await this.jin10Service.start();
+    this.optionsService?.start();
     this.memoryPipeline?.kickoffStartup();
   }
 
@@ -176,6 +184,7 @@ export class AppRuntime {
     await this.cronScheduler.stop();
     await this.mcpManager?.shutdown();
     await this.memoryPipeline?.shutdown();
+    await this.optionsService?.close();
   }
 
   // Drains pending controller events, fetches live exchange positions/orders,
