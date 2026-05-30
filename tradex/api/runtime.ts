@@ -213,6 +213,30 @@ export class AppRuntime {
         calendar: this.jin10Service.getCalendar(),
         quotes: this.jin10Service.getQuotes(),
       },
+      options: this.optionsService ? {
+        snapshots: Object.fromEntries(
+          Array.from(this.optionsService.getAllSnapshots().entries()).map(([symbol, snap]) => [
+            symbol,
+            {
+              symbol: snap.symbol,
+              spotPrice: snap.spotPrice,
+              netGexBillions: Math.round(snap.netGexBillions * 100) / 100,
+              regime: snap.regime,
+              regimeDescription: snap.regimeDescription,
+              zeroGammaLevel: snap.zeroGammaLevel,
+              callWall: snap.keyLevels.callWall,
+              putWall: snap.keyLevels.putWall,
+              maxGammaStrike: snap.keyLevels.maxGammaStrike,
+              dominantStrike: snap.dominantStrike,
+              charmFlow: snap.charmVanna?.charmFlow ?? null,
+              vannaFlow: snap.charmVanna?.vannaFlow ?? null,
+              gexByStrike: snap.gexByStrike,
+              provider: snap.provider,
+              timestamp: snap.timestamp,
+            },
+          ]),
+        ),
+      } : null,
     });
   }
 

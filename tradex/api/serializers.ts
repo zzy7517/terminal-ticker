@@ -21,6 +21,9 @@ export function serializeState(input: {
     calendar: Jin10CalendarEvent[];
     quotes: Jin10Quote[];
   };
+  options?: {
+    snapshots: Record<string, unknown>;
+  } | null;
 }): Record<string, unknown> {
   const groups: Record<string, string[]> = {};
   for (const instrument of input.instruments) {
@@ -83,6 +86,7 @@ export function serializeState(input: {
     recentNews: input.recentNews.map(newsItemToPayload),
     newsStatus: input.newsStatus ?? { enabled: input.config.news.enabled },
     jin10: input.jin10 ?? null,
+    options: input.options ?? null,
   };
 }
 
