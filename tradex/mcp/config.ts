@@ -10,15 +10,18 @@ import type { McpConfig, McpServerEntry } from "./types.js";
 
 const PROJECT_CONFIG_NAME = ".mcp.json";
 
-/** Built-in default MCP servers that are always available. */
+/**
+ * Built-in default MCP servers that are always available.
+ *
+ * NOTE: Only free, unmetered servers belong here. Rate-limited / paid servers
+ * (e.g. zer0dte, 3 req/day on the free tier) must be opt-in via `.mcp.json`
+ * or `[options.zer0dte]`, otherwise eager connection on every agent turn /
+ * cron run spams the logs once the daily limit is hit.
+ */
 const BUILTIN_SERVERS: Record<string, McpServerEntry> = {
   jin10: {
     url: "https://mcp.jin10.com/mcp",
     headers: { "Content-Type": "application/json" },
-  },
-  zer0dte: {
-    url: "https://mcp.zer0dte.trade/sse",
-    idleTimeout: 0, // Keep alive during market hours
   },
 };
 

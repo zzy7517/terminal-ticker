@@ -34,6 +34,10 @@ interface ServerConnection {
 export class McpClientManager {
   private connections = new Map<string, ServerConnection>();
   private connectPromises = new Map<string, Promise<ServerConnection>>();
+  /** serverName -> epoch ms until which we skip reconnect attempts after a failure. */
+  private failureCooldowns = new Map<string, number>();
+  /** Backoff window after a failed connection (ms). Prevents log spam from rate-limited servers. */
+  private static readonly FAILURE_COOLDOWN_MS = 5 * 60_000;
   private config: McpConfig;
   private prefix: "server" | "none" | "short";
   private globalIdleTimeout: number;
@@ -113,6 +117,14 @@ export class McpClientManager {
       return this.connectPromises.get(serverName)!;
     }
 
+    // Respect failure cooldown: don't retry (and re-log) a recently-failed server.
+    const cooldownUntil = this.failureCooldowns.get(serverName);
+    if (cooldownUntil && Date.now() < cooldownUntil) {
+      throw new Error(
+        `MCP server "${serverName}" is in failure cooldown until ${new Date(cooldownUntil).toISOString()}`,
+      );
+    }
+
     const definition = this.config.mcpServers[serverName];
     if (!definition) {
       throw new Error(`MCP server "${serverName}" not found in config`);
@@ -124,7 +136,12 @@ export class McpClientManager {
     try {
       const connection = await promise;
       this.connections.set(serverName, connection);
+      this.failureCooldowns.delete(serverName);
       return connection;
+    } catch (error) {
+      // Enter cooldown so repeated agent turns / cron runs don't spam reconnect attempts.
+      this.failureCooldowns.set(serverName, Date.now() + McpClientManager.FAILURE_COOLDOWN_MS);
+      throw error;
     } finally {
       this.connectPromises.delete(serverName);
     }
@@ -312,7 +329,10 @@ export class McpClientManager {
     } catch (error) {
       await client.close().catch(() => {});
       await transport.close().catch(() => {});
-      console.error(`[mcp] Failed to connect to "${name}":`, error instanceof Error ? error.message : error);
+      console.warn(
+        `[mcp] Failed to connect to "${name}" (cooling down ${Math.round(McpClientManager.FAILURE_COOLDOWN_MS / 60_000)}m before retry):`,
+        error instanceof Error ? error.message : error,
+      );
       throw error;
     }
   }
