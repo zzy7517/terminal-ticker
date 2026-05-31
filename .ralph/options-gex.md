@@ -25,7 +25,7 @@ Implement the full options/GEX analysis module for tradex, based on the design i
 - [x] 12. Config integration — Parse [options] from watchlist.toml, add OptionsConfig type
 - [x] 13. `tradex/api/runtime.ts` — Wire OptionsService into AppRuntime
 - [x] 14. `tradex/agent/tools/options.ts` — Agent tools (get_gex_snapshot, get_dealer_levels, get_options_flow, get_gamma_regime)
-- [ ] 15. `web/src/components/workspace/OptionsPanel.tsx` — Frontend GEX visualization
-- [ ] 16. WebSocket state integration — Add options to snapshot payload
+- [x] 15. `web/src/components/workspace/OptionsPanel.tsx` — Frontend GEX visualization
+- [x] 16. WebSocket state integration — Add options to snapshot payload
 - [x] 17. Type-check + build verification
 - [x] 18. Git commit + push + PR — https://github.com/zzy7517/tradex/pull/38
