@@ -12,6 +12,7 @@ import { buildSocialFeedTools } from "../../agent/tools/social.js";
 import { buildTradingTools } from "../../agent/tools/trading.js";
 import { buildWebTools } from "../../agent/tools/web.js";
 import { buildBrowserTools } from "../../agent/tools/browser.js";
+import { buildOptionsTools } from "../../agent/tools/options.js";
 import { createFilesystemRegistry, setFilesystemRoot } from "../../agent/tools/filesystem.js";
 import { mergeRegistries } from "../../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../../mcp/index.js";
@@ -257,6 +258,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             buildJin10Tools(runtime.jin10Service),
             buildWebTools(),
             ...(runtime.config.browser.enabled ? [buildBrowserTools(runtime.browserManager)] : []),
+            ...(runtime.optionsService ? [buildOptionsTools(runtime)] : []),
             createFilesystemRegistry({ allowedSkillPaths }),
             ...(mcpRegistry ? [mcpRegistry] : []),
           );

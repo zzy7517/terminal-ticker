@@ -5,8 +5,15 @@
  * key levels, and unusual options activity.
  */
 
-import type { ToolRegistry } from "./registry.js";
+import { ToolRegistry } from "./registry.js";
 import type { AppRuntime } from "../../api/runtime.js";
+
+/** Build a ToolRegistry containing options/GEX analysis tools. */
+export function buildOptionsTools(runtime: AppRuntime): ToolRegistry {
+  const registry = new ToolRegistry();
+  registerOptionsTools(registry, runtime);
+  return registry;
+}
 
 export function registerOptionsTools(registry: ToolRegistry, runtime: AppRuntime): void {
   const svc = runtime.optionsService;

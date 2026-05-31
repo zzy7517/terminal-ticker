@@ -21,6 +21,7 @@ import { buildNewsTools } from "../agent/tools/news.js";
 import { buildMemoryTools } from "../memory/tools.js";
 import { buildWebTools } from "../agent/tools/web.js";
 import { buildTradingTools } from "../agent/tools/trading.js";
+import { buildOptionsTools } from "../agent/tools/options.js";
 import { buildSocialFeedTools } from "../agent/tools/social.js";
 import { buildBrowserTools } from "../agent/tools/browser.js";
 import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
@@ -133,6 +134,11 @@ export async function executeCronJob(input: {
   // Add browser tools if enabled
   if (runtime.config.browser.enabled) {
     registries.push(buildBrowserTools(runtime.browserManager));
+  }
+
+  // Add options/GEX tools if enabled
+  if (runtime.optionsService) {
+    registries.push(buildOptionsTools(runtime));
   }
 
   // Add MCP tools if available

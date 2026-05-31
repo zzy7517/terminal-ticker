@@ -309,6 +309,15 @@ export interface SocialAuthStatus {
   hasSavedAuth: boolean;
   savedAtMs: number | null;
   envAvailable: boolean;
+  configured?: boolean;
+  path?: string;
+  error?: string | null;
+}
+
+export interface SocialAuthImportResult {
+  ok: boolean;
+  status: SocialAuthStatus;
+  error: string | null;
 }
 
 export interface SocialFeedItem {

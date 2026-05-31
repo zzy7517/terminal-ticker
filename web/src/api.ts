@@ -28,6 +28,7 @@ import type {
   MemoryStatus,
   NewsConfigUpdate,
   NewsItem,
+  SocialAuthImportResult,
   SocialAuthStatus,
   SocialFeedItem,
   SocialFeedConfigUpdate,
@@ -417,6 +418,15 @@ export async function saveSocialAuth(auth: { authToken: string; ct0: string }): 
   });
   if (!response.ok) {
     throw await responseError(response, 'social auth save failed');
+  }
+  return response.json();
+}
+
+// Imports X auth cookies from the logged-in Chrome profile through Open Browser Use.
+export async function importSocialAuthFromBrowser(): Promise<SocialAuthImportResult> {
+  const response = await fetch('/api/social/auth/import-browser', { method: 'POST' });
+  if (!response.ok) {
+    throw await responseError(response, 'social auth browser import failed');
   }
   return response.json();
 }
@@ -873,5 +883,4 @@ export async function saveJin10Config(config: {
   const payload = await response.json();
   return payload.state;
 }
-
 

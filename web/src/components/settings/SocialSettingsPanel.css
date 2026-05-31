@@ -59,6 +59,33 @@
   gap: 12px;
 }
 
+.social-browser-import {
+  align-items: center;
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: 0;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.social-browser-import strong,
+.social-browser-import span {
+  display: block;
+}
+
+.social-browser-import strong {
+  font-size: 13px;
+}
+
+.social-browser-import span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 3px;
+}
+
 .social-auth-form label {
   display: flex;
   flex-direction: column;
@@ -145,5 +172,9 @@
   .social-settings-layout {
     grid-template-columns: 1fr;
   }
-}
 
+  .social-browser-import {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

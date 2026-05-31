@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { EyeOff, Loader2, LockKeyhole, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
+import { Chrome, EyeOff, Loader2, LockKeyhole, RefreshCw, Save, Search, Trash2 } from 'lucide-react';
 import './SocialSettingsPanel.css';
 import type { SocialAuthStatus, SocialFeedItem } from '../../types';
 import { useMarketStore } from '../../stores/marketStore';
@@ -7,6 +7,7 @@ import {
   clearSocialAuth,
   fetchRecentSocialFeed,
   fetchSocialAuthStatus,
+  importSocialAuthFromBrowser,
   saveSocialAuth,
   saveSocialFeedConfig,
   triggerXFollowingRefresh,
@@ -19,6 +20,7 @@ export function SocialSettingsPanel() {
   const [authStatus, setAuthStatus] = useState<SocialAuthStatus | null>(null);
   const [authToken, setAuthToken] = useState('');
   const [ct0, setCt0] = useState('');
+  const [importingAuth, setImportingAuth] = useState(false);
   const [savingAuth, setSavingAuth] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -114,6 +116,26 @@ export function SocialSettingsPanel() {
     }
   }
 
+  async function importAuthFromBrowser() {
+    setImportingAuth(true);
+    setStatus('Importing X auth from the logged-in Chrome profile...');
+    try {
+      const result = await importSocialAuthFromBrowser();
+      setAuthStatus(result.status);
+      if (result.ok) {
+        setAuthToken('');
+        setCt0('');
+        setStatus('X auth imported from Chrome. Values are not shown after saving.');
+      } else {
+        setStatus(result.error ?? 'Could not import X auth from Chrome.');
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Browser import failed.');
+    } finally {
+      setImportingAuth(false);
+    }
+  }
+
   async function clearAuth() {
     setSavingAuth(true);
     setStatus('Clearing saved X auth...');
@@ -177,7 +199,8 @@ export function SocialSettingsPanel() {
 
   const hasUsableAuth = Boolean(authStatus?.hasSavedAuth || authStatus?.envAvailable);
   const savedAt = authStatus?.savedAtMs ? new Date(authStatus.savedAtMs).toLocaleString() : '—';
-  const canSaveAuth = authToken.trim().length > 0 && ct0.trim().length > 0 && !savingAuth;
+  const authBusy = savingAuth || importingAuth;
+  const canSaveAuth = authToken.trim().length > 0 && ct0.trim().length > 0 && !authBusy;
   const parsedRecentLimit = Number.parseInt(recentLimitInput, 10);
   const parsedRetentionDays = Number.parseInt(retentionDaysInput, 10);
   const parsedMaxItems = Number.parseInt(maxItemsInput, 10);
@@ -242,6 +265,17 @@ export function SocialSettingsPanel() {
             </div>
           </div>
 
+          <div className="social-browser-import">
+            <div>
+              <strong>Use logged-in Chrome</strong>
+              <span>Reads only x.com auth_token and ct0 through Open Browser Use, then stores them locally.</span>
+            </div>
+            <button className="shell-button" type="button" disabled={authBusy} onClick={importAuthFromBrowser}>
+              {importingAuth ? <Loader2 className="spin" size={15} /> : <Chrome size={15} />}
+              Import from Chrome
+            </button>
+          </div>
+
           <div className="social-auth-form">
             <label>
               <span className="panel-label">auth_token</span>
@@ -277,7 +311,7 @@ export function SocialSettingsPanel() {
             <button
               className="shell-button danger"
               type="button"
-              disabled={savingAuth || !authStatus?.hasSavedAuth}
+              disabled={authBusy || !authStatus?.hasSavedAuth}
               onClick={clearAuth}
             >
               <Trash2 size={15} />

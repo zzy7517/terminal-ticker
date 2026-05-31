@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { updateSocialFeedConfigInWatchlist } from "../../config/watchlist_store.js";
+import { importXAuthFromBrowser } from "../../social_feed/browser_auth.js";
 import { socialItemToPayload } from "../../social_feed/types.js";
 import type { AppRuntime } from "../runtime.js";
 import { requireConfigPath, reloadAndState, mergeSocialFeedConfig } from "../helpers.js";
@@ -27,6 +28,11 @@ export function socialRoutes(runtime: AppRuntime): Hono {
     const body = (await c.req.json()) as Record<string, unknown>;
     return c.json(runtime.xAuthStore.save({ authToken: String(body.authToken || ""), ct0: String(body.ct0 || "") }));
   });
+
+  // Imports X auth cookies from the user's logged-in Chrome profile via OBU.
+  app.post("/api/social/auth/import-browser", async (c) =>
+    c.json(await importXAuthFromBrowser({ browserManager: runtime.browserManager, authStore: runtime.xAuthStore })),
+  );
 
   // Clears stored X auth credentials.
   app.delete("/api/social/auth", (c) => c.json(runtime.xAuthStore.clear()));
