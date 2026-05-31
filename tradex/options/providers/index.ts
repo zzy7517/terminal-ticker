@@ -8,14 +8,14 @@ import type { OptionsConfig } from "../domain.js";
 import type { OptionsDataProvider } from "./base.js";
 import { DeribitProvider } from "./deribit.js";
 import { YFinanceProvider } from "./yfinance.js";
-import { FlashAlphaProvider, type FlashAlphaConfig } from "./flashalpha.js";
+
 import { Zer0dteProvider, type McpToolCaller, ZER0DTE_MCP_CONFIG } from "./zer0dte.js";
 
 
 export { type OptionsDataProvider, RateLimiter } from "./base.js";
 export { YFinanceProvider } from "./yfinance.js";
 export { DeribitProvider } from "./deribit.js";
-export { FlashAlphaProvider, type FlashAlphaConfig } from "./flashalpha.js";
+
 export { Zer0dteProvider, type McpToolCaller, ZER0DTE_MCP_CONFIG, ZER0DTE_TOOLS, getZer0dteMcpEntry } from "./zer0dte.js";
 
 
@@ -32,13 +32,6 @@ export function createProvider(config: OptionsConfig): OptionsDataProvider {
 
     case "deribit":
       return new DeribitProvider(config.deribit?.currencies ?? ["BTC", "ETH"]);
-
-    case "flashalpha":
-      if (!config.flashalpha?.apiKey) {
-        console.warn("[options] FlashAlpha requires API key (FLASHALPHA_API_KEY or config). Falling back to yfinance.");
-        return new YFinanceProvider();
-      }
-      return new FlashAlphaProvider({ apiKey: config.flashalpha.apiKey, baseUrl: config.flashalpha.baseUrl });
 
     case "tradier":
       if (!config.tradier?.apiKey) {

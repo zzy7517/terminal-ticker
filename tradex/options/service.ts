@@ -8,7 +8,7 @@
 import type { GexSnapshot, OiRecord, OptionsConfig, UnusualActivity } from "./domain.js";
 import { GexCalculator } from "./gex_calculator.js";
 import { DeribitProvider } from "./providers/deribit.js";
-import { FlashAlphaProvider } from "./providers/flashalpha.js";
+
 import { Zer0dteProvider, type McpToolCaller } from "./providers/zer0dte.js";
 import { createProvider, resolveProviderForSymbol, type OptionsDataProvider } from "./providers/index.js";
 import { OptionsStore } from "./store.js";
@@ -17,7 +17,7 @@ export class OptionsService {
   private readonly config: OptionsConfig;
   private readonly primaryProvider: OptionsDataProvider;
   private readonly deribitProvider: DeribitProvider | null;
-  private readonly flashAlphaProvider: FlashAlphaProvider | null;
+
   private readonly zer0dteProvider: Zer0dteProvider | null;
   private readonly calculator: GexCalculator;
   private readonly store: OptionsStore;
@@ -37,11 +37,6 @@ export class OptionsService {
     // Create separate Deribit provider if crypto is enabled
     this.deribitProvider = config.deribit?.enabled
       ? new DeribitProvider(config.deribit.currencies)
-      : null;
-
-    // FlashAlpha for pre-computed GEX (free tier: 5 req/day)
-    this.flashAlphaProvider = config.flashalpha?.apiKey
-      ? new FlashAlphaProvider({ apiKey: config.flashalpha.apiKey, baseUrl: config.flashalpha.baseUrl })
       : null;
 
     // ZER0DTE for SPX 0DTE via MCP
@@ -204,16 +199,6 @@ export class OptionsService {
         if (snap) return snap;
       } catch (err) {
         console.warn(`[options] ZER0DTE failed for ${upper}:`, err instanceof Error ? err.message : err);
-      }
-    }
-
-    // FlashAlpha covers US equities/ETFs
-    if (this.flashAlphaProvider) {
-      try {
-        const snap = await this.flashAlphaProvider.getGexSnapshot(upper);
-        if (snap) return snap;
-      } catch (err) {
-        console.warn(`[options] FlashAlpha failed for ${upper}:`, err instanceof Error ? err.message : err);
       }
     }
 

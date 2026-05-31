@@ -16,6 +16,10 @@ const BUILTIN_SERVERS: Record<string, McpServerEntry> = {
     url: "https://mcp.jin10.com/mcp",
     headers: { "Content-Type": "application/json" },
   },
+  zer0dte: {
+    url: "https://mcp.zer0dte.trade/sse",
+    idleTimeout: 0, // Keep alive during market hours
+  },
 };
 
 export function loadMcpConfig(configPath?: string | null): McpConfig {

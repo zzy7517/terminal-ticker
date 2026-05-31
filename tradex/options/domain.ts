@@ -125,7 +125,7 @@ export interface OiRecord {
 
 export interface OptionsConfig {
   enabled: boolean;
-  provider: "yfinance" | "tradier" | "deribit" | "flashalpha";
+  provider: "yfinance" | "tradier" | "deribit";
   symbols: string[];
   pollIntervalSeconds: number;
   strikeRangePercent: number;
@@ -138,10 +138,6 @@ export interface OptionsConfig {
   deribit?: {
     enabled: boolean;
     currencies: string[];
-  };
-  flashalpha?: {
-    apiKey: string;
-    baseUrl?: string;
   };
   zer0dte?: {
     enabled: boolean;

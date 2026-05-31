@@ -739,16 +739,6 @@ export function parseOptionsConfig(rawOptionsValue: unknown): import("../options
       enabled: normalizeBool(rawDeribit.enabled, "options.deribit.enabled", false),
       currencies: Array.isArray(rawDeribit.currencies) ? rawDeribit.currencies.map(String) : ["BTC", "ETH"],
     },
-    flashalpha: (() => {
-      const rawFa = asRecord(raw.flashalpha, "options.flashalpha");
-      const key = typeof rawFa.api_key === "string" ? rawFa.api_key
-        : (typeof process !== "undefined" ? process.env.FLASHALPHA_API_KEY : undefined);
-      if (!key) return undefined;
-      return {
-        apiKey: key,
-        baseUrl: typeof rawFa.base_url === "string" ? rawFa.base_url : undefined,
-      };
-    })(),
     zer0dte: (() => {
       const rawZ = asRecord(raw.zer0dte, "options.zer0dte");
       return {
