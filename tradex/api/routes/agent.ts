@@ -272,7 +272,12 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             ? buildMemoryDeveloperInstructions(runtime.config.memory.storagePath)
             : null;
 
-          const systemPrompt = [MAIN_AGENT_PROMPT, memoryInstructions ?? "", skillsPromptBlock].filter(Boolean).join("\n");
+          // Build stable session date (day-level only for prompt cache stability).
+          const now = new Date();
+          const sessionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+          const sessionDateLine = `\nSession date: ${sessionDate} (Asia/Shanghai)`;
+
+          const systemPrompt = [MAIN_AGENT_PROMPT, memoryInstructions ?? "", skillsPromptBlock].filter(Boolean).join("\n") + sessionDateLine;
 
           const agent = new Agent({
             initialState: {
