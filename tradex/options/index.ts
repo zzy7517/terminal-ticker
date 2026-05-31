@@ -32,3 +32,55 @@ export * from "./greeks.js";
 export { createProvider, DeribitProvider, type OptionsDataProvider, YFinanceProvider } from "./providers/index.js";
 export { OptionsService } from "./service.js";
 export { OptionsStore } from "./store.js";
+
+// Advanced modules
+export {
+  buildIVSurface,
+  deriveRegimeParams,
+  deriveSpotVolCoupling,
+  interpolateIVAtStrike,
+  type IVSurface,
+  type MarketRegime,
+  type RegimeParams,
+} from "./iv_surface.js";
+
+export {
+  computeHedgeImpulseCurve,
+  type DirectionalAsymmetry,
+  type HedgeImpulseConfig,
+  type HedgeImpulseCurve,
+  type HedgeImpulsePoint,
+  type ImpulseExtremum,
+  type ImpulseRegime,
+  type ZeroCrossing,
+} from "./hedge_impulse.js";
+
+export {
+  computePressureCloud,
+  type PressureCloud,
+  type PressureCloudConfig,
+  type PressureLevel,
+  type PressureZone,
+  type RegimeEdge,
+} from "./pressure_cloud.js";
+
+export {
+  computeFlowToxicity,
+  detectMultiLegStructures,
+  identifyWhales,
+  type FlowToxicity,
+  type LegStructure,
+  type MultiLegGroup,
+  type TradeFlow,
+  type WhaleAlert,
+  type WhaleConfig,
+} from "./flow_detector.js";
+
+export {
+  calculateFullExposure,
+  type ExposureModeBreakdown,
+  type ExposureOptions,
+  type ExposurePerExpiry,
+  type ExposureVector,
+  type StrikeExposure,
+} from "./exposure.js";
