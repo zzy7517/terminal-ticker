@@ -8,10 +8,12 @@ import type { OptionsConfig } from "../domain.js";
 import type { OptionsDataProvider } from "./base.js";
 import { DeribitProvider } from "./deribit.js";
 import { YFinanceProvider } from "./yfinance.js";
+import { TradierProvider } from "./tradier.js";
 
 export { type OptionsDataProvider, RateLimiter } from "./base.js";
 export { YFinanceProvider } from "./yfinance.js";
 export { DeribitProvider } from "./deribit.js";
+export { TradierProvider } from "./tradier.js";
 
 
 /**
@@ -28,11 +30,17 @@ export function createProvider(config: OptionsConfig): OptionsDataProvider {
       return new DeribitProvider(config.deribit?.currencies ?? ["BTC", "ETH"]);
 
     case "tradier":
+      // Tradier needs an API key; without one, fall back to the free
+      // Yahoo Finance provider so the service still works.
       if (!config.tradier?.apiKey) {
+        console.warn("[options] provider=tradier but no tradier.api_key configured — falling back to Yahoo Finance");
         return new YFinanceProvider();
       }
-      // TODO: Implement TradierProvider when key is available
-      return new YFinanceProvider();
+      return new TradierProvider(
+        config.tradier.apiKey,
+        config.tradier.baseUrl,
+        config.pollIntervalSeconds > 30 ? 60 : 30,
+      );
 
     default:
       return new YFinanceProvider();
