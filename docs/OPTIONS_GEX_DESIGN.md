@@ -14,6 +14,15 @@
 10. [数据持久化](#数据持久化)
 11. [配置设计](#配置设计)
 12. [实现计划](#实现计划)
+13. [进阶：Hedge Impulse 与 Pressure Cloud](#进阶设计hedge-impulse-与-pressure-cloud)
+14. [进阶：完整的 Greek Exposure 四维分析](#进阶设计完整的-greek-exposure-四维分析)
+15. [进阶：VannaFlip 信号 + 策略框架](#进阶设计vannaflip-信号--策略框架)
+16. [进阶：LLM + GEX 因果推理框架](#进阶设计llm--gex-的因果推理框架)
+17. [进阶：BTC/ETH 期权流 (Deribit)](#进阶设计btceth-期权流deribit-免费数据)
+18. [进阶：IV Surface 与 Regime 派生](#进阶设计iv-surface-与-regime-派生)
+19. [参考项目](#参考项目)
+20. [关键设计决策](#关键设计决策)
+21. [文件清单](#文件清单实现时的-checklist)
 
 ---
 
@@ -656,10 +665,366 @@ export interface OptionsConfig {
 
 ---
 
+## 进阶设计：Hedge Impulse 与 Pressure Cloud
+
+> 参考 [FullStackCraft/floe](https://github.com/FullStackCraft/floe) 的设计哲学 —— 一个被 VannaCharm.com 等生产环境使用的 TypeScript 零依赖期权分析库。
+
+### 问题：GEX 单一数值的局限
+
+传统 GEX 分析只给出一个 Net GEX 数值 + 逐 strike 柱状图。但这忽略了一个关键问题：**Gamma 和 Vanna 在价格空间中的交互效应**。
+
+做市商的 delta 变化不仅来自 Gamma（价格移动），还来自 Vanna（IV 移动）。而 IV 和价格经验上是负相关的（spot-vol coupling），所以二者不能独立分析。
+
+### 解决方案：Hedge Impulse Curve
+
+`floe` 提出的 **Hedge Impulse** 概念将 Gamma 和 Vanna 通过 Taylor 展开合并为单一的价格空间响应函数：
+
+```
+H(S) = GEX_smoothed(S) - (k / S) × VEX_smoothed(S)
+```
+
+其中：
+- `GEX_smoothed(S)` = 通过 Gaussian kernel 平滑后的 Gamma Exposure
+- `VEX_smoothed(S)` = 通过 Gaussian kernel 平滑后的 Vanna Exposure  
+- `k` = spot-vol coupling coefficient，从 IV surface 的 skew slope 导出
+- 对于股票指数，k 通常在 4-12 之间
+
+**关键设计决策**：
+1. **不做时间加权** —— Dollar GEX/VEX/CEX 已经通过 Black-Scholes Greeks 内含了所有 time-to-expiry 效应。额外加权会 double-count。
+2. **物理组合而非任意权重** —— 通过 Taylor 展开推导而非硬编码 regime-dependent 权重。
+3. **自适应 Kernel 宽度** —— 以 strike spacing 的倍数定义（默认 2 × modal strike spacing），而非 spot 的百分比。确保不同合约规格的标的有一致的平滑效果。
+
+### Impulse 曲线的含义
+
+| H(S) 值 | 含义 | 做市商行为 |
+|---|---|---|
+| H(S) > 0 | **稳定区**（Mean-reversion） | 做市商在价格靠近时做反向对冲（挂 limit 单吸收波动） |
+| H(S) < 0 | **加速区**（Trend-amplification） | 做市商在价格靠近时做同向对冲（发 market 单放大波动） |
+| H(S) = 0 | **Regime Edge** | 市场行为模式切换的临界价格 |
+
+### Regime 分类（基于 Impulse Curve）
+
+```typescript
+type ImpulseRegime = 
+  | 'pinned'        // Spot 处有强正 impulse → 价格被锁定
+  | 'expansion'     // Spot 处有负 impulse → 随时可能突破
+  | 'squeeze-up'    // 上方负 impulse + 下方正 impulse → 上行挤压
+  | 'squeeze-down'  // 下方负 impulse + 上方正 impulse → 下行挤压  
+  | 'neutral';      // 信号混合或微弱
+```
+
+### Pressure Cloud —— 可交易的区域
+
+在 Impulse Curve 基础上，`PressureCloud` 进一步提取可交易区域：
+
+```typescript
+interface PressureCloud {
+  stabilityZones: PressureZone[];     // 正 impulse 峰 → 价格减速/反转
+  accelerationZones: PressureZone[];  // 负 impulse 谷 → 价格加速/突破
+  regimeEdges: RegimeEdge[];          // 零交叉点 → 行为模式切换
+  priceLevels: PressureLevel[];       // 每个价格点的详细信息
+}
+
+interface PressureZone {
+  center: number;     // 区域中心价格
+  lower: number;      // 下界
+  upper: number;      // 上界
+  strength: number;   // 0-1 归一化强度（含 reachability 权重）
+  side: 'above-spot' | 'below-spot';
+  tradeType: 'long' | 'short';  // 交易方向建议
+  hedgeType: 'passive' | 'aggressive';  // 做市商对冲方式
+}
+```
+
+**Reachability 权重**：不是所有区域都同样重要。10% 外的 stability basin 不如 0.5% 处的 moderate basin 有意义：
+
+```
+reachRange = expectedDailySpotMove × spot × reachabilityMultiple (默认 2.0)
+proximity = exp(-((distance / reachRange)²))
+strength = (|impulse| / maxImpulse) × proximity
+```
+
+这把注意力集中在当前 session 内市场能够实际到达的价格水平。
+
+### 对冲合约估算
+
+每个价格水平都附带预估对冲合约数（正 = 买入，负 = 卖出）：
+
+```
+contracts = impulse / (multiplier × spot × 0.01)
+```
+
+| 产品 | 乘数 | 说明 |
+|---|---|---|
+| NQ (E-mini Nasdaq) | 20 | 基准单位 |
+| MNQ (Micro Nasdaq) | 2 | 10x NQ |
+| ES (E-mini S&P) | 50 | 0.4x NQ |
+| MES (Micro S&P) | 5 | 4x NQ |
+
+---
+
+## 进阶设计：完整的 Greek Exposure 四维分析
+
+> 参考 [FlashAlpha-lab/gex-explained](https://github.com/FlashAlpha-lab/gex-explained) 的 DEX/VEX/CHEX 框架
+
+### 超越 GEX：四个维度的做市商约束
+
+| 指标 | 含义 | 驱动因素 | 做市商被迫做什么 |
+|---|---|---|---|
+| **GEX** (Gamma Exposure) | 每 1% 价格变动的对冲量 | 价格变动 | 价格涨→卖/买取决于正/负gamma |
+| **DEX** (Delta Exposure) | 当前净方向性持仓 | 存量状态 | 反映现有对冲负担，IV 变化时会重新平衡 |
+| **VEX** (Vanna Exposure) | IV 变化 1 点时的 delta 调整 | IV 变动 | IV 下跌时正 VEX → 卖出；IV 上涨时 → 买入 |
+| **CHEX** (Charm Exposure) | 每天时间流逝导致的 delta 漂移 | 时间消逝 | 创造可预测的方向性流（尤其周五收盘/周一开盘） |
+
+四者合在一起，给出做市商流动的完整结构性画面：
+- **GEX** = 价格移动时发生什么
+- **DEX** = 当前方向性状态
+- **VEX** = 波动率变化时发生什么  
+- **CHEX** = 纯粹因为时间流逝会发生什么
+
+### Exposure 三种计算模式
+
+参考 `floe` 的三模式设计：
+
+```typescript
+interface ExposureVariantsPerExpiry {
+  canonical: ExposureModeBreakdown;      // 标准模式：GEX/VEX/CEX
+  stateWeighted: ExposureModeBreakdown;  // 状态加权：Vanna×IV level, Charm×DTE
+  flowDelta: ExposureModeBreakdown;      // 增量模式：仅计算 OI 变化量的贡献
+}
+```
+
+- **Canonical**：标准计算，适合 regime 判断
+- **State-Weighted**：考虑当前 IV 水平和 DTE 的实际影响（高 IV 环境下 Vanna 影响更大）
+- **Flow-Delta**：只看 OI 的日内变化（`liveOI - previousOI`），识别新开仓带来的增量影响
+
+---
+
+## 进阶设计：VannaFlip 信号 + 策略框架
+
+> 参考 [simonrey1/gex-strategy](https://github.com/simonrey1/gex-strategy) —— 一个基于 GEX walls 的量化策略，8 年回测 Sharpe 2.82
+
+### VannaFlip 信号（暴风雨后的平静）
+
+该策略的核心洞察：当 IV spike 时做市商疯狂对冲 → 当恐慌消退 IV 压缩时做市商回补 → 创造机械性买入尾流。
+
+**信号两阶段结构**：
+
+```
+阶段1: SPIKE 检测 — "暴风雨来了？"
+├─ IV 飙升到 ≥3.5× baseline（真正的恐慌）
+├─ 价格接近 Put Wall（对冲压力峰值处）
+└─ 最小波动率门槛（市场足够活跃）
+→ 打开 50-bar 观察窗口
+
+阶段2: ENTRY 门控 — "暴风雨过去了？"  
+├─ IV Compression: IV 下降到 spike 峰值的 ≤50%（恐惧消退）
+├─ Max ATR% < 0.50%: 价格 choppiness 正在平息
+├─ Wall structure: GEX walls 健在且健康
+├─ Trend state: TSI、momentum、dead-zone 检查
+└─ 5+ 更多结构性门控（GEX norm、wall spread、PW/CW strength）
+→ 第一个全部通过的 bar: 买入
+```
+
+### GEX Wall 多层设计
+
+`gex-strategy` 使用三层 wall 系统而非单一的 Call/Put Wall：
+
+| Wall 类型 | 定义 | 用途 |
+|---|---|---|
+| **Narrow Walls** | 最高 γ×OI 的 strike（靠近 spot） | 短线支撑/阻力判断 |
+| **Wide Walls** | >3% OTM 的最高 γ×OI | 结构性 levels + Trailing Stop 依据 |
+| **Weekly Walls** | 仅周五到期期权 | 本周到期前的短期 pin 效应 |
+
+### 进阶 Gamma 指标
+
+```typescript
+interface EnrichedGexProfile {
+  // 基础
+  narrow_put_walls: WallLevel[];
+  narrow_call_walls: WallLevel[];
+  wide_put_walls: WallLevel[];
+  wide_call_walls: WallLevel[];
+  atm_put_iv: number;
+  
+  // 进阶结构指标
+  total_put_goi: number;         // Put side 总 gamma×OI
+  total_call_goi: number;        // Call side 总 gamma×OI
+  cw_depth_ratio: number;        // Call Wall 之上的 gamma 比例 → CW 有多强
+  pw_com_dist_pct: number;       // Put Wall 重心距 spot 的距离% → 支撑有多远
+  pw_near_far_ratio: number;     // 近处/远处 Put gamma 比例 → 支撑是否集中
+  atm_gamma_dominance: number;   // ATM gamma 占总 gamma 比例 → pin 强度
+  near_gamma_imbalance: number;  // 近处 Put vs Call gamma 不平衡 → 方向偏向
+  gamma_tilt: number;            // (Call - Put) / Total → 整体倾斜
+}
+```
+
+### Exit 策略
+
+- **Bracket SL/TP**: 5 ATR 止损，30 ATR 止盈
+- **Wall-Trailing Stop**: 盈利达 12 ATR 后激活，跟踪到最高 PW - 2.5 ATR
+- **Hurst Exhaustion**: 当 Hurst < 0.45 持续 4+ bars 且盈利 ≥ 12 ATR 时，收紧到 highest_close − 2 ATR
+
+---
+
+## 进阶设计：LLM + GEX 的因果推理框架
+
+> 参考 [iAmGiG/gex-llm-patterns](https://github.com/iAmGiG/gex-llm-patterns) —— PhD 研究项目，已发表 IEEE BigData 2025 和 AIAI 2026。证明 LLM 可以从纯数字结构中检测做市商约束，检测率 71.5%、预测精度 90.9%。
+
+### WHO → WHOM → WHAT 因果框架
+
+Agent 的每一次 GEX 分析输出必须指明因果链：
+
+- **WHO**: 被约束的行为人（如：持有负 gamma 的做市商）
+- **WHOM**: 被影响的参与者（如：方向性交易者）
+- **WHAT**: 被迫的机制（如：顺周期对冲放大波动）
+
+示例 prompt 结构（用于 Agent tool 输出）：
+
+```
+[GEX REGIME ANALYSIS - SPY]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+▶ Regime: NEGATIVE GAMMA (-$32.9B)
+▶ Gamma Flip: $485.50 (spot $522.22, 在 flip 之上 7.6%)
+
+因果链:
+• WHO: 做市商净短 gamma $32.9B，74% 来自 call side
+• WHOM: 方向性交易者将面临放大的波动
+• WHAT: 价格下行时做市商被迫卖出→加速下跌
+         价格上行时做市商被迫买入→加速上涨
+
+结构性含义:
+• Call Wall $540 (+3.4%) = 做市商卖出压力峰值
+• Put Wall $500 (-4.3%) = 若跌破将加速下行
+• Gamma 集中度 73.4% = 强 pin 效应“罩子”
+```
+
+### 关键设计原则
+
+1. **Net GEX 是充分的** —— 不需要了解做市商是卖了 iron condor 还是 straddle。SEC 15c3-1 规则基于 aggregate risk，不是 strategy-by-strategy。
+2. **Call/Put 分解有价值** —— 同样是 -$30B net GEX，call 主导意味上行对冲压力更大，put 主导意味下行对冲压力更大。
+3. **时间混淆测试** —— LLM 应当能仅从数值结构中识别模式（无需日期/ticker 提示），这证明它在做结构性推理而非记忆匹配。
+4. **检测≠可交易** —— 稳定的检测率(68-74%)可以和经济利润崩溃(Sharpe 1.8→0.1)共存。GEX 模式是结构性机制，不是可利用的异常。
+
+### 15 种核心市场机制模式（来自 Pattern Library）
+
+该项目定义了四类 15 种可检测模式，可作为 Agent 分析的参考框架：
+
+| 类别 | 典型模式 | Agent 应输出什么 |
+|---|---|---|
+| **Squeeze** | Gamma Squeeze、Short Squeeze、Pin Risk | 拤压条件是否满足 + 方向 |
+| **Manipulation** | Max Pain Magnet、Expiration Pinning | 到期日价格吸引区 + 强度 |
+| **Flow** | Dealer Hedging、Dark Pool、Sweep Detection | 机构行为方向 + 规模 |
+| **Volatility** | Vol Crush、Regime Shift、0DTE Hedging | 波动率转向预期 + 时间线 |
+
+---
+
+## 进阶设计：BTC/ETH 期权流——Deribit 免费数据
+
+> 参考 [laloquidity/btc-options-flow](https://github.com/laloquidity/btc-options-flow) —— 实时 BTC 期权流终端，拉取 Deribit 公开 API，无需 key。
+
+### Deribit Provider 设计
+
+Deribit 提供完全免费的公开 API，包含：
+- `get_last_trades_by_currency` → 实时交易流
+- `get_book_summary_by_currency` → IV map + ATM percentile
+- `get_index_price` → BTC/ETH 现货参考价
+
+而且 Deribit **直接提供 Greeks**，无需本地计算。
+
+### Multi-Leg 结构检测
+
+自动将 ±2s/±20% 内的交易分组：
+
+| 结构 | 检测条件 |
+|---|---|
+| Vertical Spread | 同 type、反 direction、同 expiry |
+| Straddle | P+C、同 direction、同 strike(±2%)、同 expiry |
+| Strangle | P+C、同 direction、不同 strikes、同 expiry |
+| Risk Reversal | P+C、反 direction、同 expiry |
+| Calendar | 同 type、同 direction、不同 expiry |
+
+### 鲸鱼交易跟踪
+
+自动保存超过门槛的大单，并计算复合权重排序：
+
+| 因子 | 权重 | 方法 |
+|---|---|---|
+| 名义金额 | 40% | `log₁₀` scale，避免悬崖效应 |
+| DTE 紧迫度 | 25% | 指数衰减，7 天半衰期 |
+| 离 Spot 距离 | 15% | ATM > NTM > OTM > Deep OTM |
+| 逆境度 | 10% | 与你方向相反的排名更高 |
+| 时效性 | 10% | 48 小时半衰期衰减 |
+
+### IV Regime 分类
+
+计算滚动 ATM IV percentile（基于 session 内 ~200 个样本点）：
+
+| ATM IV Percentile | Regime | 含义 |
+|---|---|---|
+| < 20th | Cheap | 波动率历史低位，市场自满 |
+| 20th - 80th | Mid | 正常环境 |
+| > 80th | Expensive | 波动率历史高位，市场恐慌 |
+
+### Flow Toxicity Score
+
+单一指标浓缩流动方向性：
+- **-1.0** = 极度 bullish（买方主导）
+- **+1.0** = 极度 bearish（卖方主导）
+- ATM 交易权重 1.0x，Deep OTM 交易权重 0.1x（Delta-weighted P/C ratio）
+
+---
+
+## 进阶设计：IV Surface 与 Regime 派生
+
+> 参考 `floe` 的 regime.ts 设计
+
+### 从 IV Surface 直接导出市场状态
+
+不需要外部数据，仅从 IV surface 本身就能导出：
+
+```typescript
+interface RegimeParams {
+  atmIV: number;                 // ATM 波动率（如 0.18 = 18%）
+  impliedSpotVolCorr: number;    // 从 skew slope 导出的 spot-vol 相关性
+  impliedVolOfVol: number;       // 从 smile curvature 导出的 vol-of-vol
+  regime: 'calm' | 'normal' | 'stressed' | 'crisis';
+  expectedDailySpotMove: number; // ATM IV / sqrt(252)
+  expectedDailyVolMove: number;  // vol-of-vol / sqrt(252)
+}
+```
+
+Regime 分类规则：
+
+| ATM IV | Regime | 含义 |
+|---|---|---|
+| < 15% | Calm | 市场极低波动 |
+| 15%-20% | Normal | 正常环境 |
+| 20%-35% | Stressed | 压力环境 |
+| > 35% | Crisis | 危机模式 |
+
+Skew → Correlation 转换：
+```
+impliedSpotVolCorr = clamp(skew × 0.15, -0.95, 0.5)
+```
+
+Curvature → Vol-of-Vol 转换：
+```
+impliedVolOfVol = sqrt(|curvature|) × 2.0 × atmIV
+```
+
+---
+
 ## 参考项目
 
 | 项目 | 重点参考 | 链接 |
 |---|---|---|
+| **FullStackCraft/floe** | 🌟 TypeScript 零依赖期权库；Hedge Impulse Curve + Pressure Cloud；GEX/VEX/CEX 三模式 Exposure；Broker-agnostic 设计；生产级代码质量 | [GitHub](https://github.com/FullStackCraft/floe) |
+| **simonrey1/gex-strategy** | 🌟 Rust 回测引擎；VannaFlip 信号；多层 Wall 系统；Wall-Trailing Stop；8年 Sharpe 2.82；IBKR 实盘执行 | [GitHub](https://github.com/simonrey1/gex-strategy) |
+| **iAmGiG/gex-llm-patterns** | 🌟 PhD 研究；LLM+GEX 因果推理；15种模式库；时间混淆验证；IEEE BigData 2025 发表 | [GitHub](https://github.com/iAmGiG/gex-llm-patterns) |
+| **FlashAlpha-lab/gex-explained** | GEX 从零开始解释；DEX/VEX/CHEX 四维分析；Gamma Flip 跟踪；多标的扫描 | [GitHub](https://github.com/FlashAlpha-lab/gex-explained) |
+| **laloquidity/btc-options-flow** | Deribit 免费数据；Multi-Leg 结构检测；鲸鱼跟踪；Flow Toxicity Score | [GitHub](https://github.com/laloquidity/btc-options-flow) |
+| **ShortGammaGambler/options-desk** | Bloomberg Terminal 风格 UI；3D Vol Surface；HMM Regime Detection；Monte Carlo | [GitHub](https://github.com/ShortGammaGambler/options-desk) |
 | **0DTE-dealer-gamma** | GEX 计算引擎、向量化 Greeks、YFinance/Tradier provider 设计 | [GitHub](https://github.com/puneet-chandna/0DTE-dealer-gamma) |
 | **Radon** | 完整的「信号→策略→执行」pipeline、Unusual Whales 集成 | [GitHub](https://github.com/RektBelly/radon) |
 | **options-scanner** | 简洁的多标的扫描 UI、Claude AI 集成 | [GitHub](https://github.com/jwolberg/options-scanner) |
@@ -672,7 +1037,7 @@ export interface OptionsConfig {
 
 ### Q: 为什么用 TypeScript 而不是 Python？
 
-tradex 全栈是 TypeScript。引入 Python 会增加部署复杂度。Black-Scholes 公式在 TS 中实现并无困难（无需 NumPy 级别的向量化，因为我们单次处理的合约数 < 5000）。
+tradex 全栈是 TypeScript。引入 Python 会增加部署复杂度。Black-Scholes 公式在 TS 中实现并无困难（无需 NumPy 级别的向量化，因为我们单次处理的合约数 < 5000）。参考项目 `floe` 就是纯 TypeScript 实现的零依赖期权分析库，已用于多个生产产品。
 
 ### Q: YFinance 用 SPY 代替 SPX 准确吗？
 
@@ -686,6 +1051,7 @@ SPY ≈ SPX / 10。OI 分布形态相似，但存在差异：
 - YFinance 免费：建议 60-120 秒（避免被限速）
 - Tradier sandbox：30-60 秒
 - Tradier production：5-15 秒（120 req/min 限制）
+- Deribit：15-60 秒（免费 public API，无限制但建议礼貌访问）
 
 ### Q: GEX 数据对日内交易有多大用？
 
@@ -693,6 +1059,23 @@ SPY ≈ SPX / 10。OI 分布形态相似，但存在差异：
 - GEX 本身适合做日级/半日级的 regime 判断
 - Charm/Vanna 在 0DTE 最后 2 小时尤其有用
 - Unusual Activity 是实时信号
+- Hedge Impulse Curve 在盘中持续更新时能给出最及时的做市商流向预测
+
+### Q: 为什么需要 Hedge Impulse 而不仅仅是 GEX + Vanna 分开看？
+
+因为 Gamma 和 Vanna 不是独立的。当价格下跌时，IV 通常上升（负相关）。做市商的 delta 变化同时受到两个力量作用：
+- Gamma effect: 价格下跌→delta 变化
+- Vanna effect: IV 上升→delta 变化
+
+将两者分开看会低估实际的对冲压力，因为它们在特定方向上是叠加的。Hedge Impulse 的 Taylor 展开等式 `H(S) = GEX(S) - (k/S) × VEX(S)` 正确地将二者组合，其中 k 从市场数据导出而非硬编码。
+
+### Q: 为什么 floe 说“不需要时间加权”？
+
+传统的 GEX 分析工具会对近期期权给更高权重（因为它们“更紧迫”）。但这是 double-counting —— Black-Scholes Greeks 已经包含了这个效应：
+- Gamma ∝ 1/√T → 近期期权 gamma 自然更大
+- Charm ∝ 1/T → 近期期权 charm 自然更强
+
+所以 Dollar GEX/VEX/CEX 的绝对值已经反映了时间紧迫性。额外加权会让近期期权被过度放大。
 
 ---
 
@@ -700,13 +1083,18 @@ SPY ≈ SPX / 10。OI 分布形态相似，但存在差异：
 
 ```
 tradex/options/
-├── domain.ts              # OptionQuote, OptionChain, GexSnapshot 等类型
+├── domain.ts              # OptionQuote, OptionChain, GexSnapshot, PressureCloud 等类型
 ├── greeks.ts              # Black-Scholes Greeks (gamma, delta, vega, theta, charm, vanna)
 ├── gex_calculator.ts      # GEX 计算 + ZGL + Regime + Charm/Vanna + Walls
+├── hedge_impulse.ts       # Hedge Impulse Curve: Gaussian kernel smoothing + Gamma-Vanna coupling
+├── pressure_cloud.ts      # Stability/Acceleration zones + Reachability weighting
+├── exposure.ts            # GEX/DEX/VEX/CHEX 四维 Exposure (canonical + stateWeighted + flowDelta)
+├── iv_surface.ts          # IV Surface 构建 + skew/curvature → RegimeParams 导出
+├── flow_detector.ts       # Multi-Leg 结构检测 + 鲸鱼跟踪 + Flow Toxicity Score
 ├── providers/
 │   ├── base.ts            # OptionsDataProvider 接口
 │   ├── yfinance.ts        # Yahoo Finance adapter（美股/ETF/黄金/BTC ETF）
-│   ├── deribit.ts         # Deribit adapter（BTC/ETH 原生期权，免费）
+│   ├── deribit.ts         # Deribit adapter（BTC/ETH 原生期权，免费 public API）
 │   ├── tradier.ts         # Tradier API adapter（SPX 直接链）
 │   └── index.ts           # Registry + factory
 ├── service.ts             # OptionsService: polling + caching + detection
@@ -717,10 +1105,12 @@ tradex/api/routes/
 └── options.ts             # Hono routes: /api/options/*
 
 tradex/agent/tools/
-└── options.ts             # Agent tools: get_gex_snapshot, get_dealer_levels, etc.
+└── options.ts             # Agent tools: get_gex_snapshot, get_dealer_levels,
+                           #   get_hedge_impulse, get_pressure_cloud, etc.
 
 web/src/components/workspace/
-└── OptionsPanel.tsx        # GEX visualization panel
+├── OptionsPanel.tsx        # GEX visualization panel
+└── PressureChart.tsx       # Candlestick + Pressure Cloud overlay
 
 web/src/stores/
 └── optionsStore.ts         # (optional) 或直接挂在 marketStore.state.options

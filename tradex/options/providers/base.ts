@@ -5,7 +5,7 @@
  * from external sources and return normalized OptionChain objects.
  */
 
-import type { OptionChain } from "../domain.js";
+import type { GexSnapshot, OptionChain } from "../domain.js";
 
 export interface OptionsDataProvider {
   /** Provider identifier (e.g., "yfinance", "deribit", "tradier") */
@@ -33,6 +33,13 @@ export interface OptionsDataProvider {
     strikeRangePercent?: number;
   }): Promise<OptionChain>;
 
+  /**
+   * Get a pre-computed GEX snapshot directly from the provider.
+   * Optional — providers that pre-compute GEX (FlashAlpha, ZER0DTE)
+   * implement this to bypass local Greeks/GEX calculation.
+   */
+  getGexSnapshot?(symbol: string): Promise<GexSnapshot | null>;
+
   /** Clean up resources (close HTTP connections, etc.) */
   close(): Promise<void>;
 }
@@ -46,11 +53,15 @@ export class RateLimiter {
   private readonly maxTokens: number;
   private readonly refillRate: number; // tokens per ms
 
-  constructor(callsPerMinute: number) {
-    this.maxTokens = callsPerMinute;
-    this.tokens = callsPerMinute;
+  /**
+   * @param maxCalls Maximum number of calls allowed in the window
+   * @param windowMs Time window in milliseconds (default: 60_000 = 1 minute)
+   */
+  constructor(maxCalls: number, windowMs = 60_000) {
+    this.maxTokens = maxCalls;
+    this.tokens = maxCalls;
     this.lastRefill = Date.now();
-    this.refillRate = callsPerMinute / 60_000;
+    this.refillRate = maxCalls / windowMs;
   }
 
   async acquire(): Promise<void> {

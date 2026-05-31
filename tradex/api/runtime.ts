@@ -103,9 +103,9 @@ export class AppRuntime {
     // Wire browser automation manager
     this.browserManager = new BrowserManager(config.browser);
 
-    // Wire options/GEX service
+    // Wire options/GEX service (pass MCP caller for ZER0DTE integration)
     this.optionsService = config.options.enabled
-      ? new OptionsService(config.options)
+      ? new OptionsService(config.options, this.mcpManager ?? undefined)
       : null;
 
     // Wire trade closure → memory pipeline enqueue

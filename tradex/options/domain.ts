@@ -125,7 +125,7 @@ export interface OiRecord {
 
 export interface OptionsConfig {
   enabled: boolean;
-  provider: "yfinance" | "tradier" | "deribit";
+  provider: "yfinance" | "tradier" | "deribit" | "flashalpha";
   symbols: string[];
   pollIntervalSeconds: number;
   strikeRangePercent: number;
@@ -138,6 +138,15 @@ export interface OptionsConfig {
   deribit?: {
     enabled: boolean;
     currencies: string[];
+  };
+  flashalpha?: {
+    apiKey: string;
+    baseUrl?: string;
+  };
+  zer0dte?: {
+    enabled: boolean;
+    /** MCP server name in .mcp.json (default: "zer0dte") */
+    serverName?: string;
   };
   alerts: {
     minOiChange: number;
