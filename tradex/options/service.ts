@@ -8,8 +8,6 @@
 import type { GexSnapshot, OiRecord, OptionsConfig, UnusualActivity } from "./domain.js";
 import { GexCalculator } from "./gex_calculator.js";
 import { DeribitProvider } from "./providers/deribit.js";
-
-import { Zer0dteProvider, type McpToolCaller } from "./providers/zer0dte.js";
 import { createProvider, resolveProviderForSymbol, type OptionsDataProvider } from "./providers/index.js";
 import { OptionsStore } from "./store.js";
 
@@ -17,8 +15,6 @@ export class OptionsService {
   private readonly config: OptionsConfig;
   private readonly primaryProvider: OptionsDataProvider;
   private readonly deribitProvider: DeribitProvider | null;
-
-  private readonly zer0dteProvider: Zer0dteProvider | null;
   private readonly calculator: GexCalculator;
   private readonly store: OptionsStore;
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -30,18 +26,13 @@ export class OptionsService {
   private readonly recentActivity: UnusualActivity[] = [];
   private static readonly MAX_RECENT = 200;
 
-  constructor(config: OptionsConfig, mcpCaller?: McpToolCaller | null) {
+  constructor(config: OptionsConfig) {
     this.config = config;
     this.primaryProvider = createProvider(config);
 
     // Create separate Deribit provider if crypto is enabled
     this.deribitProvider = config.deribit?.enabled
       ? new DeribitProvider(config.deribit.currencies)
-      : null;
-
-    // ZER0DTE for SPX 0DTE via MCP
-    this.zer0dteProvider = config.zer0dte?.enabled && mcpCaller
-      ? new Zer0dteProvider(mcpCaller, config.zer0dte.serverName)
       : null;
 
     this.calculator = new GexCalculator({
@@ -84,7 +75,6 @@ export class OptionsService {
     this.stop();
     await this.primaryProvider.close();
     if (this.deribitProvider) await this.deribitProvider.close();
-    // FlashAlpha and ZER0DTE are stateless HTTP — no cleanup needed
   }
 
   // --------------------------------------------------------------------------
@@ -149,15 +139,7 @@ export class OptionsService {
   }
 
   private async fetchAndCalculate(symbol: string): Promise<GexSnapshot | null> {
-    // 1. Try pre-computed providers first (no local calculation needed)
-    const precomputed = await this.tryPrecomputedSnapshot(symbol);
-    if (precomputed) {
-      this.snapshots.set(symbol, precomputed);
-      this.store.saveGexSnapshot(precomputed);
-      return precomputed;
-    }
-
-    // 2. Fall back to raw chain → local GEX calculation
+    // Fetch raw chain → local GEX calculation
     const provider = resolveProviderForSymbol(symbol, this.primaryProvider, this.deribitProvider);
 
     const chain = await provider.getOptionsChain(symbol, {
@@ -183,26 +165,6 @@ export class OptionsService {
     this.detectUnusualActivity(chain);
 
     return snapshot;
-  }
-
-  /**
-   * Try to get a pre-computed GEX snapshot from FlashAlpha or ZER0DTE.
-   * These providers return ready-to-use GEX data without local calculation.
-   */
-  private async tryPrecomputedSnapshot(symbol: string): Promise<GexSnapshot | null> {
-    const upper = symbol.toUpperCase();
-
-    // ZER0DTE only covers SPX/SPY
-    if (this.zer0dteProvider && (upper === "SPX" || upper === "SPY")) {
-      try {
-        const snap = await this.zer0dteProvider.getGexSnapshot(upper);
-        if (snap) return snap;
-      } catch (err) {
-        console.warn(`[options] ZER0DTE failed for ${upper}:`, err instanceof Error ? err.message : err);
-      }
-    }
-
-    return null;
   }
 
   // --------------------------------------------------------------------------

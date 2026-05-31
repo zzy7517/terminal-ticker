@@ -739,13 +739,6 @@ export function parseOptionsConfig(rawOptionsValue: unknown): import("../options
       enabled: normalizeBool(rawDeribit.enabled, "options.deribit.enabled", false),
       currencies: Array.isArray(rawDeribit.currencies) ? rawDeribit.currencies.map(String) : ["BTC", "ETH"],
     },
-    zer0dte: (() => {
-      const rawZ = asRecord(raw.zer0dte, "options.zer0dte");
-      return {
-        enabled: normalizeBool(rawZ.enabled, "options.zer0dte.enabled", false),
-        serverName: typeof rawZ.server_name === "string" ? rawZ.server_name : "zer0dte",
-      };
-    })(),
     alerts: {
       minOiChange: coerceInt(rawAlerts.min_oi_change, "options.alerts.min_oi_change", 1000),
       minVolumeOiRatio: coerceFloat(rawAlerts.min_volume_oi_ratio, "options.alerts.min_volume_oi_ratio", 3.0),

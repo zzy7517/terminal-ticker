@@ -139,11 +139,6 @@ export interface OptionsConfig {
     enabled: boolean;
     currencies: string[];
   };
-  zer0dte?: {
-    enabled: boolean;
-    /** MCP server name in .mcp.json (default: "zer0dte") */
-    serverName?: string;
-  };
   alerts: {
     minOiChange: number;
     minVolumeOiRatio: number;

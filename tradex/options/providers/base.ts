@@ -35,8 +35,9 @@ export interface OptionsDataProvider {
 
   /**
    * Get a pre-computed GEX snapshot directly from the provider.
-   * Optional — providers that pre-compute GEX (FlashAlpha, ZER0DTE)
-   * implement this to bypass local Greeks/GEX calculation.
+   * Optional — providers that ship ready-to-use GEX can implement this to
+   * bypass local Greeks/GEX calculation. The built-in providers (YFinance,
+   * Deribit) return null and rely on local calculation.
    */
   getGexSnapshot?(symbol: string): Promise<GexSnapshot | null>;
 

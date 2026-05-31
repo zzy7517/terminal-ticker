@@ -14,9 +14,8 @@ const PROJECT_CONFIG_NAME = ".mcp.json";
  * Built-in default MCP servers that are always available.
  *
  * NOTE: Only free, unmetered servers belong here. Rate-limited / paid servers
- * (e.g. zer0dte, 3 req/day on the free tier) must be opt-in via `.mcp.json`
- * or `[options.zer0dte]`, otherwise eager connection on every agent turn /
- * cron run spams the logs once the daily limit is hit.
+ * must be opt-in via `.mcp.json`, otherwise eager connection on every agent
+ * turn / cron run spams the logs once the daily limit is hit.
  */
 const BUILTIN_SERVERS: Record<string, McpServerEntry> = {
   jin10: {
