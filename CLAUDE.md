@@ -73,7 +73,7 @@ The TypeScript backend `tradex/` is organized as strict layers. Upper layers imp
 2. **`config/`** — parses `watchlist.toml` → `AppConfig`. Also holds agent model normalization (`agent_models.ts`) and `watchlist_store.ts` which round-trips the TOML on add/remove from the UI.
 3. **`market_data/`** — per-provider adapters (`bitget.ts`, `hyperliquid.ts`) plus `router.ts` which dispatches `InstrumentConfig` to the right provider and preserves watchlist order. `candle_cache.ts` provides the local OHLCV cache that agent tools read from.
 4. **`runtime/`** — `feed.ts` runs background async tasks that stream quotes/candles from providers into controller events. `controller.ts` (`TickerController`) drains those events into an in-memory `QuoteState` map and tracks flash directions.
-5. **`trading/`** — local trade records and external live/demo execution. `store.ts` is a SQLite-backed `TradeStore` at `~/.cache/tradex/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.ts` submits signed Hyperliquid mainnet orders when `[trading].hyperliquid_mode = "live"`; `bitget.ts` signs Bitget orders with `PAPTRADING: 1` header in demo mode or without it in live mode when `[trading].bitget_mode` is not `"off"`. `review.ts` orchestrates LLM post-trade reviews that produce lesson rows.
+5. **`trading/`** — local trade records and external live/demo execution. `store.ts` is a SQLite-backed `TradeStore` at `~/.cache/tradex/trades.sqlite3` (tables: trades, fills, snapshots, lessons). `hyperliquid.ts` submits signed Hyperliquid mainnet orders when `[trading].hyperliquid_mode = "live"`; `bitget.ts` signs Bitget orders with `PAPTRADING: 1` header in demo mode or without it in live mode when `[trading].bitget_mode` is not `"off"`. The `lessons` table is read (via `listLessons`) by the memory pipeline, agent tools, and the `/api/lessons` route, but there is currently no code path that writes lessons.
 6. **`agent/`** — LLM layer. `providers/codex.ts` and `providers/anthropic.ts` implement the transport. `loop.ts` is a tool-calling agent loop; `tools/` defines `ToolRegistry` and tool packs.
 7. **`api/app.ts`** — Hono API and SSE routes. `api/runtime.ts` owns the `TickerController`, local stores, provider services, and state serialization.
 
@@ -86,8 +86,8 @@ The TypeScript backend `tradex/` is organized as strict layers. Upper layers imp
 The agent can submit Hyperliquid mainnet orders via `open_hyperliquid_trade`, or Bitget demo orders via `open_bitget_demo_trade`, during a chat turn only when the matching `[trading]` platform switch is enabled. Disabled platforms do not expose their Agent order-entry tools, so the model should provide trade plans instead of executing orders. Flow:
 1. Tool handler submits a signed order to the external test/demo environment and freezes a snapshot (multi-timeframe context + current analysis) into the `snapshots` table.
 2. The order result is inserted into `trades`; immediate Hyperliquid fills are inserted into `fills`. Local code no longer simulates fills from 1m candles.
-3. Closed trades can be reviewed through `trading/review.ts`. The reviewer calls the configured LLM and writes structured lessons into the `lessons` table.
-4. When the agent opens a new trade on the same instrument, the top 5 most recent lessons are injected into the prompt so past mistakes inform new decisions.
+3. Closed trades surface in the trade history and feed the memory pipeline. (An LLM post-trade reviewer that wrote `lessons` rows previously existed but was never wired into the runtime and has been removed.)
+4. When the agent opens a new trade on the same instrument, any existing lessons for that instrument are injected into the prompt so past mistakes inform new decisions.
 
 Resting orders and later fills require exchange order-state sync; they are not advanced by local candle simulation.
 

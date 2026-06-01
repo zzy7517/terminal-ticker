@@ -243,14 +243,6 @@ export class TradeStore extends BaseStore {
     return this.mustGetTrade(tradeId);
   }
 
-  saveLesson(input: { tradeId?: number | null; instrumentKey: string; category?: string; text: string; tags?: string[]; createdAtMs?: number | null }): Record<string, unknown> {
-    const createdAtMs = input.createdAtMs ?? nowMs();
-    const result = this.getConn()
-      .prepare("INSERT INTO lessons (trade_id, instrument_key, created_at_ms, category, text, tags_json) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(input.tradeId ?? null, input.instrumentKey, createdAtMs, input.category ?? "", input.text, jsonDumps(input.tags ?? []));
-    return { id: Number(result.lastInsertRowid), tradeId: input.tradeId ?? null, instrumentKey: input.instrumentKey, createdAtMs, category: input.category ?? "", text: input.text, tags: input.tags ?? [] };
-  }
-
   listLessons(input: { instrumentKey?: string | null; tradeId?: number | null; limit?: number | null } = {}): Record<string, unknown>[] {
     const clauses: string[] = [];
     const params: unknown[] = [];
@@ -266,20 +258,6 @@ export class TradeStore extends BaseStore {
     const limit = input.limit !== undefined && input.limit !== null ? `LIMIT ${Math.max(1, Math.floor(input.limit))}` : "";
     const rows = this.getConn().prepare(`SELECT * FROM lessons ${where} ORDER BY created_at_ms DESC, id DESC ${limit}`).all(...params) as LessonRow[];
     return rows.map(lessonRowToPayload);
-  }
-
-  tradeIdsWithoutReview(input: { limit?: number } = {}): number[] {
-    const rows = this.getConn()
-      .prepare(
-        `SELECT t.id
-         FROM trades t
-         LEFT JOIN lessons l ON l.trade_id = t.id
-         WHERE t.status = ? AND l.id IS NULL
-         ORDER BY t.closed_at_ms DESC, t.id DESC
-         LIMIT ?`,
-      )
-      .all(TradeStatus.CLOSED, input.limit ?? 10) as Array<{ id: number }>;
-    return rows.map((row) => row.id);
   }
 
   private mustGetTrade(tradeId: number): Trade {
