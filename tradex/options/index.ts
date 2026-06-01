@@ -65,18 +65,6 @@ export {
 } from "./pressure_cloud.js";
 
 export {
-  computeFlowToxicity,
-  detectMultiLegStructures,
-  identifyWhales,
-  type FlowToxicity,
-  type LegStructure,
-  type MultiLegGroup,
-  type TradeFlow,
-  type WhaleAlert,
-  type WhaleConfig,
-} from "./flow_detector.js";
-
-export {
   calculateFullExposure,
   type ExposureModeBreakdown,
   type ExposureOptions,

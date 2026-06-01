@@ -168,4 +168,118 @@ export function registerOptionsTools(registry: ToolRegistry, runtime: AppRuntime
       });
     },
   });
+
+  registry.register({
+    name: "get_hedge_impulse",
+    description: "Get the dealer hedge impulse curve — where price is mechanically pinned (positive impulse / attractor) vs. where it can accelerate (negative impulse / breakout). Returns impulse regime, nearest attractor levels above/below spot, directional asymmetry, and impulse at spot. Use to predict whether price will mean-revert or trend, and identify magnet/repellent prices.",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Symbol (default: SPY)" },
+      },
+    },
+    execute: async (args: Record<string, unknown>) => {
+      if (!svc) return JSON.stringify({ error: "Options service not enabled." });
+
+      const symbol = (typeof args.symbol === "string" ? args.symbol : "SPY").toUpperCase();
+      const snapshot = svc.getSnapshot(symbol);
+      if (!snapshot) return JSON.stringify({ error: `No data for ${symbol}` });
+      const hi = snapshot.hedgeImpulse;
+      if (!hi) return JSON.stringify({ error: `No hedge impulse data for ${symbol} (insufficient IV/strikes).` });
+
+      const regimeImplications: Record<string, string> = {
+        pinned: "Strong positive impulse at spot — price is mechanically locked near current level. Favor premium selling / range strategies.",
+        expansion: "Negative impulse at spot — dealers amplify moves, breakout potential. Favor directional / momentum strategies.",
+        "squeeze-up": "Negative impulse above, positive below — upside squeeze setup. Bias long into the attractor above.",
+        "squeeze-down": "Negative impulse below, positive above — downside squeeze setup. Bias short into the attractor below.",
+        neutral: "Mixed/weak impulse signals — no strong mechanical bias.",
+      };
+
+      return JSON.stringify({
+        symbol,
+        spotPrice: snapshot.spotPrice,
+        regime: hi.regime,
+        implication: regimeImplications[hi.regime] ?? null,
+        impulseAtSpot: Math.round(hi.impulseAtSpot),
+        slopeAtSpot: hi.slopeAtSpot,
+        nearestAttractorAbove: hi.nearestAttractorAbove,
+        nearestAttractorBelow: hi.nearestAttractorBelow,
+        directionalBias: hi.asymmetry.bias,
+        asymmetryRatio: Math.round(hi.asymmetry.asymmetryRatio * 100) / 100,
+        zeroCrossings: hi.zeroCrossings.map((z) => ({ price: Math.round(z.price * 100) / 100, direction: z.direction })),
+      });
+    },
+  });
+
+  registry.register({
+    name: "get_pressure_cloud",
+    description: "Get the options pressure cloud — reachable price zones classified as stability zones (mean-reversion, dealers hedge passively) or acceleration zones (trend-amplification, dealers hedge aggressively), plus regime-edge prices where behavior flips. Each zone carries a favored trade type (long/short) and strength. Use for concrete support/resistance and trade location.",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Symbol (default: SPY)" },
+      },
+    },
+    execute: async (args: Record<string, unknown>) => {
+      if (!svc) return JSON.stringify({ error: "Options service not enabled." });
+
+      const symbol = (typeof args.symbol === "string" ? args.symbol : "SPY").toUpperCase();
+      const snapshot = svc.getSnapshot(symbol);
+      if (!snapshot) return JSON.stringify({ error: `No data for ${symbol}` });
+      const pc = snapshot.pressureCloud;
+      if (!pc) return JSON.stringify({ error: `No pressure cloud data for ${symbol}.` });
+
+      const fmtZone = (z: typeof pc.stabilityZones[number]) => ({
+        center: Math.round(z.center * 100) / 100,
+        range: [Math.round(z.lower * 100) / 100, Math.round(z.upper * 100) / 100],
+        side: z.side,
+        strength: Math.round(z.strength * 100) / 100,
+        tradeType: z.tradeType,
+        hedgeType: z.hedgeType,
+      });
+
+      return JSON.stringify({
+        symbol,
+        spotPrice: snapshot.spotPrice,
+        stabilityZones: pc.stabilityZones.map(fmtZone),
+        accelerationZones: pc.accelerationZones.map(fmtZone),
+        regimeEdges: pc.regimeEdges.map((e) => ({ price: Math.round(e.price * 100) / 100, transition: e.transitionType })),
+      });
+    },
+  });
+
+  registry.register({
+    name: "get_exposure_breakdown",
+    description: "Get full 4D dealer exposure (GEX/DEX/VEX/CHEX) broken down per expiration: Gamma ($/1% move), Delta (net directional $), Vanna ($/1 vol-point), and Charm ($/1 day decay). Use to see which expirations dominate dealer hedging and how vol/time exposure is distributed.",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Symbol (default: SPY)" },
+      },
+    },
+    execute: async (args: Record<string, unknown>) => {
+      if (!svc) return JSON.stringify({ error: "Options service not enabled." });
+
+      const symbol = (typeof args.symbol === "string" ? args.symbol : "SPY").toUpperCase();
+      const snapshot = svc.getSnapshot(symbol);
+      if (!snapshot) return JSON.stringify({ error: `No data for ${symbol}` });
+      const exp = snapshot.exposure;
+      if (!exp || exp.length === 0) return JSON.stringify({ error: `No exposure data for ${symbol}.` });
+
+      return JSON.stringify({
+        symbol,
+        spotPrice: snapshot.spotPrice,
+        regime: snapshot.regimeParams?.regime ?? null,
+        atmIV: snapshot.regimeParams ? Math.round(snapshot.regimeParams.atmIV * 1000) / 10 + "%" : null,
+        perExpiry: exp.slice(0, 8).map((e) => ({
+          expiration: e.expiration,
+          daysToExpiry: Math.round(e.tte * 365),
+          gammaExposureBillions: Math.round(e.canonical.totalGammaExposure / 1e9 * 100) / 100,
+          deltaExposureBillions: Math.round(e.canonical.totalDeltaExposure / 1e9 * 100) / 100,
+          vannaExposureMillions: Math.round(e.canonical.totalVannaExposure / 1e6 * 100) / 100,
+          charmExposureMillions: Math.round(e.canonical.totalCharmExposure / 1e6 * 100) / 100,
+        })),
+      });
+    },
+  });
 }

@@ -261,6 +261,12 @@ export class OptionsStore extends BaseStore {
         vannaByStrike: {},
       } : null,
       provider: row.provider,
+      // Advanced analytics are live-only; not persisted in history rows.
+      regimeParams: null,
+      ivSurface: null,
+      hedgeImpulse: null,
+      pressureCloud: null,
+      exposure: null,
     };
   }
 }

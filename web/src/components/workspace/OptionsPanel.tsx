@@ -13,6 +13,50 @@ interface StrikeGex {
   putOi: number;
 }
 
+interface RegimeParams {
+  atmIV: number;
+  regime: 'calm' | 'normal' | 'stressed' | 'crisis';
+  impliedSpotVolCorr: number;
+  impliedVolOfVol: number;
+  expectedDailySpotMove: number;
+}
+
+interface ImpulsePoint {
+  price: number;
+  impulse: number;
+}
+
+interface HedgeImpulse {
+  regime: 'pinned' | 'expansion' | 'squeeze-up' | 'squeeze-down' | 'neutral';
+  impulseAtSpot: number;
+  nearestAttractorAbove: number | null;
+  nearestAttractorBelow: number | null;
+  asymmetry: { upside: number; downside: number; bias: 'up' | 'down' | 'neutral'; asymmetryRatio: number };
+  curve: ImpulsePoint[];
+}
+
+interface PressureZone {
+  center: number;
+  lower: number;
+  upper: number;
+  strength: number;
+  side: 'above-spot' | 'below-spot';
+  tradeType: 'long' | 'short';
+  hedgeType: 'passive' | 'aggressive';
+}
+
+interface PressureCloud {
+  stabilityZones: PressureZone[];
+  accelerationZones: PressureZone[];
+  regimeEdges: { price: number; transitionType: string }[];
+}
+
+interface IVSurface {
+  expiration: string;
+  strikes: number[];
+  smoothedIVs: number[];
+}
+
 interface OptionsSnapshot {
   symbol: string;
   spotPrice: number;
@@ -29,6 +73,11 @@ interface OptionsSnapshot {
   gexByStrike: StrikeGex[];
   provider: string;
   timestamp: number;
+  // Advanced analytics (A modules)
+  regimeParams: RegimeParams | null;
+  ivSurface: IVSurface | null;
+  hedgeImpulse: HedgeImpulse | null;
+  pressureCloud: PressureCloud | null;
 }
 
 interface UnusualItem {
@@ -163,8 +212,23 @@ export function OptionsPanel() {
         />
       </div>
 
+      {/* Market Regime + Hedge Impulse summary */}
+      {(snap.regimeParams || snap.hedgeImpulse) && (
+        <RegimeImpulseRow snap={snap} />
+      )}
+
       {/* Key Levels Visual */}
       <KeyLevelsBar snap={snap} />
+
+      {/* Hedge Impulse Curve */}
+      {snap.hedgeImpulse && snap.hedgeImpulse.curve.length > 1 && (
+        <ImpulseCurve impulse={snap.hedgeImpulse} spotPrice={snap.spotPrice} />
+      )}
+
+      {/* Pressure Cloud zones */}
+      {snap.pressureCloud && (
+        <PressureCloudView cloud={snap.pressureCloud} spotPrice={snap.spotPrice} />
+      )}
 
       {/* GEX by Strike Profile */}
       <GexProfile strikes={snap.gexByStrike} spotPrice={snap.spotPrice} zgl={snap.zeroGammaLevel} />
@@ -307,6 +371,141 @@ function GexProfile({ strikes, spotPrice, zgl }: { strikes: StrikeGex[]; spotPri
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+const IMPULSE_REGIME_LABEL: Record<string, string> = {
+  pinned: 'Pinned',
+  expansion: 'Expansion',
+  'squeeze-up': 'Squeeze Up',
+  'squeeze-down': 'Squeeze Down',
+  neutral: 'Neutral',
+};
+
+const IMPULSE_REGIME_CLASS: Record<string, string> = {
+  pinned: 'positive',
+  expansion: 'negative',
+  'squeeze-up': 'positive',
+  'squeeze-down': 'negative',
+  neutral: 'warning',
+};
+
+function RegimeImpulseRow({ snap }: { snap: OptionsSnapshot }) {
+  const rp = snap.regimeParams;
+  const hi = snap.hedgeImpulse;
+  return (
+    <div className="options-stats">
+      {rp && (
+        <Stat
+          label="Vol Regime"
+          value={rp.regime}
+          className={rp.regime === 'calm' || rp.regime === 'normal' ? 'positive' : 'negative'}
+          sub={`ATM IV ${(rp.atmIV * 100).toFixed(1)}%`}
+        />
+      )}
+      {rp && (
+        <Stat
+          label="Exp. Daily Move"
+          value={`\u00B1${(rp.expectedDailySpotMove * 100).toFixed(2)}%`}
+          sub={`spot-vol corr ${rp.impliedSpotVolCorr.toFixed(2)}`}
+        />
+      )}
+      {hi && (
+        <Stat
+          label="Impulse Regime"
+          value={IMPULSE_REGIME_LABEL[hi.regime] ?? hi.regime}
+          className={IMPULSE_REGIME_CLASS[hi.regime]}
+          sub={`bias ${hi.asymmetry.bias}`}
+        />
+      )}
+      {hi && (
+        <Stat
+          label="Attractors"
+          value={`${hi.nearestAttractorBelow ? hi.nearestAttractorBelow.toFixed(0) : '\u2013'} / ${hi.nearestAttractorAbove ? hi.nearestAttractorAbove.toFixed(0) : '\u2013'}`}
+          sub="below / above"
+        />
+      )}
+    </div>
+  );
+}
+
+function ImpulseCurve({ impulse, spotPrice }: { impulse: HedgeImpulse; spotPrice: number }) {
+  const pts = impulse.curve;
+  const W = 100;
+  const H = 40;
+  const prices = pts.map((p) => p.price);
+  const impulses = pts.map((p) => p.impulse);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const rangeP = maxP - minP || 1;
+  const maxAbs = Math.max(...impulses.map((v) => Math.abs(v)), 1);
+
+  const x = (price: number) => ((price - minP) / rangeP) * W;
+  const y = (imp: number) => H / 2 - (imp / maxAbs) * (H / 2 - 2);
+
+  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.price).toFixed(2)},${y(p.impulse).toFixed(2)}`).join(' ');
+  const spotX = x(Math.max(minP, Math.min(maxP, spotPrice)));
+
+  return (
+    <div className="gex-profile">
+      <div className="gex-profile__head">
+        <span className="gex-profile__title">Hedge Impulse Curve</span>
+        <span className="options-panel__tab-meta">+ = pin / attractor · − = accelerate</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 80, display: 'block' }}>
+        <line x1={0} y1={H / 2} x2={W} y2={H / 2} stroke="var(--line-strong)" strokeWidth={0.3} />
+        <line x1={spotX} y1={0} x2={spotX} y2={H} stroke="var(--accent)" strokeWidth={0.4} strokeDasharray="1,1" />
+        <path d={path} fill="none" stroke="var(--warning)" strokeWidth={0.8} vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="options-levels__legend">
+        <span className="options-levels__legend-item">{minP.toFixed(0)}</span>
+        <span className="options-levels__legend-item" style={{ marginLeft: 'auto' }}>{maxP.toFixed(0)}</span>
+      </div>
+    </div>
+  );
+}
+
+function PressureCloudView({ cloud, spotPrice }: { cloud: PressureCloud; spotPrice: number }) {
+  const zones = [
+    ...cloud.stabilityZones.map((z) => ({ ...z, kind: 'stability' as const })),
+    ...cloud.accelerationZones.map((z) => ({ ...z, kind: 'acceleration' as const })),
+  ].sort((a, b) => b.center - a.center);
+
+  if (zones.length === 0) return null;
+
+  return (
+    <div className="options-activity">
+      <div className="options-activity__title">Pressure Cloud</div>
+      <div className="options-activity__list">
+        {zones.map((z, i) => {
+          const dist = ((z.center - spotPrice) / spotPrice) * 100;
+          return (
+            <div key={i} className="options-activity__item">
+              <span
+                className={`options-activity__signal ${z.kind === 'stability' ? 'opening' : 'sweep'}`}
+              >
+                {z.kind === 'stability' ? 'STABLE' : 'ACCEL'}
+              </span>
+              <span className={`options-activity__type ${z.tradeType === 'long' ? 'call' : 'put'}`}>
+                {z.tradeType.toUpperCase()}
+              </span>
+              <span className="options-activity__detail">
+                {z.lower.toFixed(0)}–{z.upper.toFixed(0)} ({dist >= 0 ? '+' : ''}{dist.toFixed(1)}%) · {z.hedgeType}
+              </span>
+              <span className="options-activity__premium">{(z.strength * 100).toFixed(0)}%</span>
+            </div>
+          );
+        })}
+        {cloud.regimeEdges.length > 0 && (
+          <div className="options-activity__item" style={{ opacity: 0.7 }}>
+            <span className="options-activity__signal">EDGE</span>
+            <span className="options-activity__detail">
+              Regime flips at {cloud.regimeEdges.map((e) => e.price.toFixed(0)).join(', ')}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

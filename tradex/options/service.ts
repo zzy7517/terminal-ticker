@@ -5,11 +5,15 @@
  * and unusual activity detection.
  */
 
-import type { GexSnapshot, OiRecord, OptionsConfig, UnusualActivity } from "./domain.js";
+import type { GexSnapshot, OiRecord, OptionChain, OptionsConfig, UnusualActivity } from "./domain.js";
 import { GexCalculator } from "./gex_calculator.js";
 import { DeribitProvider } from "./providers/deribit.js";
 import { createProvider, resolveProviderForSymbol, type OptionsDataProvider } from "./providers/index.js";
 import { OptionsStore } from "./store.js";
+import { buildIVSurface, deriveRegimeParams, deriveSpotVolCoupling } from "./iv_surface.js";
+import { computeHedgeImpulseCurve } from "./hedge_impulse.js";
+import { computePressureCloud } from "./pressure_cloud.js";
+import { calculateFullExposure } from "./exposure.js";
 
 export class OptionsService {
   private readonly config: OptionsConfig;
@@ -154,6 +158,10 @@ export class OptionsService {
     // Calculate GEX
     const snapshot = this.calculator.calculate(chain);
 
+    // Enrich with advanced analytics (IV surface → regime → hedge impulse →
+    // pressure cloud) plus full 4D exposure. Non-fatal: failures leave nulls.
+    this.enrichSnapshot(snapshot, chain);
+
     // Store in memory cache
     this.snapshots.set(symbol, snapshot);
 
@@ -165,6 +173,76 @@ export class OptionsService {
     this.detectUnusualActivity(chain);
 
     return snapshot;
+  }
+
+  // --------------------------------------------------------------------------
+  // Advanced Analytics (A modules)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Compute IV surface, regime params, hedge impulse curve, pressure cloud,
+   * and full 4D exposure from the chain, attaching them to the snapshot.
+   *
+   * The IV-surface-derived chain (surface → regime → impulse → cloud) is built
+   * on the nearest expiration, where dealer hedging is most price-sensitive.
+   * Exposure is computed across all expirations.
+   */
+  private enrichSnapshot(snapshot: GexSnapshot, chain: OptionChain): void {
+    const { spotPrice, contracts } = chain;
+    const r = this.config.riskFreeRate;
+    const q = this.config.dividendYield;
+
+    try {
+      // Full 4D exposure across all expirations
+      snapshot.exposure = calculateFullExposure(contracts, spotPrice, {
+        riskFreeRate: r,
+        dividendYield: q,
+        asOfTimestamp: chain.timestamp,
+      });
+    } catch (err) {
+      console.warn(`[options] exposure failed for ${chain.underlying}:`, err instanceof Error ? err.message : err);
+      snapshot.exposure = null;
+    }
+
+    try {
+      // Front (nearest) expiration drives the surface/impulse/cloud chain
+      const frontExpiration = this.nearestExpiration(contracts, chain.timestamp);
+      if (!frontExpiration) return;
+
+      const surface = buildIVSurface(contracts, spotPrice, frontExpiration);
+      if (!surface) return;
+      snapshot.ivSurface = surface;
+
+      const regimeParams = deriveRegimeParams(surface);
+      snapshot.regimeParams = regimeParams;
+
+      const k = deriveSpotVolCoupling(regimeParams);
+      const impulse = computeHedgeImpulseCurve(contracts, spotPrice, k, {
+        riskFreeRate: r,
+        dividendYield: q,
+      });
+      snapshot.hedgeImpulse = impulse;
+
+      snapshot.pressureCloud = computePressureCloud(impulse, regimeParams);
+    } catch (err) {
+      console.warn(`[options] analytics failed for ${chain.underlying}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  /** Pick the nearest non-expired expiration present in the chain. */
+  private nearestExpiration(contracts: OptionChain["contracts"], nowMs: number): string | null {
+    let best: string | null = null;
+    let bestMs = Infinity;
+    for (const c of contracts) {
+      // Match GexCalculator.timeToExpiration: 4:00 PM ET on the expiration date.
+      const expMs = Date.parse(`${c.expiration}T16:00:00-04:00`);
+      if (!isFinite(expMs) || expMs <= nowMs) continue;
+      if (expMs < bestMs) {
+        bestMs = expMs;
+        best = c.expiration;
+      }
+    }
+    return best;
   }
 
   // --------------------------------------------------------------------------

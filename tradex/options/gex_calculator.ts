@@ -153,6 +153,12 @@ export class GexCalculator {
       gexByStrike,
       charmVanna,
       provider,
+      // Advanced analytics are attached later by OptionsService.enrichSnapshot
+      regimeParams: null,
+      ivSurface: null,
+      hedgeImpulse: null,
+      pressureCloud: null,
+      exposure: null,
     };
   }
 
@@ -355,6 +361,11 @@ export class GexCalculator {
       gexByStrike: [],
       charmVanna: null,
       provider,
+      regimeParams: null,
+      ivSurface: null,
+      hedgeImpulse: null,
+      pressureCloud: null,
+      exposure: null,
     };
   }
 }

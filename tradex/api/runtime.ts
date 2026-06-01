@@ -233,6 +233,53 @@ export class AppRuntime {
               gexByStrike: snap.gexByStrike,
               provider: snap.provider,
               timestamp: snap.timestamp,
+              // ── Advanced analytics (A modules) ──
+              regimeParams: snap.regimeParams
+                ? {
+                    atmIV: snap.regimeParams.atmIV,
+                    regime: snap.regimeParams.regime,
+                    impliedSpotVolCorr: snap.regimeParams.impliedSpotVolCorr,
+                    impliedVolOfVol: snap.regimeParams.impliedVolOfVol,
+                    expectedDailySpotMove: snap.regimeParams.expectedDailySpotMove,
+                  }
+                : null,
+              ivSurface: snap.ivSurface
+                ? {
+                    expiration: snap.ivSurface.expiration,
+                    strikes: snap.ivSurface.strikes,
+                    smoothedIVs: snap.ivSurface.smoothedIVs,
+                  }
+                : null,
+              hedgeImpulse: snap.hedgeImpulse
+                ? {
+                    regime: snap.hedgeImpulse.regime,
+                    impulseAtSpot: snap.hedgeImpulse.impulseAtSpot,
+                    nearestAttractorAbove: snap.hedgeImpulse.nearestAttractorAbove,
+                    nearestAttractorBelow: snap.hedgeImpulse.nearestAttractorBelow,
+                    asymmetry: snap.hedgeImpulse.asymmetry,
+                    curve: snap.hedgeImpulse.curve.map((p) => ({
+                      price: p.price,
+                      impulse: p.impulse,
+                    })),
+                  }
+                : null,
+              pressureCloud: snap.pressureCloud
+                ? {
+                    stabilityZones: snap.pressureCloud.stabilityZones,
+                    accelerationZones: snap.pressureCloud.accelerationZones,
+                    regimeEdges: snap.pressureCloud.regimeEdges,
+                  }
+                : null,
+              exposure: snap.exposure
+                ? snap.exposure.map((e) => ({
+                    expiration: e.expiration,
+                    tte: e.tte,
+                    totalGammaExposure: e.canonical.totalGammaExposure,
+                    totalDeltaExposure: e.canonical.totalDeltaExposure,
+                    totalVannaExposure: e.canonical.totalVannaExposure,
+                    totalCharmExposure: e.canonical.totalCharmExposure,
+                  }))
+                : null,
             },
           ]),
         ),

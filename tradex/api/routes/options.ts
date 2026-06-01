@@ -7,6 +7,10 @@
  *   GET /api/options/levels?symbol=SPY         — Key levels (ZGL, Walls)
  *   GET /api/options/unusual?symbol=SPY        — Unusual activity
  *   GET /api/options/history?symbol=SPY&limit= — Historical GEX
+ *   GET /api/options/iv-surface?symbol=SPY     — IV surface + regime params
+ *   GET /api/options/impulse?symbol=SPY        — Hedge impulse curve
+ *   GET /api/options/pressure?symbol=SPY       — Pressure cloud (zones/edges)
+ *   GET /api/options/exposure?symbol=SPY       — Full 4D exposure breakdown
  *   POST /api/options/refresh?symbol=SPY       — Force refresh
  *   POST /api/options/config                   — Update options config
  */
@@ -104,6 +108,73 @@ export function optionsRoutes(runtime: AppRuntime): Hono {
 
     const data = svc.getHistory(symbol, limit);
     return c.json({ symbol, data, count: data.length });
+  });
+
+  // GET /api/options/iv-surface
+  app.get("/api/options/iv-surface", (c) => {
+    const svc = runtime.optionsService;
+    if (!svc) return c.json({ error: "Options service not enabled" }, 503);
+
+    const symbol = (c.req.query("symbol") ?? "SPY").toUpperCase();
+    const snapshot = svc.getSnapshot(symbol);
+    if (!snapshot) return c.json({ error: `No data for ${symbol}` }, 404);
+
+    return c.json({
+      symbol,
+      spotPrice: snapshot.spotPrice,
+      ivSurface: snapshot.ivSurface,
+      regimeParams: snapshot.regimeParams,
+    });
+  });
+
+  // GET /api/options/impulse
+  app.get("/api/options/impulse", (c) => {
+    const svc = runtime.optionsService;
+    if (!svc) return c.json({ error: "Options service not enabled" }, 503);
+
+    const symbol = (c.req.query("symbol") ?? "SPY").toUpperCase();
+    const snapshot = svc.getSnapshot(symbol);
+    if (!snapshot) return c.json({ error: `No data for ${symbol}` }, 404);
+    if (!snapshot.hedgeImpulse) return c.json({ error: `No hedge impulse data for ${symbol}` }, 404);
+
+    return c.json({
+      symbol,
+      spotPrice: snapshot.spotPrice,
+      hedgeImpulse: snapshot.hedgeImpulse,
+    });
+  });
+
+  // GET /api/options/pressure
+  app.get("/api/options/pressure", (c) => {
+    const svc = runtime.optionsService;
+    if (!svc) return c.json({ error: "Options service not enabled" }, 503);
+
+    const symbol = (c.req.query("symbol") ?? "SPY").toUpperCase();
+    const snapshot = svc.getSnapshot(symbol);
+    if (!snapshot) return c.json({ error: `No data for ${symbol}` }, 404);
+    if (!snapshot.pressureCloud) return c.json({ error: `No pressure cloud data for ${symbol}` }, 404);
+
+    return c.json({
+      symbol,
+      spotPrice: snapshot.spotPrice,
+      pressureCloud: snapshot.pressureCloud,
+    });
+  });
+
+  // GET /api/options/exposure
+  app.get("/api/options/exposure", (c) => {
+    const svc = runtime.optionsService;
+    if (!svc) return c.json({ error: "Options service not enabled" }, 503);
+
+    const symbol = (c.req.query("symbol") ?? "SPY").toUpperCase();
+    const snapshot = svc.getSnapshot(symbol);
+    if (!snapshot) return c.json({ error: `No data for ${symbol}` }, 404);
+
+    return c.json({
+      symbol,
+      spotPrice: snapshot.spotPrice,
+      exposure: snapshot.exposure,
+    });
   });
 
   // POST /api/options/refresh

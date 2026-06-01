@@ -4,6 +4,11 @@
  * Pure types and interfaces. No I/O.
  */
 
+import type { IVSurface, RegimeParams } from "./iv_surface.js";
+import type { HedgeImpulseCurve } from "./hedge_impulse.js";
+import type { PressureCloud } from "./pressure_cloud.js";
+import type { ExposurePerExpiry } from "./exposure.js";
+
 // ============================================================================
 // Core Option Data
 // ============================================================================
@@ -83,6 +88,17 @@ export interface GexSnapshot {
   gexByStrike: StrikeGex[];
   charmVanna: CharmVannaFlow | null;
   provider: string;
+  // ── Advanced analytics (A modules) — optional, present when computable ──
+  /** IV surface + derived market-regime parameters for the front expiration. */
+  regimeParams: RegimeParams | null;
+  /** Smoothed IV-by-strike surface for the front expiration. */
+  ivSurface: IVSurface | null;
+  /** Dealer hedge impulse curve (pin/breakout topology). */
+  hedgeImpulse: HedgeImpulseCurve | null;
+  /** Pressure cloud: stability/acceleration zones + regime edges. */
+  pressureCloud: PressureCloud | null;
+  /** Full 4D exposure (GEX/DEX/VEX/CHEX) per expiration. */
+  exposure: ExposurePerExpiry[] | null;
 }
 
 // ============================================================================
