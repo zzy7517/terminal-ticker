@@ -3,6 +3,7 @@ import { WebSocketServer } from "ws";
 import { buildRuntimeConfig, loadConfig } from "./config/index.js";
 import { createApp } from "./api/app.js";
 import { AppRuntime } from "./api/runtime.js";
+import { applyProxyConfig, redactProxyUrl } from "./runtime/proxy.js";
 
 interface CliOptions {
   configPath: string;
@@ -60,6 +61,10 @@ async function resolveConfig(options: CliOptions) {
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const config = await resolveConfig(options);
+  // Install the outbound proxy before any subsystem makes network calls.
+  const proxyResult = applyProxyConfig(config.proxy);
+  if (proxyResult.applied) console.log(`outbound proxy enabled → ${redactProxyUrl(proxyResult.url)}`);
+  else if (proxyResult.error) console.warn(`⚠️  proxy not applied: ${proxyResult.error}`);
   const runtime = await AppRuntime.create(config);
   await runtime.start();
   const app = createApp({ runtime });

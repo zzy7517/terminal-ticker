@@ -4,6 +4,8 @@ import type {
   AgentStreamEvent,
   AgentStreamPayload,
   ProviderProfileUpdate,
+  ProxyConfigUpdate,
+  ProxyTestResult,
   AgentSessionHistoryResponse,
   AgentSessionMutationResponse,
   AgentSessionResponse,
@@ -849,6 +851,31 @@ export async function updateBrowserSettings(settings: {
     body: JSON.stringify(settings),
   });
   if (!response.ok) throw await responseError(response, 'update browser settings failed');
+  return response.json();
+}
+
+// ─── Proxy ───────────────────────────────────────────────────────────────────
+
+// Persists outbound proxy settings; backend reloads config and returns fresh state.
+export async function saveProxyConfig(config: ProxyConfigUpdate): Promise<MarketState> {
+  const response = await fetch('/api/proxy/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) throw await responseError(response, 'save proxy config failed');
+  const data = (await response.json()) as { state: MarketState };
+  return data.state;
+}
+
+// Probes the proxy without saving. Pass partial form values to test before committing.
+export async function testProxy(config: ProxyConfigUpdate & { testUrl?: string }): Promise<ProxyTestResult> {
+  const response = await fetch('/api/proxy/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) throw await responseError(response, 'proxy test failed');
   return response.json();
 }
 

@@ -10,6 +10,7 @@ import {
   Jin10Config,
   MemoryConfig,
   NewsConfig,
+  ProxyConfig,
   SocialFeedConfig,
   SUPPORTED_INST_TYPES,
   TradingConfig,
@@ -450,6 +451,19 @@ export async function updateJin10ConfigInWatchlist(watchlistPath: string, config
     `quotes_codes = [${config.quotesCodes.map(tomlString).join(", ")}]`,
   ];
   return replaceTable(watchlistPath, "jin10", lines);
+}
+
+export async function updateProxyConfigInWatchlist(watchlistPath: string, config: ProxyConfig): Promise<boolean> {
+  const lines = [
+    "[proxy]",
+    `enabled = ${config.enabled ? "true" : "false"}`,
+    `type = ${tomlString(config.type)}`,
+    `host = ${tomlString(config.host)}`,
+    `port = ${config.port}`,
+    `username = ${tomlString(config.username)}`,
+    `password = ${tomlString(config.password)}`,
+  ];
+  return replaceTable(watchlistPath, "proxy", lines);
 }
 
 export async function updateOptionsConfigInWatchlist(watchlistPath: string, config: OptionsConfig): Promise<boolean> {

@@ -318,6 +318,35 @@ export interface SocialFeedConfigUpdate {
   maxItems?: number;
 }
 
+export type ProxyType = 'http' | 'https' | 'socks5';
+
+export interface ProxyConfigPayload {
+  enabled: boolean;
+  type: ProxyType;
+  host: string;
+  port: number;
+  username: string;
+  passwordConfigured: boolean;
+}
+
+export interface ProxyConfigUpdate {
+  enabled?: boolean;
+  type?: ProxyType;
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  clearPassword?: boolean;
+}
+
+export interface ProxyTestResult {
+  ok: boolean;
+  url?: string | null;
+  status?: number;
+  latencyMs?: number;
+  error?: string;
+}
+
 export interface SocialAuthStatus {
   hasSavedAuth: boolean;
   savedAtMs: number | null;
@@ -544,6 +573,7 @@ export interface MarketState {
         currencies: string[];
       };
     };
+    proxy: ProxyConfigPayload;
     sourcePath: string | null;
   };
   instruments: Instrument[];

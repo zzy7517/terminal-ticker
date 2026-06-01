@@ -11,6 +11,7 @@ import { mcpRoutes } from "./routes/mcp.js";
 import { jin10Routes } from "./routes/jin10.js";
 import { browserRoutes } from "./routes/browser.js";
 import { optionsRoutes } from "./routes/options.js";
+import { proxyRoutes } from "./routes/proxy.js";
 
 export interface CreateAppOptions {
   runtime: AppRuntime;
@@ -31,6 +32,7 @@ export function createApp(options: CreateAppOptions): Hono {
   app.route("", jin10Routes(runtime));
   app.route("", browserRoutes(runtime));
   app.route("", optionsRoutes(runtime));
+  app.route("", proxyRoutes(runtime));
 
   return app;
 }

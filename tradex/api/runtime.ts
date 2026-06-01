@@ -22,6 +22,7 @@ import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 import { Jin10Service } from "../jin10/index.js";
 import { BrowserManager } from "../browser/index.js";
 import { OptionsService } from "../options/service.js";
+import { applyProxyConfig } from "../runtime/proxy.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -130,6 +131,9 @@ export class AppRuntime {
     await this.newsService.stop();
     await this.jin10Service.stop();
     this.config = config;
+    // Re-apply the outbound proxy before rebuilding subsystems so new feeds
+    // pick up the updated dispatcher on their first request.
+    applyProxyConfig(config.proxy);
     this.instruments = await resolveInstruments(config.instruments);
     this.controller = new TickerController({ config, instruments: this.instruments });
     this.exchangeRouter.tradingConfig = config.trading;

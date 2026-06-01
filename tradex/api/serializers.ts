@@ -159,6 +159,14 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       } : undefined,
       deribit: config.options.deribit,
     },
+    proxy: {
+      enabled: config.proxy.enabled,
+      type: config.proxy.type,
+      host: config.proxy.host,
+      port: config.proxy.port,
+      username: config.proxy.username,
+      passwordConfigured: Boolean(config.proxy.password),
+    },
     sourcePath: config.sourcePath,
   };
 }

@@ -9,6 +9,7 @@ import {
   CircleDot,
   Clock,
   KeyRound,
+  Network,
   Newspaper,
   Settings,
 } from 'lucide-react';
@@ -124,6 +125,14 @@ export function SettingsFrame({
             >
               <Chrome size={18} />
               <span>Browser</span>
+            </button>
+            <button
+              className={`settings-nav-item ${section === 'proxy' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('proxy')}
+            >
+              <Network size={18} />
+              <span>Proxy</span>
             </button>
           </div>
 

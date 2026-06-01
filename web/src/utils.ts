@@ -13,6 +13,7 @@ import {
   NEWS_HASH,
   OPTIONS_HASH,
   PROVIDERS_HASH,
+  PROXY_HASH,
   SOCIAL_HASH,
   WATCHLIST_HASH,
   type AppRoute,
@@ -23,6 +24,9 @@ import {
 } from './api';
 
 export function readRouteFromHash(): AppRoute {
+  if (window.location.hash.startsWith(PROXY_HASH)) {
+    return { view: 'settings', section: 'proxy' };
+  }
   if (window.location.hash.startsWith(OPTIONS_HASH)) {
     return { view: 'settings', section: 'options' };
   }
@@ -77,7 +81,9 @@ export function navigateToRoute(route: AppRoute) {
               ? BROWSER_HASH
               : route.section === 'options'
                 ? OPTIONS_HASH
-                : PROVIDERS_HASH;
+                : route.section === 'proxy'
+                  ? PROXY_HASH
+                  : PROVIDERS_HASH;
     window.location.hash = hash;
     return;
   }

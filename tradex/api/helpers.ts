@@ -1,4 +1,4 @@
-import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type SocialFeedConfig } from "../config/index.js";
+import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type ProxyConfig, type ProxyType, type SocialFeedConfig } from "../config/index.js";
 import { normalizeApiMode } from "../config/agent_models.js";
 import { SessionManager } from "../agent/session_manager.js";
 import type { AppRuntime } from "./runtime.js";
@@ -217,6 +217,35 @@ export function mergeMemoryConfig(config: MemoryConfig, body: Record<string, unk
     maxRolloutsPerStartup: minNumberField(body.maxRolloutsPerStartup, config.maxRolloutsPerStartup, 1),
     minSessionIdleHours: minNumberField(body.minSessionIdleHours, config.minSessionIdleHours, 0),
     extensionRetentionDays: minNumberField(body.extensionRetentionDays, config.extensionRetentionDays, 1),
+  };
+}
+
+// Applies a partial proxy config update. Host/credentials are taken verbatim;
+// type is validated against the supported set; port is range-checked.
+export function mergeProxyConfig(config: ProxyConfig, body: Record<string, unknown>): ProxyConfig {
+  let type: ProxyType = config.type;
+  if (typeof body.type === "string") {
+    const value = body.type.trim().toLowerCase();
+    if (value === "http" || value === "https" || value === "socks5") type = value;
+    else if (value === "socks" || value === "socks5h") type = "socks5";
+    else throw new Error("proxy type must be one of: http, https, socks5");
+  }
+  let port = config.port;
+  if (body.port !== undefined && body.port !== null && body.port !== "") {
+    const parsed = Number(body.port);
+    if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) {
+      throw new Error("proxy port must be an integer between 1 and 65535");
+    }
+    port = parsed;
+  }
+  return {
+    ...config,
+    enabled: typeof body.enabled === "boolean" ? body.enabled : config.enabled,
+    type,
+    host: typeof body.host === "string" ? body.host.trim() : config.host,
+    port,
+    username: typeof body.username === "string" ? body.username : config.username,
+    password: body.clearPassword === true ? "" : typeof body.password === "string" && body.password ? body.password : config.password,
   };
 }
 

@@ -15,6 +15,7 @@ import {
   CronSettingsPanel,
   McpSettingsPanel,
   BrowserSettingsPanel,
+  ProxySettingsPanel,
   WatchlistSettingsPanel,
   OptionsSettingsPanel,
 } from './components/settings';
@@ -92,6 +93,8 @@ export default function App() {
           <BrowserSettingsPanel />
         ) : route.section === 'options' ? (
           <OptionsSettingsPanel />
+        ) : route.section === 'proxy' ? (
+          <ProxySettingsPanel />
         ) : (
           <WatchlistSettingsPanel />
         )}

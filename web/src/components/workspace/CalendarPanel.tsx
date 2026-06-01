@@ -73,12 +73,20 @@ export function CalendarPanel({
     );
   }
 
-  // Only show important events (3+ stars)
-  const important = events.filter((e) => e.star >= 3);
+  // Only show important events (4+ stars)
+  const important = events.filter((e) => e.star >= 4);
 
   // Split into upcoming (actual empty) and published
   const upcoming = important.filter((e) => !e.actual || e.actual === '--' || e.actual === '-');
-  const published = important.filter((e) => e.actual && e.actual !== '--' && e.actual !== '-');
+  const published = important
+    .filter((e) => e.actual && e.actual !== '--' && e.actual !== '-')
+    // Most recently published first
+    .sort((a, b) => {
+      const ta = new Date(a.pubTime).getTime();
+      const tb = new Date(b.pubTime).getTime();
+      if (isNaN(ta) || isNaN(tb)) return 0;
+      return tb - ta;
+    });
 
   return (
     <div className="calendar-panel">
@@ -98,30 +106,7 @@ export function CalendarPanel({
 
       {important.length === 0 && (
         <div className="empty-state sm">
-          {events.length === 0 ? '暂无日历数据。点击“刷新”加载今日财经事件。' : '今日无 3 星以上重要事件。'}
-        </div>
-      )}
-
-      {upcoming.length > 0 && (
-        <div className="calendar-section">
-          <div className="calendar-section__title">待公布</div>
-          {upcoming.map((event, i) => (
-            <div key={`${event.pubTime}-${event.title}-${i}`} className={`calendar-event star-${Math.min(event.star, 3)}`}>
-              <div className="calendar-event__head">
-                <span className="calendar-event__stars">{starIcons(event.star)}</span>
-                <span className="calendar-event__time">{formatEventTime(event.pubTime)}</span>
-                <span className="calendar-event__title">{event.title}</span>
-              </div>
-              <div className="calendar-event__values">
-                <span>前值: <strong>{event.previous || '--'}</strong></span>
-                <span>预期: <strong>{event.consensus || '--'}</strong></span>
-                <span>实际: <strong className="pending">--</strong></span>
-              </div>
-              {event.affectTxt && (
-                <div className="calendar-event__affect">{event.affectTxt}</div>
-              )}
-            </div>
-          ))}
+          {events.length === 0 ? '暂无日历数据。点击“刷新”加载今日财经事件。' : '今日无 4 星以上重要事件。'}
         </div>
       )}
 
@@ -152,6 +137,29 @@ export function CalendarPanel({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {upcoming.length > 0 && (
+        <div className="calendar-section">
+          <div className="calendar-section__title">待公布</div>
+          {upcoming.map((event, i) => (
+            <div key={`${event.pubTime}-${event.title}-${i}`} className={`calendar-event star-${Math.min(event.star, 3)}`}>
+              <div className="calendar-event__head">
+                <span className="calendar-event__stars">{starIcons(event.star)}</span>
+                <span className="calendar-event__time">{formatEventTime(event.pubTime)}</span>
+                <span className="calendar-event__title">{event.title}</span>
+              </div>
+              <div className="calendar-event__values">
+                <span>前值: <strong>{event.previous || '--'}</strong></span>
+                <span>预期: <strong>{event.consensus || '--'}</strong></span>
+                <span>实际: <strong className="pending">--</strong></span>
+              </div>
+              {event.affectTxt && (
+                <div className="calendar-event__affect">{event.affectTxt}</div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

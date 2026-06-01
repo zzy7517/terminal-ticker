@@ -20,8 +20,8 @@ export function buildJin10Tools(jin10Service: Jin10Service | null): ToolRegistry
         await jin10Service.refreshCalendar();
         events = jin10Service.getCalendar();
       }
-      // Only return important events (3+ stars) to save context budget
-      const important = events.filter((e) => e.star >= 3);
+      // Only return important events (4+ stars) to save context budget
+      const important = events.filter((e) => e.star >= 4);
       return jsonOutput({ events: important });
     },
   });
