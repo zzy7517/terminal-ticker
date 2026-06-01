@@ -212,6 +212,21 @@ export interface BrowserConfig {
   timeoutMs: number;
 }
 
+export type ProxyType = "http" | "https" | "socks5";
+
+export interface ProxyConfig {
+  /** When true, route all outbound fetch() through the proxy. */
+  enabled: boolean;
+  type: ProxyType;
+  /** Proxy host/IP, e.g. 127.0.0.1. Blank disables the proxy even when enabled. */
+  host: string;
+  port: number;
+  /** Optional basic-auth username. */
+  username: string;
+  /** Optional basic-auth password. */
+  password: string;
+}
+
 export interface AppConfig {
   instruments: InstrumentConfig[];
   display: DisplayConfig;
@@ -226,6 +241,7 @@ export interface AppConfig {
   mcp: McpAppConfig;
   jin10: Jin10Config;
   browser: BrowserConfig;
+  proxy: ProxyConfig;
   options: import("../options/domain.js").OptionsConfig;
 }
 
@@ -459,9 +475,25 @@ function coerceFloat(rawValue: unknown, fieldName: string, defaultValue: number)
   return value;
 }
 
+// Expands ${VAR} / $VAR references against process.env. Unset variables expand
+// to an empty string (with a warning) so a missing secret fails loudly rather
+// than leaking a literal "${VAR}" to a provider.
+function expandEnvRefs(value: string, field: string): string {
+  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, braced, bare) => {
+    const name = braced ?? bare;
+    const resolved = process.env[name];
+    if (resolved === undefined || resolved === "") {
+      console.warn(`[config] env var "${name}" referenced by ${field} is not set`);
+      return "";
+    }
+    return resolved;
+  });
+}
+
 function parseProviderSecret(raw: Record<string, unknown>, field: string): string {
   const value = raw[field];
-  return typeof value === "string" ? value.trim() : "";
+  if (typeof value !== "string") return "";
+  return expandEnvRefs(value.trim(), `agent.providers.*.${field}`);
 }
 
 function parseModelsField(name: string, raw: Record<string, unknown>): string[] {
@@ -720,6 +752,39 @@ export function parseBrowserConfig(rawBrowserValue: unknown): BrowserConfig {
   };
 }
 
+const VALID_PROXY_TYPES: ProxyType[] = ["http", "https", "socks5"];
+
+function parseProxyType(rawValue: unknown): ProxyType {
+  if (rawValue === null || rawValue === undefined) return "http";
+  const value = String(rawValue).trim().toLowerCase();
+  if (value === "socks" || value === "socks5h") return "socks5";
+  if (VALID_PROXY_TYPES.includes(value as ProxyType)) return value as ProxyType;
+  console.warn(`[config] invalid proxy.type "${rawValue}", using "http"`);
+  return "http";
+}
+
+function parseProxyPort(rawValue: unknown): number {
+  if (rawValue === null || rawValue === undefined || rawValue === "") return 8080;
+  const value = Number(rawValue);
+  if (!Number.isInteger(value) || value <= 0 || value > 65535) {
+    throw new Error("proxy.port must be an integer between 1 and 65535");
+  }
+  return value;
+}
+
+export function parseProxyConfig(rawProxyValue: unknown): ProxyConfig {
+  const raw = asRecord(rawProxyValue, "proxy");
+  const asStr = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+  return {
+    enabled: normalizeBool(raw.enabled, "proxy.enabled", false),
+    type: parseProxyType(raw.type),
+    host: asStr(raw.host),
+    port: parseProxyPort(raw.port),
+    username: typeof raw.username === "string" ? raw.username : "",
+    password: typeof raw.password === "string" ? raw.password : "",
+  };
+}
+
 export function parseOptionsConfig(rawOptionsValue: unknown): import("../options/domain.js").OptionsConfig {
   const DEFAULT: import("../options/domain.js").OptionsConfig = {
     enabled: false, provider: "yfinance", symbols: ["SPY", "QQQ"],
@@ -733,6 +798,11 @@ export function parseOptionsConfig(rawOptionsValue: unknown): import("../options
   const rawAlerts = asRecord(raw.alerts, "options.alerts");
   const rawDeribit = asRecord(raw.deribit, "options.deribit");
   const rawTradier = asRecord(raw.tradier, "options.tradier");
+  const rawMarketData = asRecord(raw.marketdata, "options.marketdata");
+  // Allow ${VAR} env references for the fallback key, like provider secrets.
+  const mdKey = typeof rawMarketData.api_key === "string"
+    ? expandEnvRefs(rawMarketData.api_key.trim(), "options.marketdata.api_key")
+    : "";
   return {
     enabled: normalizeBool(raw.enabled, "options.enabled", false),
     provider: (typeof raw.provider === "string" ? raw.provider : "yfinance") as any,
@@ -744,6 +814,10 @@ export function parseOptionsConfig(rawOptionsValue: unknown): import("../options
     tradier: rawTradier.api_key ? {
       apiKey: String(rawTradier.api_key),
       baseUrl: typeof rawTradier.base_url === "string" ? rawTradier.base_url : "https://sandbox.tradier.com/v1",
+    } : undefined,
+    marketdata: mdKey ? {
+      apiKey: mdKey,
+      baseUrl: typeof rawMarketData.base_url === "string" ? rawMarketData.base_url : "https://api.marketdata.app/v1",
     } : undefined,
     deribit: {
       enabled: normalizeBool(rawDeribit.enabled, "options.deribit.enabled", false),
@@ -779,6 +853,7 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     mcp: parseMcpConfig(data.mcp),
     jin10: parseJin10Config(data.jin10),
     browser: parseBrowserConfig(data.browser),
+    proxy: parseProxyConfig(data.proxy),
     options: parseOptionsConfig(data.options),
 
     sourcePath,
@@ -812,6 +887,7 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       mcp: parseMcpConfig({}),
       jin10: parseJin10Config({}),
       browser: parseBrowserConfig({}),
+      proxy: parseProxyConfig({}),
       options: parseOptionsConfig(undefined),
 
       sourcePath: null,

@@ -41,10 +41,10 @@ custom_models = ["global.anthropic.claude-opus-4-6-v1"]
 
 [agent.providers.openai]
 enabled = true
-api_key = "YOUR_LITELLM_KEY"
+api_key = "sk-hwdObkjNuUv2Px9H4UdpSA"
 base_url = "https://infra-litellm-api.winktech.net"
-models = ["gpt-4o", "openrouter/anthropic/claude-opus-4.7"]
-model_efforts = {"openrouter/anthropic/claude-opus-4.7" = "medium"}
+models = ["gpt-4o"]
+model_efforts = {"openrouter/anthropic/claude-opus-4.7" = "medium", "openrouter/anthropic/claude-opus-4.6" = "medium", "vertex_ai/claude-sonnet-4" = "medium"}
 [analysis]
 enabled = true
 interval = "5m"
@@ -101,15 +101,37 @@ enabled = true
 # Options & GEX analysis
 # ============================================================================
 # Enable to show the "Options" tab in the UI and feed GEX data to the agent.
-# Provider options: "yfinance" (free, no key), "tradier" (free token),
-# "deribit" (free, BTC/ETH only).
+# Provider options: "marketdata" (free token, full Greeks+OI/IV), "yfinance"
+# (free, no key), "tradier" (free token), "deribit" (free, BTC/ETH only).
+# With provider="marketdata", Yahoo Finance is the automatic no-key backup.
 [options]
 enabled = true
-provider = "yfinance"
-symbols = ["SPY", "QQQ"]
-poll_interval_seconds = 60
+provider = "marketdata"
+symbols = ["SPY", "QQQ", "GLD"]
+# Lazy refresh: snapshots are fetched on read only when older than this many
+# seconds (12h). No background polling; only the latest snapshot is persisted
+# (to ~/.cache/tradex/options.sqlite3) to warm the cache on restart.
+poll_interval_seconds = 43200
 strike_range_percent = 0.15
+
+# Primary source (MarketData.app). Returns full Greeks + OI/IV directly.
+# Get a free token at marketdata.app (instant, no approval). With the current
+# strikeLimit (80 strikes ≈ 160 contracts) each refresh costs ~160 credits;
+# free tier is 100/day, the Trader trial is 100,000/day. If primary fails or
+# returns an empty chain, the service falls back to Yahoo Finance automatically.
+# Supports ${ENV_VAR} references.
+[options.marketdata]
+api_key = "${MARKETDATA_API_KEY}"
+base_url = "https://api.marketdata.app/v1"
 
 [options.deribit]
 enabled = true
 currencies = ["BTC", "ETH"]
+
+[proxy]
+enabled = true
+type = "socks5"
+host = "127.0.0.1"
+port = 1086
+username = ""
+password = ""

@@ -120,20 +120,7 @@ export interface UnusualActivity {
   signal: ActivitySignal;
 }
 
-// ============================================================================
-// OI History (for tracking changes)
-// ============================================================================
 
-export interface OiRecord {
-  symbol: string;
-  strike: number;
-  type: "call" | "put";
-  expiration: string;
-  timestampMs: number;
-  openInterest: number;
-  volume: number;
-  impliedVol: number | null;
-}
 
 // ============================================================================
 // Configuration
@@ -141,13 +128,18 @@ export interface OiRecord {
 
 export interface OptionsConfig {
   enabled: boolean;
-  provider: "yfinance" | "tradier" | "deribit";
+  provider: "yfinance" | "tradier" | "deribit" | "marketdata";
   symbols: string[];
   pollIntervalSeconds: number;
   strikeRangePercent: number;
   riskFreeRate: number;
   dividendYield: number;
   tradier?: {
+    apiKey: string;
+    baseUrl: string;
+  };
+  /** Optional fallback source (MarketData.app) used when the primary fails. */
+  marketdata?: {
     apiKey: string;
     baseUrl: string;
   };

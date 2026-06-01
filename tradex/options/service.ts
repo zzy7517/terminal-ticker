@@ -5,7 +5,7 @@
  * and unusual activity detection.
  */
 
-import type { GexSnapshot, OiRecord, OptionChain, OptionsConfig, UnusualActivity } from "./domain.js";
+import type { GexSnapshot, OptionChain, OptionsConfig, UnusualActivity } from "./domain.js";
 import { GexCalculator } from "./gex_calculator.js";
 import { DeribitProvider } from "./providers/deribit.js";
 import { createProvider, resolveProviderForSymbol, type OptionsDataProvider } from "./providers/index.js";
@@ -21,14 +21,22 @@ export class OptionsService {
   private readonly deribitProvider: DeribitProvider | null;
   private readonly calculator: GexCalculator;
   private readonly store: OptionsStore;
-  private intervalHandle: ReturnType<typeof setInterval> | null = null;
 
   /** Current GEX snapshots by symbol (in-memory cache) */
   private readonly snapshots = new Map<string, GexSnapshot>();
 
-  /** Recent unusual activity (ring buffer) */
-  private readonly recentActivity: UnusualActivity[] = [];
-  private static readonly MAX_RECENT = 200;
+  /**
+   * Symbols with an in-flight background refresh, so a burst of reads only
+   * triggers a single fetch per symbol.
+   */
+  private readonly inFlight = new Set<string>();
+
+  /** Age (ms) past which a cached snapshot is considered stale and a lazy
+   * background refresh is triggered on the next read. Reuses the configured
+   * poll interval, now interpreted as a freshness threshold. */
+  private get staleMs(): number {
+    return this.config.pollIntervalSeconds * 1000;
+  }
 
   constructor(config: OptionsConfig) {
     this.config = config;
@@ -51,26 +59,44 @@ export class OptionsService {
   // Lifecycle
   // --------------------------------------------------------------------------
 
-  /** Start the polling loop */
+  /**
+   * Start the service. No background polling loop: data is fetched lazily on
+   * read when the cached snapshot is missing or stale (see getSnapshot). We
+   * only warm the in-memory cache from the last persisted snapshot so reads
+   * have something to return immediately after startup.
+   */
   start(): void {
-    if (this.intervalHandle) return;
-
-    const intervalMs = this.config.pollIntervalSeconds * 1000;
-    console.log(`[options] Starting service: ${this.config.symbols.join(", ")} every ${this.config.pollIntervalSeconds}s`);
-
-    // Initial fetch
-    void this.pollAll();
-
-    // Periodic poll
-    this.intervalHandle = setInterval(() => void this.pollAll(), intervalMs);
+    this.hydrateFromStore();
+    const hours = (this.staleMs / 3_600_000).toFixed(1);
+    console.log(`[options] Lazy mode: ${this.config.symbols.join(", ")} refresh when older than ${hours}h`);
   }
 
-  /** Stop the polling loop */
-  stop(): void {
-    if (this.intervalHandle) {
-      clearInterval(this.intervalHandle);
-      this.intervalHandle = null;
+  /**
+   * Load the most recent persisted snapshot for each configured symbol into the
+   * in-memory cache. Persisted rows omit live-only analytics (exposure, IV
+   * surface, etc.) but carry the core GEX/levels needed for display and agent
+   * context between infrequent polls.
+   */
+  private hydrateFromStore(): void {
+    const symbols = new Set<string>(this.config.symbols.map((s) => s.toUpperCase()));
+    if (this.deribitProvider && this.config.deribit?.enabled) {
+      for (const currency of this.config.deribit.currencies) symbols.add(currency.toUpperCase());
     }
+    let loaded = 0;
+    for (const symbol of symbols) {
+      if (this.snapshots.has(symbol)) continue;
+      const recent = this.store.getRecentSnapshots(symbol, 1);
+      const last = recent[recent.length - 1];
+      if (last) {
+        this.snapshots.set(symbol, last);
+        loaded += 1;
+      }
+    }
+    if (loaded > 0) console.log(`[options] Hydrated ${loaded} snapshot(s) from local store`);
+  }
+
+  /** Stop the service. Nothing to tear down in lazy mode. */
+  stop(): void {
     console.log("[options] Service stopped");
   }
 
@@ -85,61 +111,67 @@ export class OptionsService {
   // Public API
   // --------------------------------------------------------------------------
 
-  /** Get the latest GEX snapshot for a symbol */
+  /**
+   * Get the latest GEX snapshot for a symbol. Returns the cached value
+   * immediately (possibly null or stale); if the cache is missing or older
+   * than the freshness threshold, a background refresh is kicked off so the
+   * next read sees fresh data. Reads never block on the network.
+   */
   getSnapshot(symbol: string): GexSnapshot | null {
-    return this.snapshots.get(symbol.toUpperCase()) ?? null;
+    const key = symbol.toUpperCase();
+    const snap = this.snapshots.get(key) ?? null;
+    this.maybeRefresh(key, snap);
+    return snap;
   }
 
-  /** Get all current snapshots */
+  /** Get all current snapshots, triggering lazy refresh for any stale symbol. */
   getAllSnapshots(): Map<string, GexSnapshot> {
+    for (const key of this.trackedSymbols()) {
+      this.maybeRefresh(key, this.snapshots.get(key) ?? null);
+    }
     return new Map(this.snapshots);
   }
 
-  /** Get recent unusual activity */
-  getUnusualActivity(symbol?: string, limit = 50): UnusualActivity[] {
-    if (symbol) {
-      return this.recentActivity
-        .filter(a => a.symbol === symbol.toUpperCase())
-        .slice(0, limit);
-    }
-    return this.recentActivity.slice(0, limit);
+  /** Unusual-activity tracking is disabled (no history is retained). */
+  getUnusualActivity(_symbol?: string, _limit = 50): UnusualActivity[] {
+    return [];
   }
 
-  /** Get historical GEX data from store */
-  getHistory(symbol: string, limit = 100): GexSnapshot[] {
-    return this.store.getRecentSnapshots(symbol.toUpperCase(), limit);
+  /** Historical GEX is not retained; only the latest snapshot is kept. */
+  getHistory(symbol: string, _limit = 100): GexSnapshot[] {
+    const snap = this.snapshots.get(symbol.toUpperCase());
+    return snap ? [snap] : [];
   }
 
-  /** Force a refresh for a specific symbol */
+  /** Force a refresh for a specific symbol. */
   async refresh(symbol: string): Promise<GexSnapshot | null> {
     return this.fetchAndCalculate(symbol.toUpperCase());
   }
 
   // --------------------------------------------------------------------------
-  // Polling
+  // Lazy refresh
   // --------------------------------------------------------------------------
 
-  private async pollAll(): Promise<void> {
-    const allSymbols = [...this.config.symbols];
+  /** All symbols this service tracks (configured equities + Deribit crypto). */
+  private trackedSymbols(): string[] {
+    const symbols = new Set<string>(this.config.symbols.map((s) => s.toUpperCase()));
     if (this.deribitProvider && this.config.deribit?.enabled) {
-      for (const currency of this.config.deribit.currencies) {
-        if (!allSymbols.includes(currency)) allSymbols.push(currency);
-      }
+      for (const currency of this.config.deribit.currencies) symbols.add(currency.toUpperCase());
     }
+    return [...symbols];
+  }
 
-    // Process sequentially to respect rate limits
-    for (const symbol of allSymbols) {
-      try {
-        await this.fetchAndCalculate(symbol);
-      } catch (err) {
-        console.error(`[options] Error fetching ${symbol}:`, err instanceof Error ? err.message : err);
-      }
-    }
-
-    // Periodic cleanup (once a day roughly)
-    if (Math.random() < 1 / (86400 / this.config.pollIntervalSeconds)) {
-      this.store.cleanup();
-    }
+  /**
+   * Trigger a non-blocking background fetch when the snapshot is missing or
+   * older than staleMs and no refresh is already in flight for that symbol.
+   */
+  private maybeRefresh(key: string, snap: GexSnapshot | null): void {
+    const fresh = snap != null && Date.now() - snap.timestamp < this.staleMs;
+    if (fresh || this.inFlight.has(key)) return;
+    this.inFlight.add(key);
+    void this.fetchAndCalculate(key)
+      .catch((err) => console.error(`[options] Lazy refresh failed for ${key}:`, err instanceof Error ? err.message : err))
+      .finally(() => this.inFlight.delete(key));
   }
 
   private async fetchAndCalculate(symbol: string): Promise<GexSnapshot | null> {
@@ -165,12 +197,9 @@ export class OptionsService {
     // Store in memory cache
     this.snapshots.set(symbol, snapshot);
 
-    // Persist
-    this.store.saveGexSnapshot(snapshot);
-
-    // Track OI changes and detect unusual activity
-    this.trackOiChanges(chain);
-    this.detectUnusualActivity(chain);
+    // Persist latest-only: replace any prior row for this symbol so the store
+    // never accumulates history. Used solely to warm the cache on restart.
+    this.store.replaceLatestSnapshot(snapshot);
 
     return snapshot;
   }
@@ -245,87 +274,4 @@ export class OptionsService {
     return best;
   }
 
-  // --------------------------------------------------------------------------
-  // OI Change Tracking
-  // --------------------------------------------------------------------------
-
-  private trackOiChanges(chain: import("./domain.js").OptionChain): void {
-    const records: OiRecord[] = chain.contracts.map(c => ({
-      symbol: chain.underlying,
-      strike: c.strike,
-      type: c.type,
-      expiration: c.expiration,
-      timestampMs: chain.timestamp,
-      openInterest: c.openInterest,
-      volume: c.volume,
-      impliedVol: c.impliedVol,
-    }));
-
-    this.store.saveOiRecords(records);
-  }
-
-  // --------------------------------------------------------------------------
-  // Unusual Activity Detection
-  // --------------------------------------------------------------------------
-
-  private detectUnusualActivity(chain: import("./domain.js").OptionChain): void {
-    const { minOiChange, minVolumeOiRatio, minPremium } = this.config.alerts;
-    const newActivity: UnusualActivity[] = [];
-
-    for (const contract of chain.contracts) {
-      // Check volume/OI ratio
-      const volumeOiRatio = contract.openInterest > 0
-        ? contract.volume / contract.openInterest
-        : 0;
-
-      // Check OI change from previous snapshot
-      const prevOi = this.store.getPreviousOi(
-        chain.underlying, contract.strike, contract.type, contract.expiration,
-      );
-      const oiChange = prevOi != null ? contract.openInterest - prevOi : 0;
-
-      // Estimate premium
-      const premiumEstimate = contract.volume * contract.mid * 100; // $ notional
-
-      // Apply filters
-      const isUnusual =
-        (Math.abs(oiChange) >= minOiChange) ||
-        (volumeOiRatio >= minVolumeOiRatio && contract.volume > 100) ||
-        (premiumEstimate >= minPremium);
-
-      if (isUnusual) {
-        // Determine signal type
-        let signal: UnusualActivity["signal"] = "unknown";
-        if (oiChange > minOiChange) signal = "opening";
-        else if (oiChange < -minOiChange) signal = "closing";
-        else if (volumeOiRatio >= minVolumeOiRatio) signal = "sweep";
-
-        const activity: UnusualActivity = {
-          symbol: chain.underlying,
-          strike: contract.strike,
-          type: contract.type,
-          expiration: contract.expiration,
-          timestampMs: chain.timestamp,
-          oiChange,
-          volume: contract.volume,
-          volumeOiRatio,
-          premiumEstimate,
-          signal,
-        };
-
-        newActivity.push(activity);
-      }
-    }
-
-    if (newActivity.length > 0) {
-      // Add to ring buffer
-      this.recentActivity.unshift(...newActivity);
-      if (this.recentActivity.length > OptionsService.MAX_RECENT) {
-        this.recentActivity.length = OptionsService.MAX_RECENT;
-      }
-
-      // Persist
-      this.store.saveUnusualActivity(newActivity);
-    }
-  }
 }

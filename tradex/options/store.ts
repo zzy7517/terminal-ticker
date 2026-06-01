@@ -1,13 +1,15 @@
 /**
  * Options & GEX Analysis - SQLite Persistence
  *
- * Stores GEX snapshots, OI history, and unusual activity records.
+ * Stores the latest GEX snapshot per symbol (one row each) to warm the
+ * in-memory cache on restart. OI-history and unusual-activity tracking were
+ * removed; only `gex_snapshots` is used.
  * File: ~/.cache/tradex/options.sqlite3
  */
 
 import path from "node:path";
 import { BaseStore, defaultCacheDir } from "../db.js";
-import type { GexSnapshot, OiRecord, UnusualActivity } from "./domain.js";
+import type { GexSnapshot } from "./domain.js";
 
 const DEFAULT_FILENAME = "options.sqlite3";
 
@@ -38,36 +40,6 @@ export class OptionsStore extends BaseStore {
         UNIQUE(symbol, timestamp_ms, provider)
       );
       CREATE INDEX IF NOT EXISTS idx_gex_symbol_time ON gex_snapshots(symbol, timestamp_ms DESC);
-
-      CREATE TABLE IF NOT EXISTS oi_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        symbol TEXT NOT NULL,
-        strike REAL NOT NULL,
-        option_type TEXT NOT NULL,
-        expiration TEXT NOT NULL,
-        timestamp_ms INTEGER NOT NULL,
-        open_interest INTEGER NOT NULL,
-        volume INTEGER NOT NULL,
-        implied_vol REAL,
-        UNIQUE(symbol, strike, option_type, expiration, timestamp_ms)
-      );
-      CREATE INDEX IF NOT EXISTS idx_oi_symbol_strike ON oi_history(symbol, strike, timestamp_ms DESC);
-
-      CREATE TABLE IF NOT EXISTS unusual_activity (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        symbol TEXT NOT NULL,
-        strike REAL NOT NULL,
-        option_type TEXT NOT NULL,
-        expiration TEXT NOT NULL,
-        timestamp_ms INTEGER NOT NULL,
-        oi_change INTEGER NOT NULL,
-        volume INTEGER NOT NULL,
-        volume_oi_ratio REAL,
-        premium_estimate REAL,
-        signal TEXT,
-        UNIQUE(symbol, strike, option_type, expiration, timestamp_ms)
-      );
-      CREATE INDEX IF NOT EXISTS idx_unusual_time ON unusual_activity(timestamp_ms DESC);
     `);
   }
 
@@ -104,6 +76,20 @@ export class OptionsStore extends BaseStore {
     );
   }
 
+  /**
+   * Persist only the latest snapshot for a symbol: delete any prior rows for
+   * that symbol, then insert this one. Keeps the table at one row per symbol
+   * (no history) so it can warm the in-memory cache on restart.
+   */
+  replaceLatestSnapshot(snapshot: GexSnapshot): void {
+    const conn = this.getConn();
+    const tx = conn.transaction(() => {
+      conn.prepare(`DELETE FROM gex_snapshots WHERE symbol = ?`).run(snapshot.symbol);
+      this.saveGexSnapshot(snapshot);
+    });
+    tx();
+  }
+
   getRecentSnapshots(symbol: string, limit = 100): GexSnapshot[] {
     const conn = this.getConn();
     const rows = conn.prepare(`
@@ -114,78 +100,6 @@ export class OptionsStore extends BaseStore {
     `).all(symbol, limit) as any[];
 
     return rows.map(row => this.rowToSnapshot(row)).reverse();
-  }
-
-  // --------------------------------------------------------------------------
-  // OI History
-  // --------------------------------------------------------------------------
-
-  saveOiRecords(records: OiRecord[]): void {
-    if (records.length === 0) return;
-    const conn = this.getConn();
-    const stmt = conn.prepare(`
-      INSERT OR REPLACE INTO oi_history
-        (symbol, strike, option_type, expiration, timestamp_ms, open_interest, volume, implied_vol)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const tx = conn.transaction(() => {
-      for (const r of records) {
-        stmt.run(r.symbol, r.strike, r.type, r.expiration, r.timestampMs, r.openInterest, r.volume, r.impliedVol);
-      }
-    });
-    tx();
-  }
-
-  getPreviousOi(symbol: string, strike: number, type: string, expiration: string): number | null {
-    const conn = this.getConn();
-    const row = conn.prepare(`
-      SELECT open_interest FROM oi_history
-      WHERE symbol = ? AND strike = ? AND option_type = ? AND expiration = ?
-      ORDER BY timestamp_ms DESC
-      LIMIT 1 OFFSET 1
-    `).get(symbol, strike, type, expiration) as any;
-
-    return row?.open_interest ?? null;
-  }
-
-  // --------------------------------------------------------------------------
-  // Unusual Activity
-  // --------------------------------------------------------------------------
-
-  saveUnusualActivity(items: UnusualActivity[]): void {
-    if (items.length === 0) return;
-    const conn = this.getConn();
-    const stmt = conn.prepare(`
-      INSERT OR IGNORE INTO unusual_activity
-        (symbol, strike, option_type, expiration, timestamp_ms, oi_change, volume, volume_oi_ratio, premium_estimate, signal)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const tx = conn.transaction(() => {
-      for (const item of items) {
-        stmt.run(
-          item.symbol, item.strike, item.type, item.expiration,
-          item.timestampMs, item.oiChange, item.volume,
-          item.volumeOiRatio, item.premiumEstimate, item.signal,
-        );
-      }
-    });
-    tx();
-  }
-
-  // --------------------------------------------------------------------------
-  // Cleanup
-  // --------------------------------------------------------------------------
-
-  /** Remove records older than the specified retention periods */
-  cleanup(gexDays = 30, oiDays = 7, unusualDays = 90): void {
-    const conn = this.getConn();
-    const now = Date.now();
-
-    conn.prepare(`DELETE FROM gex_snapshots WHERE timestamp_ms < ?`).run(now - gexDays * 86_400_000);
-    conn.prepare(`DELETE FROM oi_history WHERE timestamp_ms < ?`).run(now - oiDays * 86_400_000);
-    conn.prepare(`DELETE FROM unusual_activity WHERE timestamp_ms < ?`).run(now - unusualDays * 86_400_000);
   }
 
   // --------------------------------------------------------------------------

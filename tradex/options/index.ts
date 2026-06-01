@@ -18,7 +18,6 @@ export type {
   GammaRegime,
   GexSnapshot,
   KeyLevels,
-  OiRecord,
   OptionChain,
   OptionQuote,
   OptionsConfig,
