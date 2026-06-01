@@ -10,9 +10,11 @@ import { AgentConfig, ProviderProfile } from "../config/index.js";
 import {
   CODEX_PROVIDER,
   ANTHROPIC_PROVIDER,
+  OPENAI_PROVIDER,
   CODEX_API_MODE,
   ANTHROPIC_MESSAGES_API_MODE,
   DEFAULT_CODEX_BASE_URL,
+  DEFAULT_OPENAI_BASE_URL,
   DEFAULT_CODEX_MODEL,
   DEFAULT_ANTHROPIC_MODEL,
   normalizeProvider,
@@ -73,6 +75,26 @@ export function resolveAgentModelFromConfig(config: AgentConfig): AgentModel {
       provider,
       api,
       baseUrl: profile?.baseUrl || process.env.ANTHROPIC_BASE_URL || "",
+      reasoningEffort,
+      apiKey,
+    };
+  }
+
+  if (provider === OPENAI_PROVIDER) {
+    // For LiteLLM, point `base_url` at the proxy (e.g. http://localhost:4000/v1)
+    // and put the LiteLLM master key in `api_key` (or OPENAI_API_KEY env).
+    const apiKey = profile?.apiKey
+      || process.env.OPENAI_API_KEY
+      || process.env.LITELLM_API_KEY
+      || "";
+    const baseUrl = profile?.baseUrl
+      || process.env.OPENAI_BASE_URL
+      || DEFAULT_OPENAI_BASE_URL;
+    return {
+      id: modelId,
+      provider,
+      api,
+      baseUrl,
       reasoningEffort,
       apiKey,
     };

@@ -34,7 +34,65 @@ function createClient(model: AgentModelDescriptor, apiKey: string): Anthropic {
   return new Anthropic({
     ...(apiKey ? { apiKey } : {}),
     baseURL: model.baseUrl || undefined,
+    maxRetries: Number(process.env.ANTHROPIC_MAX_RETRIES || 4),
+    timeout: Number(process.env.ANTHROPIC_TIMEOUT_MS || 120000),
   });
+}
+
+/**
+ * Extract a human-readable, diagnosable error message from an Anthropic SDK
+ * error. The SDK collapses network failures into the unhelpful string
+ * "Connection error." with the real reason buried in `.cause`, and API
+ * failures expose status/type/request-id on the error object. This surfaces
+ * status code, error type, request id, and the underlying cause chain so the
+ * frontend shows something actionable instead of "Connection error.".
+ *
+ * Property names match @anthropic-ai/sdk's APIError: `status`, `type`,
+ * `requestID`, and `error` (the parsed response body), plus `cause` on
+ * APIConnectionError.
+ */
+function describeAnthropicError(error: unknown, model: AgentModelDescriptor): string {
+  if (!(error instanceof Error)) return String(error);
+
+  const err = error as Error & {
+    status?: number;
+    type?: string | null;
+    requestID?: string | null;
+    error?: unknown;
+    cause?: unknown;
+  };
+  const parts: string[] = [];
+
+  if (typeof err.status === "number") {
+    // HTTP-level API error (4xx/5xx). err.message is already "<status> <msg>".
+    parts.push(err.message);
+    const body = err.error as { error?: { type?: string } } | undefined;
+    const bodyType = body?.error?.type;
+    if (bodyType) parts.push(`type=${bodyType}`);
+    else if (err.type) parts.push(`type=${err.type}`);
+    if (err.requestID) parts.push(`request_id=${err.requestID}`);
+  } else {
+    // Network-level failure (APIConnectionError / timeout). The bare message
+    // is "Connection error."; the real reason is in the cause chain.
+    parts.push(`${err.constructor?.name || "Error"}: ${err.message}`);
+    let cause: unknown = err.cause;
+    const seen = new Set<unknown>();
+    while (cause && !seen.has(cause)) {
+      seen.add(cause);
+      if (cause instanceof Error) {
+        const code = (cause as Error & { code?: string }).code;
+        parts.push(code ? `${cause.message} (${code})` : cause.message);
+        cause = (cause as Error & { cause?: unknown }).cause;
+      } else {
+        parts.push(String(cause));
+        break;
+      }
+    }
+    // Connection failures almost always mean the proxy/base URL is unreachable.
+    if (model.baseUrl) parts.push(`baseURL=${model.baseUrl}`);
+  }
+
+  return parts.join(" | ");
 }
 
 const EMPTY_USAGE = {
@@ -255,7 +313,9 @@ export const streamAnthropic: StreamFn = (
         delete block.partialJson;
       }
       output.stopReason = options.signal?.aborted ? "aborted" : "error";
-      output.errorMessage = error instanceof Error ? error.message : String(error);
+      output.errorMessage = options.signal?.aborted
+        ? "Request was aborted"
+        : describeAnthropicError(error, model);
       eventStream.push({ type: "error", reason: output.stopReason as "aborted" | "error", error: output });
       eventStream.end();
     }

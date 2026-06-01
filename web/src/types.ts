@@ -120,6 +120,19 @@ export interface AgentMessage {
   error: string | null;
 }
 
+/**
+ * A steering message that has been sent to a running agent but not yet
+ * confirmed (injected into the transcript) by the backend. These are rendered
+ * in a fixed pending region below the transcript — never spliced into the
+ * `messages` array — so their position stays stable while the agent streams.
+ */
+export interface QueuedSteeringMessage {
+  /** Stable client-side id for React keys. */
+  id: string;
+  content: string;
+  createdAt: string;
+}
+
 export interface AgentSessionResponse {
   session: AgentSession | null;
   messages: AgentMessage[];

@@ -6,9 +6,14 @@
  */
 
 import { registerApiProvider } from "../api_registry.js";
-import { CODEX_API_MODE, ANTHROPIC_MESSAGES_API_MODE } from "../../config/agent_models.js";
+import {
+  CODEX_API_MODE,
+  ANTHROPIC_MESSAGES_API_MODE,
+  OPENAI_COMPLETIONS_API_MODE,
+} from "../../config/agent_models.js";
 import { streamCodex, listCodexModels } from "./codex.js";
 import { streamAnthropic, listAnthropicModels } from "./anthropic.js";
+import { streamOpenAICompletions, listOpenAICompletionsModels } from "./openai_completions.js";
 
 export function registerBuiltInProviders(): void {
   registerApiProvider({
@@ -21,6 +26,12 @@ export function registerBuiltInProviders(): void {
     api: ANTHROPIC_MESSAGES_API_MODE,
     stream: streamAnthropic,
     listModels: listAnthropicModels,
+  });
+
+  registerApiProvider({
+    api: OPENAI_COMPLETIONS_API_MODE,
+    stream: streamOpenAICompletions,
+    listModels: listOpenAICompletionsModels,
   });
 }
 

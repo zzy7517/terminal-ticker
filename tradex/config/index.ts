@@ -5,8 +5,10 @@ import { parse as parseToml } from "smol-toml";
 import {
   ANTHROPIC_PROVIDER,
   CODEX_PROVIDER,
+  OPENAI_PROVIDER,
   DEFAULT_ANTHROPIC_MODEL,
   DEFAULT_CODEX_MODEL,
+  DEFAULT_OPENAI_MODEL,
   normalizeApiMode,
   normalizeModel,
   normalizeProvider,
@@ -253,6 +255,14 @@ function providerProfilesDefault(): Record<string, ProviderProfile> {
       baseUrl: "",
       customModels: [],
     },
+    [OPENAI_PROVIDER]: {
+      enabled: false,
+      models: [DEFAULT_OPENAI_MODEL],
+      modelEfforts: [],
+      apiKey: "",
+      baseUrl: "",
+      customModels: [],
+    },
   };
 }
 
@@ -492,7 +502,7 @@ function parseProviderProfiles(rawAgent: Record<string, unknown>): Record<string
   if (rawProviders && typeof rawProviders === "object" && !Array.isArray(rawProviders)) {
     const providers = rawProviders as Record<string, unknown>;
     const profiles: Record<string, ProviderProfile> = {};
-    for (const name of [CODEX_PROVIDER, ANTHROPIC_PROVIDER]) {
+    for (const name of [CODEX_PROVIDER, ANTHROPIC_PROVIDER, OPENAI_PROVIDER]) {
       const raw = asRecord(providers[name], `agent.providers.${name}`);
       profiles[name] = {
         enabled: normalizeBool(raw.enabled, `agent.providers.${name}.enabled`, false),
@@ -521,7 +531,7 @@ function parseProviderProfiles(rawAgent: Record<string, unknown>): Record<string
 }
 
 function primaryFromProfiles(profiles: Record<string, ProviderProfile>): [string, string, string] {
-  for (const name of [CODEX_PROVIDER, ANTHROPIC_PROVIDER]) {
+  for (const name of [CODEX_PROVIDER, ANTHROPIC_PROVIDER, OPENAI_PROVIDER]) {
     const profile = profiles[name];
     if (profile?.enabled) return [name, profile.models[0] ?? "", effortFor(profile, profile.models[0] ?? "")];
   }

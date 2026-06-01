@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Eye, EyeOff, KeyRound, Loader2, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
 import { ProviderIcon } from '../ProviderIcon';
 import './ProviderSettingsPanel.css';
-import { AGENT_PROVIDER_OPTIONS } from '../../constants';
+import { AGENT_PROVIDER_OPTIONS, PROVIDERS_WITH_CUSTOM_ENDPOINT } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { fetchProviderModels, saveProviderProfile } from '../../api';
@@ -31,6 +31,10 @@ export function ProviderSettingsPanel() {
   const enabled = profile?.enabled ?? false;
   const selectedModels = new Set(profile?.models ?? []);
   const isAnthropic = activeProvider === 'anthropic';
+  const isOpenAI = activeProvider === 'openai';
+  // anthropic + openai both expose a Base URL field and manual model entry,
+  // since both can target custom OpenAI/Anthropic-compatible endpoints.
+  const supportsCustomEndpoint = PROVIDERS_WITH_CUSTOM_ENDPOINT.has(activeProvider);
 
   useEffect(() => {
     setApiKeyInput('');
@@ -245,7 +249,7 @@ export function ProviderSettingsPanel() {
             <p>{option.detail}</p>
           </div>
 
-          {enabled && isAnthropic && (
+          {enabled && supportsCustomEndpoint && (
             <div className="provider-connection-form">
               <label className="provider-field">
                 <span className="provider-field-label">API Key</span>
@@ -259,8 +263,10 @@ export function ProviderSettingsPanel() {
                       profile?.apiKeyConfigured
                         ? 'Saved. Enter a new key to replace it.'
                         : profile?.apiKeyFromEnv
-                          ? 'Using ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY environment variable.'
-                          : 'Enter your API key'
+                          ? (isOpenAI
+                              ? 'Using OPENAI_API_KEY / LITELLM_API_KEY environment variable.'
+                              : 'Using ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY environment variable.')
+                          : (isOpenAI ? 'Enter your OpenAI / LiteLLM key' : 'Enter your API key')
                     }
                     autoComplete="off"
                     spellCheck={false}
@@ -278,7 +284,11 @@ export function ProviderSettingsPanel() {
                   {profile?.apiKeyConfigured ? (
                     'API key saved locally.'
                   ) : profile?.apiKeyFromEnv ? (
-                    'Using shell env (ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY). Saving a key here overrides it.'
+                    isOpenAI
+                      ? 'Using shell env (OPENAI_API_KEY or LITELLM_API_KEY). Saving a key here overrides it.'
+                      : 'Using shell env (ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY). Saving a key here overrides it.'
+                  ) : isOpenAI ? (
+                    'For a LiteLLM proxy, use its master key. For OpenAI, get a key from platform.openai.com.'
                   ) : (
                     <>
                       Get your API key from{' '}
@@ -291,17 +301,21 @@ export function ProviderSettingsPanel() {
               </label>
 
               <label className="provider-field">
-                <span className="provider-field-label">Base URL <em>Optional</em></span>
+                <span className="provider-field-label">
+                  Base URL {isOpenAI ? <em>LiteLLM / proxy</em> : <em>Optional</em>}
+                </span>
                 <input
                   className="input mono"
                   type="url"
                   value={baseUrlInput}
                   onChange={(e) => setBaseUrlInput(e.target.value)}
-                  placeholder="https://api.anthropic.com/v1"
+                  placeholder={isOpenAI ? 'http://localhost:4000/v1' : 'https://api.anthropic.com/v1'}
                   spellCheck={false}
                 />
                 <span className="provider-field-hint">
-                  Leave empty to use https://api.anthropic.com/v1.
+                  {isOpenAI
+                    ? 'Point at your LiteLLM proxy (e.g. http://localhost:4000/v1). Leave empty to use https://api.openai.com/v1.'
+                    : 'Leave empty to use https://api.anthropic.com/v1.'}
                 </span>
               </label>
 
@@ -348,7 +362,7 @@ export function ProviderSettingsPanel() {
                   />
                 </div>
 
-                {isAnthropic && (
+                {supportsCustomEndpoint && (
                   <div className="provider-field custom-model-form">
                     <span className="provider-field-label">自定义模型 ID</span>
                     <div className="provider-secret-row">
@@ -363,7 +377,7 @@ export function ProviderSettingsPanel() {
                             void addCustomModel();
                           }
                         }}
-                        placeholder="global.anthropic.claude-opus-4-6-v1"
+                        placeholder={isOpenAI ? 'gpt-4o' : 'global.anthropic.claude-opus-4-6-v1'}
                         spellCheck={false}
                         autoComplete="off"
                       />
@@ -378,7 +392,9 @@ export function ProviderSettingsPanel() {
                       </button>
                     </div>
                     <span className="provider-field-hint">
-                      支持任意 Anthropic Messages API 兼容的 model ID（含 Bedrock inference profile）。
+                      {isOpenAI
+                        ? '输入 LiteLLM config.yaml 里的 model_name（或任意 OpenAI 兼容 model ID）。'
+                        : '支持任意 Anthropic Messages API 兼容的 model ID（含 Bedrock inference profile）。'}
                     </span>
                   </div>
                 )}
@@ -405,8 +421,16 @@ export function ProviderSettingsPanel() {
                     if (!kw) return true;
                     return `${m.displayName} ${m.slug} ${m.description}`.toLowerCase().includes(kw);
                   });
-                  const customGroup = allVisible.filter((m) => m.custom || customSlugs.has(m.slug));
-                  const officialGroup = allVisible.filter((m) => !(m.custom || customSlugs.has(m.slug)));
+                  // Selected models float to the top of their group, preserving
+                  // the original relative order within the selected / unselected
+                  // partitions (stable sort).
+                  const selectedFirst = (list: typeof allVisible) => {
+                    const sel = list.filter((m) => selectedModels.has(m.slug));
+                    const rest = list.filter((m) => !selectedModels.has(m.slug));
+                    return [...sel, ...rest];
+                  };
+                  const customGroup = selectedFirst(allVisible.filter((m) => m.custom || customSlugs.has(m.slug)));
+                  const officialGroup = selectedFirst(allVisible.filter((m) => !(m.custom || customSlugs.has(m.slug))));
 
                   const renderRow = (m: (typeof allVisible)[number]) => {
                     const isSelected = selectedModels.has(m.slug);

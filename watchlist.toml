@@ -38,6 +38,13 @@ base_url = "https://claude-proxy.p1.cn/api"
 models = ["global.anthropic.claude-opus-4-6-v1"]
 model_efforts = {"global.anthropic.claude-opus-4-6-v1" = "medium"}
 custom_models = ["global.anthropic.claude-opus-4-6-v1"]
+
+[agent.providers.openai]
+enabled = true
+api_key = "YOUR_LITELLM_KEY"
+base_url = "https://infra-litellm-api.winktech.net"
+models = ["gpt-4o", "openrouter/anthropic/claude-opus-4.7"]
+model_efforts = {"openrouter/anthropic/claude-opus-4.7" = "medium"}
 [analysis]
 enabled = true
 interval = "5m"

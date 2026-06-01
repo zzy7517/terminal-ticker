@@ -160,17 +160,15 @@ function AgentTranscriptMessage({
   toolResultsById: Map<string, AgentMessage>;
 }) {
   if (message.role === 'toolResult') return null;
-  const isQueued = message.role === 'user' && message.metadata?.queued === true;
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
   const content = message.error || message.content || (message.role === 'assistant' ? '' : 'No content.');
   const toolCalls = message.role === 'assistant' ? message.metadata?.toolCalls ?? [] : [];
   // Extract images from user message metadata (sent via the images attachment)
   const messageImages = (message.metadata?.images ?? []) as Array<{ data: string; mimeType: string }>;
   return (
-    <div className={`session-message ${message.role}${isQueued ? ' queued' : ''}`}>
+    <div className={`session-message ${message.role}`}>
       <div className="session-message-head">
         <span>{label}</span>
-        {isQueued && <span className="badge sm warning">queued</span>}
         {messageImages.length > 0 && <ImageIcon size={12} className="message-has-images-icon" />}
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
       </div>
@@ -210,6 +208,7 @@ export function AgentSessionPanel({
   const contextUsage = useAgentStore((s) => s.contextUsage);
   const sessionStats = useAgentStore((s) => s.sessionStats);
   const streamingMessage = useAgentStore((s) => s.streamingMessage);
+  const queuedSteering = useAgentStore((s) => s.queuedSteering);
 
   const pendingImages = useAgentStore((s) => s.pendingImages);
   const addPendingImage = useAgentStore((s) => s.addPendingImage);
@@ -310,6 +309,7 @@ export function AgentSessionPanel({
     lastMessageToolCallCount,
     pendingToolCalls.size,
     streamingMessage?.content,
+    queuedSteering.length,
   ]);
 
   const enabledProviders = AGENT_PROVIDER_OPTIONS.filter(
@@ -676,6 +676,16 @@ export function AgentSessionPanel({
             {!streamingMessage.content && (
               <span className="streaming-cursor" />
             )}
+          </div>
+        )}
+        {!sessionLoading && queuedSteering.length > 0 && (
+          <div className="session-steering-queue">
+            {queuedSteering.map((item) => (
+              <div key={item.id} className="session-steering-item">
+                <span className="badge sm warning">queued</span>
+                <span className="session-steering-text">{item.content}</span>
+              </div>
+            ))}
           </div>
         )}
         {!sessionLoading && messages.length === 0 && !streamingMessage && (

@@ -293,6 +293,38 @@
   width: 6px;
 }
 
+/*
+ * Fixed pending region for steering messages queued during a run. Pinned at the
+ * bottom of the transcript (below streaming text) so its position never shifts
+ * while the agent streams; entries leave only once the backend confirms them.
+ */
+.session-steering-queue {
+  align-self: flex-end;
+  display: grid;
+  gap: 4px;
+  inline-size: fit-content;
+  max-inline-size: min(50ch, 80%);
+}
+
+.session-steering-item {
+  align-items: center;
+  background: var(--canvas-2);
+  border: 1px dashed var(--accent);
+  color: var(--text-muted);
+  display: flex;
+  gap: 6px;
+  opacity: 0.8;
+  padding: 6px 10px;
+}
+
+.session-steering-text {
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .session-compose {
   display: grid;
   gap: 4px;

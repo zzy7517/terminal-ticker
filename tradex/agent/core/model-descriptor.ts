@@ -10,7 +10,7 @@
 
 import type { AgentModel } from "../models.js";
 import type { AgentModelDescriptor } from "./types.js";
-import { ANTHROPIC_PROVIDER, CODEX_PROVIDER } from "../../config/agent_models.js";
+import { ANTHROPIC_PROVIDER, CODEX_PROVIDER, OPENAI_PROVIDER } from "../../config/agent_models.js";
 import { lookupModelMetadata } from "./models-metadata.js";
 
 /**
@@ -31,7 +31,7 @@ export function inputsForModel(provider: string, modelId: string): ("text" | "im
     return ["text", "image"];
   }
 
-  if (provider === CODEX_PROVIDER) {
+  if (provider === CODEX_PROVIDER || provider === OPENAI_PROVIDER) {
     const id = modelId.toLowerCase();
     const visionPatterns = ["gpt-4o", "gpt-4.1", "gpt-5", "gpt-4-vision", "o1", "o3", "o4"];
     const reasoningOnly = ["o1-mini", "o3-mini", "o4-mini"];

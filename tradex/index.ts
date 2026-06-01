@@ -1,16 +1,8 @@
 import { serve } from "@hono/node-server";
-import { ProxyAgent, setGlobalDispatcher } from "undici";
 import { WebSocketServer } from "ws";
 import { buildRuntimeConfig, loadConfig } from "./config/index.js";
 import { createApp } from "./api/app.js";
 import { AppRuntime } from "./api/runtime.js";
-
-// ── Global HTTP proxy for fetch (Yahoo Finance, Deribit, etc.) ────────────────
-const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || process.env.ALL_PROXY;
-if (proxyUrl) {
-  setGlobalDispatcher(new ProxyAgent(proxyUrl));
-  console.log(`[proxy] Global fetch proxy set: ${proxyUrl}`);
-}
 
 interface CliOptions {
   configPath: string;

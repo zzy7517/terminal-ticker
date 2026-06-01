@@ -7,6 +7,7 @@ import type {
   AgentSessionRun,
   AgentSessionStats,
   AgentSessionSummary,
+  QueuedSteeringMessage,
 } from '../types';
 import {
   abortAgentSession,
@@ -77,8 +78,15 @@ interface AgentState {
   draftBySessionId: Record<string, string>;
   /** The assistant message currently being streamed (dual-zone pattern). */
   streamingMessage: AgentMessage | null;
-  /** Number of steering messages queued and not yet processed by the agent. */
-  steeringQueueCount: number;
+  /**
+   * Steering messages sent to a running agent but not yet confirmed by the
+   * backend, keyed by session id. Rendered in a fixed pending region below the
+   * transcript instead of being spliced into `messages`, so their position
+   * stays stable while the agent streams.
+   */
+  queuedSteeringBySessionId: Record<string, QueuedSteeringMessage[]>;
+  /** Queued steering messages for the currently-active session (derived). */
+  queuedSteering: QueuedSteeringMessage[];
   /**
    * Image attachments queued for the next send, keyed by session id.
    * The active session's bucket is mirrored to `pendingImages` for read-only
@@ -113,7 +121,7 @@ interface AgentState {
 
 type ActiveMirrorSource = Pick<
   AgentState,
-  'activeAgentSessionId' | 'agentSessionById' | 'agentSessionHistory' | 'runStateBySessionId' | 'draftBySessionId' | 'pendingImagesBySessionId'
+  'activeAgentSessionId' | 'agentSessionById' | 'agentSessionHistory' | 'runStateBySessionId' | 'draftBySessionId' | 'pendingImagesBySessionId' | 'queuedSteeringBySessionId'
 >;
 
 const NEW_SESSION_PENDING_KEY = '__new__';
@@ -181,7 +189,7 @@ function pendingImagesKey(activeId: string | null): string {
 
 function activeFields(state: ActiveMirrorSource): Pick<
   AgentState,
-  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'contextUsage' | 'sessionStats' | 'agentBusyKey' | 'pendingImages'
+  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'contextUsage' | 'sessionStats' | 'agentBusyKey' | 'pendingImages' | 'queuedSteering'
 > {
   const activeId = state.activeAgentSessionId;
   const run = activeId ? state.runStateBySessionId[activeId] : undefined;
@@ -195,6 +203,7 @@ function activeFields(state: ActiveMirrorSource): Pick<
     sessionStats: run?.sessionStats ?? session?.sessionStats ?? null,
     agentBusyKey: activeId && run?.status === 'running' ? activeId : null,
     pendingImages: state.pendingImagesBySessionId[key] ?? [],
+    queuedSteering: activeId ? state.queuedSteeringBySessionId[activeId] ?? [] : [],
   };
 }
 
@@ -204,21 +213,31 @@ function appendSessionMessage(
   message: AgentMessage,
 ): Record<string, AgentSessionResponse> {
   const session = responseForSession(state, sessionId);
-  // When backend confirms a steered user message, remove the optimistic queued placeholder
-  const messages = message.role === 'user'
-    ? session.messages.filter((item) => !(
-        item.role === 'user' &&
-        item.metadata?.queued === true &&
-        item.content === message.content
-      ))
-    : session.messages;
   return {
     ...state.agentSessionById,
     [sessionId]: {
       ...session,
-      messages: [...messages, message],
+      messages: [...session.messages, message],
     },
   };
+}
+
+/**
+ * Remove the first queued steering message matching `content` from a session's
+ * pending queue. Called when the backend confirms a steered user message,
+ * which is the moment it transitions from the pending region into `messages`.
+ */
+function removeQueuedSteering(
+  map: Record<string, QueuedSteeringMessage[]>,
+  sessionId: string,
+  content: string,
+): Record<string, QueuedSteeringMessage[]> {
+  const queue = map[sessionId];
+  if (!queue || queue.length === 0) return map;
+  const index = queue.findIndex((item) => item.content === content);
+  if (index === -1) return map;
+  const next = [...queue.slice(0, index), ...queue.slice(index + 1)];
+  return { ...map, [sessionId]: next };
 }
 
 function cacheSession(
@@ -289,7 +308,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   runStateBySessionId: {},
   draftBySessionId: {},
   streamingMessage: null,
-  steeringQueueCount: 0,
+  queuedSteeringBySessionId: {},
+  queuedSteering: [],
   pendingImagesBySessionId: {},
   pendingImages: [],
 
@@ -621,15 +641,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
               );
               const clearStreaming = raw.role === 'assistant';
-              // Decrement steering queue when a steered user message is confirmed by backend
-              const steeringQueueCount = isUserMessage
-                ? Math.max(0, s.steeringQueueCount - 1)
-                : s.steeringQueueCount;
-              const next = { ...s, agentSessionById, runStateBySessionId };
+              // A confirmed user message means the backend just injected a
+              // queued steering message into the transcript — drop it from the
+              // pending region now that it lives in `messages`.
+              const queuedSteeringBySessionId = isUserMessage
+                ? removeQueuedSteering(s.queuedSteeringBySessionId, sessionId, message.content)
+                : s.queuedSteeringBySessionId;
+              const next = { ...s, agentSessionById, runStateBySessionId, queuedSteeringBySessionId };
               return {
                 agentSessionById,
                 runStateBySessionId,
-                steeringQueueCount,
+                queuedSteeringBySessionId,
                 ...(clearStreaming ? { streamingMessage: null } : {}),
                 ...activeFields(next),
               };
@@ -687,8 +709,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                   sessionStats: stats,
                 },
               );
-              const next = { ...s, runStateBySessionId, streamingMessage: null };
-              return { runStateBySessionId, streamingMessage: null, steeringQueueCount: 0, ...activeFields(next) };
+              // The run is over: any steering still queued for this session was
+              // never injected, so clear its pending region.
+              const queuedSteeringBySessionId = s.queuedSteeringBySessionId[sessionId]?.length
+                ? { ...s.queuedSteeringBySessionId, [sessionId]: [] }
+                : s.queuedSteeringBySessionId;
+              const next = { ...s, runStateBySessionId, queuedSteeringBySessionId, streamingMessage: null };
+              return { runStateBySessionId, queuedSteeringBySessionId, streamingMessage: null, ...activeFields(next) };
             });
             return;
           }
@@ -778,36 +805,46 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   steerAgent: async () => {
     const { activeAgentSessionId, agentPrompt, runStateBySessionId } = get();
     if (!activeAgentSessionId) return;
-    const run = runStateBySessionId[activeAgentSessionId];
+    const sessionId = activeAgentSessionId;
+    const run = runStateBySessionId[sessionId];
     if (run?.status !== 'running') return;
     const prompt = agentPrompt.trim();
     if (!prompt) return;
-    // Clear input and increment queue count immediately
-    set((s) => ({
-      agentPrompt: '',
-      draftBySessionId: { ...s.draftBySessionId, [activeAgentSessionId]: '' },
-      steeringQueueCount: s.steeringQueueCount + 1,
-    }));
-    // Add optimistic user message to transcript (shown greyed out as "queued")
-    const optimisticMessage: AgentMessage = {
-      id: -Date.now(),
-      sessionId: activeAgentSessionId,
-      role: 'user',
+
+    // Optimistically add to the fixed pending region (never spliced into
+    // `messages`, so its position stays stable while the agent streams) and
+    // clear the input immediately.
+    const queued: QueuedSteeringMessage = {
+      id: `steer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       content: prompt,
       createdAt: new Date().toISOString(),
-      metadata: { queued: true },
-      error: null,
     };
     set((s) => {
-      const agentSessionById = appendSessionMessage(s, activeAgentSessionId, optimisticMessage);
-      const next = { ...s, agentSessionById };
-      return { agentSessionById, ...activeFields(next) };
+      const queuedSteeringBySessionId = {
+        ...s.queuedSteeringBySessionId,
+        [sessionId]: [...(s.queuedSteeringBySessionId[sessionId] ?? []), queued],
+      };
+      const draftBySessionId = { ...s.draftBySessionId, [sessionId]: '' };
+      const next = { ...s, draftBySessionId, queuedSteeringBySessionId };
+      // activeFields derives `agentPrompt` from the (now-cleared) draft.
+      return { draftBySessionId, queuedSteeringBySessionId, ...activeFields(next) };
     });
+
     try {
-      await steerAgentSession(activeAgentSessionId, prompt);
+      await steerAgentSession(sessionId, prompt);
     } catch (error) {
       console.error('steer failed:', error);
-      set((s) => ({ steeringQueueCount: Math.max(0, s.steeringQueueCount - 1) }));
+      // Roll back the optimistic pending entry by its stable id.
+      set((s) => {
+        const queue = s.queuedSteeringBySessionId[sessionId];
+        if (!queue) return {};
+        const queuedSteeringBySessionId = {
+          ...s.queuedSteeringBySessionId,
+          [sessionId]: queue.filter((item) => item.id !== queued.id),
+        };
+        const next = { ...s, queuedSteeringBySessionId };
+        return { queuedSteeringBySessionId, ...activeFields(next) };
+      });
     }
   },
 
@@ -919,6 +956,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         delete runStateBySessionId[sessionId];
         const draftBySessionId = { ...s.draftBySessionId };
         delete draftBySessionId[sessionId];
+        const queuedSteeringBySessionId = { ...s.queuedSteeringBySessionId };
+        delete queuedSteeringBySessionId[sessionId];
         const activeAgentSessionId = s.activeAgentSessionId === sessionId
           ? payload.history.sessions[0]?.id ?? null
           : s.activeAgentSessionId;
@@ -927,6 +966,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           agentSessionById,
           runStateBySessionId,
           draftBySessionId,
+          queuedSteeringBySessionId,
           agentSessionHistory: payload.history.sessions,
           activeAgentSessionId,
         };
@@ -934,6 +974,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           agentSessionById,
           runStateBySessionId,
           draftBySessionId,
+          queuedSteeringBySessionId,
           agentSessionHistory: payload.history.sessions,
           activeAgentSessionId,
           ...activeFields(next),
