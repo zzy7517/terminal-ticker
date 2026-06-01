@@ -116,18 +116,6 @@ export class OptionsStore extends BaseStore {
     return rows.map(row => this.rowToSnapshot(row)).reverse();
   }
 
-  getLatestSnapshot(symbol: string): GexSnapshot | null {
-    const conn = this.getConn();
-    const row = conn.prepare(`
-      SELECT * FROM gex_snapshots
-      WHERE symbol = ?
-      ORDER BY timestamp_ms DESC
-      LIMIT 1
-    `).get(symbol) as any;
-
-    return row ? this.rowToSnapshot(row) : null;
-  }
-
   // --------------------------------------------------------------------------
   // OI History
   // --------------------------------------------------------------------------
@@ -184,33 +172,6 @@ export class OptionsStore extends BaseStore {
       }
     });
     tx();
-  }
-
-  getRecentUnusualActivity(symbol: string | null, limit = 50): UnusualActivity[] {
-    const conn = this.getConn();
-    let query = `SELECT * FROM unusual_activity`;
-    const params: any[] = [];
-
-    if (symbol) {
-      query += ` WHERE symbol = ?`;
-      params.push(symbol);
-    }
-    query += ` ORDER BY timestamp_ms DESC LIMIT ?`;
-    params.push(limit);
-
-    const rows = conn.prepare(query).all(...params) as any[];
-    return rows.map(row => ({
-      symbol: row.symbol,
-      strike: row.strike,
-      type: row.option_type as "call" | "put",
-      expiration: row.expiration,
-      timestampMs: row.timestamp_ms,
-      oiChange: row.oi_change,
-      volume: row.volume,
-      volumeOiRatio: row.volume_oi_ratio,
-      premiumEstimate: row.premium_estimate,
-      signal: row.signal,
-    }));
   }
 
   // --------------------------------------------------------------------------

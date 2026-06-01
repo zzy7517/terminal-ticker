@@ -107,47 +107,6 @@ export function delta(S: number, K: number, T: number, r: number, q: number, sig
 }
 
 /**
- * Vega (∂V/∂σ) per 1% change — same for calls and puts.
- * Formula: ν = S × e^(-qT) × N'(d1) × √T / 100
- */
-export function vega(S: number, K: number, T: number, r: number, q: number, sigma: number): number {
-  if (T <= 0 || sigma <= 0 || S <= 0) return 0;
-  const d1 = bsD1(S, K, T, r, q, sigma);
-  const discount = Math.exp(-q * T);
-  const v = (S * discount * normPdf(d1) * Math.sqrt(T)) / 100;
-  return isFinite(v) ? v : 0;
-}
-
-/**
- * Theta (∂V/∂t) per day.
- * Call: θ = -[S×e^(-qT)×N'(d1)×σ/(2√T)] - r×K×e^(-rT)×N(d2) + q×S×e^(-qT)×N(d1)
- * Put:  θ = -[S×e^(-qT)×N'(d1)×σ/(2√T)] + r×K×e^(-rT)×N(-d2) - q×S×e^(-qT)×N(-d1)
- */
-export function theta(S: number, K: number, T: number, r: number, q: number, sigma: number, type: "call" | "put"): number {
-  if (T <= 0 || sigma <= 0 || S <= 0) return 0;
-
-  const d1 = bsD1(S, K, T, r, q, sigma);
-  const d2 = bsD2(S, K, T, r, q, sigma);
-  const sqrtT = Math.sqrt(T);
-  const discountQ = Math.exp(-q * T);
-  const discountR = Math.exp(-r * T);
-  const pdf = normPdf(d1);
-
-  const term1 = -(S * discountQ * pdf * sigma) / (2 * sqrtT);
-
-  let result: number;
-  if (type === "call") {
-    result = term1 - r * K * discountR * normCdf(d2) + q * S * discountQ * normCdf(d1);
-  } else {
-    result = term1 + r * K * discountR * normCdf(-d2) - q * S * discountQ * normCdf(-d1);
-  }
-
-  // Convert to per-day
-  const perDay = result / 365;
-  return isFinite(perDay) ? perDay : 0;
-}
-
-/**
  * Charm (∂Δ/∂t) — Delta decay over time, per day.
  * Measures how much Delta changes as time passes (dealers must rehedge just from clock ticking).
  * Critical for 0DTE options.
