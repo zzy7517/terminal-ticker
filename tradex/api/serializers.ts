@@ -157,6 +157,13 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
         apiKeyConfigured: Boolean(config.options.tradier.apiKey),
         baseUrl: config.options.tradier.baseUrl,
       } : undefined,
+      marketdata: config.options.marketdata ? {
+        apiKeyConfigured: Boolean(config.options.marketdata.apiKey),
+        baseUrl: config.options.marketdata.baseUrl,
+        strikeLimit: config.options.marketdata.strikeLimit ?? null,
+        dte: config.options.marketdata.dte ?? null,
+        callsPerMinute: config.options.marketdata.callsPerMinute ?? null,
+      } : undefined,
       deribit: config.options.deribit,
     },
     proxy: {

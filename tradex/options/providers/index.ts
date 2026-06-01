@@ -25,13 +25,19 @@ const MARKETDATA_STRIKE_LIMIT = 80;
 
 /** Construct a MarketData.app provider from config, or null if no key. */
 function createMarketDataProvider(config: OptionsConfig): MarketDataProvider | null {
-  const mdKey = config.marketdata?.apiKey;
+  const md = config.marketdata;
+  const mdKey = md?.apiKey;
   if (!mdKey) return null;
+  // Configured overrides win; otherwise fall back to the derived/default values.
+  const callsPerMinute = md?.callsPerMinute ?? (config.pollIntervalSeconds > 30 ? 30 : 15);
   return new MarketDataProvider(
     mdKey,
-    config.marketdata?.baseUrl,
-    config.pollIntervalSeconds > 30 ? 30 : 15,
-    { strikeLimit: MARKETDATA_STRIKE_LIMIT },
+    md?.baseUrl,
+    callsPerMinute,
+    {
+      strikeLimit: md?.strikeLimit ?? MARKETDATA_STRIKE_LIMIT,
+      dte: md?.dte,
+    },
   );
 }
 

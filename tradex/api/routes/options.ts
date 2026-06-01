@@ -205,7 +205,7 @@ export function optionsRoutes(runtime: AppRuntime): Hono {
 
       const merged: OptionsConfig = {
         enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
-        provider: (["yfinance", "tradier", "deribit"] as const).includes(body.provider as any)
+        provider: (["yfinance", "tradier", "deribit", "marketdata"] as const).includes(body.provider as any)
           ? (body.provider as OptionsConfig["provider"])
           : current.provider,
         symbols: Array.isArray(body.symbols)
@@ -219,6 +219,28 @@ export function optionsRoutes(runtime: AppRuntime): Hono {
           apiKey: typeof (body.tradier as any).apiKey === "string" ? (body.tradier as any).apiKey : (current.tradier?.apiKey ?? ""),
           baseUrl: typeof (body.tradier as any).baseUrl === "string" ? (body.tradier as any).baseUrl : (current.tradier?.baseUrl ?? "https://sandbox.tradier.com/v1"),
         } : current.tradier,
+        marketdata: body.marketdata && typeof body.marketdata === "object"
+          ? (() => {
+              const md = body.marketdata as any;
+              // A new apiKey string from the UI becomes both the resolved key and
+              // the raw TOML value. Absent => keep existing (raw env-ref preserved).
+              const hasNewKey = typeof md.apiKey === "string" && md.apiKey.length > 0;
+              // null clears an override (back to default); undefined keeps current.
+              const pickNum = (v: unknown, cur: number | undefined): number | undefined => {
+                if (v === null) return undefined;
+                if (typeof v === "number" && Number.isFinite(v)) return v;
+                return cur;
+              };
+              return {
+                apiKey: hasNewKey ? md.apiKey : (current.marketdata?.apiKey ?? ""),
+                apiKeyRaw: hasNewKey ? md.apiKey : current.marketdata?.apiKeyRaw,
+                baseUrl: typeof md.baseUrl === "string" ? md.baseUrl : (current.marketdata?.baseUrl ?? "https://api.marketdata.app/v1"),
+                strikeLimit: pickNum(md.strikeLimit, current.marketdata?.strikeLimit),
+                dte: pickNum(md.dte, current.marketdata?.dte),
+                callsPerMinute: pickNum(md.callsPerMinute, current.marketdata?.callsPerMinute),
+              };
+            })()
+          : current.marketdata,
         deribit: body.deribit && typeof body.deribit === "object" ? {
           enabled: typeof (body.deribit as any).enabled === "boolean" ? (body.deribit as any).enabled : (current.deribit?.enabled ?? false),
           currencies: Array.isArray((body.deribit as any).currencies) ? (body.deribit as any).currencies : (current.deribit?.currencies ?? ["BTC", "ETH"]),

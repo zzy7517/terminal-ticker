@@ -14,6 +14,7 @@ symbols = [
   { symbol = "xyz:SP500", source = "hyperliquid", label = "SP500 Perp (xyz)", group = "indices", show_collapsed = true },
   { symbol = "xyz:XYZ100", source = "hyperliquid", label = "XYZ100 Perp (xyz)", group = "indices", show_collapsed = true },
   { symbol = "xyz:MSTR", source = "hyperliquid", label = "MSTR Perp (xyz)", group = "stocks", show_collapsed = true },
+  { symbol = "BNBUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BNBUSDT", group = "crypto", show_collapsed = true },
 ]
 
 [display]
@@ -43,8 +44,8 @@ custom_models = ["global.anthropic.claude-opus-4-6-v1"]
 enabled = true
 api_key = "sk-hwdObkjNuUv2Px9H4UdpSA"
 base_url = "https://infra-litellm-api.winktech.net"
-models = ["gpt-4o"]
-model_efforts = {"openrouter/anthropic/claude-opus-4.7" = "medium", "openrouter/anthropic/claude-opus-4.6" = "medium", "vertex_ai/claude-sonnet-4" = "medium"}
+models = ["openrouter/anthropic/claude-opus-4.7", "openrouter/anthropic/claude-opus-4.6"]
+model_efforts = {"openrouter/anthropic/claude-opus-4.7" = "medium", "openrouter/anthropic/claude-opus-4.6" = "medium"}
 [analysis]
 enabled = true
 interval = "5m"
@@ -108,18 +109,9 @@ enabled = true
 enabled = true
 provider = "marketdata"
 symbols = ["SPY", "QQQ", "GLD"]
-# Lazy refresh: snapshots are fetched on read only when older than this many
-# seconds (12h). No background polling; only the latest snapshot is persisted
-# (to ~/.cache/tradex/options.sqlite3) to warm the cache on restart.
 poll_interval_seconds = 43200
 strike_range_percent = 0.15
 
-# Primary source (MarketData.app). Returns full Greeks + OI/IV directly.
-# Get a free token at marketdata.app (instant, no approval). With the current
-# strikeLimit (80 strikes ≈ 160 contracts) each refresh costs ~160 credits;
-# free tier is 100/day, the Trader trial is 100,000/day. If primary fails or
-# returns an empty chain, the service falls back to Yahoo Finance automatically.
-# Supports ${ENV_VAR} references.
 [options.marketdata]
 api_key = "${MARKETDATA_API_KEY}"
 base_url = "https://api.marketdata.app/v1"
@@ -127,7 +119,6 @@ base_url = "https://api.marketdata.app/v1"
 [options.deribit]
 enabled = true
 currencies = ["BTC", "ETH"]
-
 [proxy]
 enabled = true
 type = "socks5"

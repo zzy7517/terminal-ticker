@@ -36,8 +36,8 @@ export const AGENT_PROVIDER_OPTIONS = [
     label: 'OpenAI',
     apiMode: 'openai_completions',
     defaultModel: 'gpt-4o',
-    description: 'Chat Completions adapter (OpenAI / LiteLLM)',
-    detail: 'OpenAI Chat Completions adapter. Point Base URL at any OpenAI-compatible endpoint — a LiteLLM proxy, Ollama, vLLM, or OpenAI itself.',
+    description: 'Chat Completions adapter (OpenAI-compatible)',
+    detail: 'OpenAI Chat Completions adapter. Point Base URL at any OpenAI-compatible endpoint — Ollama, vLLM, OpenRouter, or OpenAI itself.',
     supportsReasoning: false,
   },
 ] as const;

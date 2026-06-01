@@ -71,7 +71,12 @@ export function ProviderSettingsPanel() {
     try {
       const payload = await fetchProviderModels(activeProvider);
       const visible = payload.models.filter((m) => m.supportedInApi && m.visibility !== 'hide');
-      useAgentStore.getState().setModelCache((prev) => ({ ...prev, [activeProvider]: visible }));
+      // OpenAI-compatible proxies can list the same model ID multiple
+      // times (one per deployment/alias). Dedupe by slug so each model appears
+      // once and the "Showing N models" count is accurate.
+      const seen = new Set<string>();
+      const deduped = visible.filter((m) => (seen.has(m.slug) ? false : (seen.add(m.slug), true)));
+      useAgentStore.getState().setModelCache((prev) => ({ ...prev, [activeProvider]: deduped }));
       setStatus(`${visible.length} 个模型可用。`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Model refresh failed.');
@@ -264,9 +269,9 @@ export function ProviderSettingsPanel() {
                         ? 'Saved. Enter a new key to replace it.'
                         : profile?.apiKeyFromEnv
                           ? (isOpenAI
-                              ? 'Using OPENAI_API_KEY / LITELLM_API_KEY environment variable.'
+                              ? 'Using OPENAI_API_KEY environment variable.'
                               : 'Using ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY environment variable.')
-                          : (isOpenAI ? 'Enter your OpenAI / LiteLLM key' : 'Enter your API key')
+                          : (isOpenAI ? 'Enter your OpenAI key' : 'Enter your API key')
                     }
                     autoComplete="off"
                     spellCheck={false}
@@ -285,10 +290,10 @@ export function ProviderSettingsPanel() {
                     'API key saved locally.'
                   ) : profile?.apiKeyFromEnv ? (
                     isOpenAI
-                      ? 'Using shell env (OPENAI_API_KEY or LITELLM_API_KEY). Saving a key here overrides it.'
+                      ? 'Using shell env (OPENAI_API_KEY). Saving a key here overrides it.'
                       : 'Using shell env (ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY). Saving a key here overrides it.'
                   ) : isOpenAI ? (
-                    'For a LiteLLM proxy, use its master key. For OpenAI, get a key from platform.openai.com.'
+                    'For an OpenAI-compatible proxy, use its key. For OpenAI, get a key from platform.openai.com.'
                   ) : (
                     <>
                       Get your API key from{' '}
@@ -302,7 +307,7 @@ export function ProviderSettingsPanel() {
 
               <label className="provider-field">
                 <span className="provider-field-label">
-                  Base URL {isOpenAI ? <em>LiteLLM / proxy</em> : <em>Optional</em>}
+                  Base URL {isOpenAI ? <em>proxy</em> : <em>Optional</em>}
                 </span>
                 <input
                   className="input mono"
@@ -314,7 +319,7 @@ export function ProviderSettingsPanel() {
                 />
                 <span className="provider-field-hint">
                   {isOpenAI
-                    ? 'Point at your LiteLLM proxy (e.g. http://localhost:4000/v1). Leave empty to use https://api.openai.com/v1.'
+                    ? 'Point at any OpenAI-compatible endpoint (e.g. http://localhost:4000/v1). Leave empty to use https://api.openai.com/v1.'
                     : 'Leave empty to use https://api.anthropic.com/v1.'}
                 </span>
               </label>
@@ -393,7 +398,7 @@ export function ProviderSettingsPanel() {
                     </div>
                     <span className="provider-field-hint">
                       {isOpenAI
-                        ? '输入 LiteLLM config.yaml 里的 model_name（或任意 OpenAI 兼容 model ID）。'
+                        ? '输入任意 OpenAI 兼容的 model ID。'
                         : '支持任意 Anthropic Messages API 兼容的 model ID（含 Bedrock inference profile）。'}
                     </span>
                   </div>
@@ -416,11 +421,14 @@ export function ProviderSettingsPanel() {
                       preferWebsockets: false,
                       custom: true,
                     }));
-                  const allVisible = [...orphanCustomOptions, ...visibleModels].filter((m) => {
-                    const kw = modelSearch.trim().toLowerCase();
-                    if (!kw) return true;
-                    return `${m.displayName} ${m.slug} ${m.description}`.toLowerCase().includes(kw);
-                  });
+                  const seenSlugs = new Set<string>();
+                  const allVisible = [...orphanCustomOptions, ...visibleModels]
+                    .filter((m) => (seenSlugs.has(m.slug) ? false : (seenSlugs.add(m.slug), true)))
+                    .filter((m) => {
+                      const kw = modelSearch.trim().toLowerCase();
+                      if (!kw) return true;
+                      return `${m.displayName} ${m.slug} ${m.description}`.toLowerCase().includes(kw);
+                    });
                   // Selected models float to the top of their group, preserving
                   // the original relative order within the selected / unselected
                   // partitions (stable sort).

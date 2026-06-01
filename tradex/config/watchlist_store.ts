@@ -478,6 +478,14 @@ export async function updateOptionsConfigInWatchlist(watchlistPath: string, conf
   if (config.tradier) {
     lines.push("", "[options.tradier]", `api_key = ${tomlString(config.tradier.apiKey)}`, `base_url = ${tomlString(config.tradier.baseUrl)}`);
   }
+  if (config.marketdata && config.marketdata.apiKey) {
+    // Prefer the raw "${ENV}" reference so we never write a resolved secret to disk.
+    const mdKey = config.marketdata.apiKeyRaw || config.marketdata.apiKey;
+    lines.push("", "[options.marketdata]", `api_key = ${tomlString(mdKey)}`, `base_url = ${tomlString(config.marketdata.baseUrl)}`);
+    if (config.marketdata.strikeLimit != null) lines.push(`strike_limit = ${config.marketdata.strikeLimit}`);
+    if (config.marketdata.dte != null) lines.push(`dte = ${config.marketdata.dte}`);
+    if (config.marketdata.callsPerMinute != null) lines.push(`calls_per_minute = ${config.marketdata.callsPerMinute}`);
+  }
   if (config.deribit) {
     lines.push("", "[options.deribit]", `enabled = ${config.deribit.enabled ? "true" : "false"}`, `currencies = [${config.deribit.currencies.map(tomlString).join(", ")}]`);
   }

@@ -1,0 +1,239 @@
+/* ── Options & GEX settings ───────────────────────────────────────── */
+/* Single-column grouped layout. Reuses provider-* primitives from
+   ProviderSettingsPanel.css for cards/fields; this file owns the grouping
+   shell and a few Options-only refinements. Corner radius is 0 to match
+   the rest of the settings surface. */
+
+.options-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+/* A titled group: a thin label rule + its body. Groups give the page the
+   "Data Sources / Symbols / Advanced" hierarchy that was missing. */
+.options-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.options-group-title {
+  align-items: baseline;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text-muted);
+  display: flex;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 8px;
+  justify-content: space-between;
+  letter-spacing: 0.14em;
+  padding-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.options-group-title .options-group-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+/* Master enable row sits above the groups, slightly stronger than a
+   normal toggle row. */
+.options-master {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.options-master strong {
+  display: block;
+  font-size: 14px;
+}
+
+.options-master small {
+  color: var(--text-muted);
+  display: block;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Slim provider cards: radio-style rows, less vertical weight than the
+   agent-provider catalog. */
+.options-provider-list {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.options-provider-item {
+  align-items: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  text-align: left;
+  width: 100%;
+}
+
+.options-provider-item:hover {
+  background: var(--accent-tint);
+}
+
+.options-provider-item:active {
+  transform: scale(0.99);
+}
+
+.options-provider-item.selected {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+}
+
+.options-provider-item .name {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+  width: 100%;
+}
+
+.options-provider-item .name .check {
+  color: var(--accent);
+  margin-left: auto;
+}
+
+.options-provider-item small {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+/* Inline config block that appears under the selected provider. */
+.options-config {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.options-config-head {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.options-config-head strong {
+  font-size: 13px;
+}
+
+/* Tuning fields inside a provider config block: responsive 2-3 col grid. */
+.options-config-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+/* Symbols editor */
+.options-symbols {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.options-symbol-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.options-symbol-chips:empty::before {
+  color: var(--text-muted);
+  content: 'No symbols yet.';
+  font-size: 12px;
+}
+
+.options-symbol-chip {
+  align-items: center;
+  background: var(--accent-tint);
+  border: 1px solid var(--line-soft);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.options-symbol-chip button {
+  align-items: center;
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  line-height: 1;
+  padding: 0;
+}
+
+.options-symbol-chip button:hover {
+  color: var(--accent);
+}
+
+.options-symbol-add {
+  display: flex;
+  gap: 6px;
+}
+
+.options-symbol-add .input {
+  flex: 1;
+}
+
+/* Advanced field grid */
+.options-advanced-grid {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  padding: 16px;
+}
+
+/* Inline save status, right-aligned and quiet. */
+.options-status {
+  color: var(--text-muted);
+  font-size: 12px;
+  min-height: 16px;
+  padding: 0 2px;
+}
+
+.options-status.error {
+  color: var(--danger, #d9534f);
+}
+
+@media (max-width: 768px) {
+  .options-provider-list,
+  .options-advanced-grid,
+  .options-config-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -83,7 +83,7 @@ The TypeScript backend `tradex/` is organized as strict layers. Upper layers imp
 
 ### Trade record and external execution pipeline
 
-The agent can submit Hyperliquid mainnet orders via `open_hyperliquid_trade`, or Bitget demo orders via `open_bitget_demo_trade`, during a chat turn only when the matching `[trading]` platform switch is enabled. Disabled platforms do not expose their Agent order-entry tools, so the model should provide trade plans instead of executing orders. Flow:
+The agent submits orders through a single unified `open_exchange_trade` tool during a chat turn. `ExchangeRouter` (`trading/exchange_router.ts`) routes by `instrument_key` prefix: `hyperliquid:*` → Hyperliquid (live only; demo is rejected), `USDT-FUTURES:*` / `USDC-FUTURES:*` / `COIN-FUTURES:*` → Bitget (demo via `PAPTRADING: 1` header, or live). The order-entry tools (`open_exchange_trade`, `modify_tpsl`) are only registered when at least one platform's `[trading]` mode is not `"off"` (the `tradingEnabled` flag in `tools/trading.ts`). If the routed platform's mode is `"off"`, the router returns a `disabled by config` error, so the model should provide trade plans instead of executing orders. `open_exchange_trade` requires both `take_profit_price` and `stop_loss_price`. Flow:
 1. Tool handler submits a signed order to the external test/demo environment and freezes a snapshot (multi-timeframe context + current analysis) into the `snapshots` table.
 2. The order result is inserted into `trades`; immediate Hyperliquid fills are inserted into `fills`. Local code no longer simulates fills from 1m candles.
 3. Closed trades surface in the trade history and feed the memory pipeline. (An LLM post-trade reviewer that wrote `lessons` rows previously existed but was never wired into the runtime and has been removed.)
@@ -95,7 +95,7 @@ Resting orders and later fills require exchange order-state sync; they are not a
 
 Two modes live side by side:
 
-- **Tool-calling loop**: `agent/loop.ts` runs iterative chat with `ToolRegistry` (market tools, news tools, local trade-history tools, Hyperliquid mainnet entry, and Bitget demo entry). Bounded by `DEFAULT_MAX_ITERATIONS`.
+- **Tool-calling loop**: `agent/loop.ts` runs iterative chat with `ToolRegistry` (market tools, news tools, local trade-history tools, plus the unified exchange order-entry/modify tools routed through `ExchangeRouter`). Bounded by `DEFAULT_MAX_ITERATIONS`.
 
 Both persist user/assistant turns to `agent_sessions.sqlite3` via `AgentSessionStore`. The `api_mode` in config selects transport shape — Codex uses Responses API shapes, Anthropic uses Messages API shapes.
 

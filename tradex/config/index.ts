@@ -800,9 +800,8 @@ export function parseOptionsConfig(rawOptionsValue: unknown): import("../options
   const rawTradier = asRecord(raw.tradier, "options.tradier");
   const rawMarketData = asRecord(raw.marketdata, "options.marketdata");
   // Allow ${VAR} env references for the fallback key, like provider secrets.
-  const mdKey = typeof rawMarketData.api_key === "string"
-    ? expandEnvRefs(rawMarketData.api_key.trim(), "options.marketdata.api_key")
-    : "";
+  const mdKeyRaw = typeof rawMarketData.api_key === "string" ? rawMarketData.api_key.trim() : "";
+  const mdKey = mdKeyRaw ? expandEnvRefs(mdKeyRaw, "options.marketdata.api_key") : "";
   return {
     enabled: normalizeBool(raw.enabled, "options.enabled", false),
     provider: (typeof raw.provider === "string" ? raw.provider : "yfinance") as any,
@@ -817,7 +816,11 @@ export function parseOptionsConfig(rawOptionsValue: unknown): import("../options
     } : undefined,
     marketdata: mdKey ? {
       apiKey: mdKey,
+      apiKeyRaw: mdKeyRaw,
       baseUrl: typeof rawMarketData.base_url === "string" ? rawMarketData.base_url : "https://api.marketdata.app/v1",
+      strikeLimit: rawMarketData.strike_limit != null ? coerceInt(rawMarketData.strike_limit, "options.marketdata.strike_limit", 80) : undefined,
+      dte: rawMarketData.dte != null ? coerceInt(rawMarketData.dte, "options.marketdata.dte", 7) : undefined,
+      callsPerMinute: rawMarketData.calls_per_minute != null ? coerceInt(rawMarketData.calls_per_minute, "options.marketdata.calls_per_minute", 30) : undefined,
     } : undefined,
     deribit: {
       enabled: normalizeBool(rawDeribit.enabled, "options.deribit.enabled", false),

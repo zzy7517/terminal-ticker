@@ -391,11 +391,12 @@ export async function saveNewsConfig(config: NewsConfigUpdate): Promise<MarketSt
 // Saves options/GEX configuration and returns the updated runtime state.
 export interface OptionsConfigUpdate {
   enabled?: boolean;
-  provider?: 'yfinance' | 'tradier' | 'deribit';
+  provider?: 'yfinance' | 'tradier' | 'deribit' | 'marketdata';
   symbols?: string[];
   pollIntervalSeconds?: number;
   strikeRangePercent?: number;
   tradier?: { apiKey?: string; baseUrl?: string };
+  marketdata?: { apiKey?: string; baseUrl?: string; strikeLimit?: number | null; dte?: number | null; callsPerMinute?: number | null };
   deribit?: { enabled?: boolean; currencies?: string[] };
 }
 

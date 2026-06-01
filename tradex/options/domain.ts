@@ -140,8 +140,17 @@ export interface OptionsConfig {
   };
   /** Optional fallback source (MarketData.app) used when the primary fails. */
   marketdata?: {
+    /** Resolved key (env refs expanded) — used to talk to the API. */
     apiKey: string;
+    /** Raw TOML value (e.g. "${MARKETDATA_API_KEY}") preserved for round-trip writes. */
+    apiKeyRaw?: string;
     baseUrl: string;
+    /** Max strikes fetched per side; caps credit use (1 credit/contract). Default 80. */
+    strikeLimit?: number;
+    /** Target near-term expiration in days-to-expiry. Default 7. */
+    dte?: number;
+    /** Outbound request cap per minute. Default derived from poll interval (15 or 30). */
+    callsPerMinute?: number;
   };
   deribit?: {
     enabled: boolean;

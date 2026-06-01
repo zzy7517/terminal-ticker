@@ -560,13 +560,20 @@ export interface MarketState {
     jin10: Jin10ConfigPayload;
     options: {
       enabled: boolean;
-      provider: 'yfinance' | 'tradier' | 'deribit';
+      provider: 'yfinance' | 'tradier' | 'deribit' | 'marketdata';
       symbols: string[];
       pollIntervalSeconds: number;
       strikeRangePercent: number;
       tradier?: {
         apiKeyConfigured: boolean;
         baseUrl: string;
+      };
+      marketdata?: {
+        apiKeyConfigured: boolean;
+        baseUrl: string;
+        strikeLimit: number | null;
+        dte: number | null;
+        callsPerMinute: number | null;
       };
       deribit?: {
         enabled: boolean;

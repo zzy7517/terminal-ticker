@@ -8,9 +8,10 @@ tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bit
 
 - **行情监控**：订阅 Bitget futures，拉取 Hyperliquid 主网快照、K 线与 extended stats。
 - **Jin10 数据**：集成金十数据，实时行情报价（黄金、原油、汇率、指数等）、快讯 Flash、经济日历。通过 MCP 桥接调用 jin10 server。
+- **期权 / GEX 分析**：对美股/ETF（SPY、QQQ、AAPL、NVDA、GLD、IBIT 等）和加密（BTC/ETH）计算 Gamma Exposure、做市商定位与隐藏对冲流。Black-Scholes Greeks 引擎，输出 net GEX、gamma regime（正/负）、Zero Gamma Level、Call/Put Wall、Max Gamma Strike，以及 charm/vanna 隐藏流、对冲脉冲与压力云。数据源 MarketData.app 为主、Yahoo Finance 免费兜底，按需懒刷新（默认 12h 新鲜度）。前端有 Options 面板做可视化。
 - **行情工作区**：前端展示 watchlist、实时价格摘要、Agent、新闻、社交动态、经济日历和持仓面板。
 - **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Hyperliquid 主网标的，也可以直接编辑 `watchlist.toml`。金十数据标的可在 mcp配置里直接添加。
-- **Agent 分析**：支持 Codex Responses provider 和 Anthropic Messages provider。Agent 可以读取行情、裸 K / 带指标 K 线、路透社新闻、金十快讯、社交动态、本地记忆和交易记录。支持外部 MCP 和 skills 集成。
+- **Agent 分析**：支持 Codex Responses provider、Anthropic Messages provider，以及 OpenAI Chat Completions provider（可指向任意 OpenAI 兼容端点）。Agent 可以读取行情、裸 K / 带指标 K 线、路透社新闻、金十快讯、社交动态、期权 GEX / 做市商定位、本地记忆和交易记录。支持外部 MCP 和 skills 集成。
 - **MCP 集成**：通过 `.mcp.json` 配置外部 MCP server（如 jin10），Agent 可以调用 MCP 工具。前端 Settings 可视化管理 MCP 连接。
 - **会话持久化**：Agent session 会写成本地 JSONL，并用 SQLite 建索引；前端可以恢复、重置或删除历史会话。
 - **交易执行**：配置层允许时，Agent 可以向 Hyperliquid 主网或 Bitget 提交订单；关闭时 Agent 只会给出开单建议。
@@ -44,6 +45,8 @@ http://127.0.0.1:5173
 
 默认配置文件是 `watchlist.toml`。如果不传 `--config`，程序会读取当前目录下的 `watchlist.toml`。
 
+**期权数据**：`[options]` 段控制期权/GEX 模块。`provider = "marketdata"` 用 MarketData.app（需在 marketdata.app 免费申请 token），失败或空链时自动回落到 Yahoo Finance（免费无 key）。MarketData token 通过 `[options.marketdata].api_key` 配置，支持 `${MARKETDATA_API_KEY}` 形式的环境变量引用，凭证不必写进 `watchlist.toml`。加密标的（BTC/ETH）走 Deribit 公开 API，无需 key。快照按需懒刷新（默认 12h 新鲜度），无后台轮询。
+
 ## Web UI
 
 界面采用 Bloomberg Terminal 风格：纯黑背景、全等宽字体（JetBrains Mono）、零圆角、荧光橙 accent、1px 网格边框、高信息密度。没有 light/dark 切换——始终是终端模式。
@@ -55,14 +58,15 @@ http://127.0.0.1:5173
 - **Positions**：查看实时持仓、交易记录、fills、history、lessons，并撤销交易所挂单。
 - **News / Social**：Reuters 新闻、Jin10 快讯、X 社交动态。
 - **Calendar**：经济日历（来自 Jin10），按时间排列重要经济事件和数据发布。
+- **Options**：期权 GEX 可视化——net GEX、gamma regime、Zero Gamma Level、Call/Put Wall 等关键位，以及逐行权价的 GEX 柱状图。
 - **Cron**：管理定时看盘任务、手动触发任务并查看运行记录。
-- **Settings**：管理 Providers、Watchlist、Agent Context、News、Social、Memory、Cron、MCP 和 Browser 配置。
+- **Settings**：管理 Providers、Watchlist、Agent Context、News、Social、Memory、Cron、MCP、Options 和 Browser 配置。
 
 ## 本地数据
 
 默认本地状态主要在这些地方：
 
-- `watchlist.toml`：watchlist、display、agent、news、social、memory、cache、trading、jin10、browser 配置。
+- `watchlist.toml`：watchlist、display、agent、news、social、memory、cache、trading、jin10、options、browser 配置。
 - `.mcp.json`：MCP server 配置（jin10 等外部工具 server）。
 - `~/.cache/tradex/agent_sessions/`：Agent session JSONL 消息历史。
 - `~/.cache/tradex/session_index.sqlite3`：Agent session 索引。
@@ -72,6 +76,7 @@ http://127.0.0.1:5173
 - `~/.cache/tradex/news.sqlite3`：新闻条目和抓取 cursor。
 - `~/.cache/tradex/social_feed.sqlite3`：社交动态缓存。
 - `~/.cache/tradex/candles.sqlite3`：默认 K 线 cache；如果设置了 `XDG_CACHE_HOME` 或 `[cache].path`，会使用对应路径。
+- `~/.cache/tradex/options.sqlite3`：期权 GEX 快照（每个标的仅保留最新一条，用于重启后预热缓存）。
 这些数据都是本地优先，没有服务端账号体系。
 
 ## 验证
