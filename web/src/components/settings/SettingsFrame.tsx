@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import {
+  Activity,
   ArrowLeft,
   Bot,
   Brain,
@@ -107,6 +108,14 @@ export function SettingsFrame({
             >
               <Cable size={18} />
               <span>MCP</span>
+            </button>
+            <button
+              className={`settings-nav-item ${section === 'options' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('options')}
+            >
+              <Activity size={18} />
+              <span>Options</span>
             </button>
             <button
               className={`settings-nav-item ${section === 'browser' ? 'active' : ''}`}

@@ -516,6 +516,21 @@ export interface MarketState {
       configPath: string | null;
     };
     jin10: Jin10ConfigPayload;
+    options: {
+      enabled: boolean;
+      provider: 'yfinance' | 'tradier' | 'deribit';
+      symbols: string[];
+      pollIntervalSeconds: number;
+      strikeRangePercent: number;
+      tradier?: {
+        apiKeyConfigured: boolean;
+        baseUrl: string;
+      };
+      deribit?: {
+        enabled: boolean;
+        currencies: string[];
+      };
+    };
     sourcePath: string | null;
   };
   instruments: Instrument[];
@@ -657,7 +672,6 @@ export interface CronJobStatus {
   useMainPrompt: boolean;
   model: string | null;
   userMessage: string;
-  useMainPrompt?: boolean;
   maxIterations: number | null;
   maxCandles: number | null;
   tradingEnabled: boolean;
@@ -698,7 +712,6 @@ export interface CronJobCreate {
   model?: string | null;
   symbols?: string[];
   enabled?: boolean;
-  useMainPrompt?: boolean;
   maxIterations?: number | null;
   maxCandles?: number | null;
   tradingEnabled?: boolean;
@@ -715,7 +728,6 @@ export interface CronJobUpdate {
   model?: string | null;
   symbols?: string[];
   enabled?: boolean;
-  useMainPrompt?: boolean;
   maxIterations?: number | null;
   maxCandles?: number | null;
   tradingEnabled?: boolean;

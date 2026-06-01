@@ -11,6 +11,7 @@ import {
   MCP_HASH,
   MEMORY_HASH,
   NEWS_HASH,
+  OPTIONS_HASH,
   PROVIDERS_HASH,
   SOCIAL_HASH,
   WATCHLIST_HASH,
@@ -22,6 +23,9 @@ import {
 } from './api';
 
 export function readRouteFromHash(): AppRoute {
+  if (window.location.hash.startsWith(OPTIONS_HASH)) {
+    return { view: 'settings', section: 'options' };
+  }
   if (window.location.hash.startsWith(BROWSER_HASH)) {
     return { view: 'settings', section: 'browser' };
   }
@@ -71,7 +75,9 @@ export function navigateToRoute(route: AppRoute) {
             ? MCP_HASH
             : route.section === 'browser'
               ? BROWSER_HASH
-              : PROVIDERS_HASH;
+              : route.section === 'options'
+                ? OPTIONS_HASH
+                : PROVIDERS_HASH;
     window.location.hash = hash;
     return;
   }

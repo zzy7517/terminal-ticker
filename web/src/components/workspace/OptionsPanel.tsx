@@ -1,5 +1,8 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMarketStore } from '../../stores/marketStore';
+import './OptionsPanel.css';
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface StrikeGex {
   strike: number;
@@ -28,105 +31,45 @@ interface OptionsSnapshot {
   timestamp: number;
 }
 
-const REGIME_COLORS: Record<string, string> = {
-  long_gamma: '#22c55e',
-  short_gamma: '#ef4444',
-  neutral: '#eab308',
-};
-
-const REGIME_EMOJI: Record<string, string> = {
-  long_gamma: '🟢',
-  short_gamma: '🔴',
-  neutral: '🟡',
-};
-
-function formatBillions(value: number): string {
-  return `${value >= 0 ? '+' : ''}$${value.toFixed(2)}B`;
+interface UnusualItem {
+  symbol: string;
+  strike: number;
+  type: 'call' | 'put';
+  expiration: string;
+  timestampMs: number;
+  oiChange: number;
+  volume: number;
+  volumeOiRatio: number;
+  premiumEstimate: number;
+  signal: string;
 }
 
-function formatMoney(value: number | null): string {
-  if (value == null) return '—';
-  const abs = Math.abs(value);
-  if (abs >= 1e9) return `${value >= 0 ? '+' : '-'}$${(abs / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${value >= 0 ? '+' : '-'}$${(abs / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3) return `${value >= 0 ? '+' : '-'}$${(abs / 1e3).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
+// ── Formatters ───────────────────────────────────────────────────────────────
+
+function fmtBillions(v: number): string {
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}B`;
 }
 
-function pctDiff(level: number, spot: number): string {
+function fmtMoney(v: number | null): string {
+  if (v == null) return '-';
+  const abs = Math.abs(v);
+  const sign = v >= 0 ? '+' : '-';
+  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(0)}K`;
+  return `$${v.toFixed(0)}`;
+}
+
+function fmtPct(level: number, spot: number): string {
   const pct = ((level - spot) / spot) * 100;
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 }
 
-function GexBar({ strike }: { strike: StrikeGex }) {
-  const maxAbs = 1; // Will be normalized by parent
-  const callWidth = Math.min(Math.abs(strike.callGex) / maxAbs * 100, 100);
-  const putWidth = Math.min(Math.abs(strike.putGex) / maxAbs * 100, 100);
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, height: 16 }}>
-      <div style={{ width: 60, textAlign: 'right', fontFamily: 'monospace', opacity: 0.7 }}>
-        {strike.strike.toFixed(0)}
-      </div>
-      <div style={{ flex: 1, display: 'flex', height: 12, position: 'relative' }}>
-        <div style={{ position: 'absolute', left: '50%', width: 1, height: '100%', background: '#555' }} />
-        {/* Put (left, red) */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{ width: `${putWidth}%`, background: '#ef4444', borderRadius: 2, minWidth: putWidth > 0 ? 1 : 0 }} />
-        </div>
-        {/* Call (right, green) */}
-        <div style={{ flex: 1 }}>
-          <div style={{ width: `${callWidth}%`, background: '#22c55e', borderRadius: 2, minWidth: callWidth > 0 ? 1 : 0 }} />
-        </div>
-      </div>
-    </div>
-  );
+function fmtTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function StrikeChart({ strikes, spotPrice, zgl }: { strikes: StrikeGex[]; spotPrice: number; zgl: number }) {
-  if (strikes.length === 0) return <div style={{ opacity: 0.5, padding: 8 }}>No strike data</div>;
-
-  const maxGex = Math.max(...strikes.map(s => Math.max(Math.abs(s.callGex), Math.abs(s.putGex))), 1);
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: '4px 0' }}>
-      {strikes.map((s) => {
-        const isSpot = Math.abs(s.strike - spotPrice) < (spotPrice * 0.005);
-        const isZgl = Math.abs(s.strike - zgl) < (spotPrice * 0.005);
-        const callWidth = Math.abs(s.callGex) / maxGex * 100;
-        const putWidth = Math.abs(s.putGex) / maxGex * 100;
-
-        return (
-          <div key={s.strike} style={{
-            display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, height: 14,
-            background: isSpot ? 'rgba(255,255,255,0.05)' : isZgl ? 'rgba(234,179,8,0.1)' : undefined,
-          }}>
-            <div style={{
-              width: 55, textAlign: 'right', fontFamily: 'monospace', opacity: 0.7,
-              color: isSpot ? '#60a5fa' : isZgl ? '#eab308' : undefined,
-              fontWeight: isSpot || isZgl ? 600 : 400,
-            }}>
-              {s.strike.toFixed(0)}{isSpot ? ' ◀' : isZgl ? ' ◆' : ''}
-            </div>
-            <div style={{ flex: 1, display: 'flex', height: 10, position: 'relative' }}>
-              <div style={{ position: 'absolute', left: '50%', width: 1, height: '100%', background: '#444' }} />
-              <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-                <div style={{ width: `${putWidth}%`, background: '#ef4444aa', borderRadius: 1, minWidth: putWidth > 0.5 ? 1 : 0 }} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ width: `${callWidth}%`, background: '#22c55eaa', borderRadius: 1, minWidth: callWidth > 0.5 ? 1 : 0 }} />
-              </div>
-            </div>
-          </div>
-        );
-      })}
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, opacity: 0.5, paddingTop: 4, marginLeft: 59 }}>
-        <span>◀ Put GEX (negative)</span>
-        <span>Call GEX (positive) ▶</span>
-      </div>
-    </div>
-  );
-}
+// ── Main Component ───────────────────────────────────────────────────────────
 
 export function OptionsPanel() {
   const state = useMarketStore((s) => s.state);
@@ -137,89 +80,234 @@ export function OptionsPanel() {
     return Object.keys(optionsData);
   }, [optionsData]);
 
+  const [activeSymbol, setActiveSymbol] = useState<string>('');
+  const [unusualActivity, setUnusualActivity] = useState<UnusualItem[]>([]);
+
+  // Auto-select first symbol
+  useEffect(() => {
+    if (symbols.length > 0 && (!activeSymbol || !symbols.includes(activeSymbol))) {
+      setActiveSymbol(symbols[0]);
+    }
+  }, [symbols, activeSymbol]);
+
+  // Fetch unusual activity
+  useEffect(() => {
+    if (!activeSymbol) return;
+    fetch(`/api/options/unusual?symbol=${activeSymbol}&limit=20`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.items) setUnusualActivity(data.items); })
+      .catch(() => {});
+  }, [activeSymbol]);
+
+  // ── Empty state ──
   if (!optionsData || symbols.length === 0) {
     return (
-      <div style={{ padding: 16, opacity: 0.6 }}>
-        <h3 style={{ margin: 0, marginBottom: 8 }}>Options / GEX Analysis</h3>
-        <p style={{ margin: 0, fontSize: 13 }}>
-          Not enabled. Add <code>[options] enabled = true</code> to your watchlist.toml.
-        </p>
+      <div className="options-panel__empty">
+        <span>Options & GEX Analysis</span>
+        <span>No data available. Enable options in Settings or wait for first poll.</span>
+        <code>[options] enabled = true</code>
       </div>
     );
   }
 
+  const snap = optionsData[activeSymbol];
+  if (!snap) return null;
+
   return (
-    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 16, overflow: 'auto', height: '100%' }}>
-      <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Options / GEX Analysis</h3>
+    <div className="options-panel">
+      {/* Symbol Tabs */}
+      <div className="options-panel__tabs">
+        {symbols.map((sym) => (
+          <button
+            key={sym}
+            className={`options-panel__tab${activeSymbol === sym ? ' active' : ''}`}
+            type="button"
+            onClick={() => setActiveSymbol(sym)}
+          >
+            {sym}
+          </button>
+        ))}
+        <span className="options-panel__tab-meta">
+          {snap.provider} - {fmtTime(snap.timestamp)}
+        </span>
+      </div>
 
-      {symbols.map((sym) => {
-        const snap = optionsData[sym];
-        if (!snap) return null;
+      {/* Overview Stats */}
+      <div className="options-stats">
+        <Stat
+          label="Net GEX"
+          value={fmtBillions(snap.netGexBillions)}
+          className={snap.netGexBillions >= 0 ? 'positive' : 'negative'}
+        />
+        <Stat
+          label="Regime"
+          value={snap.regime.replace('_', ' ')}
+          className={snap.regime === 'long_gamma' ? 'positive' : snap.regime === 'short_gamma' ? 'negative' : 'warning'}
+          sub={snap.regimeDescription}
+        />
+        <Stat label="Spot" value={snap.spotPrice.toFixed(2)} className="accent" />
+        <Stat
+          label="Zero Gamma"
+          value={snap.zeroGammaLevel.toFixed(1)}
+          sub={fmtPct(snap.zeroGammaLevel, snap.spotPrice)}
+        />
+        <Stat
+          label="Charm Flow"
+          value={fmtMoney(snap.charmFlow)}
+          className={snap.charmFlow != null ? (snap.charmFlow >= 0 ? 'positive' : 'negative') : undefined}
+        />
+        <Stat
+          label="Vanna Flow"
+          value={fmtMoney(snap.vannaFlow)}
+          className={snap.vannaFlow != null ? (snap.vannaFlow >= 0 ? 'positive' : 'negative') : undefined}
+        />
+      </div>
 
-        return (
-          <div key={sym} style={{ border: '1px solid #333', borderRadius: 6, padding: 10 }}>
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>{snap.symbol}</span>
-              <span style={{ fontSize: 12, opacity: 0.6 }}>
-                {snap.provider} • {new Date(snap.timestamp).toLocaleTimeString()}
+      {/* Key Levels Visual */}
+      <KeyLevelsBar snap={snap} />
+
+      {/* GEX by Strike Profile */}
+      <GexProfile strikes={snap.gexByStrike} spotPrice={snap.spotPrice} zgl={snap.zeroGammaLevel} />
+
+      {/* Unusual Activity */}
+      {unusualActivity.length > 0 && (
+        <div className="options-activity">
+          <div className="options-activity__title">Unusual Activity</div>
+          <div className="options-activity__list">
+            {unusualActivity.map((item, i) => (
+              <div key={i} className="options-activity__item">
+                <span className={`options-activity__signal ${item.signal}`}>{item.signal}</span>
+                <span className={`options-activity__type ${item.type}`}>{item.type.toUpperCase()}</span>
+                <span className="options-activity__detail">
+                  {item.strike} {item.expiration} | Vol:{item.volume.toLocaleString()} OI:{Math.abs(item.oiChange).toLocaleString()}
+                </span>
+                <span className="options-activity__premium">{fmtMoney(item.premiumEstimate)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sub-Components ───────────────────────────────────────────────────────────
+
+function Stat({ label, value, className, sub }: { label: string; value: string; className?: string; sub?: string }) {
+  return (
+    <div className="options-stat">
+      <span className="options-stat__label">{label}</span>
+      <span className={`options-stat__value${className ? ` ${className}` : ''}`}>{value}</span>
+      {sub && <span className="options-stat__sub">{sub}</span>}
+    </div>
+  );
+}
+
+function KeyLevelsBar({ snap }: { snap: OptionsSnapshot }) {
+  const levels = [
+    { label: 'Put Wall', value: snap.putWall, color: 'var(--down)' },
+    { label: 'ZGL', value: snap.zeroGammaLevel, color: 'var(--warning)' },
+    { label: 'Spot', value: snap.spotPrice, color: 'var(--accent)' },
+    { label: 'Max Gamma', value: snap.maxGammaStrike, color: '#a855f7' },
+    { label: 'Call Wall', value: snap.callWall, color: 'var(--up)' },
+  ];
+
+  // Calculate positions as % of range
+  const allValues = levels.map((l) => l.value).filter((v) => v > 0);
+  const min = Math.min(...allValues) * 0.998;
+  const max = Math.max(...allValues) * 1.002;
+  const range = max - min || 1;
+
+  return (
+    <div className="options-levels">
+      <div className="options-levels__title">Key Levels</div>
+      <div className="options-levels__bar">
+        <div className="options-levels__track" />
+        {levels.map((l) => {
+          if (l.value <= 0) return null;
+          const pct = ((l.value - min) / range) * 100;
+          return (
+            <div
+              key={l.label}
+              className="options-levels__marker"
+              style={{ left: `${Math.max(2, Math.min(98, pct))}%` }}
+            >
+              <div className="options-levels__marker-dot" style={{ background: l.color }} />
+              <span className="options-levels__marker-label" style={{ color: l.color }}>
+                {l.value.toFixed(0)}
               </span>
             </div>
-
-            {/* Stat tiles */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 10 }}>
-              <StatTile label="Net GEX" value={formatBillions(snap.netGexBillions)} color={REGIME_COLORS[snap.regime]} />
-              <StatTile
-                label="Regime"
-                value={`${REGIME_EMOJI[snap.regime]} ${snap.regime.replace('_', ' ')}`}
-                color={REGIME_COLORS[snap.regime]}
-              />
-              <StatTile
-                label="Zero Gamma"
-                value={`${snap.zeroGammaLevel.toFixed(1)} (${pctDiff(snap.zeroGammaLevel, snap.spotPrice)})`}
-              />
-              <StatTile
-                label="Hidden Flow"
-                value={formatMoney(snap.charmFlow != null && snap.vannaFlow != null ? snap.charmFlow + snap.vannaFlow : null)}
-                sublabel={snap.charmFlow != null ? `C:${formatMoney(snap.charmFlow)} V:${formatMoney(snap.vannaFlow)}` : undefined}
-              />
-            </div>
-
-            {/* Key Levels */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 10, fontSize: 11 }}>
-              <LevelPill label="Call Wall" value={snap.callWall} spot={snap.spotPrice} color="#22c55e" />
-              <LevelPill label="Put Wall" value={snap.putWall} spot={snap.spotPrice} color="#ef4444" />
-              <LevelPill label="Max Gamma" value={snap.maxGammaStrike} spot={snap.spotPrice} color="#a78bfa" />
-              <LevelPill label="Spot" value={snap.spotPrice} spot={snap.spotPrice} color="#60a5fa" />
-            </div>
-
-            {/* GEX by Strike Chart */}
-            {snap.gexByStrike && snap.gexByStrike.length > 0 && (
-              <StrikeChart strikes={snap.gexByStrike} spotPrice={snap.spotPrice} zgl={snap.zeroGammaLevel} />
-            )}
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
+      <div className="options-levels__legend">
+        {levels.map((l) => (
+          <span key={l.label} className="options-levels__legend-item">
+            <span className="options-levels__legend-dot" style={{ background: l.color }} />
+            {l.label} ({fmtPct(l.value, snap.spotPrice)})
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
 
-function StatTile({ label, value, color, sublabel }: { label: string; value: string; color?: string; sublabel?: string }) {
-  return (
-    <div style={{ background: '#1a1a2e', borderRadius: 4, padding: '6px 8px' }}>
-      <div style={{ fontSize: 10, opacity: 0.5, marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: color ?? '#e2e8f0', fontFamily: 'monospace' }}>{value}</div>
-      {sublabel && <div style={{ fontSize: 9, opacity: 0.4, marginTop: 1 }}>{sublabel}</div>}
-    </div>
-  );
-}
+function GexProfile({ strikes, spotPrice, zgl }: { strikes: StrikeGex[]; spotPrice: number; zgl: number }) {
+  if (!strikes || strikes.length === 0) {
+    return (
+      <div className="gex-profile">
+        <div className="gex-profile__title">GEX Profile</div>
+        <div style={{ color: 'var(--text-muted)', fontSize: 11, padding: '8px 0' }}>Waiting for data...</div>
+      </div>
+    );
+  }
 
-function LevelPill({ label, value, spot, color }: { label: string; value: number; spot: number; color: string }) {
+  const maxGex = Math.max(...strikes.map((s) => Math.max(Math.abs(s.callGex), Math.abs(s.putGex))), 1);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-      <span style={{ fontSize: 9, opacity: 0.5 }}>{label}</span>
-      <span style={{ fontSize: 12, fontWeight: 600, color, fontFamily: 'monospace' }}>{value.toFixed(1)}</span>
-      <span style={{ fontSize: 9, opacity: 0.4 }}>{pctDiff(value, spot)}</span>
+    <div className="gex-profile">
+      <div className="gex-profile__head">
+        <span className="gex-profile__title">GEX by Strike</span>
+        <div className="gex-profile__legend">
+          <span className="gex-profile__legend-item">
+            <span className="gex-profile__legend-swatch" style={{ background: 'var(--down)' }} />
+            Put
+          </span>
+          <span className="gex-profile__legend-item">
+            <span className="gex-profile__legend-swatch" style={{ background: 'var(--up)' }} />
+            Call
+          </span>
+        </div>
+      </div>
+
+      <div className="gex-profile__chart">
+        {strikes.map((s) => {
+          const isSpot = Math.abs(s.strike - spotPrice) < spotPrice * 0.005;
+          const isZgl = Math.abs(s.strike - zgl) < spotPrice * 0.005;
+          const callPct = (Math.abs(s.callGex) / maxGex) * 100;
+          const putPct = (Math.abs(s.putGex) / maxGex) * 100;
+
+          return (
+            <div
+              key={s.strike}
+              className={`gex-profile__row${isSpot ? ' is-spot' : ''}${isZgl ? ' is-zgl' : ''}`}
+            >
+              <span className="gex-profile__strike">
+                {s.strike.toFixed(0)}{isSpot ? ' \u25C0' : isZgl ? ' \u25C6' : ''}
+              </span>
+              <div className="gex-profile__bars">
+                <div className="gex-profile__center" />
+                <div className="gex-profile__bar-left">
+                  <div className="gex-profile__bar-fill put" style={{ width: `${putPct}%` }} />
+                </div>
+                <div className="gex-profile__bar-right">
+                  <div className="gex-profile__bar-fill call" style={{ width: `${callPct}%` }} />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

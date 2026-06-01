@@ -147,6 +147,18 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       quotesEnabled: config.jin10.quotesEnabled,
       quotesCodes: config.jin10.quotesCodes,
     },
+    options: {
+      enabled: config.options.enabled,
+      provider: config.options.provider,
+      symbols: config.options.symbols,
+      pollIntervalSeconds: config.options.pollIntervalSeconds,
+      strikeRangePercent: config.options.strikeRangePercent,
+      tradier: config.options.tradier ? {
+        apiKeyConfigured: Boolean(config.options.tradier.apiKey),
+        baseUrl: config.options.tradier.baseUrl,
+      } : undefined,
+      deribit: config.options.deribit,
+    },
     sourcePath: config.sourcePath,
   };
 }

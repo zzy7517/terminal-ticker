@@ -89,3 +89,20 @@ quotes_codes = ["XAUUSD", "XAGUSD", "USOIL", "EURUSD", "USDJPY", "USDCNH", "N225
 enabled = true
 # socket_path = "/tmp/open-browser-use/example.sock"  # optional, auto-discovers by default
 # timeout_ms = 15000
+
+# ============================================================================
+# Options & GEX analysis
+# ============================================================================
+# Enable to show the "Options" tab in the UI and feed GEX data to the agent.
+# Provider options: "yfinance" (free, no key), "tradier" (free token),
+# "deribit" (free, BTC/ETH only).
+[options]
+enabled = true
+provider = "yfinance"
+symbols = ["SPY", "QQQ"]
+poll_interval_seconds = 60
+strike_range_percent = 0.15
+
+[options.deribit]
+enabled = true
+currencies = ["BTC", "ETH"]

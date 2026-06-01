@@ -8,10 +8,14 @@
  *   GET /api/options/unusual?symbol=SPY        — Unusual activity
  *   GET /api/options/history?symbol=SPY&limit= — Historical GEX
  *   POST /api/options/refresh?symbol=SPY       — Force refresh
+ *   POST /api/options/config                   — Update options config
  */
 
 import { Hono } from "hono";
+import { updateOptionsConfigInWatchlist } from "../../config/watchlist_store.js";
+import type { OptionsConfig } from "../../options/domain.js";
 import type { AppRuntime } from "../runtime.js";
+import { requireConfigPath, reloadAndState } from "../helpers.js";
 
 export function optionsRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
@@ -118,6 +122,43 @@ export function optionsRoutes(runtime: AppRuntime): Hono {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return c.json({ error: msg }, 500);
+    }
+  });
+
+  // POST /api/options/config — update options configuration
+  app.post("/api/options/config", async (c) => {
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      const watchlistPath = requireConfigPath(runtime);
+      const current = runtime.config.options;
+
+      const merged: OptionsConfig = {
+        enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
+        provider: (["yfinance", "tradier", "deribit"] as const).includes(body.provider as any)
+          ? (body.provider as OptionsConfig["provider"])
+          : current.provider,
+        symbols: Array.isArray(body.symbols)
+          ? body.symbols.map(String).filter(Boolean).map((s: string) => s.toUpperCase())
+          : current.symbols,
+        pollIntervalSeconds: typeof body.pollIntervalSeconds === "number" ? body.pollIntervalSeconds : current.pollIntervalSeconds,
+        strikeRangePercent: typeof body.strikeRangePercent === "number" ? body.strikeRangePercent : current.strikeRangePercent,
+        riskFreeRate: current.riskFreeRate,
+        dividendYield: current.dividendYield,
+        tradier: body.tradier && typeof body.tradier === "object" ? {
+          apiKey: typeof (body.tradier as any).apiKey === "string" ? (body.tradier as any).apiKey : (current.tradier?.apiKey ?? ""),
+          baseUrl: typeof (body.tradier as any).baseUrl === "string" ? (body.tradier as any).baseUrl : (current.tradier?.baseUrl ?? "https://sandbox.tradier.com/v1"),
+        } : current.tradier,
+        deribit: body.deribit && typeof body.deribit === "object" ? {
+          enabled: typeof (body.deribit as any).enabled === "boolean" ? (body.deribit as any).enabled : (current.deribit?.enabled ?? false),
+          currencies: Array.isArray((body.deribit as any).currencies) ? (body.deribit as any).currencies : (current.deribit?.currencies ?? ["BTC", "ETH"]),
+        } : current.deribit,
+        alerts: current.alerts,
+      };
+
+      await updateOptionsConfigInWatchlist(watchlistPath, merged);
+      return c.json({ state: await reloadAndState(runtime, watchlistPath) });
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : String(error) }, 400);
     }
   });
 

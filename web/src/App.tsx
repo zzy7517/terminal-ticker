@@ -16,6 +16,7 @@ import {
   McpSettingsPanel,
   BrowserSettingsPanel,
   WatchlistSettingsPanel,
+  OptionsSettingsPanel,
 } from './components/settings';
 
 export default function App() {
@@ -89,6 +90,8 @@ export default function App() {
           <McpSettingsPanel />
         ) : route.section === 'browser' ? (
           <BrowserSettingsPanel />
+        ) : route.section === 'options' ? (
+          <OptionsSettingsPanel />
         ) : (
           <WatchlistSettingsPanel />
         )}

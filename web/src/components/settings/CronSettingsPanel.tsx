@@ -32,7 +32,6 @@ interface JobDraft {
   userMessage: string;
   model: string | null;
   enabled: boolean;
-  useMainPrompt: boolean;
   maxIterations: number | null;
   maxCandles: number | null;
   tradingEnabled: boolean;
@@ -48,7 +47,6 @@ const EMPTY_DRAFT: JobDraft = {
   userMessage: '开始定时看盘分析',
   model: null,
   enabled: true,
-  useMainPrompt: false,
   maxIterations: null,
   maxCandles: null,
   tradingEnabled: false,
@@ -191,11 +189,10 @@ export function CronSettingsPanel() {
       name: job.name,
       cron: job.cron,
       systemPrompt: job.systemPrompt,
-      useMainPrompt: job.useMainPrompt,
+      useMainPrompt: job.useMainPrompt ?? false,
       userMessage: job.userMessage,
       model: job.model,
       enabled: job.enabled,
-      useMainPrompt: job.useMainPrompt ?? false,
       maxIterations: job.maxIterations,
       maxCandles: job.maxCandles,
       tradingEnabled: job.tradingEnabled,
@@ -250,7 +247,6 @@ export function CronSettingsPanel() {
         userMessage: draft.userMessage || '开始定时看盘分析',
         model: draft.model,
         enabled: draft.enabled,
-        useMainPrompt: draft.useMainPrompt,
         maxIterations: draft.maxIterations,
         maxCandles: draft.maxCandles,
         tradingEnabled: draft.tradingEnabled,

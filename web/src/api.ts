@@ -386,6 +386,30 @@ export async function saveNewsConfig(config: NewsConfigUpdate): Promise<MarketSt
   return payload.state;
 }
 
+// Saves options/GEX configuration and returns the updated runtime state.
+export interface OptionsConfigUpdate {
+  enabled?: boolean;
+  provider?: 'yfinance' | 'tradier' | 'deribit';
+  symbols?: string[];
+  pollIntervalSeconds?: number;
+  strikeRangePercent?: number;
+  tradier?: { apiKey?: string; baseUrl?: string };
+  deribit?: { enabled?: boolean; currencies?: string[] };
+}
+
+export async function saveOptionsConfig(config: OptionsConfigUpdate): Promise<MarketState> {
+  const response = await fetch('/api/options/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'options config save failed');
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
 // Saves social feed settings and returns the updated runtime state.
 export async function saveSocialFeedConfig(config: SocialFeedConfigUpdate): Promise<MarketState> {
   const response = await fetch('/api/social/config', {
