@@ -21,6 +21,9 @@ export function serializeState(input: {
     calendar: Jin10CalendarEvent[];
     quotes: Jin10Quote[];
   };
+  options?: {
+    snapshots: Record<string, unknown>;
+  } | null;
 }): Record<string, unknown> {
   const groups: Record<string, string[]> = {};
   for (const instrument of input.instruments) {
@@ -83,6 +86,7 @@ export function serializeState(input: {
     recentNews: input.recentNews.map(newsItemToPayload),
     newsStatus: input.newsStatus ?? { enabled: input.config.news.enabled },
     jin10: input.jin10 ?? null,
+    options: input.options ?? null,
   };
 }
 
@@ -142,6 +146,18 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       calendarEnabled: config.jin10.calendarEnabled,
       quotesEnabled: config.jin10.quotesEnabled,
       quotesCodes: config.jin10.quotesCodes,
+    },
+    options: {
+      enabled: config.options.enabled,
+      provider: config.options.provider,
+      symbols: config.options.symbols,
+      pollIntervalSeconds: config.options.pollIntervalSeconds,
+      strikeRangePercent: config.options.strikeRangePercent,
+      tradier: config.options.tradier ? {
+        apiKeyConfigured: Boolean(config.options.tradier.apiKey),
+        baseUrl: config.options.tradier.baseUrl,
+      } : undefined,
+      deribit: config.options.deribit,
     },
     sourcePath: config.sourcePath,
   };

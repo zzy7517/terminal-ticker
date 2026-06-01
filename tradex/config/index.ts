@@ -224,7 +224,7 @@ export interface AppConfig {
   mcp: McpAppConfig;
   jin10: Jin10Config;
   browser: BrowserConfig;
-
+  options: import("../options/domain.js").OptionsConfig;
 }
 
 export function expandUserPath(inputPath: string): string {
@@ -710,6 +710,43 @@ export function parseBrowserConfig(rawBrowserValue: unknown): BrowserConfig {
   };
 }
 
+export function parseOptionsConfig(rawOptionsValue: unknown): import("../options/domain.js").OptionsConfig {
+  const DEFAULT: import("../options/domain.js").OptionsConfig = {
+    enabled: false, provider: "yfinance", symbols: ["SPY", "QQQ"],
+    pollIntervalSeconds: 60, strikeRangePercent: 0.15,
+    riskFreeRate: 0.0363, dividendYield: 0.015,
+    deribit: { enabled: false, currencies: ["BTC", "ETH"] },
+    alerts: { minOiChange: 1000, minVolumeOiRatio: 3.0, minPremium: 100_000 },
+  };
+  if (!rawOptionsValue || typeof rawOptionsValue !== "object") return DEFAULT;
+  const raw = rawOptionsValue as Record<string, unknown>;
+  const rawAlerts = asRecord(raw.alerts, "options.alerts");
+  const rawDeribit = asRecord(raw.deribit, "options.deribit");
+  const rawTradier = asRecord(raw.tradier, "options.tradier");
+  return {
+    enabled: normalizeBool(raw.enabled, "options.enabled", false),
+    provider: (typeof raw.provider === "string" ? raw.provider : "yfinance") as any,
+    symbols: Array.isArray(raw.symbols) ? raw.symbols.map(String) : ["SPY", "QQQ"],
+    pollIntervalSeconds: coerceInt(raw.poll_interval_seconds, "options.poll_interval_seconds", 60),
+    strikeRangePercent: coerceFloat(raw.strike_range_percent, "options.strike_range_percent", 0.15),
+    riskFreeRate: coerceFloat(raw.risk_free_rate, "options.risk_free_rate", 0.0363),
+    dividendYield: coerceFloat(raw.dividend_yield, "options.dividend_yield", 0.015),
+    tradier: rawTradier.api_key ? {
+      apiKey: String(rawTradier.api_key),
+      baseUrl: typeof rawTradier.base_url === "string" ? rawTradier.base_url : "https://sandbox.tradier.com/v1",
+    } : undefined,
+    deribit: {
+      enabled: normalizeBool(rawDeribit.enabled, "options.deribit.enabled", false),
+      currencies: Array.isArray(rawDeribit.currencies) ? rawDeribit.currencies.map(String) : ["BTC", "ETH"],
+    },
+    alerts: {
+      minOiChange: coerceInt(rawAlerts.min_oi_change, "options.alerts.min_oi_change", 1000),
+      minVolumeOiRatio: coerceFloat(rawAlerts.min_volume_oi_ratio, "options.alerts.min_volume_oi_ratio", 3.0),
+      minPremium: coerceInt(rawAlerts.min_premium, "options.alerts.min_premium", 100_000),
+    },
+  };
+}
+
 export function parseConfig(data: Record<string, unknown>, sourcePath: string | null = null): AppConfig {
   const rawSymbols = data.symbols;
   if (!Array.isArray(rawSymbols)) throw new Error("symbols must be a list of symbol entries");
@@ -732,6 +769,7 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     mcp: parseMcpConfig(data.mcp),
     jin10: parseJin10Config(data.jin10),
     browser: parseBrowserConfig(data.browser),
+    options: parseOptionsConfig(data.options),
 
     sourcePath,
   };
@@ -764,6 +802,7 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       mcp: parseMcpConfig({}),
       jin10: parseJin10Config({}),
       browser: parseBrowserConfig({}),
+      options: parseOptionsConfig(undefined),
 
       sourcePath: null,
     } satisfies AppConfig);

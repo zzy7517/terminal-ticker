@@ -12,6 +12,7 @@ import { buildSocialFeedTools } from "../../agent/tools/social.js";
 import { buildTradingTools } from "../../agent/tools/trading.js";
 import { buildWebTools } from "../../agent/tools/web.js";
 import { buildBrowserTools } from "../../agent/tools/browser.js";
+import { buildOptionsTools } from "../../agent/tools/options.js";
 import { createFilesystemRegistry, setFilesystemRoot } from "../../agent/tools/filesystem.js";
 import { mergeRegistries } from "../../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../../mcp/index.js";
@@ -257,6 +258,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             buildJin10Tools(runtime.jin10Service),
             buildWebTools(),
             ...(runtime.config.browser.enabled ? [buildBrowserTools(runtime.browserManager)] : []),
+            ...(runtime.optionsService ? [buildOptionsTools(runtime)] : []),
             createFilesystemRegistry({ allowedSkillPaths }),
             ...(mcpRegistry ? [mcpRegistry] : []),
           );
@@ -270,7 +272,12 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             ? buildMemoryDeveloperInstructions(runtime.config.memory.storagePath)
             : null;
 
-          const systemPrompt = [MAIN_AGENT_PROMPT, memoryInstructions ?? "", skillsPromptBlock].filter(Boolean).join("\n");
+          // Build stable session date (day-level only for prompt cache stability).
+          const now = new Date();
+          const sessionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+          const sessionDateLine = `\nSession date: ${sessionDate} (Asia/Shanghai)`;
+
+          const systemPrompt = [MAIN_AGENT_PROMPT, memoryInstructions ?? "", skillsPromptBlock].filter(Boolean).join("\n") + sessionDateLine;
 
           const agent = new Agent({
             initialState: {

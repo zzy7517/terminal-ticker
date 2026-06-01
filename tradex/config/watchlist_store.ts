@@ -17,6 +17,7 @@ import {
   loadConfig,
   normalizeSymbolForSource,
 } from "./index.js";
+import type { OptionsConfig } from "../options/domain.js";
 
 function tomlString(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -449,6 +450,24 @@ export async function updateJin10ConfigInWatchlist(watchlistPath: string, config
     `quotes_codes = [${config.quotesCodes.map(tomlString).join(", ")}]`,
   ];
   return replaceTable(watchlistPath, "jin10", lines);
+}
+
+export async function updateOptionsConfigInWatchlist(watchlistPath: string, config: OptionsConfig): Promise<boolean> {
+  const lines = [
+    "[options]",
+    `enabled = ${config.enabled ? "true" : "false"}`,
+    `provider = ${tomlString(config.provider)}`,
+    `symbols = [${config.symbols.map(tomlString).join(", ")}]`,
+    `poll_interval_seconds = ${config.pollIntervalSeconds}`,
+    `strike_range_percent = ${config.strikeRangePercent}`,
+  ];
+  if (config.tradier) {
+    lines.push("", "[options.tradier]", `api_key = ${tomlString(config.tradier.apiKey)}`, `base_url = ${tomlString(config.tradier.baseUrl)}`);
+  }
+  if (config.deribit) {
+    lines.push("", "[options.deribit]", `enabled = ${config.deribit.enabled ? "true" : "false"}`, `currencies = [${config.deribit.currencies.map(tomlString).join(", ")}]`);
+  }
+  return replaceTable(watchlistPath, "options", lines);
 }
 
 async function replaceTable(watchlistPath: string, tableName: string, lines: string[]): Promise<boolean> {

@@ -2,6 +2,8 @@
  * core/transform-messages.ts — Cross-cutting message transforms.
  *
  * Transforms applied before handing context to the provider:
+ *   0. injectTimestamps — prepend a human-readable timestamp to user messages
+ *      so the LLM has time-awareness without modifying the stored history.
  *   1. downgradeUnsupportedImages — replace ImageContent with a placeholder
  *      when the target model does not list "image" in its inputs.
  *   2. normalizeToolCallIds — shorten/sanitize tool call IDs for cross-provider
@@ -26,6 +28,52 @@ import type {
 
 const NON_VISION_USER_IMAGE_PLACEHOLDER = "(image omitted: model does not support images)";
 const NON_VISION_TOOL_IMAGE_PLACEHOLDER = "(tool image omitted: model does not support images)";
+
+// ============================================================================
+// Timestamp Injection
+// ============================================================================
+
+/**
+ * Format a Unix ms timestamp into a human-readable prefix for user messages.
+ * Uses UTC+8 (CST) to match the user's timezone.
+ *
+ * Output: "[2026-05-31 14:23 CST]"
+ */
+function formatTimestampPrefix(timestampMs: number): string {
+  const d = new Date(timestampMs);
+  // UTC+8 offset
+  const utc8 = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+  const year = utc8.getUTCFullYear();
+  const month = String(utc8.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(utc8.getUTCDate()).padStart(2, "0");
+  const hours = String(utc8.getUTCHours()).padStart(2, "0");
+  const minutes = String(utc8.getUTCMinutes()).padStart(2, "0");
+  return `[${year}-${month}-${day} ${hours}:${minutes} CST]`;
+}
+
+/**
+ * Inject a timestamp prefix into each user message's content.
+ * Only modifies the copy sent to the LLM — stored messages remain untouched.
+ *
+ * For string content: prepends "[timestamp] " before the text.
+ * For array content: prepends a TextContent block with the timestamp.
+ */
+function injectTimestamps(messages: AgentMessage[]): AgentMessage[] {
+  return messages.map((msg) => {
+    if (msg.role !== "user") return msg;
+    const userMsg = msg as UserMessage;
+    const prefix = formatTimestampPrefix(userMsg.timestamp);
+
+    if (typeof userMsg.content === "string") {
+      return { ...userMsg, content: `${prefix} ${userMsg.content}` };
+    }
+    // Array content: prepend a text block with the timestamp
+    return {
+      ...userMsg,
+      content: [{ type: "text" as const, text: prefix }, ...userMsg.content],
+    };
+  });
+}
 
 /** Max length for normalized tool call IDs. Anthropic limit is 64. */
 const MAX_TOOL_CALL_ID_LENGTH = 64;
@@ -126,6 +174,7 @@ function simpleHash(str: string): string {
 
 /**
  * Apply all cross-cutting message transforms before sending to a provider:
+ * 0. Timestamp injection into user messages
  * 1. Image downgrade for non-vision models
  * 2. Tool call ID normalization for cross-provider compatibility
  * 3. Drop errored/aborted assistant messages
@@ -135,10 +184,13 @@ export function transformMessages(
   messages: AgentMessage[],
   model: AgentModelDescriptor,
 ): AgentMessage[] {
+  // Phase 0: Inject timestamps into user messages for LLM time-awareness
+  let transformed: AgentMessage[] = injectTimestamps(messages);
+
   // Phase 1: Image downgrade
-  let transformed: AgentMessage[] = modelSupportsImages(model)
-    ? messages
-    : messages.map((msg) => {
+  transformed = modelSupportsImages(model)
+    ? transformed
+    : transformed.map((msg) => {
         if (msg.role === "user" && Array.isArray(msg.content)) {
           const downgraded = replaceImagesWithPlaceholder(msg.content, NON_VISION_USER_IMAGE_PLACEHOLDER);
           return { ...msg, content: downgraded } as UserMessage;

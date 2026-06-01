@@ -21,6 +21,7 @@ import { AgentModelRegistry } from "../agent/model_registry.js";
 import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 import { Jin10Service } from "../jin10/index.js";
 import { BrowserManager } from "../browser/index.js";
+import { OptionsService } from "../options/service.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -39,6 +40,7 @@ export class AppRuntime {
   readonly mcpManager: McpClientManager | null;
   jin10Service: Jin10Service;
   readonly browserManager: BrowserManager;
+  readonly optionsService: OptionsService | null;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
   readonly activeAgents = new Map<string, Agent>();
@@ -100,6 +102,11 @@ export class AppRuntime {
 
     // Wire browser automation manager
     this.browserManager = new BrowserManager(config.browser);
+
+    // Wire options/GEX service
+    this.optionsService = config.options.enabled
+      ? new OptionsService(config.options)
+      : null;
 
     // Wire trade closure → memory pipeline enqueue
     this.tradeStore.onTradeClosed((tradeId) => this.enqueueTradeForMemory(tradeId));
@@ -164,6 +171,7 @@ export class AppRuntime {
     this.cronScheduler.start();
     this.mcpManager?.start();
     await this.jin10Service.start();
+    this.optionsService?.start();
     this.memoryPipeline?.kickoffStartup();
   }
 
@@ -176,6 +184,7 @@ export class AppRuntime {
     await this.cronScheduler.stop();
     await this.mcpManager?.shutdown();
     await this.memoryPipeline?.shutdown();
+    await this.optionsService?.close();
   }
 
   // Drains pending controller events, fetches live exchange positions/orders,
@@ -204,6 +213,77 @@ export class AppRuntime {
         calendar: this.jin10Service.getCalendar(),
         quotes: this.jin10Service.getQuotes(),
       },
+      options: this.optionsService ? {
+        snapshots: Object.fromEntries(
+          Array.from(this.optionsService.getAllSnapshots().entries()).map(([symbol, snap]) => [
+            symbol,
+            {
+              symbol: snap.symbol,
+              spotPrice: snap.spotPrice,
+              netGexBillions: Math.round(snap.netGexBillions * 100) / 100,
+              regime: snap.regime,
+              regimeDescription: snap.regimeDescription,
+              zeroGammaLevel: snap.zeroGammaLevel,
+              callWall: snap.keyLevels.callWall,
+              putWall: snap.keyLevels.putWall,
+              maxGammaStrike: snap.keyLevels.maxGammaStrike,
+              dominantStrike: snap.dominantStrike,
+              charmFlow: snap.charmVanna?.charmFlow ?? null,
+              vannaFlow: snap.charmVanna?.vannaFlow ?? null,
+              gexByStrike: snap.gexByStrike,
+              provider: snap.provider,
+              timestamp: snap.timestamp,
+              // ── Advanced analytics (A modules) ──
+              regimeParams: snap.regimeParams
+                ? {
+                    atmIV: snap.regimeParams.atmIV,
+                    regime: snap.regimeParams.regime,
+                    impliedSpotVolCorr: snap.regimeParams.impliedSpotVolCorr,
+                    impliedVolOfVol: snap.regimeParams.impliedVolOfVol,
+                    expectedDailySpotMove: snap.regimeParams.expectedDailySpotMove,
+                  }
+                : null,
+              ivSurface: snap.ivSurface
+                ? {
+                    expiration: snap.ivSurface.expiration,
+                    strikes: snap.ivSurface.strikes,
+                    smoothedIVs: snap.ivSurface.smoothedIVs,
+                  }
+                : null,
+              hedgeImpulse: snap.hedgeImpulse
+                ? {
+                    regime: snap.hedgeImpulse.regime,
+                    impulseAtSpot: snap.hedgeImpulse.impulseAtSpot,
+                    nearestAttractorAbove: snap.hedgeImpulse.nearestAttractorAbove,
+                    nearestAttractorBelow: snap.hedgeImpulse.nearestAttractorBelow,
+                    asymmetry: snap.hedgeImpulse.asymmetry,
+                    curve: snap.hedgeImpulse.curve.map((p) => ({
+                      price: p.price,
+                      impulse: p.impulse,
+                    })),
+                  }
+                : null,
+              pressureCloud: snap.pressureCloud
+                ? {
+                    stabilityZones: snap.pressureCloud.stabilityZones,
+                    accelerationZones: snap.pressureCloud.accelerationZones,
+                    regimeEdges: snap.pressureCloud.regimeEdges,
+                  }
+                : null,
+              exposure: snap.exposure
+                ? snap.exposure.map((e) => ({
+                    expiration: e.expiration,
+                    tte: e.tte,
+                    totalGammaExposure: e.canonical.totalGammaExposure,
+                    totalDeltaExposure: e.canonical.totalDeltaExposure,
+                    totalVannaExposure: e.canonical.totalVannaExposure,
+                    totalCharmExposure: e.canonical.totalCharmExposure,
+                  }))
+                : null,
+            },
+          ]),
+        ),
+      } : null,
     });
   }
 

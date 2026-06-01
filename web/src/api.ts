@@ -28,6 +28,7 @@ import type {
   MemoryStatus,
   NewsConfigUpdate,
   NewsItem,
+  SocialAuthImportResult,
   SocialAuthStatus,
   SocialFeedItem,
   SocialFeedConfigUpdate,
@@ -385,6 +386,30 @@ export async function saveNewsConfig(config: NewsConfigUpdate): Promise<MarketSt
   return payload.state;
 }
 
+// Saves options/GEX configuration and returns the updated runtime state.
+export interface OptionsConfigUpdate {
+  enabled?: boolean;
+  provider?: 'yfinance' | 'tradier' | 'deribit';
+  symbols?: string[];
+  pollIntervalSeconds?: number;
+  strikeRangePercent?: number;
+  tradier?: { apiKey?: string; baseUrl?: string };
+  deribit?: { enabled?: boolean; currencies?: string[] };
+}
+
+export async function saveOptionsConfig(config: OptionsConfigUpdate): Promise<MarketState> {
+  const response = await fetch('/api/options/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'options config save failed');
+  }
+  const payload = await response.json();
+  return payload.state;
+}
+
 // Saves social feed settings and returns the updated runtime state.
 export async function saveSocialFeedConfig(config: SocialFeedConfigUpdate): Promise<MarketState> {
   const response = await fetch('/api/social/config', {
@@ -417,6 +442,15 @@ export async function saveSocialAuth(auth: { authToken: string; ct0: string }): 
   });
   if (!response.ok) {
     throw await responseError(response, 'social auth save failed');
+  }
+  return response.json();
+}
+
+// Imports X auth cookies from the logged-in Chrome profile through Open Browser Use.
+export async function importSocialAuthFromBrowser(): Promise<SocialAuthImportResult> {
+  const response = await fetch('/api/social/auth/import-browser', { method: 'POST' });
+  if (!response.ok) {
+    throw await responseError(response, 'social auth browser import failed');
   }
   return response.json();
 }
@@ -873,5 +907,4 @@ export async function saveJin10Config(config: {
   const payload = await response.json();
   return payload.state;
 }
-
 

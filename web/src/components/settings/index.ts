@@ -8,3 +8,4 @@ export { SocialSettingsPanel } from './SocialSettingsPanel';
 export { CronSettingsPanel } from './CronSettingsPanel';
 export { McpSettingsPanel } from './McpSettingsPanel';
 export { BrowserSettingsPanel } from './BrowserSettingsPanel';
+export { OptionsSettingsPanel } from './OptionsSettingsPanel';
