@@ -116,6 +116,9 @@ export class FeedWorker {
         this.bitgetSocket = new BitgetPublicWebSocket(this.bitgetInstruments);
         this.emit({ kind: "status", payload: "subscribed" });
         await this.bitgetSocket.listen((payload) => this.emit({ kind: "quote", payload }), signal);
+        // listen() resolves on a server-initiated close — back off before
+        // reconnecting, otherwise repeated closes become a tight reconnect loop.
+        if (!signal.aborted) await sleep(this.config.display.reconnectDelaySeconds * 1000, signal).catch(() => undefined);
       } catch (error) {
         if (signal.aborted) break;
         this.emit({ kind: "error", payload: error instanceof Error ? error.message : String(error) });
@@ -135,6 +138,8 @@ export class FeedWorker {
         this.hyperliquidSocket = new HyperliquidAllMidsWebSocket(this.hyperliquidInstruments);
         this.emit({ kind: "status", payload: "subscribed" });
         await this.hyperliquidSocket.listen((payload) => this.emit({ kind: "quote", payload }), signal);
+        // Same as runBitget: a resolved listen() means the peer closed on us.
+        if (!signal.aborted) await sleep(this.config.display.reconnectDelaySeconds * 1000, signal).catch(() => undefined);
       } catch (error) {
         if (signal.aborted) break;
         this.emit({ kind: "error", payload: error instanceof Error ? error.message : String(error) });

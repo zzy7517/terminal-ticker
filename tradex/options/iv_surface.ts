@@ -255,7 +255,7 @@ function ivToRegime(atmIV: number): MarketRegime {
  * For equity indices, k typically falls in [4, 12].
  */
 export function deriveSpotVolCoupling(params: RegimeParams): number {
-  const { impliedSpotVolCorr, atmIV } = params;
-  const k = -impliedSpotVolCorr * atmIV * Math.sqrt(252);
+  const { impliedSpotVolCorr, impliedVolOfVol } = params;
+  const k = -impliedSpotVolCorr * impliedVolOfVol * Math.sqrt(252);
   return Math.max(2, Math.min(20, k));
 }

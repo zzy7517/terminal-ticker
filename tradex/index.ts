@@ -72,7 +72,11 @@ async function main(): Promise<void> {
   const wss = new WebSocketServer({ server: server as never, path: "/ws" });
   wss.on("connection", (socket) => {
     const sendState = async () => {
-      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(await runtime.state()));
+      try {
+        if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(await runtime.state()));
+      } catch (error) {
+        console.warn("WS state broadcast failed:", error instanceof Error ? error.message : error);
+      }
     };
     void sendState();
     const timer = setInterval(() => void sendState(), config.display.refreshIntervalMs);

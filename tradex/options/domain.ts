@@ -39,6 +39,11 @@ export interface OptionChain {
   contracts: OptionQuote[];
   timestamp: number;        // Unix ms
   provider: string;
+  /**
+   * Units of underlying per contract. US equity options: 100 (default).
+   * Deribit crypto options: 1 (OI is denominated in coins).
+   */
+  contractMultiplier?: number;
 }
 
 // ============================================================================
@@ -67,7 +72,7 @@ export interface KeyLevels {
 export interface CharmVannaFlow {
   charmFlow: number;        // $ flow from time decay (+ = dealers buy, - = sell)
   vannaFlow: number;        // $ flow from IV change (+ = dealers buy, - = sell)
-  netHiddenFlow: number;    // charm + vanna combined
+  netHiddenFlow: number;    // charm + vanna combined ($)
   charmByStrike: Record<number, number>;
   vannaByStrike: Record<number, number>;
 }

@@ -24,6 +24,19 @@ function tomlString(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * Serializes all watchlist read-modify-write operations. Concurrent config
+ * POSTs from the UI would otherwise interleave their read/write phases and
+ * silently lose the earlier update.
+ */
+let watchlistWriteQueue: Promise<unknown> = Promise.resolve();
+
+function withWatchlistLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = watchlistWriteQueue.then(fn, fn);
+  watchlistWriteQueue = run.catch(() => undefined);
+  return run;
+}
+
 function normalizeBitgetSymbol(symbol: string): string {
   const normalized = symbol.trim().toUpperCase();
   if (!normalized) throw new Error("symbol entries cannot be blank");
@@ -122,18 +135,20 @@ function isSymbolEntry(line: string, input: { source: string; symbol: string; in
 }
 
 async function appendEntryToSymbolsArray(sourcePath: string, entry: string): Promise<void> {
-  const text = await readFile(sourcePath, "utf8");
-  const lines = text.split(/\r?\n/);
-  const startIndex = lines.findIndex((line) => line.trim().startsWith("symbols") && line.includes("["));
-  if (startIndex < 0) {
-    const prefix = text && !text.endsWith("\n") ? `${text}\n` : text;
-    await writeFile(sourcePath, `${prefix}\nsymbols = [\n${entry}\n]\n`);
-    return;
-  }
-  const endIndex = lines.findIndex((line, index) => index > startIndex && line.trim() === "]");
-  if (endIndex < 0) throw new Error("symbols array is not closed");
-  lines.splice(endIndex, 0, entry);
-  await writeFile(sourcePath, `${lines.join("\n").replace(/\n*$/, "")}\n`);
+  return withWatchlistLock(async () => {
+    const text = await readFile(sourcePath, "utf8");
+    const lines = text.split(/\r?\n/);
+    const startIndex = lines.findIndex((line) => line.trim().startsWith("symbols") && line.includes("["));
+    if (startIndex < 0) {
+      const prefix = text && !text.endsWith("\n") ? `${text}\n` : text;
+      await writeFile(sourcePath, `${prefix}\nsymbols = [\n${entry}\n]\n`);
+      return;
+    }
+    const endIndex = lines.findIndex((line, index) => index > startIndex && line.trim() === "]");
+    if (endIndex < 0) throw new Error("symbols array is not closed");
+    lines.splice(endIndex, 0, entry);
+    await writeFile(sourcePath, `${lines.join("\n").replace(/\n*$/, "")}\n`);
+  });
 }
 
 export async function appendBitgetSymbolToWatchlist(
@@ -198,12 +213,14 @@ export async function removeSymbolFromWatchlist(
   );
   if (!exists) return false;
   if (config.instruments.length <= 1) throw new Error("cannot remove the last watchlist symbol");
-  const lines = (await readFile(sourcePath, "utf8")).split(/\r?\n/);
-  const index = lines.findIndex((line) => isSymbolEntry(line, { source, symbol, instType }));
-  if (index < 0) throw new Error(`${source}:${symbol} exists but is not an inline symbol entry`);
-  lines.splice(index, 1);
-  await writeFile(sourcePath, `${lines.join("\n").replace(/\n*$/, "")}\n`);
-  return true;
+  return withWatchlistLock(async () => {
+    const lines = (await readFile(sourcePath, "utf8")).split(/\r?\n/);
+    const index = lines.findIndex((line) => isSymbolEntry(line, { source, symbol, instType }));
+    if (index < 0) throw new Error(`${source}:${symbol} exists but is not an inline symbol entry`);
+    lines.splice(index, 1);
+    await writeFile(sourcePath, `${lines.join("\n").replace(/\n*$/, "")}\n`);
+    return true;
+  });
 }
 
 function setInlineAnalysisInterval(line: string, interval: string): string {
@@ -225,6 +242,13 @@ function setInlineAnalysisInterval(line: string, interval: string): string {
 }
 
 export async function reorderSymbolsInWatchlist(
+  watchlistPath: string,
+  orderedKeys: string[],
+): Promise<boolean> {
+  return withWatchlistLock(() => reorderSymbolsUnlocked(watchlistPath, orderedKeys));
+}
+
+async function reorderSymbolsUnlocked(
   watchlistPath: string,
   orderedKeys: string[],
 ): Promise<boolean> {
@@ -313,18 +337,20 @@ export async function updateInstrumentAnalysisIntervalInWatchlist(
   watchlistPath: string,
   input: { source: string; symbol: string; instType?: string | null; interval: string },
 ): Promise<boolean> {
-  const sourcePath = path.resolve(expandUserPath(watchlistPath));
-  const source = input.source.trim().toLowerCase();
-  const symbol = normalizeSymbolForSource(source, input.symbol);
-  const instType = input.instType ? input.instType.trim().toUpperCase() : null;
-  const lines = (await readFile(sourcePath, "utf8")).split(/\r?\n/);
-  const index = lines.findIndex((line) => isSymbolEntry(line, { source, symbol, instType }));
-  if (index < 0) throw new Error(`${source}:${symbol} exists but is not an inline symbol entry`);
-  const nextLine = setInlineAnalysisInterval(lines[index], input.interval);
-  if (nextLine === lines[index]) return false;
-  lines[index] = nextLine;
-  await writeFile(sourcePath, `${lines.join("\n").replace(/\n*$/, "")}\n`);
-  return true;
+  return withWatchlistLock(async () => {
+    const sourcePath = path.resolve(expandUserPath(watchlistPath));
+    const source = input.source.trim().toLowerCase();
+    const symbol = normalizeSymbolForSource(source, input.symbol);
+    const instType = input.instType ? input.instType.trim().toUpperCase() : null;
+    const lines = (await readFile(sourcePath, "utf8")).split(/\r?\n/);
+    const index = lines.findIndex((line) => isSymbolEntry(line, { source, symbol, instType }));
+    if (index < 0) throw new Error(`${source}:${symbol} exists but is not an inline symbol entry`);
+    const nextLine = setInlineAnalysisInterval(lines[index], input.interval);
+    if (nextLine === lines[index]) return false;
+    lines[index] = nextLine;
+    await writeFile(sourcePath, `${lines.join("\n").replace(/\n*$/, "")}\n`);
+    return true;
+  });
 }
 
 function replaceTopLevelTable(text: string, tableName: string, nextLines: string[]): string {
@@ -356,6 +382,17 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
     `max_candles = ${config.maxCandles}`,
     `candle_context_mode = ${tomlString(config.candleContextMode)}`,
   ];
+  // [agent.skills] is part of the [agent] table block replaced below — it
+  // must be re-emitted or a config save silently drops it.
+  lines.push(
+    "",
+    "[agent.skills]",
+    `enabled = ${config.skills.enabled ? "true" : "false"}`,
+    `include_defaults = ${config.skills.includeDefaults ? "true" : "false"}`,
+  );
+  if (config.skills.paths.length > 0) {
+    lines.push(`paths = [${config.skills.paths.map(tomlString).join(", ")}]`);
+  }
   for (const [name, profile] of Object.entries(config.providerProfiles)) {
     lines.push("", `[agent.providers.${name}]`, `enabled = ${profile.enabled ? "true" : "false"}`);
     if (profile.apiKey) lines.push(`api_key = ${tomlString(profile.apiKey)}`);
@@ -449,6 +486,7 @@ export async function updateJin10ConfigInWatchlist(watchlistPath: string, config
     `quotes_enabled = ${config.quotesEnabled ? "true" : "false"}`,
     `quotes_poll_interval_seconds = ${config.quotesPollIntervalSeconds}`,
     `quotes_codes = [${config.quotesCodes.map(tomlString).join(", ")}]`,
+    `agent_analysis = ${config.agentAnalysis ? "true" : "false"}`,
   ];
   return replaceTable(watchlistPath, "jin10", lines);
 }
@@ -474,6 +512,8 @@ export async function updateOptionsConfigInWatchlist(watchlistPath: string, conf
     `symbols = [${config.symbols.map(tomlString).join(", ")}]`,
     `poll_interval_seconds = ${config.pollIntervalSeconds}`,
     `strike_range_percent = ${config.strikeRangePercent}`,
+    `risk_free_rate = ${config.riskFreeRate}`,
+    `dividend_yield = ${config.dividendYield}`,
   ];
   if (config.tradier) {
     lines.push("", "[options.tradier]", `api_key = ${tomlString(config.tradier.apiKey)}`, `base_url = ${tomlString(config.tradier.baseUrl)}`);
@@ -489,16 +529,25 @@ export async function updateOptionsConfigInWatchlist(watchlistPath: string, conf
   if (config.deribit) {
     lines.push("", "[options.deribit]", `enabled = ${config.deribit.enabled ? "true" : "false"}`, `currencies = [${config.deribit.currencies.map(tomlString).join(", ")}]`);
   }
+  lines.push(
+    "",
+    "[options.alerts]",
+    `min_oi_change = ${config.alerts.minOiChange}`,
+    `min_volume_oi_ratio = ${config.alerts.minVolumeOiRatio}`,
+    `min_premium = ${config.alerts.minPremium}`,
+  );
   return replaceTable(watchlistPath, "options", lines);
 }
 
 async function replaceTable(watchlistPath: string, tableName: string, lines: string[]): Promise<boolean> {
-  const sourcePath = path.resolve(expandUserPath(watchlistPath));
-  const text = await readFile(sourcePath, "utf8");
-  const rendered = replaceTopLevelTable(text, tableName, lines);
-  if (rendered === text) return false;
-  await writeFile(sourcePath, rendered);
-  return true;
+  return withWatchlistLock(async () => {
+    const sourcePath = path.resolve(expandUserPath(watchlistPath));
+    const text = await readFile(sourcePath, "utf8");
+    const rendered = replaceTopLevelTable(text, tableName, lines);
+    if (rendered === text) return false;
+    await writeFile(sourcePath, rendered);
+    return true;
+  });
 }
 
 

@@ -23,6 +23,7 @@
 import type { OptionQuote } from "./domain.js";
 import { gamma, vanna } from "./greeks.js";
 import { MIN_IV, MAX_IV, CONTRACT_MULTIPLIER, ONE_PERCENT_MOVE } from "./domain.js";
+import { yearsToExpiry } from "./expiry.js";
 
 // ============================================================================
 // Types
@@ -88,6 +89,8 @@ export interface HedgeImpulseConfig {
   riskFreeRate?: number;
   /** Dividend yield */
   dividendYield?: number;
+  /** Units of underlying per contract (default: 100; Deribit crypto: 1) */
+  contractMultiplier?: number;
 }
 
 // ============================================================================
@@ -114,6 +117,7 @@ export function computeHedgeImpulseCurve(
     kernelWidthStrikes = 2,
     riskFreeRate = 0.0363,
     dividendYield = 0.015,
+    contractMultiplier = CONTRACT_MULTIPLIER,
   } = config;
 
   const now = Date.now();
@@ -121,7 +125,7 @@ export function computeHedgeImpulseCurve(
 
   // Extract strike-level GEX and VEX values
   const { strikes, gexValues, vexValues } = computeStrikeExposures(
-    contracts, spotPrice, riskFreeRate, dividendYield
+    contracts, spotPrice, riskFreeRate, dividendYield, contractMultiplier
   );
 
   if (strikes.length < 2) {
@@ -190,6 +194,7 @@ function computeStrikeExposures(
   spot: number,
   r: number,
   q: number,
+  multiplier: number = CONTRACT_MULTIPLIER,
 ): { strikes: number[]; gexValues: number[]; vexValues: number[] } {
   const gexMap = new Map<number, number>();
   const vexMap = new Map<number, number>();
@@ -205,11 +210,11 @@ function computeStrikeExposures(
     const v = vanna(spot, c.strike, T, r, q, c.impliedVol);
 
     // GEX: calls positive, puts negative (trader-facing)
-    const gex = c.openInterest * g * CONTRACT_MULTIPLIER * spot * spot * ONE_PERCENT_MOVE;
+    const gex = c.openInterest * g * multiplier * spot * spot * ONE_PERCENT_MOVE;
     const signedGex = c.type === "call" ? gex : -gex;
 
     // VEX: vanna exposure (same sign convention)
-    const vex = c.openInterest * v * CONTRACT_MULTIPLIER * spot * ONE_PERCENT_MOVE;
+    const vex = c.openInterest * v * multiplier * spot * ONE_PERCENT_MOVE;
     const signedVex = c.type === "call" ? -vex : vex;
 
     gexMap.set(c.strike, (gexMap.get(c.strike) ?? 0) + signedGex);
@@ -376,10 +381,7 @@ function detectStrikeSpacing(strikes: number[]): number {
 }
 
 function timeToExpiry(expirationStr: string): number {
-  const expDate = new Date(expirationStr + "T16:00:00-04:00");
-  const diffMs = expDate.getTime() - Date.now();
-  if (diffMs <= 0) return 0;
-  return diffMs / (365.25 * 24 * 3600 * 1000);
+  return yearsToExpiry(expirationStr, Date.now());
 }
 
 function emptyImpulseCurve(spot: number, k: number, now: number): HedgeImpulseCurve {

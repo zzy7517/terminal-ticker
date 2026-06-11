@@ -121,7 +121,9 @@ export class YFinanceProvider implements OptionsDataProvider {
     let url = `${YAHOO_OPTIONS_URL}/${encodeURIComponent(symbol)}`;
     const params: string[] = [];
     if (options?.expiration) {
-      const expTimestamp = Math.floor(new Date(options.expiration + "T16:00:00Z").getTime() / 1000);
+      // Yahoo expiration timestamps are midnight-UTC epochs (matching what
+      // getExpirations derives dates from); 16:00Z would never match.
+      const expTimestamp = Math.floor(new Date(options.expiration + "T00:00:00Z").getTime() / 1000);
       params.push(`date=${expTimestamp}`);
     }
 

@@ -37,10 +37,17 @@ export class OptionsStore extends BaseStore {
         vanna_flow REAL,
         provider TEXT NOT NULL,
         gex_by_strike_json TEXT,
+        zgl_crossing_found INTEGER,
         UNIQUE(symbol, timestamp_ms, provider)
       );
       CREATE INDEX IF NOT EXISTS idx_gex_symbol_time ON gex_snapshots(symbol, timestamp_ms DESC);
     `);
+    // Additive migration for databases created before zgl_crossing_found existed.
+    try {
+      conn.exec(`ALTER TABLE gex_snapshots ADD COLUMN zgl_crossing_found INTEGER`);
+    } catch {
+      // Column already exists.
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -53,8 +60,8 @@ export class OptionsStore extends BaseStore {
       INSERT OR REPLACE INTO gex_snapshots
         (symbol, timestamp_ms, spot_price, net_gex, total_call_gex, total_put_gex,
          zero_gamma_level, regime, call_wall, put_wall, max_gamma_strike,
-         charm_flow, vanna_flow, provider, gex_by_strike_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         charm_flow, vanna_flow, provider, gex_by_strike_json, zgl_crossing_found)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -73,6 +80,7 @@ export class OptionsStore extends BaseStore {
       snapshot.charmVanna?.vannaFlow ?? null,
       snapshot.provider,
       JSON.stringify(snapshot.gexByStrike),
+      snapshot.keyLevels.zglCrossingFound ? 1 : 0,
     );
   }
 
@@ -125,7 +133,8 @@ export class OptionsStore extends BaseStore {
         putWall: row.put_wall ?? row.spot_price,
         maxGammaStrike: row.max_gamma_strike ?? row.spot_price,
         zeroGammaLevel: row.zero_gamma_level,
-        zglCrossingFound: true,
+        // Rows persisted before the column existed default to true.
+        zglCrossingFound: row.zgl_crossing_found == null ? true : Boolean(row.zgl_crossing_found),
       },
       gexByStrike,
       charmVanna: row.charm_flow != null ? {

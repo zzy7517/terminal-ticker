@@ -160,9 +160,16 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const toolCallsById = new Map<string, Record<string, unknown>>();
     let seq = 0;
 
+    let streamCancelled = false;
     const sendFrame = (controller: ReadableStreamDefaultController<Uint8Array>, event: Record<string, unknown>) => {
+      if (streamCancelled) return;
       seq += 1;
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ sessionId, runId, seq, event })}\n\n`));
+      try {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ sessionId, runId, seq, event })}\n\n`));
+      } catch {
+        // Client went away mid-run; the cancel() hook aborts the agent.
+        streamCancelled = true;
+      }
     };
 
     const stream = new ReadableStream({
@@ -253,6 +260,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             buildTradingTools({
               tradeStore: runtime.tradeStore,
               exchangeRouter: runtime.exchangeRouter,
+              tradingConfig: runtime.config.trading,
               resolveSessionId: () => sessionId,
             }),
             buildJin10Tools(runtime.jin10Service),
@@ -649,8 +657,18 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           sendFrame(controller, { type: "agent_end", error: errorText, totalTokens: 0, promptTokens: 0, sessionStats: null });
         } finally {
           runtime.activeAgents.delete(sessionId);
-          controller.close();
+          try {
+            controller.close();
+          } catch {
+            // Already closed/cancelled by the client.
+          }
         }
+      },
+      cancel() {
+        // Client disconnected (page refresh, tab close, network drop): stop
+        // the agent run instead of letting it burn LLM/tool budget unobserved.
+        streamCancelled = true;
+        runtime.activeAgents.get(sessionId)?.abort();
       },
     });
 

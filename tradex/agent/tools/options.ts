@@ -56,8 +56,55 @@ export function registerOptionsTools(registry: ToolRegistry, runtime: AppRuntime
         netHiddenFlow: snapshot.charmVanna ? Math.round(snapshot.charmVanna.netHiddenFlow) : null,
         totalCallGexBillions: Math.round(snapshot.totalCallGex / 1e9 * 100) / 100,
         totalPutGexBillions: Math.round(snapshot.totalPutGex / 1e9 * 100) / 100,
+        regimeParams: snapshot.regimeParams
+          ? {
+              atmIV: Math.round(snapshot.regimeParams.atmIV * 1000) / 10 + "%",
+              volRegime: snapshot.regimeParams.regime,
+              impliedSpotVolCorr: Math.round(snapshot.regimeParams.impliedSpotVolCorr * 100) / 100,
+              impliedVolOfVol: Math.round(snapshot.regimeParams.impliedVolOfVol * 100) / 100,
+              expectedDailySpotMove: Math.round(snapshot.regimeParams.expectedDailySpotMove * 10000) / 100 + "%",
+            }
+          : null,
         provider: snapshot.provider,
         timestamp: new Date(snapshot.timestamp).toISOString(),
+      });
+    },
+  });
+
+  registry.register({
+    name: "get_gex_by_strike",
+    description: "Get the full per-strike Gamma Exposure (GEX) breakdown — every strike's call GEX, put GEX, net GEX, call OI, and put OI. Use to see the exact distribution of dealer gamma across strikes, identify OI concentration, validate whether walls are sharp (single spike) or broad (cluster), and detect asymmetries near spot.",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Symbol (default: SPY)" },
+      },
+    },
+    execute: async (args: Record<string, unknown>) => {
+      if (!svc) return JSON.stringify({ error: "Options service not enabled." });
+
+      const symbol = (typeof args.symbol === "string" ? args.symbol : "SPY").toUpperCase();
+      const snapshot = svc.getSnapshot(symbol);
+      if (!snapshot) return JSON.stringify({ error: `No data for ${symbol}` });
+
+      const strikes = snapshot.gexByStrike;
+      if (!strikes || strikes.length === 0) {
+        return JSON.stringify({ error: `No per-strike GEX data for ${symbol}` });
+      }
+
+      return JSON.stringify({
+        symbol,
+        spotPrice: snapshot.spotPrice,
+        zeroGammaLevel: snapshot.zeroGammaLevel,
+        totalStrikes: strikes.length,
+        strikes: strikes.map((s) => ({
+          strike: s.strike,
+          callGex: Math.round(s.callGex),
+          putGex: Math.round(s.putGex),
+          netGex: Math.round(s.netGex),
+          callOi: s.callOi,
+          putOi: s.putOi,
+        })),
       });
     },
   });
