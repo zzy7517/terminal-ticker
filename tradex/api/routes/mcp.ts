@@ -22,7 +22,11 @@ import type { AppRuntime } from "../runtime.js";
 import { loadMcpConfig } from "../../mcp/config.js";
 import type { McpServerEntry, McpSettings } from "../../mcp/types.js";
 
-const MCP_CONFIG_PATH = resolve(process.cwd(), ".mcp.json");
+/** Same resolution as loadMcpConfig: configured path, else cwd/.mcp.json. */
+function mcpConfigPath(runtime: AppRuntime): string {
+  const configured = runtime.config.mcp.configPath;
+  return configured ? resolve(configured) : resolve(process.cwd(), ".mcp.json");
+}
 
 export function mcpRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
@@ -237,7 +241,7 @@ export function mcpRoutes(runtime: AppRuntime): Hono {
     const body = await c.req.json<{ settings?: McpSettings }>();
     const current = loadMcpConfig(runtime.config.mcp.configPath);
     const updated = { ...current, settings: body.settings ?? current.settings };
-    writeMcpConfig(updated);
+    writeMcpConfig(mcpConfigPath(runtime), updated);
     return c.json({ ok: true, settings: updated.settings });
   });
 
@@ -252,7 +256,7 @@ export function mcpRoutes(runtime: AppRuntime): Hono {
     }
 
     current.mcpServers[body.name] = body.config;
-    writeMcpConfig(current);
+    writeMcpConfig(mcpConfigPath(runtime), current);
     return c.json({ ok: true, server: body.name });
   });
 
@@ -267,7 +271,7 @@ export function mcpRoutes(runtime: AppRuntime): Hono {
     }
 
     current.mcpServers[name] = body.config;
-    writeMcpConfig(current);
+    writeMcpConfig(mcpConfigPath(runtime), current);
     return c.json({ ok: true, server: name });
   });
 
@@ -286,14 +290,13 @@ export function mcpRoutes(runtime: AppRuntime): Hono {
     }
 
     delete current.mcpServers[name];
-    writeMcpConfig(current);
+    writeMcpConfig(mcpConfigPath(runtime), current);
     return c.json({ ok: true });
   });
 
   return app;
 }
 
-function writeMcpConfig(config: { mcpServers: Record<string, McpServerEntry>; settings?: McpSettings }): void {
-  const path = MCP_CONFIG_PATH;
+function writeMcpConfig(path: string, config: { mcpServers: Record<string, McpServerEntry>; settings?: McpSettings }): void {
   writeFileSync(path, JSON.stringify(config, null, 2) + "\n", "utf-8");
 }

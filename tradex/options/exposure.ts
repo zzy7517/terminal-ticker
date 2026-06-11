@@ -25,6 +25,7 @@
 import type { OptionQuote } from "./domain.js";
 import { CONTRACT_MULTIPLIER, MIN_IV, MAX_IV, ONE_PERCENT_MOVE } from "./domain.js";
 import { gamma, delta, vanna, charm } from "./greeks.js";
+import { yearsToExpiry } from "./expiry.js";
 
 // ============================================================================
 // Types
@@ -74,6 +75,8 @@ export interface ExposureOptions {
   dividendYield?: number;
   /** Timestamp for time-to-expiry calculation (default: now) */
   asOfTimestamp?: number;
+  /** Units of underlying per contract (default: 100; Deribit crypto: 1) */
+  contractMultiplier?: number;
 }
 
 // ============================================================================
@@ -98,6 +101,7 @@ export function calculateFullExposure(
     riskFreeRate = 0.0363,
     dividendYield = 0.015,
     asOfTimestamp = Date.now(),
+    contractMultiplier = CONTRACT_MULTIPLIER,
   } = options;
 
   // Group by expiration
@@ -138,21 +142,21 @@ export function calculateFullExposure(
       // === CANONICAL MODE ===
       const canonVec = computeCanonicalExposure(
         spotPrice, strike, T, riskFreeRate, dividendYield,
-        callContract, putContract
+        callContract, putContract, contractMultiplier
       );
       canonicalStrikes.push({ strikePrice: strike, ...canonVec });
 
       // === STATE-WEIGHTED MODE ===
       const stateVec = computeStateWeightedExposure(
         spotPrice, strike, T, riskFreeRate, dividendYield,
-        callContract, putContract, daysToExpiry
+        callContract, putContract, daysToExpiry, contractMultiplier
       );
       stateWeightedStrikes.push({ strikePrice: strike, ...stateVec });
 
       // === FLOW-DELTA MODE ===
       const flowVec = computeFlowDeltaExposure(
         spotPrice, strike, T, riskFreeRate, dividendYield,
-        callContract, putContract, previousOI
+        callContract, putContract, previousOI, contractMultiplier
       );
       flowDeltaStrikes.push({ strikePrice: strike, ...flowVec });
     }
@@ -179,6 +183,7 @@ function computeCanonicalExposure(
   S: number, K: number, T: number, r: number, q: number,
   callContract: OptionQuote | undefined,
   putContract: OptionQuote | undefined,
+  multiplier: number = CONTRACT_MULTIPLIER,
 ): ExposureVector {
   let gammaExposure = 0;
   let deltaExposure = 0;
@@ -194,10 +199,10 @@ function computeCanonicalExposure(
     const ch = charm(S, K, T, r, q, iv, "call");
 
     // Dealer is short calls (sold to customers) → negate
-    gammaExposure += -oi * g * CONTRACT_MULTIPLIER * S * S * ONE_PERCENT_MOVE;
-    deltaExposure += -oi * d * CONTRACT_MULTIPLIER * S;
-    vannaExposure += -oi * v * CONTRACT_MULTIPLIER * S * ONE_PERCENT_MOVE;
-    charmExposure += -oi * ch * CONTRACT_MULTIPLIER * S;
+    gammaExposure += -oi * g * multiplier * S * S * ONE_PERCENT_MOVE;
+    deltaExposure += -oi * d * multiplier * S;
+    vannaExposure += -oi * v * multiplier * S * ONE_PERCENT_MOVE;
+    charmExposure += -oi * ch * multiplier * S;
   }
 
   if (putContract && putContract.impliedVol) {
@@ -209,10 +214,10 @@ function computeCanonicalExposure(
     const ch = charm(S, K, T, r, q, iv, "put");
 
     // Dealer is long puts (bought from customers) → positive sign
-    gammaExposure += oi * g * CONTRACT_MULTIPLIER * S * S * ONE_PERCENT_MOVE;
-    deltaExposure += oi * d * CONTRACT_MULTIPLIER * S;
-    vannaExposure += oi * v * CONTRACT_MULTIPLIER * S * ONE_PERCENT_MOVE;
-    charmExposure += oi * ch * CONTRACT_MULTIPLIER * S;
+    gammaExposure += oi * g * multiplier * S * S * ONE_PERCENT_MOVE;
+    deltaExposure += oi * d * multiplier * S;
+    vannaExposure += oi * v * multiplier * S * ONE_PERCENT_MOVE;
+    charmExposure += oi * ch * multiplier * S;
   }
 
   return sanitizeVector({
@@ -229,9 +234,10 @@ function computeStateWeightedExposure(
   callContract: OptionQuote | undefined,
   putContract: OptionQuote | undefined,
   daysToExpiry: number,
+  multiplier: number = CONTRACT_MULTIPLIER,
 ): ExposureVector {
   // State-weighted: Vanna weighted by IV level, Charm weighted by DTE
-  const canonical = computeCanonicalExposure(S, K, T, r, q, callContract, putContract);
+  const canonical = computeCanonicalExposure(S, K, T, r, q, callContract, putContract, multiplier);
 
   const callIV = callContract?.impliedVol ?? 0;
   const putIV = putContract?.impliedVol ?? 0;
@@ -253,6 +259,7 @@ function computeFlowDeltaExposure(
   callContract: OptionQuote | undefined,
   putContract: OptionQuote | undefined,
   previousOI?: Map<string, number>,
+  multiplier: number = CONTRACT_MULTIPLIER,
 ): ExposureVector {
   if (!previousOI) {
     return { gammaExposure: 0, deltaExposure: 0, vannaExposure: 0, charmExposure: 0, netExposure: 0 };
@@ -274,10 +281,10 @@ function computeFlowDeltaExposure(
       const v = vanna(S, K, T, r, q, iv);
       const ch = charm(S, K, T, r, q, iv, "call");
 
-      gammaExposure += -oiDelta * g * CONTRACT_MULTIPLIER * S * S * ONE_PERCENT_MOVE;
-      deltaExposure += -oiDelta * d * CONTRACT_MULTIPLIER * S;
-      vannaExposure += -oiDelta * v * CONTRACT_MULTIPLIER * S * ONE_PERCENT_MOVE;
-      charmExposure += -oiDelta * ch * CONTRACT_MULTIPLIER * S;
+      gammaExposure += -oiDelta * g * multiplier * S * S * ONE_PERCENT_MOVE;
+      deltaExposure += -oiDelta * d * multiplier * S;
+      vannaExposure += -oiDelta * v * multiplier * S * ONE_PERCENT_MOVE;
+      charmExposure += -oiDelta * ch * multiplier * S;
     }
   }
 
@@ -291,10 +298,10 @@ function computeFlowDeltaExposure(
       const v = vanna(S, K, T, r, q, iv);
       const ch = charm(S, K, T, r, q, iv, "put");
 
-      gammaExposure += oiDelta * g * CONTRACT_MULTIPLIER * S * S * ONE_PERCENT_MOVE;
-      deltaExposure += oiDelta * d * CONTRACT_MULTIPLIER * S;
-      vannaExposure += oiDelta * v * CONTRACT_MULTIPLIER * S * ONE_PERCENT_MOVE;
-      charmExposure += oiDelta * ch * CONTRACT_MULTIPLIER * S;
+      gammaExposure += oiDelta * g * multiplier * S * S * ONE_PERCENT_MOVE;
+      deltaExposure += oiDelta * d * multiplier * S;
+      vannaExposure += oiDelta * v * multiplier * S * ONE_PERCENT_MOVE;
+      charmExposure += oiDelta * ch * multiplier * S;
     }
   }
 
@@ -355,10 +362,7 @@ function isValidForExposure(c: OptionQuote): boolean {
 }
 
 function timeToExpiry(expirationStr: string, nowMs: number): number {
-  const expDate = new Date(expirationStr + "T16:00:00-04:00");
-  const diffMs = expDate.getTime() - nowMs;
-  if (diffMs <= 0) return 0;
-  return diffMs / (365.25 * 24 * 3600 * 1000);
+  return yearsToExpiry(expirationStr, nowMs);
 }
 
 function sanitizeVector(vec: ExposureVector): ExposureVector {

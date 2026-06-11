@@ -16,7 +16,18 @@ export function buildTradingTools(input: {
   const registry = new ToolRegistry();
   const router = input.exchangeRouter;
   const config = input.tradingConfig;
-  const tradingEnabled = config ? (config.hyperliquidMode !== "off" || config.bitgetMode !== "off") : Boolean(router);
+  // Order-entry tools are only registered when a trading config explicitly
+  // enables at least one platform. A missing config means "off" — the router
+  // always exists, so falling back to Boolean(router) would silently expose
+  // order entry even with both [trading] modes set to "off".
+  const tradingEnabled = config != null && (config.hyperliquidMode !== "off" || config.bitgetMode !== "off");
+
+  const positivePrice = (value: unknown, name: string): { price: number | null; error: string | null } => {
+    if (value == null) return { price: null, error: null };
+    const price = Number(value);
+    if (!Number.isFinite(price) || price <= 0) return { price: null, error: `${name} must be a positive number` };
+    return { price, error: null };
+  };
 
   registry.register({
     name: "get_exchange_positions",
@@ -77,14 +88,27 @@ export function buildTradingTools(input: {
         const direction = directionStr === "long" ? TradeDirection.LONG : TradeDirection.SHORT;
         const isBuy = direction === TradeDirection.LONG;
         const size = Number(args.size);
-        if (!size || size <= 0) return jsonOutput({ error: "size must be > 0" });
+        if (!Number.isFinite(size) || size <= 0) return jsonOutput({ error: "size must be > 0" });
         const orderType = String(args.order_type || "market").toLowerCase();
         if (orderType !== "market" && orderType !== "limit") return jsonOutput({ error: `invalid order_type: ${orderType}` });
-        const limitPrice = args.limit_price == null ? null : Number(args.limit_price);
+        const limitParsed = positivePrice(args.limit_price, "limit_price");
+        if (limitParsed.error) return jsonOutput({ error: limitParsed.error });
+        const limitPrice = limitParsed.price;
         if (orderType === "limit" && limitPrice == null) return jsonOutput({ error: "limit order requires limit_price" });
-        const takeProfitPrice = args.take_profit_price == null ? null : Number(args.take_profit_price);
-        const stopLossPrice = args.stop_loss_price == null ? null : Number(args.stop_loss_price);
+        const tpParsed = positivePrice(args.take_profit_price, "take_profit_price");
+        if (tpParsed.error) return jsonOutput({ error: tpParsed.error });
+        const slParsed = positivePrice(args.stop_loss_price, "stop_loss_price");
+        if (slParsed.error) return jsonOutput({ error: slParsed.error });
+        const takeProfitPrice = tpParsed.price;
+        const stopLossPrice = slParsed.price;
         if (takeProfitPrice == null || stopLossPrice == null) return jsonOutput({ error: "take_profit_price and stop_loss_price are required" });
+        // Direction sanity: for a long, TP must sit above SL; inverted for a short.
+        if (direction === TradeDirection.LONG && takeProfitPrice <= stopLossPrice) {
+          return jsonOutput({ error: "long trade requires take_profit_price > stop_loss_price" });
+        }
+        if (direction === TradeDirection.SHORT && takeProfitPrice >= stopLossPrice) {
+          return jsonOutput({ error: "short trade requires take_profit_price < stop_loss_price" });
+        }
 
         const snapshotId = input.captureSnapshot ? input.captureSnapshot(instrumentKey) : null;
 
@@ -151,8 +175,12 @@ export function buildTradingTools(input: {
       execute: async (args) => {
         if (!router) return jsonOutput({ error: "exchange router unavailable" });
         const instrumentKey = String(args.instrument_key);
-        const takeProfitPrice = args.take_profit_price == null ? null : Number(args.take_profit_price);
-        const stopLossPrice = args.stop_loss_price == null ? null : Number(args.stop_loss_price);
+        const tpParsed = positivePrice(args.take_profit_price, "take_profit_price");
+        if (tpParsed.error) return jsonOutput({ error: tpParsed.error });
+        const slParsed = positivePrice(args.stop_loss_price, "stop_loss_price");
+        if (slParsed.error) return jsonOutput({ error: slParsed.error });
+        const takeProfitPrice = tpParsed.price;
+        const stopLossPrice = slParsed.price;
         if (takeProfitPrice == null && stopLossPrice == null) return jsonOutput({ error: "take_profit_price or stop_loss_price is required" });
 
         let directionStr = args.direction ? String(args.direction).toLowerCase() : null;
@@ -161,8 +189,10 @@ export function buildTradingTools(input: {
           if (positions.length === 1) directionStr = positions[0].side;
           else return jsonOutput({ error: "direction is required when it cannot be inferred from one matching exchange position" });
         }
+        if (directionStr !== "long" && directionStr !== "short") return jsonOutput({ error: `invalid direction: ${directionStr}` });
         const isBuy = directionStr === "long";
         const size = args.size != null ? Number(args.size) : undefined;
+        if (size !== undefined && (!Number.isFinite(size) || size <= 0)) return jsonOutput({ error: "size must be > 0" });
         if (size === undefined) {
           const positions = await router.getPositions(instrumentKey);
           const match = positions.find((p) => p.side === directionStr);

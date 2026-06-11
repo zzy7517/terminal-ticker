@@ -34,14 +34,14 @@ export class AppRuntime {
   socialFeedService: SocialFeedService;
   readonly xAuthStore: XAuthStore;
   readonly memoryBackend: LocalMemoryBackend;
-  readonly memoryPipeline: MemoryPipeline | null;
+  memoryPipeline: MemoryPipeline | null;
   readonly sessionIndex: SessionIndex;
   readonly cronJobStore: CronJobStore;
   readonly cronScheduler: CronScheduler;
   readonly mcpManager: McpClientManager | null;
   jin10Service: Jin10Service;
   readonly browserManager: BrowserManager;
-  readonly optionsService: OptionsService | null;
+  optionsService: OptionsService | null;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
   readonly activeAgents = new Map<string, Agent>();
@@ -147,10 +147,17 @@ export class AppRuntime {
       mcpManager: this.mcpManager,
       newsStore: this.newsService.store,
     });
+    // Rebuild options/memory subsystems so toggling them via the config API
+    // takes effect without a process restart.
+    await this.optionsService?.close();
+    this.optionsService = config.options.enabled ? new OptionsService(config.options) : null;
+    await this.memoryPipeline?.shutdown();
+    this.memoryPipeline = this._buildMemoryPipeline(config);
     if (shouldRestart) {
       this.controller.start();
       await this.newsService.start();
       await this.jin10Service.start();
+      this.optionsService?.start();
     }
     this.cronScheduler.reload();
   }

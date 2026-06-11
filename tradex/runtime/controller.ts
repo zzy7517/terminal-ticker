@@ -15,6 +15,14 @@ type WorkerFactory = new (input: {
   emit: (event: FeedEvent) => void;
 }) => FeedWorker;
 
+/**
+ * Upper bound on queued feed events. The queue is only drained by state()
+ * reads (WebSocket broadcast / REST); without a bound, a headless run with no
+ * connected clients would grow it without limit. Quote payloads are full
+ * snapshots, so dropping the oldest events is safe.
+ */
+const MAX_QUEUED_EVENTS = 10_000;
+
 export class TickerController {
   readonly config: AppConfig;
   readonly instruments: readonly MarketInstrument[];
@@ -35,7 +43,12 @@ export class TickerController {
     this.feedWorker = new Factory({
       config: input.config,
       instruments: input.instruments,
-      emit: (event) => this.eventQueue.push(event),
+      emit: (event) => {
+        this.eventQueue.push(event);
+        if (this.eventQueue.length > MAX_QUEUED_EVENTS) {
+          this.eventQueue.splice(0, this.eventQueue.length - MAX_QUEUED_EVENTS);
+        }
+      },
     });
   }
 
@@ -126,12 +139,15 @@ export class TickerController {
       const quote = this.quotes[key];
       const incoming = Array.isArray(payload.candles) ? payload.candles : [];
       const multiRaw = payload.multi_timeframe_candles;
+      const multi =
+        multiRaw && typeof multiRaw === "object" && !Array.isArray(multiRaw)
+          ? Object.fromEntries(Object.entries(multiRaw as Record<string, unknown>).map(([interval, candles]) => [interval, Array.isArray(candles) ? candles : []]))
+          : null;
+      // A transient fetch failure produces an empty payload — keep the last
+      // good candles instead of wiping the chart and agent context.
       quote.applyCandles({
-        candles: incoming.length > 0 ? mergeCandles(quote.candles, incoming) : [],
-        multiTimeframeCandles:
-          multiRaw && typeof multiRaw === "object" && !Array.isArray(multiRaw)
-            ? Object.fromEntries(Object.entries(multiRaw as Record<string, unknown>).map(([interval, candles]) => [interval, Array.isArray(candles) ? candles : []]))
-            : undefined,
+        candles: incoming.length > 0 ? mergeCandles(quote.candles, incoming) : quote.candles,
+        multiTimeframeCandles: multi && Object.keys(multi).length > 0 ? multi : undefined,
       });
       return true;
     }

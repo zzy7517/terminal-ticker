@@ -14,6 +14,7 @@ import { buildIVSurface, deriveRegimeParams, deriveSpotVolCoupling } from "./iv_
 import { computeHedgeImpulseCurve } from "./hedge_impulse.js";
 import { computePressureCloud } from "./pressure_cloud.js";
 import { calculateFullExposure } from "./exposure.js";
+import { expiryCloseMs } from "./expiry.js";
 
 export class OptionsService {
   private readonly config: OptionsConfig;
@@ -220,6 +221,7 @@ export class OptionsService {
     const { spotPrice, contracts } = chain;
     const r = this.config.riskFreeRate;
     const q = this.config.dividendYield;
+    const contractMultiplier = chain.contractMultiplier;
 
     try {
       // Full 4D exposure across all expirations
@@ -227,6 +229,7 @@ export class OptionsService {
         riskFreeRate: r,
         dividendYield: q,
         asOfTimestamp: chain.timestamp,
+        contractMultiplier,
       });
     } catch (err) {
       console.warn(`[options] exposure failed for ${chain.underlying}:`, err instanceof Error ? err.message : err);
@@ -249,6 +252,7 @@ export class OptionsService {
       const impulse = computeHedgeImpulseCurve(contracts, spotPrice, k, {
         riskFreeRate: r,
         dividendYield: q,
+        contractMultiplier,
       });
       snapshot.hedgeImpulse = impulse;
 
@@ -263,8 +267,8 @@ export class OptionsService {
     let best: string | null = null;
     let bestMs = Infinity;
     for (const c of contracts) {
-      // Match GexCalculator.timeToExpiration: 4:00 PM ET on the expiration date.
-      const expMs = Date.parse(`${c.expiration}T16:00:00-04:00`);
+      // Match GexCalculator.timeToExpiration: 4:00 PM ET close (DST-aware).
+      const expMs = expiryCloseMs(c.expiration);
       if (!isFinite(expMs) || expMs <= nowMs) continue;
       if (expMs < bestMs) {
         bestMs = expMs;

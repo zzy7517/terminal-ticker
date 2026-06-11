@@ -72,7 +72,7 @@ export class DeribitProvider implements OptionsDataProvider {
   readonly rateLimit = 60;
 
   private readonly rateLimiter: RateLimiter;
-  private readonly currencies: string[];
+  readonly currencies: string[];
 
   constructor(currencies: string[] = ["BTC", "ETH"]) {
     this.rateLimiter = new RateLimiter(60);
@@ -145,6 +145,7 @@ export class DeribitProvider implements OptionsDataProvider {
         contracts: [],
         timestamp: Date.now(),
         provider: this.name,
+        contractMultiplier: 1,
       };
     }
 
@@ -186,6 +187,9 @@ export class DeribitProvider implements OptionsDataProvider {
       contracts,
       timestamp: Date.now(),
       provider: this.name,
+      // Deribit OI is denominated in coins (1 contract = 1 BTC/ETH), not the
+      // US equity 100-share multiplier.
+      contractMultiplier: 1,
     };
   }
 

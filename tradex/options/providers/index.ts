@@ -100,7 +100,8 @@ export function createProvider(config: OptionsConfig): OptionsDataProvider {
 
 /**
  * Determine which provider to use for a given symbol.
- * Crypto symbols go to Deribit, everything else goes to the primary provider.
+ * Crypto symbols (well-known set + whatever the Deribit provider is configured
+ * to track) go to Deribit, everything else goes to the primary provider.
  */
 const CRYPTO_SYMBOLS = new Set(["BTC", "ETH", "SOL"]);
 
@@ -109,7 +110,8 @@ export function resolveProviderForSymbol(
   primary: OptionsDataProvider,
   deribit: DeribitProvider | null,
 ): OptionsDataProvider {
-  if (deribit && CRYPTO_SYMBOLS.has(symbol.toUpperCase())) {
+  const upper = symbol.toUpperCase();
+  if (deribit && (CRYPTO_SYMBOLS.has(upper) || deribit.currencies.some((c) => c.toUpperCase() === upper))) {
     return deribit;
   }
   return primary;

@@ -29,6 +29,7 @@ import {
   type StrikeGex,
 } from "./domain.js";
 import { charm, gamma, vanna } from "./greeks.js";
+import { yearsToExpiry } from "./expiry.js";
 
 // ============================================================================
 // GEX Calculator
@@ -61,6 +62,7 @@ export class GexCalculator {
    */
   calculate(chain: OptionChain): GexSnapshot {
     const { spotPrice, contracts, underlying, provider, timestamp } = chain;
+    const multiplier = chain.contractMultiplier ?? CONTRACT_MULTIPLIER;
 
     // Filter valid contracts
     const valid = contracts.filter(c => this.isValidContract(c));
@@ -85,8 +87,8 @@ export class GexCalculator {
       // Calculate gamma
       const g = gamma(spotPrice, contract.strike, T, this.r, this.q, iv);
 
-      // GEX = OI × Γ × 100 × S² × 0.01
-      const rawGex = contract.openInterest * g * CONTRACT_MULTIPLIER * (spotPrice ** 2) * ONE_PERCENT_MOVE;
+      // GEX = OI × Γ × multiplier × S² × 0.01
+      const rawGex = contract.openInterest * g * multiplier * (spotPrice ** 2) * ONE_PERCENT_MOVE;
 
       // Sign convention: calls positive, puts negative
       const signedGex = contract.type === "call" ? rawGex : -rawGex;
@@ -135,7 +137,7 @@ export class GexCalculator {
       : spotPrice;
 
     // Charm & Vanna
-    const charmVanna = this.calculateCharmVanna(valid, spotPrice, now);
+    const charmVanna = this.calculateCharmVanna(valid, spotPrice, now, multiplier);
 
     return {
       timestamp: now,
@@ -276,6 +278,7 @@ export class GexCalculator {
     contracts: OptionQuote[],
     spotPrice: number,
     nowMs: number,
+    multiplier: number = CONTRACT_MULTIPLIER,
   ): CharmVannaFlow {
     let charmFlow = 0;
     let vannaFlow = 0;
@@ -291,18 +294,20 @@ export class GexCalculator {
       const iv = c.impliedVol ?? 0;
       if (iv < MIN_IV || iv > MAX_IV) continue;
 
-      // Charm flow: OI × Charm × 100 × timeFraction
+      // Charm flow ($): OI × Charm × multiplier × timeFraction × S
+      // (OI × ΔΔ × multiplier is share flow; × spot converts to dollars,
+      // matching the CharmVannaFlow "$ flow" contract.)
       const charmVal = charm(spotPrice, c.strike, T, this.r, this.q, iv, c.type);
-      const rawCharmFlow = c.openInterest * charmVal * CONTRACT_MULTIPLIER * timeFraction;
+      const rawCharmFlow = c.openInterest * charmVal * multiplier * timeFraction * spotPrice;
       // Dealer positioning: short calls (negative), long puts (positive)
       const signedCharm = c.type === "call" ? -rawCharmFlow : rawCharmFlow;
 
       charmFlow += signedCharm;
       charmByStrike[c.strike] = (charmByStrike[c.strike] ?? 0) + signedCharm;
 
-      // Vanna flow: OI × Vanna × ΔIV × 100
+      // Vanna flow ($): OI × Vanna × ΔIV × multiplier × S
       const vannaVal = vanna(spotPrice, c.strike, T, this.r, this.q, iv);
-      const rawVannaFlow = c.openInterest * vannaVal * this.vannaBump * CONTRACT_MULTIPLIER;
+      const rawVannaFlow = c.openInterest * vannaVal * this.vannaBump * multiplier * spotPrice;
       const signedVanna = c.type === "call" ? -rawVannaFlow : rawVannaFlow;
 
       vannaFlow += signedVanna;
@@ -329,13 +334,9 @@ export class GexCalculator {
     return true;
   }
 
-  /** Calculate time to expiration in years. Assumes 4:00 PM ET close on expiration date. */
+  /** Calculate time to expiration in years. Assumes 4:00 PM ET close on expiration date (DST-aware). */
   private timeToExpiration(expirationStr: string, nowMs: number): number {
-    // Parse expiration as 4:00 PM ET on that date
-    const expDate = new Date(expirationStr + "T16:00:00-04:00");
-    const diffMs = expDate.getTime() - nowMs;
-    if (diffMs <= 0) return 0;
-    return diffMs / (365.25 * 24 * 3600 * 1000);
+    return yearsToExpiry(expirationStr, nowMs);
   }
 
   private emptySnapshot(symbol: string, spotPrice: number, timestamp: number, provider: string): GexSnapshot {
