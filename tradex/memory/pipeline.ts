@@ -1,5 +1,9 @@
 import type { AgentConfig, MemoryConfig } from "../config/index.js";
 import type { ChatResponse, LLMChatClient } from "../agent/llm_client.js";
+import {
+  agentConfigForModelSelection,
+  type ModelRuntimeSnapshot,
+} from "../agent/model_runtime.js";
 import type { TradeStore } from "../trading/store.js";
 import { ensureMemoryLayout } from "./paths.js";
 import { MemoryRuntimePolicy } from "./policy.js";
@@ -11,7 +15,7 @@ import {
   SOURCE_TRADE_EVENT,
 } from "./state.js";
 import { MemoryFileStorage } from "./write/storage.js";
-import { Phase1Processor, normalizePhase1Output, type Phase1Extraction, type LLMProviderFactory, type SessionSource } from "./write/phase1.js";
+import { Phase1Processor, type LLMProviderFactory, type SessionSource } from "./write/phase1.js";
 import { Phase2Runner } from "./write/phase2.js";
 import { elapsedMs, memoryLog } from "./telemetry.js";
 
@@ -112,6 +116,7 @@ export class MemoryPipeline {
     agentConfigProvider?: (() => AgentConfig | null) | null;
     phase2ConfigProvider?: (() => AgentConfig | null) | null;
     llmProviderFactory?: LLMProviderFactory;
+    modelRuntimeSnapshot?: ModelRuntimeSnapshot;
     policy?: MemoryRuntimePolicy;
   }) {
     this.config = input.config;
@@ -125,7 +130,9 @@ export class MemoryPipeline {
     const phase1AgentConfigProvider = agentConfigProvider
       ? (() => {
           const config = agentConfigProvider();
-          return config && input.config.extractModel ? { ...config, model: input.config.extractModel } : config;
+          return config
+            ? agentConfigForModelSelection(config, input.config.extractModel)
+            : config;
         })
       : null;
     const llmProviderFactory = input.llmProviderFactory ?? (() => { throw new Error("no LLM provider factory configured"); }) as unknown as LLMProviderFactory;
@@ -163,6 +170,7 @@ export class MemoryPipeline {
       agentConfigProvider: input.phase2ConfigProvider ?? agentConfigProvider,
       rateLimitGuard: this.rateLimitGuard,
       consolidationModel: input.config.consolidationModel,
+      modelRuntimeSnapshot: input.modelRuntimeSnapshot,
       heartbeatIntervalMs: DEFAULT_PHASE2_HEARTBEAT_MS,
     });
   }

@@ -18,7 +18,7 @@ import { resolveAgentModelFromConfig } from "./models.js";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { TextContent } from "@earendil-works/pi-ai";
-import { createPiModelAccess } from "./pi_runtime.js";
+import type { ModelRuntimeSnapshot } from "./model_runtime.js";
 import { fetchProviderModelCatalog } from "./list_models.js";
 
 export class LLMProviderUnavailable extends Error {}
@@ -28,6 +28,8 @@ export class LLMProviderUnavailable extends Error {}
  * a simple chat client for the memory pipeline.
  */
 export class AgentModelRegistry {
+  constructor(private readonly modelRuntime: ModelRuntimeSnapshot) {}
+
   /** Resolve config into an AgentModel value object. */
   resolve(config: AgentConfig): AgentModel {
     return resolveAgentModelFromConfig(config);
@@ -39,7 +41,7 @@ export class AgentModelRegistry {
    * pipeline.
    */
   createProvider(config: AgentConfig): LLMChatClient {
-    const { model, modelRegistry } = createPiModelAccess(config);
+    const { model, modelRegistry, requiresAuth } = this.modelRuntime.resolve(config);
     return {
       name: model.provider,
       model: model.id,
@@ -52,7 +54,12 @@ export class AgentModelRegistry {
           tools: [],
         }, {
           apiKey: auth.apiKey,
-          headers: auth.headers,
+          headers: requiresAuth
+            ? auth.headers
+            : {
+                ...auth.headers,
+                Authorization: null as unknown as string,
+              },
         });
         // Forward text deltas to legacy onDelta callback while awaiting final result
         if (onDelta) {
@@ -80,8 +87,6 @@ export class AgentModelRegistry {
     return fetchProviderModelCatalog(config, providerOverride);
   }
 }
-
-export const DEFAULT_AGENT_MODEL_REGISTRY = new AgentModelRegistry();
 
 // Re-export the supported provider constants so callers don't have to import
 // from config to know what's registered.

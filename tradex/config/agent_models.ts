@@ -13,8 +13,26 @@ export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 export const DEFAULT_CODEX_MODEL = "gpt-5.4-mini";
 export const DEFAULT_ANTHROPIC_MODEL = "global.anthropic.claude-opus-4-6-v1";
 export const DEFAULT_OPENAI_MODEL = "gpt-4o";
+export const CODEX_PI_API = "openai-codex-responses";
+export const ANTHROPIC_PI_API = "anthropic-messages";
+export const OPENAI_PI_API = "openai-completions";
 
-const SUPPORTED_AGENT_PROVIDERS = new Set([CODEX_PROVIDER, ANTHROPIC_PROVIDER, OPENAI_PROVIDER]);
+/** Logical Tradex provider IDs mapped to Pi's registry provider IDs. */
+export const PI_PROVIDER_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  [CODEX_PROVIDER]: "openai-codex",
+});
+
+export function toPiProviderId(provider: string): string {
+  return PI_PROVIDER_ALIASES[provider] ?? provider;
+}
+
+export function fromPiProviderId(provider: string): string {
+  for (const [logicalId, piId] of Object.entries(PI_PROVIDER_ALIASES)) {
+    if (piId === provider) return logicalId;
+  }
+  return provider;
+}
+
 const SUPPORTED_API_MODES = new Set([CODEX_API_MODE, ANTHROPIC_MESSAGES_API_MODE, OPENAI_COMPLETIONS_API_MODE]);
 const SUPPORTED_REASONING_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const CODEX_MODEL_ALIASES = new Map([
@@ -37,10 +55,16 @@ export function normalizeProvider(rawValue: unknown): string {
   if (typeof rawValue !== "string") throw new Error("agent.provider must be a string");
   const provider = rawValue.trim().toLowerCase();
   if (!provider) return CODEX_PROVIDER;
-  if (!SUPPORTED_AGENT_PROVIDERS.has(provider)) {
-    throw new Error(`agent.provider must be one of: ${[...SUPPORTED_AGENT_PROVIDERS].sort().join(", ")}`);
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(provider)) {
+    throw new Error("agent.provider must use 1-64 lowercase letters, numbers, dots, underscores, or hyphens");
   }
-  return provider;
+  return fromPiProviderId(provider);
+}
+
+export function defaultProviderApi(provider: string): string {
+  if (provider === CODEX_PROVIDER) return CODEX_PI_API;
+  if (provider === ANTHROPIC_PROVIDER) return ANTHROPIC_PI_API;
+  return OPENAI_PI_API;
 }
 
 export function normalizeApiMode(provider: string, rawValue?: unknown): string {
@@ -48,6 +72,7 @@ export function normalizeApiMode(provider: string, rawValue?: unknown): string {
     if (provider === CODEX_PROVIDER) return CODEX_API_MODE;
     if (provider === ANTHROPIC_PROVIDER) return ANTHROPIC_MESSAGES_API_MODE;
     if (provider === OPENAI_PROVIDER) return OPENAI_COMPLETIONS_API_MODE;
+    return OPENAI_COMPLETIONS_API_MODE;
   }
   if (typeof rawValue !== "string") throw new Error("agent.api_mode must be a string");
   const apiMode = rawValue.trim().toLowerCase();
@@ -61,7 +86,18 @@ export function normalizeApiMode(provider: string, rawValue?: unknown): string {
   if (provider === OPENAI_PROVIDER && apiMode !== OPENAI_COMPLETIONS_API_MODE) {
     throw new Error(`agent.api_mode for openai must be ${OPENAI_COMPLETIONS_API_MODE}`);
   }
-  if (!SUPPORTED_API_MODES.has(apiMode)) {
+  if (
+    provider !== CODEX_PROVIDER
+    && provider !== ANTHROPIC_PROVIDER
+    && provider !== OPENAI_PROVIDER
+    && !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(apiMode)
+  ) {
+    throw new Error("agent.api_mode must be a safe wire-format identifier");
+  }
+  if (
+    (provider === CODEX_PROVIDER || provider === ANTHROPIC_PROVIDER || provider === OPENAI_PROVIDER)
+    && !SUPPORTED_API_MODES.has(apiMode)
+  ) {
     throw new Error(`agent.api_mode must be one of: ${[...SUPPORTED_API_MODES].sort().join(", ")}`);
   }
   return apiMode;
@@ -121,5 +157,5 @@ export function resolveAgentModel(config: {
     // Basic chat + tool-calling works without it; revisit per-backend later.
     return { provider, apiMode, model, reasoningEffort, supportsReasoning: false, requiresAccountId: false };
   }
-  throw new Error(`Unsupported agent provider: ${provider}`);
+  return { provider, apiMode, model, reasoningEffort, supportsReasoning: true, requiresAccountId: false };
 }

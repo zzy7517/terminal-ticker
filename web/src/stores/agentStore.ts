@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type {
   AgentContextUsage,
   AgentMessage,
-  AgentModelOption,
+  AgentModelRegistry,
   AgentSessionResponse,
   AgentSessionRun,
   AgentSessionStats,
@@ -13,40 +13,76 @@ import {
   abortAgentSession,
   createAgentSession,
   deleteAgentSessionById,
+  fetchAgentModelRegistry,
   fetchAgentSession,
   fetchAgentSessions,
-  fetchProviderModels,
   steerAgentSession,
   streamAgentMessage,
   type ImageAttachment,
 } from '../api';
-import { AGENT_PROVIDER_OPTIONS } from '../constants';
 
 const STORAGE_KEY_PROVIDER = 'tradex-agent-provider';
-const STORAGE_KEY_MODEL = 'tradex-agent-model';
+const STORAGE_KEY_MODELS = 'tradex-agent-models-by-provider';
 
 function loadPersistedProvider(): string {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_PROVIDER);
-    if (stored && AGENT_PROVIDER_OPTIONS.some((o) => o.provider === stored)) return stored;
-  } catch {}
-  return AGENT_PROVIDER_OPTIONS[0].provider;
-}
-
-function loadPersistedModel(): string {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_MODEL);
     if (stored) return stored;
   } catch {}
-  return AGENT_PROVIDER_OPTIONS[0].defaultModel;
+  return '';
+}
+
+function loadPersistedModels(): Record<string, string> {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_MODELS);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return Object.fromEntries(
+        Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+      );
+    }
+  } catch {}
+  return {};
 }
 
 function persistProviderModel(provider: string, model: string): void {
   try {
     localStorage.setItem(STORAGE_KEY_PROVIDER, provider);
-    localStorage.setItem(STORAGE_KEY_MODEL, model);
+    const models = loadPersistedModels();
+    if (provider && model) models[provider] = model;
+    localStorage.setItem(STORAGE_KEY_MODELS, JSON.stringify(models));
   } catch {}
 }
+
+function selectableModels(registry: AgentModelRegistry | null, provider?: string) {
+  return registry?.models.filter((model) => (
+    model.selected && model.runnable && (!provider || model.providerId === provider)
+  )) ?? [];
+}
+
+function registrySelection(
+  registry: AgentModelRegistry,
+  provider: string,
+  model: string,
+): { provider: string; model: string } {
+  const persistedModels = loadPersistedModels();
+  const canonicalProvider = registry.providers.find((item) => (
+    item.providerId === provider || item.configProviderId === provider
+  ))?.providerId ?? provider;
+  const providerModels = selectableModels(registry, canonicalProvider);
+  const remembered = persistedModels[canonicalProvider] ?? persistedModels[provider];
+  const selected = providerModels.find((item) => item.id === model)
+    ?? providerModels.find((item) => item.id === remembered)
+    ?? providerModels[0]
+    ?? selectableModels(registry)[0];
+  return selected
+    ? { provider: selected.providerId, model: selected.id }
+    : { provider: canonicalProvider, model };
+}
+
+const initialProvider = loadPersistedProvider();
+const initialModels = loadPersistedModels();
 import { useMarketStore } from './marketStore';
 
 type ContextUsage = AgentContextUsage | null;
@@ -69,7 +105,8 @@ interface AgentState {
   agentProvider: string;
   agentModel: string;
   pendingToolCalls: Set<string>;
-  modelCache: Record<string, AgentModelOption[]>;
+  modelRegistry: AgentModelRegistry | null;
+  modelRegistryLoading: boolean;
   contextUsage: ContextUsage;
   sessionStats: SessionStatsState;
   activeAgentSessionId: string | null;
@@ -105,12 +142,10 @@ interface AgentState {
   addPendingImage: (image: ImageAttachment) => void;
   removePendingImage: (index: number) => void;
   clearPendingImages: () => void;
-  setModelCache: (updater: (prev: Record<string, AgentModelOption[]>) => Record<string, AgentModelOption[]>) => void;
   changeProviderModel: (provider: string, defaultModel: string) => void;
 
   initSessions: () => () => void;
-  syncProviderModel: (profiles: Record<string, { enabled: boolean; models: string[]; modelEfforts: Record<string, string> }>) => void;
-  fetchModelsForEnabledProviders: (profiles: Record<string, { enabled: boolean; models: string[]; modelEfforts: Record<string, string> }>) => void;
+  refreshModelRegistry: () => Promise<void>;
   runAgentAnalysis: () => Promise<void>;
   steerAgent: () => Promise<void>;
   abortAgent: () => Promise<void>;
@@ -125,6 +160,7 @@ type ActiveMirrorSource = Pick<
 >;
 
 const NEW_SESSION_PENDING_KEY = '__new__';
+let modelRegistryRequest: Promise<AgentModelRegistry> | null = null;
 
 function idleRun(sessionId: string): SessionRunProjection {
   return {
@@ -248,6 +284,13 @@ function cacheSession(
   return sessionId ? { ...cache, [sessionId]: payload } : cache;
 }
 
+function sessionProviderModel(payload: AgentSessionResponse | null): Partial<Pick<AgentState, 'agentProvider' | 'agentModel'>> {
+  const session = payload?.session;
+  if (!session?.provider || !session.model) return {};
+  persistProviderModel(session.provider, session.model);
+  return { agentProvider: session.provider, agentModel: session.model };
+}
+
 function responseForSession(state: AgentState, sessionId: string): AgentSessionResponse {
   const cached = state.agentSessionById[sessionId];
   if (cached) return cached;
@@ -297,10 +340,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentSessionActionKey: null,
   agentBusyKey: null,
   agentPrompt: '',
-  agentProvider: loadPersistedProvider(),
-  agentModel: loadPersistedModel(),
+  agentProvider: initialProvider,
+  agentModel: initialModels[initialProvider] ?? '',
   pendingToolCalls: new Set(),
-  modelCache: {},
+  modelRegistry: null,
+  modelRegistryLoading: false,
   contextUsage: null,
   sessionStats: null,
   activeAgentSessionId: null,
@@ -327,7 +371,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         }
       : s.runStateBySessionId;
     const next = { ...s, activeAgentSessionId, agentSessionById, runStateBySessionId };
-    return { activeAgentSessionId, agentSessionById, runStateBySessionId, ...activeFields(next) };
+    return {
+      activeAgentSessionId,
+      agentSessionById,
+      runStateBySessionId,
+      ...sessionProviderModel(session),
+      ...activeFields(next),
+    };
   }),
   setAgentSessionHistory: (history) => set((s) => {
     const runStateBySessionId = mergeHistoryRuns(history, s.runStateBySessionId);
@@ -341,8 +391,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       : s.draftBySessionId,
   })),
   setAgentProvider: (provider) => {
-    set({ agentProvider: provider });
-    persistProviderModel(provider, get().agentModel);
+    const current = get();
+    const selection = current.modelRegistry
+      ? registrySelection(current.modelRegistry, provider, '')
+      : { provider, model: loadPersistedModels()[provider] ?? '' };
+    set({ agentProvider: selection.provider, agentModel: selection.model });
+    persistProviderModel(selection.provider, selection.model);
   },
   setAgentModel: (model) => {
     set({ agentModel: model });
@@ -374,44 +428,31 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const next = { ...s, pendingImagesBySessionId };
     return { pendingImagesBySessionId, ...activeFields(next) };
   }),
-  setModelCache: (updater) => set((s) => ({ modelCache: updater(s.modelCache) })),
   changeProviderModel: (provider, defaultModel) => {
     set({ agentProvider: provider, agentModel: defaultModel });
     persistProviderModel(provider, defaultModel);
   },
 
-  syncProviderModel: (profiles) => {
-    const { agentProvider, agentModel } = get();
-    const currentProfile = profiles[agentProvider];
-    if (currentProfile?.enabled && currentProfile.models?.length) {
-      if (!currentProfile.models.includes(agentModel)) {
-        set({ agentModel: currentProfile.models[0] });
-      }
-    } else {
-      const firstEnabled = AGENT_PROVIDER_OPTIONS.find((o) => profiles[o.provider]?.enabled);
-      if (firstEnabled) {
-        const fp = profiles[firstEnabled.provider];
-        set({
-          agentProvider: firstEnabled.provider,
-          agentModel: fp?.models?.[0] || firstEnabled.defaultModel,
-        });
-      }
-    }
-  },
-
-  fetchModelsForEnabledProviders: (profiles) => {
-    const { modelCache } = get();
-    const enabledProviders = AGENT_PROVIDER_OPTIONS
-      .filter((o) => profiles[o.provider]?.enabled)
-      .map((o) => o.provider);
-    for (const provider of enabledProviders) {
-      if (modelCache[provider]?.length) continue;
-      fetchProviderModels(provider)
-        .then((payload) => {
-          const visible = payload.models.filter((m) => m.supportedInApi && m.visibility !== 'hide');
-          set((s) => ({ modelCache: { ...s.modelCache, [provider]: visible } }));
-        })
-        .catch(() => {});
+  refreshModelRegistry: async () => {
+    set({ modelRegistryLoading: true });
+    try {
+      modelRegistryRequest ??= fetchAgentModelRegistry().finally(() => {
+        modelRegistryRequest = null;
+      });
+      const registry = await modelRegistryRequest;
+      const current = get();
+      if (current.modelRegistry?.generation === registry.generation) return;
+      const selection = registrySelection(registry, current.agentProvider, current.agentModel);
+      set({
+        modelRegistry: registry,
+        agentProvider: selection.provider,
+        agentModel: selection.model,
+      });
+      persistProviderModel(selection.provider, selection.model);
+    } catch (error) {
+      console.error('model registry refresh failed:', error);
+    } finally {
+      set({ modelRegistryLoading: false });
     }
   },
 
@@ -443,11 +484,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             runStateBySessionId,
             activeAgentSessionId: s.activeAgentSessionId ?? firstSessionId,
           };
+          const activeSummary = payload.sessions.find((item) => item.id === next.activeAgentSessionId);
+          const activeSession = next.activeAgentSessionId
+            ? agentSessionById[next.activeAgentSessionId]
+              ?? (activeSummary ? sessionFromSummary(activeSummary) : null)
+            : null;
           return {
             agentSessionById,
             agentSessionHistory: payload.sessions,
             runStateBySessionId,
             activeAgentSessionId: next.activeAgentSessionId,
+            ...sessionProviderModel(activeSession),
             ...activeFields(next),
           };
         });
@@ -465,7 +512,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                   [sessionId]: mergeRunPayload(s.runStateBySessionId[sessionId], sessionId, sessionPayload.run),
                 };
                 const next = { ...s, agentSessionById, runStateBySessionId, activeAgentSessionId: sessionId };
-                return { agentSessionById, runStateBySessionId, activeAgentSessionId: sessionId, ...activeFields(next) };
+                return {
+                  agentSessionById,
+                  runStateBySessionId,
+                  activeAgentSessionId: sessionId,
+                  ...sessionProviderModel(sessionPayload),
+                  ...activeFields(next),
+                };
               });
             })
             .catch((error) => { console.error(error); if (!disposed) set({ agentSession: null }); })
@@ -907,7 +960,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     if (get().agentSessionById[sessionId]) {
       set((s) => {
         const next = { ...s, activeAgentSessionId: sessionId };
-        return { activeAgentSessionId: sessionId, ...activeFields(next) };
+        return {
+          activeAgentSessionId: sessionId,
+          ...sessionProviderModel(s.agentSessionById[sessionId]),
+          ...activeFields(next),
+        };
       });
       return;
     }
@@ -931,6 +988,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           agentSessionById,
           runStateBySessionId,
           activeAgentSessionId: sessionId,
+          ...sessionProviderModel(payload),
           ...activeFields(next),
         };
       });

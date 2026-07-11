@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { nowMs } from "../../db.js";
-import { FillKind, type Trade } from "../../trading/models.js";
 import type { TradeStore } from "../../trading/store.js";
 import { memoryHome } from "../paths.js";
 import { SOURCE_AGENT_SESSION, SOURCE_TRADE_EVENT, type Stage1Output } from "../state.js";

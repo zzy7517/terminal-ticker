@@ -9,6 +9,7 @@ import {
   DEFAULT_ANTHROPIC_MODEL,
   DEFAULT_CODEX_MODEL,
   DEFAULT_OPENAI_MODEL,
+  defaultProviderApi,
   normalizeApiMode,
   normalizeModel,
   normalizeProvider,
@@ -88,13 +89,29 @@ export interface CacheConfig {
 
 export interface ProviderProfile {
   enabled: boolean;
+  /** Pi wire-format API identifier, e.g. "openai-completions". */
+  api: string;
+  displayName: string;
+  requiresAuth: boolean;
   models: string[];
   modelEfforts: Array<[string, string]>;
   apiKey: string;
   /** Original TOML value (may be `${ENV}`); preserved on save so secrets stay as placeholders. */
   apiKeyRaw: string;
   baseUrl: string;
+  /** Legacy custom model IDs without metadata. */
   customModels: string[];
+  customModelDefinitions: CustomModelDefinition[];
+}
+
+export interface CustomModelDefinition {
+  id: string;
+  name: string;
+  api: string;
+  reasoning: boolean;
+  input: Array<"text" | "image">;
+  contextWindow: number;
+  maxTokens: number;
 }
 
 export type CandleContextMode = "raw" | "with_indicators";
@@ -260,30 +277,42 @@ function providerProfilesDefault(): Record<string, ProviderProfile> {
   return {
     [CODEX_PROVIDER]: {
       enabled: true,
+      api: defaultProviderApi(CODEX_PROVIDER),
+      displayName: "OpenAI Codex",
+      requiresAuth: true,
       models: [DEFAULT_CODEX_MODEL],
       modelEfforts: [],
       apiKey: "",
       apiKeyRaw: "",
       baseUrl: "",
       customModels: [],
+      customModelDefinitions: [],
     },
     [ANTHROPIC_PROVIDER]: {
       enabled: false,
+      api: defaultProviderApi(ANTHROPIC_PROVIDER),
+      displayName: "Anthropic",
+      requiresAuth: true,
       models: [DEFAULT_ANTHROPIC_MODEL],
       modelEfforts: [],
       apiKey: "",
       apiKeyRaw: "",
       baseUrl: "",
       customModels: [],
+      customModelDefinitions: [],
     },
     [OPENAI_PROVIDER]: {
       enabled: false,
+      api: defaultProviderApi(OPENAI_PROVIDER),
+      displayName: "OpenAI",
+      requiresAuth: true,
       models: [DEFAULT_OPENAI_MODEL],
       modelEfforts: [],
       apiKey: "",
       apiKeyRaw: "",
       baseUrl: "",
       customModels: [],
+      customModelDefinitions: [],
     },
   };
 }
@@ -511,7 +540,8 @@ function parseProviderSecret(raw: Record<string, unknown>, field: string): strin
 function parseModelsField(name: string, raw: Record<string, unknown>): string[] {
   if (Array.isArray(raw.models)) return raw.models.filter(Boolean).map((model) => normalizeModel(name, model));
   if (raw.model !== undefined && raw.model !== null) return [normalizeModel(name, raw.model)];
-  return [normalizeModel(name, null)];
+  const fallback = normalizeModel(name, null);
+  return fallback ? [fallback] : [];
 }
 
 function parseCustomModelsField(raw: Record<string, unknown>): string[] {
@@ -526,6 +556,48 @@ function parseCustomModelsField(raw: Record<string, unknown>): string[] {
     out.push(trimmed);
   }
   return out;
+}
+
+function parseCustomModelDefinitions(
+  raw: Record<string, unknown>,
+  providerApi: string,
+  field: string,
+): CustomModelDefinition[] {
+  const values = [
+    ...(Array.isArray(raw.custom_model_definitions) ? raw.custom_model_definitions : []),
+    ...(Array.isArray(raw.custom_models)
+      ? raw.custom_models.filter((value) => value !== null && typeof value === "object" && !Array.isArray(value))
+      : []),
+  ];
+  if (values.length === 0) return [];
+  const definitions = new Map<string, CustomModelDefinition>();
+  for (const [index, value] of values.entries()) {
+    const item = asRecord(value, `${field}.custom_model_definitions[${index}]`);
+    const id = typeof item.id === "string" ? item.id.trim() : "";
+    if (!id) throw new Error(`${field}.custom_model_definitions[${index}].id is required`);
+    const api = typeof item.api === "string" && item.api.trim() ? item.api.trim() : providerApi;
+    const input = Array.isArray(item.input)
+      ? item.input.filter((entry): entry is "text" | "image" => entry === "text" || entry === "image")
+      : ["text" as const];
+    const contextWindow = Number(item.context_window ?? item.contextWindow);
+    const maxTokens = Number(item.max_tokens ?? item.maxTokens);
+    if (!Number.isInteger(contextWindow) || contextWindow <= 0) {
+      throw new Error(`${field}.custom_model_definitions[${index}].context_window must be a positive integer`);
+    }
+    if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
+      throw new Error(`${field}.custom_model_definitions[${index}].max_tokens must be a positive integer`);
+    }
+    definitions.set(id, {
+      id,
+      name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : id,
+      api,
+      reasoning: normalizeBool(item.reasoning, `${field}.custom_model_definitions[${index}].reasoning`, false),
+      input: input.length > 0 ? input : ["text"],
+      contextWindow,
+      maxTokens,
+    });
+  }
+  return [...definitions.values()];
 }
 
 function parseModelEfforts(name: string, raw: Record<string, unknown>): Array<[string, string]> {
@@ -546,16 +618,28 @@ function parseProviderProfiles(rawAgent: Record<string, unknown>): Record<string
   if (rawProviders && typeof rawProviders === "object" && !Array.isArray(rawProviders)) {
     const providers = rawProviders as Record<string, unknown>;
     const profiles: Record<string, ProviderProfile> = {};
-    for (const name of [CODEX_PROVIDER, ANTHROPIC_PROVIDER, OPENAI_PROVIDER]) {
-      const raw = asRecord(providers[name], `agent.providers.${name}`);
+    for (const [rawName, rawValue] of Object.entries(providers)) {
+      const name = normalizeProvider(rawName);
+      if (profiles[name]) throw new Error(`duplicate agent provider: ${name}`);
+      const field = `agent.providers.${name}`;
+      const raw = asRecord(rawValue, field);
+      const api = typeof raw.api === "string" && raw.api.trim()
+        ? raw.api.trim()
+        : defaultProviderApi(name);
       profiles[name] = {
-        enabled: normalizeBool(raw.enabled, `agent.providers.${name}.enabled`, false),
+        enabled: normalizeBool(raw.enabled, `${field}.enabled`, false),
+        api,
+        displayName: typeof raw.display_name === "string" && raw.display_name.trim()
+          ? raw.display_name.trim()
+          : name,
+        requiresAuth: normalizeBool(raw.requires_auth, `${field}.requires_auth`, true),
         models: parseModelsField(name, raw),
         modelEfforts: parseModelEfforts(name, raw),
         apiKey: parseProviderSecret(raw, "api_key"),
         apiKeyRaw: parseProviderSecretRaw(raw, "api_key"),
         baseUrl: parseProviderSecret(raw, "base_url"),
         customModels: parseCustomModelsField(raw),
+        customModelDefinitions: parseCustomModelDefinitions(raw, api, field),
       };
     }
     return profiles;
@@ -568,17 +652,25 @@ function parseProviderProfiles(rawAgent: Record<string, unknown>): Record<string
     for (const name of Object.keys(defaults)) {
       defaults[name] =
         name === provider
-          ? { enabled: true, models: [model], modelEfforts: [[model, effort]], apiKey: "", apiKeyRaw: "", baseUrl: "", customModels: [] }
-          : { enabled: false, models: [normalizeModel(name, null)], modelEfforts: [], apiKey: "", apiKeyRaw: "", baseUrl: "", customModels: [] };
+          ? { ...defaults[name], enabled: true, models: [model], modelEfforts: [[model, effort]] }
+          : { ...defaults[name], enabled: false, models: [normalizeModel(name, null)], modelEfforts: [] };
     }
   }
   return defaults;
 }
 
 function primaryFromProfiles(profiles: Record<string, ProviderProfile>): [string, string, string] {
-  for (const name of [CODEX_PROVIDER, ANTHROPIC_PROVIDER, OPENAI_PROVIDER]) {
+  const ordered = [
+    CODEX_PROVIDER,
+    ANTHROPIC_PROVIDER,
+    OPENAI_PROVIDER,
+    ...Object.keys(profiles).filter((name) => name !== CODEX_PROVIDER && name !== ANTHROPIC_PROVIDER && name !== OPENAI_PROVIDER),
+  ];
+  for (const name of ordered) {
     const profile = profiles[name];
-    if (profile?.enabled) return [name, profile.models[0] ?? "", effortFor(profile, profile.models[0] ?? "")];
+    if (profile?.enabled && profile.models.length > 0) {
+      return [name, profile.models[0], effortFor(profile, profile.models[0])];
+    }
   }
   return [CODEX_PROVIDER, DEFAULT_CODEX_MODEL, "medium"];
 }
@@ -616,11 +708,29 @@ export function parseSkillsConfig(rawSkillsValue: unknown): SkillsConfig {
 export function parseAgentConfig(rawAgentValue: unknown): AgentConfig {
   const rawAgent = asRecord(rawAgentValue, "agent");
   const profiles = parseProviderProfiles(rawAgent);
-  const [provider, model, reasoningEffort] = primaryFromProfiles(profiles);
+  const [fallbackProvider, fallbackModel, fallbackEffort] = primaryFromProfiles(profiles);
+  const requestedProvider = typeof rawAgent.default_provider === "string"
+    ? normalizeProvider(rawAgent.default_provider)
+    : fallbackProvider;
+  const provider = profiles[requestedProvider] ? requestedProvider : fallbackProvider;
+  const profile = profiles[provider];
+  const model = typeof rawAgent.default_model === "string" && rawAgent.default_model.trim()
+    ? normalizeModel(provider, rawAgent.default_model)
+    : provider === fallbackProvider
+      ? fallbackModel
+      : profile.models[0] ?? fallbackModel;
+  const reasoningEffort = profile
+    ? effortFor(profile, model)
+    : fallbackEffort;
   return {
     enabled: normalizeBool(rawAgent.enabled, "agent.enabled", true),
     provider,
-    apiMode: normalizeApiMode(provider),
+    apiMode: normalizeApiMode(
+      provider,
+      provider === CODEX_PROVIDER || provider === ANTHROPIC_PROVIDER || provider === OPENAI_PROVIDER
+        ? undefined
+        : profiles[provider]?.api,
+    ),
     model,
     systemPrompt: typeof rawAgent.system_prompt === "string" ? rawAgent.system_prompt.trim() : "",
     maxCandles: coerceMinInt(rawAgent.max_candles, "agent.max_candles", 40, 10),

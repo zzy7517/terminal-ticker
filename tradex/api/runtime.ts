@@ -19,6 +19,10 @@ import { CronScheduler } from "../cron/scheduler.js";
 import { CronJobStore } from "../cron/job_store.js";
 import type { ActiveAgentRun } from "../agent/pi_runtime.js";
 import { AgentModelRegistry } from "../agent/model_registry.js";
+import {
+  buildModelRuntimeSnapshot,
+  type ModelRuntimeSnapshot,
+} from "../agent/model_runtime.js";
 import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 import { Jin10Service } from "../jin10/index.js";
 import { BrowserManager } from "../browser/index.js";
@@ -48,16 +52,22 @@ export class AppRuntime {
   readonly lockedAgentSessions = new Set<string>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
   readonly activeAgents = new Map<string, ActiveAgentRun>();
+  private _modelRuntimeSnapshot: ModelRuntimeSnapshot;
   private running = false;
 
   // Private to enforce async construction via `create`; wires all subsystems
   // together but does not start any background tasks.
-  private constructor(config: AppConfig, instruments: MarketInstrument[]) {
+  private constructor(
+    config: AppConfig,
+    instruments: MarketInstrument[],
+    modelRuntimeSnapshot: ModelRuntimeSnapshot,
+  ) {
     this.config = config;
+    this._modelRuntimeSnapshot = modelRuntimeSnapshot;
     this.instruments = instruments;
     this.controller = new TickerController({ config, instruments });
     this.tradeStore = new TradeStore();
-    this.exchangeRouter = new ExchangeRouter({ tradeStore: this.tradeStore, tradingConfig: config.trading });
+    this.exchangeRouter = new ExchangeRouter({ tradingConfig: config.trading });
     this.newsService = new NewsService({ config: config.news });
     this.xAuthStore = new XAuthStore();
     this.socialFeedService = new SocialFeedService({
@@ -65,7 +75,7 @@ export class AppRuntime {
       clientFactory: () => new XInternalClient(this.xAuthStore.load()),
     });
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
-    this.memoryPipeline = this._buildMemoryPipeline(config);
+    this.memoryPipeline = this._buildMemoryPipeline(config, modelRuntimeSnapshot);
     this.memoryPort = new LocalMemoryPort(config.memory, () => this.memoryPipeline);
 
     // Wire MCP client manager
@@ -121,22 +131,39 @@ export class AppRuntime {
   // Resolves the instrument list asynchronously before constructing the runtime,
   // since instrument resolution may involve network calls to provider catalogs.
   static async create(config: AppConfig): Promise<AppRuntime> {
-    return new AppRuntime(config, await resolveInstruments(config.instruments));
+    const modelRuntimeSnapshot = buildModelRuntimeSnapshot(config.agent, 1);
+    return new AppRuntime(
+      config,
+      await resolveInstruments(config.instruments),
+      modelRuntimeSnapshot,
+    );
+  }
+
+  get modelRuntimeSnapshot(): ModelRuntimeSnapshot {
+    return this._modelRuntimeSnapshot;
   }
 
   // Hot-reloads config after a watchlist TOML change. Stops the controller and
   // news service, rebuilds all stateful subsystems with the new config, then
   // restarts them only if the runtime was already running.
   async reloadConfig(config: AppConfig): Promise<void> {
+    // Build and validate replacement state off to the side. No live caller can
+    // observe it until the single snapshot assignment below.
+    const nextModelRuntime = buildModelRuntimeSnapshot(
+      config.agent,
+      this._modelRuntimeSnapshot.generation + 1,
+    );
+    const nextInstruments = await resolveInstruments(config.instruments);
     const shouldRestart = this.running;
     await this.controller.stop();
     await this.newsService.stop();
     await this.jin10Service.stop();
     this.config = config;
+    this._modelRuntimeSnapshot = nextModelRuntime;
     // Re-apply the outbound proxy before rebuilding subsystems so new feeds
     // pick up the updated dispatcher on their first request.
     applyProxyConfig(config.proxy);
-    this.instruments = await resolveInstruments(config.instruments);
+    this.instruments = nextInstruments;
     this.controller = new TickerController({ config, instruments: this.instruments });
     this.exchangeRouter.tradingConfig = config.trading;
     this.newsService = new NewsService({ config: config.news });
@@ -154,7 +181,7 @@ export class AppRuntime {
     await this.optionsService?.close();
     this.optionsService = config.options.enabled ? new OptionsService(config.options) : null;
     await this.memoryPipeline?.shutdown();
-    this.memoryPipeline = this._buildMemoryPipeline(config);
+    this.memoryPipeline = this._buildMemoryPipeline(config, nextModelRuntime);
     this.memoryPort = new LocalMemoryPort(config.memory, () => this.memoryPipeline);
     if (shouldRestart) {
       this.controller.start();
@@ -308,10 +335,13 @@ export class AppRuntime {
   }
 
   // Builds the memory pipeline from current config; returns null when disabled.
-  private _buildMemoryPipeline(config: AppConfig): MemoryPipeline | null {
+  private _buildMemoryPipeline(
+    config: AppConfig,
+    modelRuntimeSnapshot: ModelRuntimeSnapshot,
+  ): MemoryPipeline | null {
     if (!config.memory.enabled) return null;
 
-    const registry = new AgentModelRegistry();
+    const registry = new AgentModelRegistry(modelRuntimeSnapshot);
     const tradeStore = this.tradeStore;
     const sessionSource = {
       listSessions(input: { limit?: number }) {
@@ -343,6 +373,7 @@ export class AppRuntime {
       tradeStore,
       agentConfigProvider,
       llmProviderFactory,
+      modelRuntimeSnapshot,
       policy: config.memory.generateMemories
         ? MemoryRuntimePolicy.normal()
         : MemoryRuntimePolicy.disabled(),

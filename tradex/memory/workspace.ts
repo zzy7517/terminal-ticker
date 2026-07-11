@@ -225,7 +225,7 @@ function snapshotFiles(root: string): Record<string, string> {
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
-      if (ignoredForSnapshot(root, full, entry.name)) continue;
+      if (ignoredForSnapshot(entry.name)) continue;
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile()) {
         try {
@@ -238,7 +238,7 @@ function snapshotFiles(root: string): Record<string, string> {
   return files;
 }
 
-function ignoredForSnapshot(root: string, full: string, name: string): boolean {
+function ignoredForSnapshot(name: string): boolean {
   if (name === ".git" || name === "__pycache__" || name.startsWith(".")) return true;
   if (name === PHASE2_DIFF_FILENAME) return true;
   if (name.endsWith(".sqlite3") || name.includes(".sqlite3-")) return true;

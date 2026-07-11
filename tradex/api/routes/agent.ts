@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import crypto from "node:crypto";
-import { DEFAULT_AGENT_MODEL_REGISTRY } from "../../agent/model_registry.js";
+import { AgentModelRegistry } from "../../agent/model_registry.js";
 import {
   clonePiSession,
   createPiSession,
@@ -19,7 +19,7 @@ import { buildTradingTools } from "../../agent/tools/trading.js";
 import { buildWebTools } from "../../agent/tools/web.js";
 import { buildBrowserTools } from "../../agent/tools/browser.js";
 import { buildOptionsTools } from "../../agent/tools/options.js";
-import { createFilesystemRegistry, setFilesystemRoot } from "../../agent/tools/filesystem.js";
+import { createFilesystemRegistry } from "../../agent/tools/filesystem.js";
 import { mergeRegistries } from "../../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../../mcp/index.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
@@ -206,6 +206,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         try {
           // ---- Load skills ----
           const requestConfig = agentConfigForRequest(runtime.config.agent, body);
+          const modelRuntime = runtime.modelRuntimeSnapshot;
           const skillsConfig = runtime.config.agent.skills;
           let skillsPromptBlock = "";
           const allowedSkillPaths = new Set<string>();
@@ -294,6 +295,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
           const agent = await createPiAgentRuntime({
             config: requestConfig,
+            modelRuntime,
             systemPrompt,
             tools,
             sessionManager: mgr,
@@ -543,15 +545,43 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     return c.json({ ok: true });
   });
 
+  // Exposes the immutable Pi catalog projection without credential material.
+  app.get("/api/agent/model-registry", (c) => {
+    return c.json(runtime.modelRuntimeSnapshot.toDTO());
+  });
+
+  app.post("/api/agent/model-registry/resolve", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const provider = typeof body.provider === "string" ? body.provider : "";
+    const id = typeof body.id === "string"
+      ? body.id
+      : typeof body.model === "string"
+        ? body.model
+        : "";
+    if (!provider.trim() || !id.trim()) {
+      return c.json({ detail: "provider and id are required" }, 400);
+    }
+    try {
+      const snapshot = runtime.modelRuntimeSnapshot;
+      return c.json({
+        generation: snapshot.generation,
+        model: snapshot.resolveSelection({ provider, id }),
+      });
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : String(error) }, 404);
+    }
+  });
+
   // Lists available models for the given provider, annotated with the active model.
   app.get("/api/agent/providers/:provider/models", async (c) => {
     const provider = c.req.param("provider");
     const profile = runtime.config.agent.providerProfiles[provider];
     try {
-      const models = await DEFAULT_AGENT_MODEL_REGISTRY.listAvailableModels(runtime.config.agent, provider);
+      const registry = new AgentModelRegistry(runtime.modelRuntimeSnapshot);
+      const models = await registry.listAvailableModels(runtime.config.agent, provider);
       return c.json({
         provider,
-        apiMode: apiModeForProvider(provider),
+        apiMode: apiModeForProvider(provider, profile?.api),
         activeModel: profile?.models[0] ?? runtime.config.agent.model,
         models: models.map(normalizeModelOption),
       });

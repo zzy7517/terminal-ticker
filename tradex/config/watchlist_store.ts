@@ -29,6 +29,16 @@ function tomlString(value: string): string {
     .replace(/\t/g, "\\t")}"`;
 }
 
+function tomlKey(value: string): string {
+  return /^[A-Za-z0-9_-]+$/.test(value) ? value : tomlString(value);
+}
+
+function tomlCustomModelDefinition(
+  definition: AgentConfig["providerProfiles"][string]["customModelDefinitions"][number],
+): string {
+  return `{ id = ${tomlString(definition.id)}, name = ${tomlString(definition.name)}, api = ${tomlString(definition.api)}, reasoning = ${definition.reasoning ? "true" : "false"}, input = [${definition.input.map(tomlString).join(", ")}], context_window = ${definition.contextWindow}, max_tokens = ${definition.maxTokens} }`;
+}
+
 /**
  * Serializes all watchlist read-modify-write operations. Concurrent config
  * POSTs from the UI would otherwise interleave their read/write phases and
@@ -384,6 +394,8 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
   const lines = [
     "[agent]",
     `enabled = ${config.enabled ? "true" : "false"}`,
+    `default_provider = ${tomlString(config.provider)}`,
+    `default_model = ${tomlString(config.model)}`,
     `system_prompt = ${tomlString(config.systemPrompt)}`,
     `max_candles = ${config.maxCandles}`,
     `candle_context_mode = ${tomlString(config.candleContextMode)}`,
@@ -400,10 +412,13 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
     lines.push(`paths = [${config.skills.paths.map(tomlString).join(", ")}]`);
   }
   for (const [name, profile] of Object.entries(config.providerProfiles)) {
-    lines.push("", `[agent.providers.${name}]`, `enabled = ${profile.enabled ? "true" : "false"}`);
-    if (profile.apiKeyRaw || profile.apiKey) {
-      lines.push(`api_key = ${tomlString(profile.apiKeyRaw || profile.apiKey)}`);
-    }
+    lines.push("", `[agent.providers.${tomlKey(name)}]`, `enabled = ${profile.enabled ? "true" : "false"}`);
+    lines.push(`api = ${tomlString(profile.api)}`);
+    if (profile.displayName) lines.push(`display_name = ${tomlString(profile.displayName)}`);
+    lines.push(`requires_auth = ${profile.requiresAuth ? "true" : "false"}`);
+    // Only the original source value may be persisted. apiKey can contain an
+    // expanded environment secret and must never be used as a serialization fallback.
+    if (profile.apiKeyRaw) lines.push(`api_key = ${tomlString(profile.apiKeyRaw)}`);
     if (profile.baseUrl) lines.push(`base_url = ${tomlString(profile.baseUrl)}`);
     lines.push(`models = [${profile.models.map(tomlString).join(", ")}]`);
     if (profile.modelEfforts.length > 0) {
@@ -411,6 +426,9 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
     }
     if (profile.customModels.length > 0) {
       lines.push(`custom_models = [${profile.customModels.map(tomlString).join(", ")}]`);
+    }
+    if (profile.customModelDefinitions.length > 0) {
+      lines.push(`custom_model_definitions = [${profile.customModelDefinitions.map(tomlCustomModelDefinition).join(", ")}]`);
     }
   }
   return replaceTable(watchlistPath, "agent", lines);

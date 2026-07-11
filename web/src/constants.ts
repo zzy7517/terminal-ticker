@@ -10,41 +10,6 @@ export const GROUP_LABELS: Record<string, string> = {
   preipo: 'Pre-IPO',
 };
 
-export const REASONING_OPTIONS = ['low', 'medium', 'high', 'xhigh'];
-export const DEFAULT_ANTHROPIC_MODEL = 'global.anthropic.claude-opus-4-6-v1';
-export const AGENT_PROVIDER_OPTIONS = [
-  {
-    provider: 'codex',
-    label: 'Codex',
-    apiMode: 'codex_responses',
-    defaultModel: 'gpt-5.4-mini',
-    description: 'Responses adapter for market analysis',
-    detail: 'Codex Responses adapter used by the local agent for structured commentary and watch-plan output.',
-    supportsReasoning: true,
-  },
-  {
-    provider: 'anthropic',
-    label: 'Anthropic',
-    apiMode: 'anthropic_messages',
-    defaultModel: DEFAULT_ANTHROPIC_MODEL,
-    description: 'Messages adapter via x-api-key',
-    detail: 'Anthropic Messages adapter used by the local agent through the official or custom endpoint.',
-    supportsReasoning: false,
-  },
-  {
-    provider: 'openai',
-    label: 'OpenAI',
-    apiMode: 'openai_completions',
-    defaultModel: 'gpt-4o',
-    description: 'Chat Completions adapter (OpenAI-compatible)',
-    detail: 'OpenAI Chat Completions adapter. Point Base URL at any OpenAI-compatible endpoint — Ollama, vLLM, OpenRouter, or OpenAI itself.',
-    supportsReasoning: false,
-  },
-] as const;
-
-// Providers that talk an OpenAI/Anthropic-compatible wire format and therefore
-// support a custom Base URL + manually-entered model IDs in the settings UI.
-export const PROVIDERS_WITH_CUSTOM_ENDPOINT = new Set(['anthropic', 'openai']);
 export const PROVIDERS_HASH = '#/settings/providers';
 export const AGENT_CONTEXT_HASH = '#/settings/agent-context';
 export const WATCHLIST_HASH = '#/settings/watchlist';

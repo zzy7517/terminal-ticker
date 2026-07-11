@@ -23,7 +23,6 @@ import { ProviderIcon } from '../ProviderIcon';
 import { forkSession, cloneSession } from '../../api';
 import type { AgentMessage, AgentToolCall } from '../../types';
 import { parseSlashCommand, getAutocompleteSuggestions, applyCompletion, type SlashCommand, type AutocompleteSuggestion, type CommandContext } from '../../slash-commands';
-import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useAgentStore } from '../../stores/agentStore';
 import { useMarketStore } from '../../stores/marketStore';
 import { contextUsagePercent, formatContextPercent, resolveContextWindow } from '../../utils/contextUsage';
@@ -190,7 +189,7 @@ function AgentTranscriptMessage({
 }
 
 export function AgentSessionPanel({
-  providerProfiles,
+  providerProfiles: _providerProfiles,
   disabled,
 }: {
   providerProfiles: Record<string, { enabled: boolean; models: string[]; modelEfforts: Record<string, string> }>;
@@ -204,7 +203,7 @@ export function AgentSessionPanel({
   const agentSessionActionKey = useAgentStore((s) => s.agentSessionActionKey);
   const agentSessionLoadingKey = useAgentStore((s) => s.agentSessionLoadingKey);
   const pendingToolCalls = useAgentStore((s) => s.pendingToolCalls);
-  const modelCache = useAgentStore((s) => s.modelCache);
+  const modelRegistry = useAgentStore((s) => s.modelRegistry);
   const contextUsage = useAgentStore((s) => s.contextUsage);
   const sessionStats = useAgentStore((s) => s.sessionStats);
   const streamingMessage = useAgentStore((s) => s.streamingMessage);
@@ -312,8 +311,10 @@ export function AgentSessionPanel({
     queuedSteering.length,
   ]);
 
-  const enabledProviders = AGENT_PROVIDER_OPTIONS.filter(
-    (o) => providerProfiles[o.provider]?.enabled,
+  const enabledProviders = (modelRegistry?.providers ?? []).filter((provider) =>
+    modelRegistry?.models.some((model) => (
+      model.providerId === provider.providerId && model.selected && model.runnable
+    )),
   );
   const kw = modelPickerSearch.trim().toLowerCase();
 
@@ -323,7 +324,7 @@ export function AgentSessionPanel({
     setModelPickerSearch('');
   }
 
-  const currentProviderOption = AGENT_PROVIDER_OPTIONS.find((o) => o.provider === agentProvider);
+  const currentProviderOption = modelRegistry?.providers.find((provider) => provider.providerId === agentProvider);
 
   // === Unified autocomplete system (slash commands + instrument mentions) ===
 
@@ -480,7 +481,7 @@ export function AgentSessionPanel({
 
   const contextProvider = agentSession?.session?.provider ?? agentProvider;
   const contextModel = agentSession?.session?.model ?? agentModel;
-  const contextWindow = resolveContextWindow(contextProvider, contextModel, modelCache);
+  const contextWindow = resolveContextWindow(contextProvider, contextModel, modelRegistry);
   const rawContextPercent = contextUsagePercent(contextUsage, contextWindow);
   const contextPercentLabel = formatContextPercent(rawContextPercent);
   const contextPercentLevel = rawContextPercent ?? 0;
@@ -533,7 +534,7 @@ export function AgentSessionPanel({
           >
             {currentProviderOption && (
               <span className="session-model-provider-icon">
-                <ProviderIcon provider={currentProviderOption.provider} size={14} />
+                <ProviderIcon provider={currentProviderOption.providerId} size={14} />
               </span>
             )}
             <span>{agentModel}</span>
@@ -552,31 +553,32 @@ export function AgentSessionPanel({
               </div>
               <div className="session-model-dropdown-list">
                 {enabledProviders.map((opt) => {
-                  const profile = providerProfiles[opt.provider];
-                  const providerModels = (profile?.models ?? []).filter((m) =>
-                    !kw || m.toLowerCase().includes(kw) || opt.label.toLowerCase().includes(kw),
+                  const providerModels = (modelRegistry?.models ?? []).filter((model) =>
+                    model.providerId === opt.providerId
+                    && model.selected
+                    && model.runnable
+                    && (!kw || model.id.toLowerCase().includes(kw) || model.name.toLowerCase().includes(kw) || opt.name.toLowerCase().includes(kw)),
                   );
                   if (providerModels.length === 0) return null;
                   return (
-                    <div key={opt.provider} className="session-model-group">
+                    <div key={opt.providerId} className="session-model-group">
                       <div className="session-model-group-head">
-                        <ProviderIcon provider={opt.provider} size={15} />
-                        <span>{opt.label}</span>
+                        <ProviderIcon provider={opt.providerId} size={15} />
+                        <span>{opt.name}</span>
                       </div>
-                      {providerModels.map((m) => {
-                        const active = agentProvider === opt.provider && agentModel === m;
+                      {providerModels.map((model) => {
+                        const active = agentProvider === opt.providerId && agentModel === model.id;
                         return (
                           <button
-                            key={`${opt.provider}:${m}`}
+                            key={`${opt.providerId}:${model.id}`}
                             className={`session-model-option ${active ? 'active' : ''}`}
                             type="button"
-                            onClick={() => selectPickerModel(opt.provider, m)}
+                            onClick={() => selectPickerModel(opt.providerId, model.id)}
                           >
                             {active && <Check size={14} />}
-                            <span>{m}</span>
-                            {profile?.modelEfforts?.[m] && (
-                              <span className="session-model-effort">{profile.modelEfforts[m]}</span>
-                            )}
+                            <span>{model.name || model.id}</span>
+                            {model.reasoning && <span className="session-model-effort">reasoning</span>}
+                            <span className="session-model-effort">{formatTokenCount(model.contextWindow)}</span>
                           </button>
                         );
                       })}
@@ -584,9 +586,11 @@ export function AgentSessionPanel({
                   );
                 })}
                 {enabledProviders.every((opt) => {
-                  const profile = providerProfiles[opt.provider];
-                  return (profile?.models ?? []).filter((m) =>
-                    !kw || m.toLowerCase().includes(kw) || opt.label.toLowerCase().includes(kw),
+                  return (modelRegistry?.models ?? []).filter((model) =>
+                    model.providerId === opt.providerId
+                    && model.selected
+                    && model.runnable
+                    && (!kw || model.id.toLowerCase().includes(kw) || model.name.toLowerCase().includes(kw) || opt.name.toLowerCase().includes(kw)),
                   ).length === 0;
                 }) && (
                   <div className="empty-state sm">无匹配模型</div>

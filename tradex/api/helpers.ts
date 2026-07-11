@@ -1,5 +1,5 @@
 import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type ProxyConfig, type ProxyType, type SocialFeedConfig } from "../config/index.js";
-import { normalizeApiMode } from "../config/agent_models.js";
+import { defaultProviderApi, normalizeApiMode, normalizeProvider } from "../config/agent_models.js";
 import {
   listPiSessions,
   openPiSession,
@@ -83,8 +83,11 @@ export function catalogItem(instrument: { key: string; source: string; symbol: s
 // Merges per-request provider/model overrides from the SSE body into the
 // persisted agent config without mutating it.
 export function agentConfigForRequest(config: AgentConfig, body: Record<string, unknown>): AgentConfig {
-  const provider = typeof body.provider === "string" && body.provider.trim() ? body.provider.trim() : config.provider;
+  const provider = normalizeProvider(
+    typeof body.provider === "string" && body.provider.trim() ? body.provider : config.provider,
+  );
   const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : config.model;
+  const existingProfile = config.providerProfiles[provider];
   return {
     ...config,
     provider,
@@ -93,14 +96,18 @@ export function agentConfigForRequest(config: AgentConfig, body: Record<string, 
     providerProfiles: {
       ...config.providerProfiles,
       [provider]: {
-        ...(config.providerProfiles[provider] ?? {
+        ...(existingProfile ?? {
           enabled: true,
+          api: defaultProviderApi(provider),
+          displayName: provider,
+          requiresAuth: true,
           models: [],
           modelEfforts: [],
           apiKey: "",
           apiKeyRaw: "",
           baseUrl: "",
           customModels: [],
+          customModelDefinitions: [],
         }),
         enabled: true,
         models: [model],
@@ -125,14 +132,19 @@ export async function reloadAndState(runtime: AppRuntime, watchlistPath: string)
 // Applies a partial provider profile update, handling model toggle, effort
 // overrides, custom model add/remove, and automatic active-provider promotion.
 export function mergeProviderProfile(config: AgentConfig, provider: string, body: Record<string, unknown>): AgentConfig {
+  provider = normalizeProvider(provider);
   const current = config.providerProfiles[provider] ?? {
     enabled: false,
+    api: defaultProviderApi(provider),
+    displayName: provider,
+    requiresAuth: true,
     models: [],
     modelEfforts: [],
     apiKey: "",
     apiKeyRaw: "",
     baseUrl: "",
     customModels: [],
+    customModelDefinitions: [],
   };
   let models = [...current.models];
   if (Array.isArray(body.models)) models = body.models.map(String).filter(Boolean);
@@ -149,6 +161,7 @@ export function mergeProviderProfile(config: AgentConfig, provider: string, body
     modelEfforts.push([effortUpdate.model, effortUpdate.effort]);
   }
   let customModels = [...(current.customModels ?? [])];
+  let customModelDefinitions = [...current.customModelDefinitions];
   if (typeof body.addCustomModel === "string" && body.addCustomModel.trim()) {
     const slug = body.addCustomModel.trim();
     if (!customModels.includes(slug)) customModels.push(slug);
@@ -156,8 +169,41 @@ export function mergeProviderProfile(config: AgentConfig, provider: string, body
   if (typeof body.removeCustomModel === "string" && body.removeCustomModel.trim()) {
     const slug = body.removeCustomModel.trim();
     customModels = customModels.filter((item) => item !== slug);
+    customModelDefinitions = customModelDefinitions.filter((item) => item.id !== slug);
     models = models.filter((item) => item !== slug);
     modelEfforts = modelEfforts.filter(([item]) => item !== slug);
+  }
+  if (Array.isArray(body.customModelDefinitions)) {
+    customModelDefinitions = body.customModelDefinitions.map((value, index) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error(`customModelDefinitions[${index}] must be an object`);
+      }
+      const item = value as Record<string, unknown>;
+      const id = typeof item.id === "string" ? item.id.trim() : "";
+      const name = typeof item.name === "string" && item.name.trim() ? item.name.trim() : id;
+      const api = typeof item.api === "string" && item.api.trim() ? item.api.trim() : current.api;
+      const contextWindow = Number(item.contextWindow);
+      const maxTokens = Number(item.maxTokens);
+      const input = Array.isArray(item.input)
+        ? item.input.filter((entry): entry is "text" | "image" => entry === "text" || entry === "image")
+        : [];
+      if (!id) throw new Error(`customModelDefinitions[${index}].id is required`);
+      if (!Number.isInteger(contextWindow) || contextWindow <= 0) {
+        throw new Error(`customModelDefinitions[${index}].contextWindow must be a positive integer`);
+      }
+      if (!Number.isInteger(maxTokens) || maxTokens <= 0) {
+        throw new Error(`customModelDefinitions[${index}].maxTokens must be a positive integer`);
+      }
+      return {
+        id,
+        name,
+        api,
+        reasoning: item.reasoning === true,
+        input: input.length > 0 ? input : ["text"],
+        contextWindow,
+        maxTokens,
+      };
+    });
   }
   const clearApiKey = body.clearApiKey === true;
   const nextApiKey = clearApiKey
@@ -178,7 +224,13 @@ export function mergeProviderProfile(config: AgentConfig, provider: string, body
     apiKey: nextApiKey,
     apiKeyRaw: nextApiKeyRaw,
     baseUrl: typeof body.baseUrl === "string" ? body.baseUrl.trim() : current.baseUrl,
+    api: typeof body.api === "string" && body.api.trim() ? body.api.trim() : current.api,
+    displayName: typeof body.displayName === "string" && body.displayName.trim()
+      ? body.displayName.trim()
+      : current.displayName,
+    requiresAuth: typeof body.requiresAuth === "boolean" ? body.requiresAuth : current.requiresAuth,
     customModels,
+    customModelDefinitions,
   };
   const providerProfiles = { ...config.providerProfiles, [provider]: nextProfile };
   const firstEnabled = Object.entries(providerProfiles).find(([, profile]) => profile.enabled && profile.models.length > 0);
@@ -187,7 +239,7 @@ export function mergeProviderProfile(config: AgentConfig, provider: string, body
   return {
     ...config,
     provider: activeProvider,
-    apiMode: apiModeForProvider(activeProvider),
+    apiMode: apiModeForProvider(activeProvider, activeProfile.api),
     model: activeProfile.models[0] ?? config.model,
     reasoningEffort: activeProfile.modelEfforts.find(([model]) => model === activeProfile.models[0])?.[1] ?? config.reasoningEffort,
     providerProfiles,
@@ -280,9 +332,11 @@ export function minNumberField(value: unknown, fallback: number, minimum: number
 }
 
 // Maps a provider name to the API shape it speaks (Anthropic Messages vs Codex Responses).
-export function apiModeForProvider(provider: string): string {
+export function apiModeForProvider(provider: string, dynamicApi?: string): string {
   if (provider === "anthropic") return "anthropic_messages";
-  return "codex_responses";
+  if (provider === "openai") return "openai_completions";
+  if (provider === "codex") return "codex_responses";
+  return dynamicApi || "openai-completions";
 }
 
 // Normalizes a raw model descriptor from any provider catalog into a

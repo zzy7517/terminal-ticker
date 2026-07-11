@@ -172,12 +172,26 @@ export interface AgentStreamEvent {
 
 export interface ProviderProfileState {
   enabled: boolean;
+  api: string;
+  displayName: string;
+  requiresAuth: boolean;
   models: string[];
   modelEfforts: Record<string, string>;
   baseUrl?: string;
   apiKeyConfigured?: boolean;
   apiKeyFromEnv?: boolean;
   customModels?: string[];
+  customModelDefinitions?: CustomModelDefinition[];
+}
+
+export interface CustomModelDefinition {
+  id: string;
+  name: string;
+  api: string;
+  reasoning: boolean;
+  input: Array<'text' | 'image'>;
+  contextWindow: number;
+  maxTokens: number;
 }
 
 export interface AgentConfig {
@@ -201,6 +215,9 @@ export interface AgentConfigUpdate {
 
 export interface ProviderProfileUpdate {
   enabled?: boolean;
+  api?: string;
+  displayName?: string;
+  requiresAuth?: boolean;
   models?: string[];
   toggleModel?: string;
   modelEffort?: { model: string; effort: string };
@@ -210,6 +227,7 @@ export interface ProviderProfileUpdate {
   clearApiKey?: boolean;
   addCustomModel?: string;
   removeCustomModel?: string;
+  customModelDefinitions?: CustomModelDefinition[];
 }
 
 export interface AnalysisConfigUpdate {
@@ -398,6 +416,44 @@ export interface AgentModelsResponse {
   apiMode: string;
   activeModel: string;
   models: AgentModelOption[];
+}
+
+export interface AgentModelRegistryProvider {
+  providerId: string;
+  configProviderId: string;
+  name: string;
+  enabled: boolean;
+  api: string;
+  requiresAuth: boolean;
+  baseUrlConfigured: boolean;
+  authConfigured: boolean;
+  discoverable: boolean;
+  runnable: boolean;
+}
+
+export interface AgentModelRegistryModel {
+  providerId: string;
+  id: string;
+  name: string;
+  api: string;
+  reasoning: boolean;
+  input: string[];
+  contextWindow: number;
+  maxTokens: number;
+  selected: boolean;
+  source: 'pi' | 'custom' | 'legacy';
+  runnable: boolean;
+}
+
+export interface AgentModelRegistry {
+  generation: number;
+  providers: AgentModelRegistryProvider[];
+  models: AgentModelRegistryModel[];
+}
+
+export interface AgentModelRegistryResolveResponse {
+  generation: number;
+  model: AgentModelRegistryModel;
 }
 
 export interface Quote {
