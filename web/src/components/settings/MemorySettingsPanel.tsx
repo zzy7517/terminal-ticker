@@ -16,19 +16,16 @@ import {
 } from 'lucide-react';
 import { ProviderIcon } from '../ProviderIcon';
 import type {
-  AgentModelOption,
   MemoryBrowseListResult,
   MemoryBrowseReadResult,
   MemoryBrowseSearchResult,
   MemoryConfigUpdate,
   MemoryStatus,
 } from '../../types';
-import { AGENT_PROVIDER_OPTIONS } from '../../constants';
 import { useAgentStore } from '../../stores/agentStore';
 import { useMarketStore } from '../../stores/marketStore';
 import {
   fetchMemoryStatus,
-  fetchProviderModels,
   saveMemoryConfig,
   memoryList,
   memoryRead,
@@ -49,12 +46,9 @@ function MemoryModelPicker({
   disabled: boolean;
   onChange: (model: string | null) => void;
 }) {
-  const modelCache = useAgentStore((s) => s.modelCache);
-  const agentConfig = useMarketStore((s) => s.state?.config.agent);
-  const profiles = agentConfig?.providerProfiles ?? {};
+  const registry = useAgentStore((s) => s.modelRegistry);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [localCache, setLocalCache] = useState<Record<string, AgentModelOption[]>>({});
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -69,22 +63,9 @@ function MemoryModelPicker({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const enabledProviders = AGENT_PROVIDER_OPTIONS.filter((o) => profiles[o.provider]?.enabled);
-    for (const opt of enabledProviders) {
-      if (modelCache[opt.provider]?.length || localCache[opt.provider]?.length) continue;
-      fetchProviderModels(opt.provider)
-        .then((payload) => {
-          const visible = payload.models.filter((m) => m.supportedInApi && m.visibility !== 'hide');
-          useAgentStore.getState().setModelCache((prev) => ({ ...prev, [opt.provider]: visible }));
-          setLocalCache((prev) => ({ ...prev, [opt.provider]: visible }));
-        })
-        .catch(() => {});
-    }
-  }, [open, profiles, modelCache, localCache]);
-
-  const enabledProviders = AGENT_PROVIDER_OPTIONS.filter((o) => profiles[o.provider]?.enabled);
+  const enabledProviders = (registry?.providers ?? []).filter((provider) =>
+    registry?.models.some((model) => model.providerId === provider.providerId && model.selected && model.runnable),
+  );
   const kw = search.trim().toLowerCase();
 
   const displayValue = value || 'Agent default';
@@ -132,28 +113,31 @@ function MemoryModelPicker({
               <span className="memory-model-option-hint">inherit</span>
             </button>
             {enabledProviders.map((opt) => {
-              const providerModels = (modelCache[opt.provider] ?? []).filter((m) =>
-                !kw || m.slug.toLowerCase().includes(kw) || m.displayName.toLowerCase().includes(kw),
+              const providerModels = (registry?.models ?? []).filter((model) =>
+                model.providerId === opt.providerId
+                && model.selected
+                && model.runnable
+                && (!kw || model.id.toLowerCase().includes(kw) || model.name.toLowerCase().includes(kw)),
               );
               if (providerModels.length === 0) return null;
               return (
-                <div key={opt.provider} className="memory-model-group">
+                <div key={opt.providerId} className="memory-model-group">
                   <div className="memory-model-group-head">
-                    <ProviderIcon provider={opt.provider} size={13} />
-                    <span>{opt.label}</span>
+                    <ProviderIcon provider={opt.providerId} size={13} />
+                    <span>{opt.name}</span>
                   </div>
-                  {providerModels.map((m) => {
-                    const fullSlug = `${opt.provider}:${m.slug}`;
-                    const isActive = value === fullSlug || (value === m.slug && !value.includes(':'));
+                  {providerModels.map((model) => {
+                    const fullSlug = `${opt.providerId}:${model.id}`;
+                    const isActive = value === fullSlug || (value === model.id && !value.includes(':'));
                     return (
                       <button
-                        key={m.slug}
+                        key={model.id}
                         className={`memory-model-option ${isActive ? 'active' : ''}`}
                         type="button"
                         onClick={() => { onChange(fullSlug); setOpen(false); setSearch(''); }}
                       >
                         {isActive && <Check size={12} />}
-                        <span>{m.displayName || m.slug}</span>
+                        <span>{model.name || model.id}</span>
                       </button>
                     );
                   })}

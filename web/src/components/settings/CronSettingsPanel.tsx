@@ -2,13 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Clock, Plus, Trash2, Save, ChevronDown, Search, Check, Cpu } from 'lucide-react';
 import { ProviderIcon } from '../ProviderIcon';
 import './CronSettingsPanel.css';
-import type { AgentModelOption, CronJobStatus } from '../../types';
-import { AGENT_PROVIDER_OPTIONS } from '../../constants';
+import type { CronJobStatus } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
-import { useMarketStore } from '../../stores/marketStore';
 import {
   fetchCronJobs,
-  fetchProviderModels,
   createCronJob,
   updateCronJob,
   deleteCronJob,
@@ -55,11 +52,9 @@ const EMPTY_DRAFT: JobDraft = {
 };
 
 function CronModelPicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
-  const modelCache = useAgentStore((s) => s.modelCache);
-  const profiles = useMarketStore((s) => s.state?.config.agent.providerProfiles) ?? {};
+  const registry = useAgentStore((s) => s.modelRegistry);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [localCache, setLocalCache] = useState<Record<string, AgentModelOption[]>>({});
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -71,22 +66,9 @@ function CronModelPicker({ value, onChange }: { value: string | null; onChange: 
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const enabled = AGENT_PROVIDER_OPTIONS.filter((o) => profiles[o.provider]?.enabled);
-    for (const opt of enabled) {
-      if (modelCache[opt.provider]?.length || localCache[opt.provider]?.length) continue;
-      fetchProviderModels(opt.provider)
-        .then((payload) => {
-          const visible = payload.models.filter((m) => m.supportedInApi && m.visibility !== 'hide');
-          useAgentStore.getState().setModelCache((prev) => ({ ...prev, [opt.provider]: visible }));
-          setLocalCache((prev) => ({ ...prev, [opt.provider]: visible }));
-        })
-        .catch(() => {});
-    }
-  }, [open, profiles, modelCache, localCache]);
-
-  const enabledProviders = AGENT_PROVIDER_OPTIONS.filter((o) => profiles[o.provider]?.enabled);
+  const enabledProviders = (registry?.providers ?? []).filter((provider) =>
+    registry?.models.some((model) => model.providerId === provider.providerId && model.selected && model.runnable),
+  );
   const kw = search.trim().toLowerCase();
   const providerForValue = value?.includes(':') ? value.split(':')[0] : null;
   const modelSlugForValue = value?.includes(':') ? value.split(':').slice(1).join(':') : value;
@@ -119,23 +101,26 @@ function CronModelPicker({ value, onChange }: { value: string | null; onChange: 
               <span className="memory-model-option-hint">inherit</span>
             </button>
             {enabledProviders.map((opt) => {
-              const models = (modelCache[opt.provider] ?? []).filter((m) =>
-                !kw || m.slug.toLowerCase().includes(kw) || m.displayName.toLowerCase().includes(kw));
+              const models = (registry?.models ?? []).filter((model) =>
+                model.providerId === opt.providerId
+                && model.selected
+                && model.runnable
+                && (!kw || model.id.toLowerCase().includes(kw) || model.name.toLowerCase().includes(kw)));
               if (!models.length) return null;
               return (
-                <div key={opt.provider} className="memory-model-group">
+                <div key={opt.providerId} className="memory-model-group">
                   <div className="memory-model-group-head">
-                    <ProviderIcon provider={opt.provider} size={13} />
-                    <span>{opt.label}</span>
+                    <ProviderIcon provider={opt.providerId} size={13} />
+                    <span>{opt.name}</span>
                   </div>
-                  {models.map((m) => {
-                    const fullSlug = `${opt.provider}:${m.slug}`;
+                  {models.map((model) => {
+                    const fullSlug = `${opt.providerId}:${model.id}`;
                     const isActive = value === fullSlug;
                     return (
-                      <button key={m.slug} className={`memory-model-option ${isActive ? 'active' : ''}`} type="button"
+                      <button key={model.id} className={`memory-model-option ${isActive ? 'active' : ''}`} type="button"
                         onClick={() => { onChange(fullSlug); setOpen(false); setSearch(''); }}>
                         {isActive && <Check size={12} />}
-                        <span>{m.displayName || m.slug}</span>
+                        <span>{model.name || model.id}</span>
                       </button>
                     );
                   })}

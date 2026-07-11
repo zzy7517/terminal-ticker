@@ -8,7 +8,7 @@ export function AgentSessionHistoryList() {
   const agentSession = useAgentStore((s) => s.agentSession);
   const history = useAgentStore((s) => s.agentSessionHistory);
   const runStateBySessionId = useAgentStore((s) => s.runStateBySessionId);
-  const modelCache = useAgentStore((s) => s.modelCache);
+  const modelRegistry = useAgentStore((s) => s.modelRegistry);
   const busyActionKey = useAgentStore((s) => s.agentSessionActionKey);
   const loading = useAgentStore((s) => s.agentSessionHistoryLoadingKey) !== null;
   const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
@@ -42,7 +42,7 @@ export function AgentSessionHistoryList() {
     provider: string,
     model: string,
   ): string | null {
-    const contextWindow = resolveContextWindow(provider, model, modelCache);
+    const contextWindow = resolveContextWindow(provider, model, modelRegistry);
     const value = formatContextPercent(contextUsagePercent(usage, contextWindow));
     if (!value) return null;
     return `${value}% ctx`;

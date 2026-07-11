@@ -5,10 +5,10 @@
  * invokes the agent loop, and persists the result as a cron session JSONL file.
  */
 
-import type { CronJobConfig, AgentConfig } from "../config/index.js";
-import { normalizeApiMode } from "../config/agent_models.js";
+import type { CronJobConfig } from "../config/index.js";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import { createPiAgentRuntime } from "../agent/pi_runtime.js";
+import { agentConfigForModelSelection } from "../agent/model_runtime.js";
 import { createPiSession, piProviderName } from "../agent/pi_sessions.js";
 import { buildMarketTools } from "../agent/tools/market.js";
 import { buildNewsTools } from "../agent/tools/news.js";
@@ -48,19 +48,16 @@ export async function executeCronJob(input: {
 }): Promise<CronRunResult> {
   const { job, runtime } = input;
   const startMs = Date.now();
-  const provider = resolveProvider(job, runtime);
-  const model = resolveModel(job, runtime);
+  const agentConfig = agentConfigForModelSelection(runtime.config.agent, job.model);
+  const modelRuntime = runtime.modelRuntimeSnapshot;
   const cronMgr = createPiSession({
     title: `[cron] ${job.name}`,
     sessionDir: jobDir(job.name),
   });
-  cronMgr.appendModelChange(piProviderName(provider), model);
+  cronMgr.appendModelChange(piProviderName(agentConfig.provider), agentConfig.model);
   const sessionId = cronMgr.getSessionId();
   const filePath = cronMgr.getSessionFile();
   if (!filePath) throw new Error("Pi did not create a persistent cron session");
-
-  // Build agent config, optionally overriding model from job config
-  const agentConfig = buildAgentConfigForJob(job, runtime.config.agent);
 
   const maxCandles = job.maxCandles ?? runtime.config.agent.maxCandles;
   const memoryRegistry = await runtime.memoryPort.buildTools();
@@ -161,6 +158,7 @@ export async function executeCronJob(input: {
 
     const agent = await createPiAgentRuntime({
       config: agentConfig,
+      modelRuntime,
       systemPrompt,
       tools,
       maxTurns: maxIterations,
@@ -225,64 +223,4 @@ export async function executeCronJob(input: {
     error,
     durationMs,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-function resolveProvider(job: CronJobConfig, runtime: AppRuntime): string {
-  if (job.model) {
-    // "codex:gpt-5.4" → provider "codex", "anthropic:claude-..." → provider "anthropic"
-    const colonIdx = job.model.indexOf(":");
-    if (colonIdx > 0) return job.model.slice(0, colonIdx);
-  }
-  return runtime.config.agent.provider;
-}
-
-function resolveModel(job: CronJobConfig, runtime: AppRuntime): string {
-  if (job.model) {
-    const colonIdx = job.model.indexOf(":");
-    if (colonIdx > 0) return job.model.slice(colonIdx + 1);
-    return job.model;
-  }
-  return runtime.config.agent.model;
-}
-
-function buildAgentConfigForJob(job: CronJobConfig, baseConfig: AgentConfig): AgentConfig {
-  const provider = job.model ? resolveProviderFromModel(job.model, baseConfig.provider) : baseConfig.provider;
-  const model = job.model ? resolveModelFromModel(job.model, baseConfig.model) : baseConfig.model;
-
-  return {
-    ...baseConfig,
-    provider,
-    apiMode: normalizeApiMode(provider),
-    model,
-    providerProfiles: {
-      ...baseConfig.providerProfiles,
-      [provider]: {
-        ...(baseConfig.providerProfiles[provider] ?? {
-          enabled: true,
-          models: [],
-          modelEfforts: [],
-          apiKey: "",
-          apiKeyRaw: "",
-          baseUrl: "",
-          customModels: [],
-        }),
-        enabled: true,
-        models: [model],
-      },
-    },
-  };
-}
-
-function resolveProviderFromModel(modelSpec: string, fallback: string): string {
-  const colonIdx = modelSpec.indexOf(":");
-  return colonIdx > 0 ? modelSpec.slice(0, colonIdx) : fallback;
-}
-
-function resolveModelFromModel(modelSpec: string, fallback: string): string {
-  const colonIdx = modelSpec.indexOf(":");
-  return colonIdx > 0 ? modelSpec.slice(colonIdx + 1) : modelSpec || fallback;
 }

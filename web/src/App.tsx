@@ -42,6 +42,11 @@ export default function App() {
     return useAgentStore.getState().initSessions();
   }, []);
 
+  // Load the backend-owned model catalog once on startup.
+  useEffect(() => {
+    void useAgentStore.getState().refreshModelRegistry();
+  }, []);
+
   // Auto-select first group/key when instruments change.
   const instrumentsSig = state?.instruments.map((i) => i.key).join(',') ?? '';
   useEffect(() => {
@@ -57,19 +62,13 @@ export default function App() {
     }
   }, [instrumentsSig]);
 
-  // Sync agent provider/model with profile changes.
+  // Provider configuration reloads create a new registry generation.
   const profilesSig = state?.config.agent.providerProfiles
     ? JSON.stringify(state.config.agent.providerProfiles)
     : '';
   useEffect(() => {
     if (!state?.config.agent.providerProfiles) return;
-    useAgentStore.getState().syncProviderModel(state.config.agent.providerProfiles);
-  }, [profilesSig]);
-
-  // Fetch models for newly enabled providers.
-  useEffect(() => {
-    if (!state?.config.agent.providerProfiles) return;
-    useAgentStore.getState().fetchModelsForEnabledProviders(state.config.agent.providerProfiles);
+    void useAgentStore.getState().refreshModelRegistry();
   }, [profilesSig]);
 
   if (route.view === 'settings') {

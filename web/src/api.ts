@@ -1,5 +1,7 @@
 import type {
   AgentConfigUpdate,
+  AgentModelRegistry,
+  AgentModelRegistryResolveResponse,
   AgentModelsResponse,
   AgentStreamEvent,
   AgentStreamPayload,
@@ -339,6 +341,29 @@ export async function fetchProviderModels(provider: string): Promise<AgentModels
   const response = await fetch(`/api/agent/providers/${encodeURIComponent(provider)}/models`);
   if (!response.ok) {
     throw await responseError(response, 'provider model refresh failed');
+  }
+  return response.json();
+}
+
+export async function fetchAgentModelRegistry(): Promise<AgentModelRegistry> {
+  const response = await fetch('/api/agent/model-registry');
+  if (!response.ok) {
+    throw await responseError(response, 'model registry fetch failed');
+  }
+  return response.json();
+}
+
+export async function resolveAgentModel(
+  provider: string,
+  id: string,
+): Promise<AgentModelRegistryResolveResponse> {
+  const response = await fetch('/api/agent/model-registry/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider, id }),
+  });
+  if (!response.ok) {
+    throw await responseError(response, 'model resolve failed');
   }
   return response.json();
 }

@@ -2,31 +2,30 @@ import { describe, expect, it } from 'vitest';
 import {
   contextTokenCount,
   contextUsagePercent,
-  fallbackContextWindow,
   formatContextPercent,
   resolveContextWindow,
 } from './contextUsage';
 
 describe('context usage helpers', () => {
-  it('falls back to known model-family context windows when cache metadata is missing', () => {
-    expect(resolveContextWindow('codex', 'gpt-5.4-mini', {})).toBe(128_000);
-    expect(resolveContextWindow('anthropic', 'global.anthropic.claude-opus-4-6-v1', {})).toBe(200_000);
-  });
-
-  it('prefers provider cache metadata over family fallback values', () => {
-    expect(resolveContextWindow('Codex', 'gpt-5.4-mini', {
-      codex: [{
-        slug: 'gpt-5.4-mini',
-        displayName: 'GPT 5.4 Mini',
-        description: '',
-        visibility: 'public',
-        supportedInApi: true,
-        defaultReasoningEffort: 'medium',
-        supportedReasoningEfforts: ['medium'],
+  it('reads context windows from registry metadata', () => {
+    expect(resolveContextWindow('provider-a', 'model-a', {
+      generation: 1,
+      providers: [],
+      models: [{
+        providerId: 'provider-a',
+        id: 'model-a',
+        name: 'Model A',
+        api: 'test-api',
+        reasoning: true,
+        input: ['text'],
         contextWindow: 256_000,
-        preferWebsockets: false,
+        maxTokens: 8_192,
+        selected: true,
+        source: 'pi',
+        runnable: true,
       }],
     })).toBe(256_000);
+    expect(resolveContextWindow('unknown', 'unknown-model', null)).toBeNull();
   });
 
   it('uses the best available token count and computes percent', () => {
@@ -39,6 +38,5 @@ describe('context usage helpers', () => {
   it('formats tiny and whole percentages for compact display', () => {
     expect(formatContextPercent(0.4)).toBe('<1');
     expect(formatContextPercent(70.49)).toBe('70');
-    expect(fallbackContextWindow('unknown', 'unknown-model')).toBeNull();
   });
 });

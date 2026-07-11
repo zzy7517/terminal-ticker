@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   SessionManager,
-  type SessionEntry,
   type SessionInfo,
   type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
@@ -15,23 +14,17 @@ import type {
   UserMessage,
 } from "@earendil-works/pi-ai";
 import { defaultCacheDir } from "../db.js";
+import { toPiProviderId } from "../config/agent_models.js";
 
 const PI_SESSIONS_SUBDIR = "pi_sessions";
 export const EXTERNAL_CONTEXT_ENTRY = "tradex_external_context";
-
-const PROVIDER_NAMES: Record<string, string> = {
-  "openai-codex": "codex",
-};
-const PI_PROVIDER_NAMES: Record<string, string> = {
-  codex: "openai-codex",
-};
 
 export function piSessionsDir(): string {
   return path.join(defaultCacheDir(), PI_SESSIONS_SUBDIR);
 }
 
 export function piProviderName(provider: string): string {
-  return PI_PROVIDER_NAMES[provider] ?? provider;
+  return toPiProviderId(provider);
 }
 
 export function piSessionFileExists(manager: SessionManager): boolean {
@@ -115,7 +108,7 @@ export function piSessionPayload(manager: SessionManager): Record<string, unknow
     session: {
       id: manager.getSessionId(),
       title,
-      provider: externalProviderName(model?.provider ?? ""),
+      provider: model?.provider ?? "",
       model: model?.modelId ?? "",
       createdAt: header.timestamp,
       updatedAt: entries.at(-1)?.timestamp ?? header.timestamp,
@@ -345,10 +338,6 @@ function externalToolName(name: string): boolean {
     "browser_screenshot",
     "browser_status",
   ]).has(name);
-}
-
-function externalProviderName(provider: string): string {
-  return PROVIDER_NAMES[provider] ?? provider;
 }
 
 function assertPathInside(filePath: string, root: string): void {

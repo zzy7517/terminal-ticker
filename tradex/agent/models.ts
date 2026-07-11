@@ -11,12 +11,8 @@ import {
   CODEX_PROVIDER,
   ANTHROPIC_PROVIDER,
   OPENAI_PROVIDER,
-  CODEX_API_MODE,
-  ANTHROPIC_MESSAGES_API_MODE,
   DEFAULT_CODEX_BASE_URL,
   DEFAULT_OPENAI_BASE_URL,
-  DEFAULT_CODEX_MODEL,
-  DEFAULT_ANTHROPIC_MODEL,
   normalizeProvider,
   normalizeModel,
   normalizeReasoningEffort,
@@ -97,7 +93,11 @@ export function resolveProviderAccess(config: AgentConfig, providerOverride?: st
     };
   }
 
-  throw new Error(`Unsupported agent provider: ${provider}`);
+  return {
+    provider,
+    apiKey: profile?.apiKey || "",
+    baseUrl: profile?.baseUrl || "",
+  };
 }
 
 /**
@@ -106,7 +106,7 @@ export function resolveProviderAccess(config: AgentConfig, providerOverride?: st
  */
 export function resolveAgentModelFromConfig(config: AgentConfig): AgentModel {
   const provider = normalizeProvider(config.provider);
-  const api = normalizeApiMode(provider, config.apiMode);
+  const api = config.providerProfiles[provider]?.api ?? normalizeApiMode(provider, config.apiMode);
   const modelId = normalizeModel(provider, config.model);
   const reasoningEffort = normalizeReasoningEffort(config.reasoningEffort);
   const access = resolveProviderAccess(config, provider);

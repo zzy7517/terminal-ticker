@@ -1,6 +1,10 @@
 import type { AgentConfig } from "../../config/index.js";
 import { nowMs } from "../../db.js";
 import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
+import {
+  agentConfigForModelSelection,
+  type ModelRuntimeSnapshot,
+} from "../../agent/model_runtime.js";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import { ToolRegistry, type ToolDefinition } from "../../agent/tools/registry.js";
 import { DEFAULT_RETRY_DELAY_MS, type MemoryStateStore, type Stage1Output } from "../state.js";
@@ -370,6 +374,7 @@ export class Phase2Runner {
   readonly rateLimitGuard: MemoryRequestGuard;
   readonly consolidationModel: string | null;
   readonly heartbeatIntervalMs: number;
+  readonly modelRuntimeSnapshot: ModelRuntimeSnapshot | null;
 
   constructor(input: {
     root: string;
@@ -379,6 +384,7 @@ export class Phase2Runner {
     rateLimitGuard: MemoryRequestGuard;
     consolidationModel?: string | null;
     heartbeatIntervalMs: number;
+    modelRuntimeSnapshot?: ModelRuntimeSnapshot;
   }) {
     this.root = input.root;
     this.stateStore = input.stateStore;
@@ -387,6 +393,7 @@ export class Phase2Runner {
     this.rateLimitGuard = input.rateLimitGuard;
     this.consolidationModel = input.consolidationModel ?? null;
     this.heartbeatIntervalMs = Math.max(1, input.heartbeatIntervalMs);
+    this.modelRuntimeSnapshot = input.modelRuntimeSnapshot ?? null;
   }
 
   async runOnce(input: { limit?: number } = {}): Promise<boolean> {
@@ -495,16 +502,21 @@ export class Phase2Runner {
     diff: MemoryWorkspaceDiff,
     ownershipToken: string | null,
   ): Promise<void> {
-    const agentConfig = this.consolidationModel
-      ? { ...baseAgentConfig, model: this.consolidationModel }
-      : baseAgentConfig;
+    const agentConfig = agentConfigForModelSelection(
+      baseAgentConfig,
+      this.consolidationModel,
+    );
     const tools = createMemoryFileTools(this.root, () => this._assertPhase2Ownership(ownershipToken));
+    if (!this.modelRuntimeSnapshot) {
+      throw new Error("memory phase2 has no model runtime snapshot");
+    }
 
     let turns = 0;
     let finalError: string | null = null;
     let finalText = "";
     const agent = await createPiAgentRuntime({
       config: agentConfig,
+      modelRuntime: this.modelRuntimeSnapshot,
       systemPrompt: PHASE2_SYSTEM_PROMPT,
       tools,
       maxTurns: MAX_PHASE2_AGENT_TURNS,

@@ -1,22 +1,16 @@
-import type { AgentContextUsage, AgentModelOption } from '../types';
-
-export function fallbackContextWindow(provider: string, model: string): number | null {
-  const normalizedProvider = provider.toLowerCase();
-  const id = `${normalizedProvider}:${model}`.toLowerCase();
-  if (normalizedProvider === 'anthropic' || id.includes('claude')) return 200_000;
-  if (id.includes('gpt-5') || id.includes('gpt-4.1') || id.includes('gpt-4o')) return 128_000;
-  return null;
-}
+import type { AgentContextUsage, AgentModelRegistry } from '../types';
 
 export function resolveContextWindow(
   provider: string,
   model: string,
-  modelCache: Record<string, AgentModelOption[]>,
+  registry: AgentModelRegistry | null,
 ): number | null {
-  const normalizedProvider = provider.toLowerCase();
-  const cached = (modelCache[provider] ?? modelCache[normalizedProvider] ?? []).find((item) => item.slug === model)?.contextWindow ?? null;
-  if (cached && cached > 0) return cached;
-  return fallbackContextWindow(provider, model);
+  const exact = registry?.models.find((item) => item.providerId === provider && item.id === model);
+  if (exact?.contextWindow && exact.contextWindow > 0) return exact.contextWindow;
+  const idMatches = registry?.models.filter((item) => item.id === model) ?? [];
+  return idMatches.length === 1 && idMatches[0].contextWindow > 0
+    ? idMatches[0].contextWindow
+    : null;
 }
 
 export function contextTokenCount(usage: AgentContextUsage | null | undefined): number | null {
