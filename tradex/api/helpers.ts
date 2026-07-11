@@ -1,6 +1,12 @@
 import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type ProxyConfig, type ProxyType, type SocialFeedConfig } from "../config/index.js";
 import { normalizeApiMode } from "../config/agent_models.js";
-import { SessionManager } from "../agent/session_manager.js";
+import {
+  listPiSessions,
+  openPiSession,
+  piSessionPayload,
+  piSessionSummary,
+} from "../agent/pi_sessions.js";
+import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AppRuntime } from "./runtime.js";
 
 // Returns a stable idle run descriptor for sessions that have no active agent loop.
@@ -17,46 +23,45 @@ export function idleRun(sessionId: string): Record<string, unknown> {
 
 // Resolves a SessionManager for the given ID, checking the pending map first,
 // then the index, then a full disk scan as a last resort.
-export function openSessionManager(sessionId: string, runtime?: AppRuntime): SessionManager | null {
+export async function openSessionManager(sessionId: string, runtime?: AppRuntime): Promise<SessionManager | null> {
   const pending = runtime?.pendingSessionManagers.get(sessionId);
   if (pending) return pending;
-  const indexed = runtime?.sessionIndex.get(sessionId);
-  if (indexed) return SessionManager.open(indexed.filePath, runtime?.sessionIndex);
-  const allSessions = SessionManager.listAll();
-  const info = allSessions.find((s) => s.id === sessionId);
-  if (!info) return null;
-  return SessionManager.open(info.path, runtime?.sessionIndex);
+  return openPiSession(sessionId);
 }
 
 // Builds the session + messages payload returned by the single-session endpoints.
-export function sessionResponse(runtime: AppRuntime, sessionId: string): Record<string, unknown> {
-  const mgr = openSessionManager(sessionId, runtime);
+export async function sessionResponse(runtime: AppRuntime, sessionId: string): Promise<Record<string, unknown>> {
+  const mgr = await openSessionManager(sessionId, runtime);
   if (!mgr) return { session: null, messages: [], run: idleRun(sessionId) };
-  const payload = mgr.sessionPayload();
-  return { ...payload, run: idleRun(sessionId) };
+  return {
+    ...piSessionPayload(mgr),
+    run: runtime.lockedAgentSessions.has(sessionId)
+      ? { ...idleRun(sessionId), status: "running" }
+      : idleRun(sessionId),
+  };
 }
 
 // Returns the sidebar session list (max 200) with the first 5 sessions
 // pre-loaded so the frontend can render them without extra round-trips.
-export function sessionHistory(runtime: AppRuntime): Record<string, unknown> {
-  const indexed = runtime.sessionIndex.listAllSessions({ limit: 200 }).filter((row) => row.messageCount > 0);
-  const summaries = indexed.map((row) => ({
-    id: row.id,
-    title: row.title || row.firstMessage.slice(0, 60),
-    provider: row.provider,
-    model: row.model,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    active: false,
-    apiMode: null,
-    reasoningEffort: null,
-    leafId: null,
-    messageCount: row.messageCount,
-    preview: row.firstMessage,
-    contextUsage: null,
-    run: idleRun(row.id),
-  }));
-  return { sessions: summaries, preloadedSessions: summaries.slice(0, 5).map((item) => sessionResponse(runtime, String(item.id))) };
+export async function sessionHistory(runtime: AppRuntime): Promise<Record<string, unknown>> {
+  const listed = (await listPiSessions()).filter((row) => row.messageCount > 0).slice(0, 200);
+  const managers = await Promise.all(listed.map((row) => openPiSession(row.id)));
+  const summaries: Array<Record<string, unknown>> = listed.flatMap((row, index) => {
+    const manager = managers[index];
+    if (!manager) return [];
+    return [{
+      ...piSessionSummary(row, manager),
+      run: runtime.lockedAgentSessions.has(row.id)
+        ? { ...idleRun(row.id), status: "running" }
+        : idleRun(row.id),
+    }];
+  });
+  return {
+    sessions: summaries,
+    preloadedSessions: await Promise.all(
+      summaries.slice(0, 5).map((item) => sessionResponse(runtime, String(item.id))),
+    ),
+  };
 }
 
 // Shapes an instrument into the catalog item format consumed by the add-instrument UI.

@@ -1,7 +1,16 @@
 import { Hono } from "hono";
 import crypto from "node:crypto";
-import { SessionManager } from "../../agent/session_manager.js";
 import { DEFAULT_AGENT_MODEL_REGISTRY } from "../../agent/model_registry.js";
+import {
+  clonePiSession,
+  createPiSession,
+  deletePiSession,
+  EXTERNAL_CONTEXT_ENTRY,
+  forkPiSessionBeforeUser,
+  piProviderName,
+  piSessionFileExists,
+  piSessionPayload,
+} from "../../agent/pi_sessions.js";
 import { buildMarketTools } from "../../agent/tools/market.js";
 import { buildNewsTools } from "../../agent/tools/news.js";
 import { buildJin10Tools } from "../../agent/tools/jin10.js";
@@ -14,7 +23,8 @@ import { createFilesystemRegistry, setFilesystemRoot } from "../../agent/tools/f
 import { mergeRegistries } from "../../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../../mcp/index.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
-import type { AssistantMessage, TextContent, ImageContent } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage, TextContent, ImageContent, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
 import { loadSkills, formatSkillsForPrompt } from "../../agent/skills.js";
 import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
@@ -36,37 +46,46 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
 
   // Lists all persisted agent sessions with summary metadata.
-  app.get("/api/agent/sessions", (c) => c.json(sessionHistory(runtime)));
+  app.get("/api/agent/sessions", async (c) => c.json(await sessionHistory(runtime)));
 
   // Creates a new agent session and returns it alongside the updated history.
   app.post("/api/agent/sessions", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const mgr = SessionManager.create({
+    const mgr = createPiSession({
       title: String(body.title || "New Agent Session"),
-      provider: String(body.provider || runtime.config.agent.provider),
-      model: String(body.model || runtime.config.agent.model),
-      index: runtime.sessionIndex,
     });
+    mgr.appendModelChange(
+      piProviderName(String(body.provider || runtime.config.agent.provider)),
+      String(body.model || runtime.config.agent.model),
+    );
     runtime.pendingSessionManagers.set(mgr.getSessionId(), mgr);
-    const payload = mgr.sessionPayload();
+    const payload = piSessionPayload(mgr);
     const sessionResp = { ...payload, run: idleRun(mgr.getSessionId()) };
     return c.json({
       ...sessionResp,
-      history: sessionHistory(runtime),
+      history: await sessionHistory(runtime),
     });
   });
 
   // Returns the full message history for a single agent session.
-  app.get("/api/agent/sessions/:id", (c) => {
-    return c.json(sessionResponse(runtime, c.req.param("id")));
+  app.get("/api/agent/sessions/:id", async (c) => {
+    return c.json(await sessionResponse(runtime, c.req.param("id")));
   });
 
   // Deletes a session from disk and evicts it from the pending map.
   app.delete("/api/agent/sessions/:id", async (c) => {
     const sessionId = c.req.param("id");
-    runtime.pendingSessionManagers.delete(sessionId);
-    SessionManager.deleteSession(sessionId, runtime.sessionIndex);
-    return c.json({ session: { session: null, messages: [] }, history: sessionHistory(runtime), state: await runtime.state() });
+    if (runtime.lockedAgentSessions.has(sessionId)) {
+      return c.json({ detail: "cannot delete a running session" }, 409);
+    }
+    runtime.lockedAgentSessions.add(sessionId);
+    try {
+      runtime.pendingSessionManagers.delete(sessionId);
+      await deletePiSession(sessionId);
+      return c.json({ session: { session: null, messages: [] }, history: await sessionHistory(runtime), state: await runtime.state() });
+    } finally {
+      runtime.lockedAgentSessions.delete(sessionId);
+    }
   });
 
   // =========================================================================
@@ -83,22 +102,25 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
     if (!entryId) return c.json({ detail: "entryId is required" }, 400);
 
-    const mgr = openSessionManager(sessionId, runtime);
-    if (!mgr) return c.json({ detail: "session not found" }, 404);
-
+    if (runtime.lockedAgentSessions.has(sessionId)) {
+      return c.json({ detail: "cannot fork a running session" }, 409);
+    }
+    runtime.lockedAgentSessions.add(sessionId);
     try {
-      const { sessionId: newSessionId, prompt } = mgr.createForkedSession(entryId);
-      // Open the new session and return its response
-      const newMgr = openSessionManager(newSessionId, runtime);
-      if (!newMgr) return c.json({ detail: "failed to open forked session" }, 500);
+      const mgr = await openSessionManager(sessionId, runtime);
+      if (!mgr) return c.json({ detail: "session not found" }, 404);
+      const { manager: newMgr, prompt } = forkPiSessionBeforeUser(mgr, entryId);
+      const newSessionId = newMgr.getSessionId();
       runtime.pendingSessionManagers.set(newSessionId, newMgr);
       return c.json({
-        ...sessionResponse(runtime, newSessionId),
+        ...await sessionResponse(runtime, newSessionId),
         prompt, // The user message text to place in the editor
-        history: sessionHistory(runtime),
+        history: await sessionHistory(runtime),
       });
     } catch (err) {
       return c.json({ detail: err instanceof Error ? err.message : "fork failed" }, 400);
+    } finally {
+      runtime.lockedAgentSessions.delete(sessionId);
     }
   });
 
@@ -106,20 +128,26 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   // the current position.
   app.post("/api/agent/sessions/:id/clone", async (c) => {
     const sessionId = c.req.param("id");
-    const mgr = openSessionManager(sessionId, runtime);
-    if (!mgr) return c.json({ detail: "session not found" }, 404);
-
+    if (runtime.lockedAgentSessions.has(sessionId)) {
+      return c.json({ detail: "cannot clone a running session" }, 409);
+    }
+    runtime.lockedAgentSessions.add(sessionId);
     try {
-      const { sessionId: newSessionId } = mgr.createClonedSession();
-      const newMgr = openSessionManager(newSessionId, runtime);
-      if (!newMgr) return c.json({ detail: "failed to open cloned session" }, 500);
+      const mgr = await openSessionManager(sessionId, runtime);
+      if (!mgr) return c.json({ detail: "session not found" }, 404);
+      const leafId = mgr.getLeafId();
+      if (!leafId) return c.json({ detail: "cannot clone an empty session" }, 400);
+      const newMgr = clonePiSession(mgr, leafId);
+      const newSessionId = newMgr.getSessionId();
       runtime.pendingSessionManagers.set(newSessionId, newMgr);
       return c.json({
-        ...sessionResponse(runtime, newSessionId),
-        history: sessionHistory(runtime),
+        ...await sessionResponse(runtime, newSessionId),
+        history: await sessionHistory(runtime),
       });
     } catch (err) {
       return c.json({ detail: err instanceof Error ? err.message : "clone failed" }, 400);
+    } finally {
+      runtime.lockedAgentSessions.delete(sessionId);
     }
   });
 
@@ -144,11 +172,14 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     if (!message && requestImages.length === 0) {
       return c.json({ detail: "message or images is required" }, 400);
     }
-
-    const mgr = openSessionManager(sessionId, runtime);
+    const mgr = await openSessionManager(sessionId, runtime);
     if (!mgr) {
       return c.json({ detail: "agent session not found" }, 404);
     }
+    if (runtime.lockedAgentSessions.has(sessionId)) {
+      return c.json({ detail: "an agent run is already active for this session" }, 409);
+    }
+    runtime.lockedAgentSessions.add(sessionId);
 
     const encoder = new TextEncoder();
     const runId = crypto.randomUUID();
@@ -173,21 +204,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         sendFrame(controller, { type: "agent_start" });
 
         try {
-          // ---- Session bookkeeping ----
-          const conversationHistory = mgr.buildSessionContext();
-          // Persist user-attached images on the user message so the frontend
-          // can re-render them after the run completes (when the panel
-          // refreshes the session via session_update / GET sessions/:id).
-          const userImagesMeta = requestImages.length > 0
-            ? requestImages.map((img) => ({ data: img.data, mimeType: img.mimeType }))
-            : null;
-          mgr.appendMessage({
-            role: "user",
-            content: message,
-            metadata: userImagesMeta ? { images: userImagesMeta } : null,
-          });
-          runtime.pendingSessionManagers.delete(sessionId);
-
           // ---- Load skills ----
           const requestConfig = agentConfigForRequest(runtime.config.agent, body);
           const skillsConfig = runtime.config.agent.skills;
@@ -280,80 +296,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             config: requestConfig,
             systemPrompt,
             tools,
+            sessionManager: mgr,
           });
-
-          // Restore conversation history into agent.
-          // Track tool call IDs from assistant messages so we can drop orphaned
-          // toolResult entries whose parent assistant was skipped (e.g. empty/error turns).
-          const restoredToolCallIds = new Set<string>();
-          for (const msg of conversationHistory) {
-            const role = String(msg.role || "");
-            const meta = (msg.metadata ?? {}) as Record<string, unknown>;
-            if (role === "user") {
-              const text = String(msg.content || "");
-              const storedImages = Array.isArray(meta.images) ? meta.images as Array<{ data: string; mimeType: string }> : [];
-              if (storedImages.length > 0) {
-                const blocks: Array<TextContent | ImageContent> = [];
-                if (text) blocks.push({ type: "text", text });
-                for (const img of storedImages) {
-                  blocks.push({ type: "image", data: img.data, mimeType: img.mimeType });
-                }
-                agent.messages = [...agent.messages, { role: "user", content: blocks, timestamp: Date.now() }];
-              } else {
-                agent.messages = [...agent.messages, { role: "user", content: text, timestamp: Date.now() }];
-              }
-            } else if (role === "assistant") {
-              const assistantContent: Array<{ type: "text"; text: string } | { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> }> = [];
-              const text = String(msg.content || "");
-              if (text) {
-                assistantContent.push({ type: "text" as const, text });
-              }
-              const toolCalls = Array.isArray(meta.toolCalls) ? meta.toolCalls : [];
-              for (const tc of toolCalls) {
-                const tcObj = tc as Record<string, unknown>;
-                const tcId = String(tcObj.id || "");
-                assistantContent.push({
-                  type: "toolCall" as const,
-                  id: tcId,
-                  name: String(tcObj.name || ""),
-                  arguments: (typeof tcObj.arguments === "object" && tcObj.arguments !== null ? tcObj.arguments : {}) as Record<string, unknown>,
-                });
-                restoredToolCallIds.add(tcId);
-              }
-              if (assistantContent.length === 0) continue;
-              agent.messages = [...agent.messages, {
-                role: "assistant",
-                content: assistantContent,
-                provider: requestConfig.provider,
-                model: requestConfig.model,
-                api: requestConfig.apiMode,
-                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-                stopReason: "stop" as const,
-                timestamp: Date.now(),
-              }];
-            } else if (role === "system") {
-              agent.messages = [...agent.messages, { role: "user", content: String(msg.content || ""), timestamp: Date.now() }];
-            } else if (role === "toolResult") {
-              const toolCallId = String(meta.toolCallId || "");
-              if (!toolCallId || !restoredToolCallIds.has(toolCallId)) continue;
-              const text = String(msg.content || "");
-              const toolImages = Array.isArray(meta.images) ? meta.images as Array<{ data: string; mimeType: string }> : [];
-              const toolContent: Array<TextContent | ImageContent> = [];
-              if (text) toolContent.push({ type: "text", text });
-              for (const img of toolImages) {
-                toolContent.push({ type: "image", data: img.data, mimeType: img.mimeType });
-              }
-              if (toolContent.length === 0) toolContent.push({ type: "text", text: "" });
-              agent.messages = [...agent.messages, {
-                role: "toolResult" as const,
-                toolCallId,
-                toolName: String(meta.toolName || ""),
-                content: toolContent,
-                isError: Boolean(meta.error),
-                timestamp: Date.now(),
-              }];
-            }
-          }
 
           // ---- Subscribe to agent events ----
           let finalError: string | null = null;
@@ -363,7 +307,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           let totalCacheRead = 0;
           let totalCacheWrite = 0;
           let totalCost = 0;
-          let currentAssistantTurnEntryId: string | null = null;
           let initialUserMessageSeen = false;
           let externalContextRecorded = false;
 
@@ -371,59 +314,22 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             switch (event.type) {
               case "message_start": {
                 const msg = event.message;
-                if (msg.role === "user") {
-                  if (!initialUserMessageSeen) {
-                    initialUserMessageSeen = true;
-                    break;
-                  }
-                  const userContent = typeof msg.content === "string"
-                    ? msg.content
-                    : (msg.content as Array<{ type: string; text?: string }>)
-                        .filter((c) => c.type === "text")
-                        .map((c) => c.text ?? "")
-                        .join("");
-                  const userEntryId = mgr.appendMessage({ role: "user", content: userContent });
-                  const userEntry = mgr.getEntry(userEntryId);
-                  sendFrame(controller, {
-                    type: "message_end",
-                    message: {
-                      id: userEntryId,
-                      sessionId,
-                      role: "user",
-                      content: userContent,
-                      createdAt: userEntry?.timestamp ?? new Date().toISOString(),
-                      metadata: null,
-                      error: null,
-                      entryId: userEntryId,
-                      parentId: userEntry?.parentId ?? null,
-                      entryType: "message",
-                    },
-                  });
-                } else if (msg.role === "assistant") {
-                  // Every assistant message_start creates a fresh turn
+                if (msg.role === "assistant") {
                   toolCallsById.clear();
                   assistantClientId = `assistant:${crypto.randomUUID()}`;
-                  const entryId = mgr.appendMessage({
-                    role: "assistant",
-                    content: "",
-                    metadata: { toolCalls: [] },
-                    error: null,
-                  });
-                  currentAssistantTurnEntryId = entryId;
-                  const entry = mgr.getEntry(entryId);
                   sendFrame(controller, {
                     type: "message_start",
                     message: {
-                      id: entryId,
+                      id: assistantClientId,
                       clientId: assistantClientId,
                       sessionId,
                       role: "assistant",
                       content: "",
-                      createdAt: entry?.timestamp ?? new Date().toISOString(),
+                      createdAt: new Date().toISOString(),
                       metadata: { toolCalls: [] },
                       error: null,
-                      entryId,
-                      parentId: entry?.parentId ?? null,
+                      entryId: null,
+                      parentId: mgr.getLeafId(),
                       entryType: "message",
                     },
                   });
@@ -470,13 +376,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                   externalContextToolNames.has(event.toolName)
                 ) {
                   externalContextRecorded = true;
-                }
-                if (currentAssistantTurnEntryId) {
-                  mgr.updateMessage(currentAssistantTurnEntryId, {
-                    metadata: {
-                      toolCalls: Array.from(toolCallsById.values()),
-                      ...(externalContextRecorded ? { memoryExternalContext: true } : {}),
-                    },
+                  mgr.appendCustomEntry(EXTERNAL_CONTEXT_ENTRY, {
+                    toolName: event.toolName,
                   });
                 }
                 sendFrame(controller, { type: "tool_execution_start", toolCall });
@@ -503,44 +404,26 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                     ...(toolResultImages.length > 0 ? { images: toolResultImages } : {}),
                   },
                 });
-                const entryId = mgr.appendMessage({
-                  role: "toolResult",
-                  content: toolOutput,
-                  metadata: {
-                    toolCallId: event.toolCallId,
-                    toolName: event.toolName,
-                    error: event.isError,
-                    ...(toolResultImages.length > 0 ? { images: toolResultImages } : {}),
-                  },
-                  error: event.isError ? toolOutput : null,
-                });
-                const toolEntry = mgr.getEntry(entryId);
-                sendFrame(controller, {
-                  type: "message_end",
-                  message: {
-                    id: entryId,
-                    sessionId,
-                    role: "toolResult",
-                    content: toolOutput,
-                    createdAt: toolEntry?.timestamp ?? new Date().toISOString(),
-                    metadata: {
-                      toolCallId: event.toolCallId,
-                      toolName: event.toolName,
-                      error: event.isError,
-                      ...(toolResultImages.length > 0 ? { images: toolResultImages } : {}),
-                    },
-                    error: event.isError ? toolOutput : null,
-                    entryId,
-                    parentId: toolEntry?.parentId ?? null,
-                    entryType: "message",
-                  },
-                });
                 break;
               }
 
               case "message_end": {
                 const msg = event.message;
-                if (msg.role === "assistant" && currentAssistantTurnEntryId) {
+                if (msg.role === "user") {
+                  if (!initialUserMessageSeen) {
+                    initialUserMessageSeen = true;
+                    break;
+                  }
+                  sendFrame(controller, {
+                    type: "message_end",
+                    message: agentEventMessageDto(sessionId, msg),
+                  });
+                } else if (msg.role === "toolResult") {
+                  sendFrame(controller, {
+                    type: "message_end",
+                    message: agentEventMessageDto(sessionId, msg),
+                  });
+                } else if (msg.role === "assistant") {
                   const assistant = msg as AssistantMessage;
                   const turnContent = assistant.content
                     .filter((c): c is TextContent => c.type === "text")
@@ -560,36 +443,9 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                   totalCacheRead += assistant.usage.cacheRead;
                   totalCacheWrite += assistant.usage.cacheWrite;
                   totalCost += assistant.usage.cost.total;
-                  const turnMetadata = {
-                    totalTokens: assistant.usage.totalTokens,
-                    promptTokens: assistant.usage.input,
-                    completionTokens: assistant.usage.output,
-                    cacheRead: assistant.usage.cacheRead,
-                    cacheWrite: assistant.usage.cacheWrite,
-                    cost: assistant.usage.cost.total,
-                    toolCalls: Array.from(toolCallsById.values()),
-                    ...(externalContextRecorded ? { memoryExternalContext: true } : {}),
-                  };
-                  const updated = mgr.updateMessage(currentAssistantTurnEntryId, {
-                    content: turnContent,
-                    metadata: turnMetadata,
-                    error: finalError,
-                  });
                   sendFrame(controller, {
                     type: "message_end",
-                    message: {
-                      id: currentAssistantTurnEntryId,
-                      clientId: assistantClientId,
-                      sessionId,
-                      role: "assistant",
-                      content: turnContent,
-                      createdAt: updated.timestamp,
-                      metadata: turnMetadata,
-                      error: finalError,
-                      entryId: currentAssistantTurnEntryId,
-                      parentId: updated.parentId ?? null,
-                      entryType: "message",
-                    },
+                    message: agentEventMessageDto(sessionId, msg, assistantClientId),
                   });
                 }
                 break;
@@ -605,6 +461,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
           // ---- Run the agent ----
           await agent.prompt(message, requestImages.length > 0 ? requestImages : undefined);
+          if (piSessionFileExists(mgr)) runtime.pendingSessionManagers.delete(sessionId);
+          runtime.activeAgents.delete(sessionId);
 
           sendFrame(controller, {
             type: "agent_end",
@@ -625,8 +483,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
           sendFrame(controller, {
             type: "session_update",
-            session: sessionResponse(runtime, sessionId),
-            history: sessionHistory(runtime),
+            session: await sessionResponse(runtime, sessionId),
+            history: await sessionHistory(runtime),
             state: await runtime.state(),
           });
 
@@ -636,6 +494,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           sendFrame(controller, { type: "agent_end", error: errorText, totalTokens: 0, promptTokens: 0, sessionStats: null });
         } finally {
           runtime.activeAgents.delete(sessionId);
+          runtime.lockedAgentSessions.delete(sessionId);
+          if (piSessionFileExists(mgr)) runtime.pendingSessionManagers.delete(sessionId);
           try {
             controller.close();
           } catch {
@@ -728,4 +588,97 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   });
 
   return app;
+}
+
+function agentEventMessageDto(
+  sessionId: string,
+  message: AgentMessage,
+  clientId?: string,
+): Record<string, unknown> {
+  const createdAt = new Date(
+    typeof message.timestamp === "number" ? message.timestamp : Date.now(),
+  ).toISOString();
+  const id = clientId
+    ?? (message.role === "toolResult"
+      ? `toolResult:${(message as ToolResultMessage).toolCallId}`
+      : `${message.role}:${crypto.randomUUID()}`);
+  const base = {
+    id,
+    ...(clientId ? { clientId } : {}),
+    sessionId,
+    role: message.role,
+    createdAt,
+    entryId: null,
+    parentId: null,
+    entryType: "message",
+  };
+
+  if (message.role === "user") {
+    const user = message as UserMessage;
+    return {
+      ...base,
+      content: eventContentText(user.content),
+      metadata: eventImageMetadata(user.content),
+      error: null,
+    };
+  }
+  if (message.role === "assistant") {
+    const assistant = message as AssistantMessage;
+    return {
+      ...base,
+      content: eventContentText(assistant.content),
+      metadata: {
+        totalTokens: assistant.usage.totalTokens,
+        promptTokens: assistant.usage.input,
+        completionTokens: assistant.usage.output,
+        cacheRead: assistant.usage.cacheRead,
+        cacheWrite: assistant.usage.cacheWrite,
+        cost: assistant.usage.cost.total,
+        toolCalls: assistant.content
+          .filter((item) => item.type === "toolCall")
+          .map((item) => ({
+            id: item.id,
+            name: item.name,
+            arguments: item.arguments,
+          })),
+      },
+      error: assistant.errorMessage ?? null,
+    };
+  }
+  if (message.role === "toolResult") {
+    const result = message as ToolResultMessage;
+    return {
+      ...base,
+      content: eventContentText(result.content),
+      metadata: {
+        toolCallId: result.toolCallId,
+        toolName: result.toolName,
+        error: result.isError,
+        ...(eventImageMetadata(result.content) ?? {}),
+      },
+      error: result.isError ? eventContentText(result.content) : null,
+    };
+  }
+  return { ...base, content: "", metadata: null, error: null };
+}
+
+function eventContentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((item): item is TextContent =>
+      Boolean(item && typeof item === "object" && (item as { type?: unknown }).type === "text")
+    )
+    .map((item) => item.text)
+    .join("");
+}
+
+function eventImageMetadata(content: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(content)) return null;
+  const images = content
+    .filter((item): item is ImageContent =>
+      Boolean(item && typeof item === "object" && (item as { type?: unknown }).type === "image")
+    )
+    .map((item) => ({ data: item.data, mimeType: item.mimeType }));
+  return images.length > 0 ? { images } : null;
 }

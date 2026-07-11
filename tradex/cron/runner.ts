@@ -5,14 +5,11 @@
  * invokes the agent loop, and persists the result as a cron session JSONL file.
  */
 
-import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import type { CronJobConfig, AgentConfig } from "../config/index.js";
 import { normalizeApiMode } from "../config/agent_models.js";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import { createPiAgentRuntime } from "../agent/pi_runtime.js";
-import { SessionManager } from "../agent/session_manager.js";
+import { createPiSession, piProviderName } from "../agent/pi_sessions.js";
 import { buildMarketTools } from "../agent/tools/market.js";
 import { buildNewsTools } from "../agent/tools/news.js";
 import { buildWebTools } from "../agent/tools/web.js";
@@ -24,7 +21,7 @@ import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../mcp/index.js";
 import { loadSkills, formatSkillsForPrompt } from "../agent/skills.js";
 import { MAIN_AGENT_PROMPT } from "../agent/prompts.js";
-import { newCronSessionPath } from "./store.js";
+import { jobDir } from "./store.js";
 import type { AppRuntime } from "../api/runtime.js";
 
 const DEFAULT_CRON_MAX_ITERATIONS = 10;
@@ -51,30 +48,16 @@ export async function executeCronJob(input: {
 }): Promise<CronRunResult> {
   const { job, runtime } = input;
   const startMs = Date.now();
-  const sessionId = crypto.randomUUID();
-  const filePath = newCronSessionPath(job.name, sessionId);
-
-  // Write the session JSONL directly to the cron-specific path.
-  // We cannot use SessionManager.create() because it forces the file into
-  // agent_sessions/. Instead, we write the header manually and then open it.
   const provider = resolveProvider(job, runtime);
   const model = resolveModel(job, runtime);
-  const header = {
-    type: "session",
-    version: 1,
-    id: sessionId,
-    timestamp: new Date().toISOString(),
+  const cronMgr = createPiSession({
     title: `[cron] ${job.name}`,
-    provider,
-    model,
-  };
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(header) + "\n");
-
-  const cronMgr = SessionManager.open(filePath);
-
-  // Append the user message
-  cronMgr.appendMessage({ role: "user", content: job.userMessage });
+    sessionDir: jobDir(job.name),
+  });
+  cronMgr.appendModelChange(piProviderName(provider), model);
+  const sessionId = cronMgr.getSessionId();
+  const filePath = cronMgr.getSessionFile();
+  if (!filePath) throw new Error("Pi did not create a persistent cron session");
 
   // Build agent config, optionally overriding model from job config
   const agentConfig = buildAgentConfigForJob(job, runtime.config.agent);
@@ -181,6 +164,7 @@ export async function executeCronJob(input: {
       systemPrompt,
       tools,
       maxTurns: maxIterations,
+      sessionManager: cronMgr,
     });
 
     agent.subscribe((event) => {
@@ -202,21 +186,26 @@ export async function executeCronJob(input: {
 
     await agent.prompt(job.userMessage);
 
-    // Persist assistant response
-    cronMgr.appendMessage({
-      role: "assistant",
-      content,
-      metadata: {
-        iterations,
-      },
-    });
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught);
     cronMgr.appendMessage({
       role: "assistant",
-      content: `[cron job error] ${error}`,
-      error,
-    });
+      content: [{ type: "text", text: `[cron job error] ${error}` }],
+      provider: piProviderName(agentConfig.provider),
+      model: agentConfig.model,
+      api: agentConfig.apiMode,
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "error",
+      errorMessage: error,
+      timestamp: Date.now(),
+    } as AssistantMessage);
   }
 
   // Write completion marker so the store can distinguish ok/error/running

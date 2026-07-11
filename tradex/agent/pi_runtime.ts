@@ -97,6 +97,7 @@ export async function createPiAgentRuntime(input: {
   config: AgentConfig;
   systemPrompt: string;
   tools: ToolRegistry;
+  sessionManager?: PiSessionManager;
   maxTurns?: number;
   /** Called immediately before each provider stream request (e.g. rate-limit reserve). */
   beforeProviderRequest?: () => void;
@@ -127,7 +128,7 @@ export async function createPiAgentRuntime(input: {
     modelRegistry,
     resourceLoader,
     settingsManager,
-    sessionManager: PiSessionManager.inMemory(),
+    sessionManager: input.sessionManager ?? PiSessionManager.inMemory(),
     noTools: "all",
     tools: customTools.map((tool) => tool.name),
     customTools,
