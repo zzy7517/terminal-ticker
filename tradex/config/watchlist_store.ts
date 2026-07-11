@@ -21,7 +21,12 @@ import {
 import type { OptionsConfig } from "../options/domain.js";
 
 function tomlString(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `"${value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t")}"`;
 }
 
 /**
@@ -379,6 +384,7 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
   const lines = [
     "[agent]",
     `enabled = ${config.enabled ? "true" : "false"}`,
+    `system_prompt = ${tomlString(config.systemPrompt)}`,
     `max_candles = ${config.maxCandles}`,
     `candle_context_mode = ${tomlString(config.candleContextMode)}`,
   ];

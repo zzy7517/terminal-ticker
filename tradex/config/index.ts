@@ -102,6 +102,7 @@ export interface AgentConfig {
   provider: string;
   apiMode: string;
   model: string;
+  systemPrompt: string;
   maxCandles: number;
   candleContextMode: CandleContextMode;
   reasoningEffort: string;
@@ -609,6 +610,7 @@ export function parseAgentConfig(rawAgentValue: unknown): AgentConfig {
     provider,
     apiMode: normalizeApiMode(provider),
     model,
+    systemPrompt: typeof rawAgent.system_prompt === "string" ? rawAgent.system_prompt.trim() : "",
     maxCandles: coerceMinInt(rawAgent.max_candles, "agent.max_candles", 40, 10),
     candleContextMode: parseCandleContextMode(rawAgent.candle_context_mode),
     reasoningEffort,

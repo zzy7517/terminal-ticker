@@ -10,7 +10,8 @@
  * `core/` instead — it speaks the same types.
  */
 
-import type { AgentMessage, AssistantMessage } from "./core/types.js";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 export type StreamDeltaHandler = (delta: string) => Promise<void> | void;
 

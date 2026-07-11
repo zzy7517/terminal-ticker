@@ -185,6 +185,7 @@ export interface AgentConfig {
   provider: string;
   apiMode: string;
   model: string;
+  systemPrompt: string;
   maxCandles: number;
   candleContextMode: "raw" | "with_indicators";
   reasoningEffort: string;
@@ -193,6 +194,7 @@ export interface AgentConfig {
 
 export interface AgentConfigUpdate {
   enabled: boolean;
+  systemPrompt: string;
   maxCandles: number;
   candleContextMode: "raw" | "with_indicators";
 }

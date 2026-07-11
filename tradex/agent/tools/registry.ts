@@ -16,10 +16,9 @@
 
 import type {
   AgentToolUpdateCallback,
-  ImageContent,
-  TextContent,
   ToolExecutionMode,
-} from "../core/types.js";
+} from "@earendil-works/pi-agent-core";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 
 /** Single text or image block returned to the model. */
 export type ContentBlock = TextContent | ImageContent;

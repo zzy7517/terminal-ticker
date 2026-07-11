@@ -8,6 +8,7 @@ type CandleContextMode = 'raw' | 'with_indicators';
 export function AgentContextSettingsPanel() {
   const state = useMarketStore((s) => s.state);
   const config = state?.config.agent;
+  const [systemPrompt, setSystemPrompt] = useState(config?.systemPrompt ?? '');
   const [maxCandles, setMaxCandles] = useState(config?.maxCandles ?? 40);
   const [candleContextMode, setCandleContextMode] = useState<CandleContextMode>(config?.candleContextMode ?? 'raw');
   const [saving, setSaving] = useState(false);
@@ -15,9 +16,10 @@ export function AgentContextSettingsPanel() {
 
   useEffect(() => {
     if (!config) return;
+    setSystemPrompt(config.systemPrompt);
     setMaxCandles(config.maxCandles);
     setCandleContextMode(config.candleContextMode);
-  }, [config?.candleContextMode, config?.maxCandles]);
+  }, [config?.candleContextMode, config?.maxCandles, config?.systemPrompt]);
 
   async function saveContext() {
     if (!config) return;
@@ -26,6 +28,7 @@ export function AgentContextSettingsPanel() {
     try {
       const nextState = await saveAgentConfig({
         enabled: config.enabled,
+        systemPrompt,
         maxCandles,
         candleContextMode,
       });
@@ -47,6 +50,20 @@ export function AgentContextSettingsPanel() {
         </div>
       </header>
       <section className="provider-detail">
+        <div className="provider-section-head">
+          <strong>System Prompt</strong>
+          <small>Leave empty to use the built-in trading prompt.</small>
+        </div>
+        <label>
+          <span>Custom instructions</span>
+          <textarea
+            className="input"
+            rows={10}
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+            placeholder="Use the built-in trading agent prompt"
+          />
+        </label>
         <div className="provider-section-head">
           <strong>Market Context</strong>
           <small>Number of recent candles included in agent prompts and tools.</small>

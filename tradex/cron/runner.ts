@@ -10,15 +10,11 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CronJobConfig, AgentConfig } from "../config/index.js";
 import { normalizeApiMode } from "../config/agent_models.js";
-import { resolveAgentModelFromConfig } from "../agent/models.js";
-import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../agent/core/index.js";
-import type { TextContent, ShouldStopContext } from "../agent/core/types.js";
-
-import { agentModelToDescriptor } from "../agent/core/model-descriptor.js";
+import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
+import { createPiAgentRuntime } from "../agent/pi_runtime.js";
 import { SessionManager } from "../agent/session_manager.js";
 import { buildMarketTools } from "../agent/tools/market.js";
 import { buildNewsTools } from "../agent/tools/news.js";
-import { buildMemoryTools } from "../memory/tools.js";
 import { buildWebTools } from "../agent/tools/web.js";
 import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildOptionsTools } from "../agent/tools/options.js";
@@ -84,6 +80,7 @@ export async function executeCronJob(input: {
   const agentConfig = buildAgentConfigForJob(job, runtime.config.agent);
 
   const maxCandles = job.maxCandles ?? runtime.config.agent.maxCandles;
+  const memoryRegistry = await runtime.memoryPort.buildTools();
 
   // Assemble tools — always include market + news + memory + web
   const registries: ToolRegistry[] = [
@@ -96,10 +93,7 @@ export async function executeCronJob(input: {
         }),
       refresh: () => runtime.newsService.refreshNow(),
     }),
-    buildMemoryTools({
-      root: runtime.config.memory.storagePath,
-      allowWriteNotes: runtime.config.memory.enabled && runtime.config.memory.generateMemories,
-    }),
+    ...(memoryRegistry ? [memoryRegistry] : []),
     buildWebTools(),
   ];
 
@@ -163,6 +157,10 @@ export async function executeCronJob(input: {
     } else {
       systemPrompt = job.systemPrompt || "";
     }
+    const memoryContext = await runtime.memoryPort.getPromptContext();
+    if (memoryContext) {
+      systemPrompt = systemPrompt ? `${systemPrompt}\n${memoryContext}` : memoryContext;
+    }
     const skillsConfig = runtime.config.agent.skills;
     if (skillsConfig.enabled) {
       const { skills: loadedSkills } = loadSkills({
@@ -176,39 +174,25 @@ export async function executeCronJob(input: {
       }
     }
 
-    // ---- Build Agent ----
-    const resolved = resolveAgentModelFromConfig(agentConfig);
-    const modelDescriptor = agentModelToDescriptor(resolved);
-
     const maxIterations = job.maxIterations ?? DEFAULT_CRON_MAX_ITERATIONS;
 
-    const agent = new Agent({
-      initialState: {
-        systemPrompt: systemPrompt || "",
-        model: modelDescriptor,
-        thinkingLevel: "off",
-        tools: registryToAgentTools(tools),
-        messages: [],
-      },
-      streamFn: createStreamFnFromRegistry(),
-      apiKey: resolved.apiKey,
-      toolExecution: "sequential",
-      shouldStopAfterTurn: (_ctx: ShouldStopContext) => {
-        // Stop once we've completed `maxIterations` assistant turns.
-        // turn_end fires before this hook, so iterations is already incremented.
-        return iterations >= maxIterations;
-      },
+    const agent = await createPiAgentRuntime({
+      config: agentConfig,
+      systemPrompt,
+      tools,
+      maxTurns: maxIterations,
     });
 
     agent.subscribe((event) => {
       if (event.type === "turn_end") {
         iterations += 1;
-        if (event.message.errorMessage) {
-          error = event.message.errorMessage;
+        const message = event.message as AssistantMessage;
+        if (message.errorMessage) {
+          error = message.errorMessage;
         }
         // Capture text content from this assistant turn. The final turn's
         // text is what we surface as the cron run output.
-        const text = event.message.content
+        const text = message.content
           .filter((c): c is TextContent => c.type === "text")
           .map((c) => c.text)
           .join("");

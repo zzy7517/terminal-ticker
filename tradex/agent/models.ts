@@ -43,6 +43,63 @@ export interface AgentModel {
   accountId?: string | null;
 }
 
+/** Provider credentials only — no model id required (used by model catalog fetch). */
+export interface ProviderAccess {
+  provider: string;
+  apiKey: string;
+  baseUrl: string;
+  accountId?: string | null;
+}
+
+/** Resolve apiKey/baseUrl for a provider without picking a default model. */
+export function resolveProviderAccess(config: AgentConfig, providerOverride?: string): ProviderAccess {
+  const provider = normalizeProvider(providerOverride ?? config.provider);
+  const profile: ProviderProfile | undefined = config.providerProfiles[provider];
+
+  if (provider === CODEX_PROVIDER) {
+    const { accessToken, accountId } = resolveCodexCredentials(profile);
+    return {
+      provider,
+      apiKey: accessToken,
+      baseUrl: profile?.baseUrl || DEFAULT_CODEX_BASE_URL,
+      accountId,
+    };
+  }
+
+  if (provider === ANTHROPIC_PROVIDER) {
+    // Prefer ANTHROPIC_AUTH_TOKEN (common for Anthropic-compatible proxies);
+    // fall back to ANTHROPIC_API_KEY. profile.apiKey may already be expanded
+    // from `${ANTHROPIC_AUTH_TOKEN}` in watchlist.toml via expandEnvRefs.
+    const apiKey =
+      profile?.apiKey
+      || process.env.ANTHROPIC_AUTH_TOKEN?.trim()
+      || process.env.ANTHROPIC_API_KEY?.trim()
+      || "";
+    return {
+      provider,
+      apiKey,
+      baseUrl: profile?.baseUrl || process.env.ANTHROPIC_BASE_URL || "",
+    };
+  }
+
+  if (provider === OPENAI_PROVIDER) {
+    // For LiteLLM, point `base_url` at the proxy (e.g. http://localhost:4000/v1)
+    // and put the LiteLLM master key in `api_key` (or OPENAI_API_KEY env).
+    return {
+      provider,
+      apiKey: profile?.apiKey
+        || process.env.OPENAI_API_KEY
+        || process.env.LITELLM_API_KEY
+        || "",
+      baseUrl: profile?.baseUrl
+        || process.env.OPENAI_BASE_URL
+        || DEFAULT_OPENAI_BASE_URL,
+    };
+  }
+
+  throw new Error(`Unsupported agent provider: ${provider}`);
+}
+
 /**
  * Resolve an AgentModel from the runtime AgentConfig.
  * This is the primary way to get a model from config on each request.
@@ -52,55 +109,17 @@ export function resolveAgentModelFromConfig(config: AgentConfig): AgentModel {
   const api = normalizeApiMode(provider, config.apiMode);
   const modelId = normalizeModel(provider, config.model);
   const reasoningEffort = normalizeReasoningEffort(config.reasoningEffort);
+  const access = resolveProviderAccess(config, provider);
 
-  const profile: ProviderProfile | undefined = config.providerProfiles[provider];
-
-  if (provider === CODEX_PROVIDER) {
-    const { accessToken, accountId } = resolveCodexCredentials(profile);
-    return {
-      id: modelId,
-      provider,
-      api,
-      baseUrl: profile?.baseUrl || DEFAULT_CODEX_BASE_URL,
-      reasoningEffort,
-      apiKey: accessToken,
-      accountId,
-    };
-  }
-
-  if (provider === ANTHROPIC_PROVIDER) {
-    const apiKey = profile?.apiKey || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || "";
-    return {
-      id: modelId,
-      provider,
-      api,
-      baseUrl: profile?.baseUrl || process.env.ANTHROPIC_BASE_URL || "",
-      reasoningEffort,
-      apiKey,
-    };
-  }
-
-  if (provider === OPENAI_PROVIDER) {
-    // For LiteLLM, point `base_url` at the proxy (e.g. http://localhost:4000/v1)
-    // and put the LiteLLM master key in `api_key` (or OPENAI_API_KEY env).
-    const apiKey = profile?.apiKey
-      || process.env.OPENAI_API_KEY
-      || process.env.LITELLM_API_KEY
-      || "";
-    const baseUrl = profile?.baseUrl
-      || process.env.OPENAI_BASE_URL
-      || DEFAULT_OPENAI_BASE_URL;
-    return {
-      id: modelId,
-      provider,
-      api,
-      baseUrl,
-      reasoningEffort,
-      apiKey,
-    };
-  }
-
-  throw new Error(`Unsupported agent provider: ${provider}`);
+  return {
+    id: modelId,
+    provider,
+    api,
+    baseUrl: access.baseUrl,
+    reasoningEffort,
+    apiKey: access.apiKey,
+    accountId: access.accountId,
+  };
 }
 
 /**

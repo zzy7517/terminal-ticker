@@ -1,7 +1,5 @@
 import type { AgentConfig, MemoryConfig } from "../config/index.js";
 import type { ChatResponse, LLMChatClient } from "../agent/llm_client.js";
-import type { StreamFn } from "../agent/core/types.js";
-import { createStreamFnFromRegistry } from "../agent/core/index.js";
 import type { TradeStore } from "../trading/store.js";
 import { ensureMemoryLayout } from "./paths.js";
 import { MemoryRuntimePolicy } from "./policy.js";
@@ -135,15 +133,6 @@ export class MemoryPipeline {
         chat: (chatInput) => this.rateLimitGuard.chat(provider, chatInput),
       };
     };
-    const baseStreamFn = createStreamFnFromRegistry();
-    const guardedStreamFn: StreamFn = (model, context, options) => {
-      const allowed = this.rateLimitGuard.reserveRequest();
-      if (!allowed.ok) {
-        throw new Error(`memory rate-limit guard skipped agent request: ${allowed.reason}`);
-      }
-      return baseStreamFn(model, context, options);
-    };
-
     this.storage = new MemoryFileStorage({
       root: this.root,
       tradeStore: tradeStore ?? ({ getTrade: () => null, getSnapshot: () => null, listTrades: () => [], listLessons: () => [] } as unknown as TradeStore),
@@ -169,7 +158,6 @@ export class MemoryPipeline {
       storage: this.storage,
       agentConfigProvider: input.phase2ConfigProvider ?? agentConfigProvider,
       llmProviderFactory: guardedLlmProviderFactory,
-      agentStreamFn: guardedStreamFn,
       consolidationModel: input.config.consolidationModel,
       heartbeatIntervalMs: DEFAULT_PHASE2_HEARTBEAT_MS,
     });

@@ -1,10 +1,8 @@
 import type { AgentConfig } from "../../config/index.js";
 import { nowMs } from "../../db.js";
 import type { LLMChatClient } from "../../agent/llm_client.js";
-import { resolveAgentModelFromConfig } from "../../agent/models.js";
-import { Agent, registryToAgentTools } from "../../agent/core/index.js";
-import { agentModelToDescriptor } from "../../agent/core/model-descriptor.js";
-import type { AgentEvent, StreamFn, TextContent } from "../../agent/core/types.js";
+import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
+import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import { ToolRegistry, type ToolDefinition } from "../../agent/tools/registry.js";
 import { DEFAULT_RETRY_DELAY_MS, type MemoryStateStore, type Stage1Output } from "../state.js";
 import type { MemoryWorkspaceDiff } from "../workspace.js";
@@ -367,7 +365,6 @@ export class Phase2Runner {
   readonly stateStore: MemoryStateStore;
   readonly storage: MemoryFileStorage;
   readonly agentConfigProvider: (() => AgentConfig | null) | null;
-  readonly agentStreamFn: StreamFn | null;
   readonly consolidationModel: string | null;
   readonly heartbeatIntervalMs: number;
 
@@ -377,7 +374,6 @@ export class Phase2Runner {
     storage: MemoryFileStorage;
     agentConfigProvider: (() => AgentConfig | null) | null;
     llmProviderFactory: LLMProviderFactory;
-    agentStreamFn?: StreamFn | null;
     consolidationModel?: string | null;
     heartbeatIntervalMs: number;
   }) {
@@ -385,7 +381,6 @@ export class Phase2Runner {
     this.stateStore = input.stateStore;
     this.storage = input.storage;
     this.agentConfigProvider = input.agentConfigProvider;
-    this.agentStreamFn = input.agentStreamFn ?? null;
     this.consolidationModel = input.consolidationModel ?? null;
     this.heartbeatIntervalMs = Math.max(1, input.heartbeatIntervalMs);
   }
@@ -499,38 +494,24 @@ export class Phase2Runner {
     const agentConfig = this.consolidationModel
       ? { ...baseAgentConfig, model: this.consolidationModel }
       : baseAgentConfig;
-    const resolved = resolveAgentModelFromConfig(agentConfig);
-    const modelDescriptor = agentModelToDescriptor(resolved);
     const tools = createMemoryFileTools(this.root, () => this._assertPhase2Ownership(ownershipToken));
-    const streamFn = this.agentStreamFn;
-    if (!streamFn) throw new Error("memory Phase 2 requires an agent stream function");
 
     let turns = 0;
     let finalError: string | null = null;
     let finalText = "";
-    const agent = new Agent({
-      initialState: {
-        systemPrompt: PHASE2_SYSTEM_PROMPT,
-        model: modelDescriptor,
-        thinkingLevel: "off",
-        tools: registryToAgentTools(tools),
-        messages: [],
-      },
-      streamFn,
-      apiKey: resolved.apiKey,
-      getApiKey: () => {
-        const fresh = resolveAgentModelFromConfig(agentConfig);
-        return fresh.apiKey;
-      },
-      toolExecution: "sequential",
-      shouldStopAfterTurn: () => turns >= MAX_PHASE2_AGENT_TURNS,
+    const agent = await createPiAgentRuntime({
+      config: agentConfig,
+      systemPrompt: PHASE2_SYSTEM_PROMPT,
+      tools,
+      maxTurns: MAX_PHASE2_AGENT_TURNS,
     });
 
-    agent.subscribe((event: AgentEvent) => {
+    agent.subscribe((event) => {
       if (event.type !== "turn_end") return;
       turns += 1;
-      finalError = event.message.errorMessage ?? finalError;
-      const text = event.message.content
+      const message = event.message as AssistantMessage;
+      finalError = message.errorMessage ?? finalError;
+      const text = message.content
         .filter((item): item is TextContent => item.type === "text")
         .map((item) => item.text)
         .join("");

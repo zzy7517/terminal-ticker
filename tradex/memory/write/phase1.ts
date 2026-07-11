@@ -1,5 +1,5 @@
 import type { AgentConfig } from "../../config/index.js";
-import type { Usage } from "../../agent/core/types.js";
+import type { Usage } from "@earendil-works/pi-ai";
 import { nowMs } from "../../db.js";
 import type { LLMChatClient } from "../../agent/llm_client.js";
 import { TradeStatus, FillKind, type Trade, type Fill, fillToPayload, tradeToPayload, snapshotToPayload } from "../../trading/models.js";

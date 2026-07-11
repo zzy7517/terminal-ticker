@@ -1,35 +1,25 @@
 /**
- * model_registry.ts — Convenience wrapper around AgentModel resolution + the
- * api_registry.
+ * model_registry.ts — Convenience wrapper around AgentModel resolution +
+ * remote model catalog fetch.
  *
  * Used by:
  *  - api/routes/agent.ts for listAvailableModels()
  *  - memory pipeline (via LLMProviderFactory)
- *
- * Internally delegates to resolveAgentModelFromConfig + getApiStream /
- * getApiListModels. memory's LLMChatClient.chat() shape is implemented here so
- * memory consumers don't have to know about the provider stream contract.
  */
 
 import { AgentConfig } from "../config/index.js";
 import {
   ANTHROPIC_PROVIDER,
   CODEX_PROVIDER,
-  normalizeApiMode,
-  normalizeModel,
-  normalizeProvider,
-  normalizeReasoningEffort,
 } from "../config/agent_models.js";
 import type { LLMChatClient, ChatResponse } from "./llm_client.js";
 import type { AgentModel } from "./models.js";
 import { resolveAgentModelFromConfig } from "./models.js";
-import { getApiStream, getApiListModels } from "./api_registry.js";
-import type { AgentContext, AgentModelDescriptor, TextContent } from "./core/types.js";
-import { transformMessages } from "./core/transform-messages.js";
-import { agentModelToDescriptor } from "./core/model-descriptor.js";
-
-// Ensure built-in providers are registered
-import "./providers/register.js";
+import { convertToLlm } from "@earendil-works/pi-coding-agent";
+import { streamSimple } from "@earendil-works/pi-ai/compat";
+import type { TextContent } from "@earendil-works/pi-ai";
+import { createPiModelAccess } from "./pi_runtime.js";
+import { fetchProviderModelCatalog } from "./list_models.js";
 
 export class LLMProviderUnavailable extends Error {}
 
@@ -49,21 +39,20 @@ export class AgentModelRegistry {
    * pipeline.
    */
   createProvider(config: AgentConfig): LLMChatClient {
-    const model = this.resolve(config);
-    const descriptor = agentModelToDescriptor(model);
-    const streamFn = getApiStream(descriptor.api);
-    const apiKey = model.apiKey;
+    const { model, modelRegistry } = createPiModelAccess(config);
     return {
-      name: descriptor.provider,
-      model: descriptor.id,
+      name: model.provider,
+      model: model.id,
       async chat({ system, messages, onDelta }): Promise<ChatResponse> {
-        const context: AgentContext = {
+        const auth = await modelRegistry.getApiKeyAndHeaders(model);
+        if (!auth.ok) throw new LLMProviderUnavailable(auth.error);
+        const stream = streamSimple(model, {
           systemPrompt: system ?? "",
-          messages: transformMessages(messages, descriptor),
+          messages: convertToLlm(messages),
           tools: [],
-        };
-        const stream = streamFn(descriptor, context, {
-          apiKey,
+        }, {
+          apiKey: auth.apiKey,
+          headers: auth.headers,
         });
         // Forward text deltas to legacy onDelta callback while awaiting final result
         if (onDelta) {
@@ -83,29 +72,12 @@ export class AgentModelRegistry {
     };
   }
 
-  /** List available models for a provider. */
+  /** Fetch available models from the provider's remote catalog. */
   async listAvailableModels(
     config: AgentConfig,
     providerOverride?: string | null,
   ): Promise<Array<Record<string, unknown>>> {
-    let model: AgentModel;
-    if (providerOverride) {
-      const provider = normalizeProvider(providerOverride);
-      const apiMode = normalizeApiMode(provider);
-      const stub: AgentConfig = {
-        ...config,
-        provider,
-        apiMode,
-        model: normalizeModel(provider, null),
-        reasoningEffort: normalizeReasoningEffort(null),
-      };
-      model = resolveAgentModelFromConfig(stub);
-    } else {
-      model = this.resolve(config);
-    }
-    const descriptor = agentModelToDescriptor(model);
-    const listFn = getApiListModels(descriptor.api);
-    return listFn(descriptor, { apiKey: model.apiKey });
+    return fetchProviderModelCatalog(config, providerOverride);
   }
 }
 

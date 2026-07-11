@@ -1,11 +1,8 @@
 import { Hono } from "hono";
 import crypto from "node:crypto";
-import { resolveAgentModelFromConfig } from "../../agent/models.js";
 import { SessionManager } from "../../agent/session_manager.js";
 import { DEFAULT_AGENT_MODEL_REGISTRY } from "../../agent/model_registry.js";
 import { buildMarketTools } from "../../agent/tools/market.js";
-import { buildMemoryTools } from "../../memory/tools.js";
-import { buildMemoryDeveloperInstructions, parseMemoryCitations } from "../../memory/read/index.js";
 import { buildNewsTools } from "../../agent/tools/news.js";
 import { buildJin10Tools } from "../../agent/tools/jin10.js";
 import { buildSocialFeedTools } from "../../agent/tools/social.js";
@@ -17,9 +14,8 @@ import { createFilesystemRegistry, setFilesystemRoot } from "../../agent/tools/f
 import { mergeRegistries } from "../../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../../mcp/index.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
-import { Agent, registryToAgentTools, createStreamFnFromRegistry } from "../../agent/core/index.js";
-import type { AssistantMessage, TextContent, ImageContent } from "../../agent/core/types.js";
-import { agentModelToDescriptor } from "../../agent/core/model-descriptor.js";
+import type { AssistantMessage, TextContent, ImageContent } from "@earendil-works/pi-ai";
+import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
 import { loadSkills, formatSkillsForPrompt } from "../../agent/skills.js";
 import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
 import type { AppRuntime } from "../runtime.js";
@@ -216,6 +212,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           const mcpRegistry = runtime.mcpManager
             ? await buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig())
             : null;
+          const memoryRegistry = await runtime.memoryPort.buildTools();
           const externalContextToolNames = new Set([
             "web_search",
             "web_fetch",
@@ -253,10 +250,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                 product: typeof args.product === "string" ? args.product : undefined,
               })).items,
             }),
-            buildMemoryTools({
-              root: runtime.config.memory.storagePath,
-              allowWriteNotes: runtime.config.memory.enabled && runtime.config.memory.generateMemories,
-            }),
+            ...(memoryRegistry ? [memoryRegistry] : []),
             buildTradingTools({
               tradeStore: runtime.tradeStore,
               exchangeRouter: runtime.exchangeRouter,
@@ -271,37 +265,21 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             ...(mcpRegistry ? [mcpRegistry] : []),
           );
 
-          // ---- Create Agent ----
-          const resolved = resolveAgentModelFromConfig(requestConfig);
-          const modelDescriptor = agentModelToDescriptor(resolved);
-
           // Inject memory context into system prompt when available.
-          const memoryInstructions = runtime.config.memory.enabled && runtime.config.memory.useMemories
-            ? buildMemoryDeveloperInstructions(runtime.config.memory.storagePath)
-            : null;
+          const memoryInstructions = await runtime.memoryPort.getPromptContext();
 
           // Build stable session date (day-level only for prompt cache stability).
           const now = new Date();
           const sessionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
           const sessionDateLine = `\nSession date: ${sessionDate} (Asia/Shanghai)`;
 
-          const systemPrompt = [MAIN_AGENT_PROMPT, memoryInstructions ?? "", skillsPromptBlock].filter(Boolean).join("\n") + sessionDateLine;
+          const baseSystemPrompt = requestConfig.systemPrompt.trim() || MAIN_AGENT_PROMPT;
+          const systemPrompt = [baseSystemPrompt, memoryInstructions ?? "", skillsPromptBlock].filter(Boolean).join("\n") + sessionDateLine;
 
-          const agent = new Agent({
-            initialState: {
-              systemPrompt,
-              model: modelDescriptor,
-              thinkingLevel: "off",
-              tools: registryToAgentTools(tools),
-              messages: [],
-            },
-            streamFn: createStreamFnFromRegistry(),
-            apiKey: resolved.apiKey,
-            getApiKey: async () => {
-              const fresh = resolveAgentModelFromConfig(requestConfig);
-              return fresh.apiKey;
-            },
-            toolExecution: "sequential",
+          const agent = await createPiAgentRuntime({
+            config: requestConfig,
+            systemPrompt,
+            tools,
           });
 
           // Restore conversation history into agent.
@@ -346,8 +324,9 @@ export function agentRoutes(runtime: AppRuntime): Hono {
               agent.messages = [...agent.messages, {
                 role: "assistant",
                 content: assistantContent,
-                provider: modelDescriptor.provider,
-                model: modelDescriptor.id,
+                provider: requestConfig.provider,
+                model: requestConfig.model,
+                api: requestConfig.apiMode,
                 usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
                 stopReason: "stop" as const,
                 timestamp: Date.now(),
@@ -512,7 +491,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                 // Extract images from tool result for frontend display
                 const toolResultImages = event.result.content
                   .filter((c: { type: string }) => c.type === "image")
-                  .map((c) => ({ data: (c as ImageContent).data, mimeType: (c as ImageContent).mimeType }));
+                  .map((c: { type: string }) => ({ data: (c as ImageContent).data, mimeType: (c as ImageContent).mimeType }));
                 sendFrame(controller, {
                   type: "tool_execution_end",
                   toolCall: toolCallsById.get(event.toolCallId) ?? { id: event.toolCallId, name: event.toolName, arguments: {} },
@@ -567,7 +546,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
                     .filter((c): c is TextContent => c.type === "text")
                     .map((c) => c.text)
                     .join("");
-                  recordMemoryCitationUsage(runtime, turnContent);
+                  void runtime.memoryPort.recordAssistantResponse(turnContent);
                   finalError = assistant.errorMessage ?? null;
                   totalTokens += assistant.usage.totalTokens;
                   promptTokens += assistant.usage.input;
@@ -738,6 +717,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     await updateAgentConfigInWatchlist(watchlistPath, {
       ...runtime.config.agent,
       enabled: typeof body.enabled === "boolean" ? body.enabled : runtime.config.agent.enabled,
+      systemPrompt: typeof body.systemPrompt === "string" ? body.systemPrompt.trim() : runtime.config.agent.systemPrompt,
       maxCandles: Number.isFinite(Number(body.maxCandles)) ? Number(body.maxCandles) : runtime.config.agent.maxCandles,
       candleContextMode:
         body.candleContextMode === "raw" || body.candleContextMode === "with_indicators"
@@ -748,34 +728,4 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   });
 
   return app;
-}
-
-function recordMemoryCitationUsage(runtime: AppRuntime, content: string): void {
-  const citations = parseMemoryCitations(content);
-  if (!citations || !runtime.memoryPipeline) return;
-
-  const seenPaths = new Set<string>();
-  for (const entry of citations.entries) {
-    if (seenPaths.has(entry.filePath)) continue;
-    seenPaths.add(entry.filePath);
-    try {
-      runtime.memoryPipeline.state.recordUsage({
-        filePath: entry.filePath,
-        usageKind: "citation",
-      });
-    } catch (error) {
-      console.warn("failed recording memory citation usage", error);
-    }
-  }
-
-  if (citations.rolloutIds.length > 0) {
-    try {
-      runtime.memoryPipeline.state.recordSourceRefUsage({
-        sourceRefs: citations.rolloutIds,
-        usageKind: "citation",
-      });
-    } catch (error) {
-      console.warn("failed recording memory rollout usage", error);
-    }
-  }
 }
