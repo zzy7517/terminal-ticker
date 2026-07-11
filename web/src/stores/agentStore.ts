@@ -149,7 +149,7 @@ interface AgentState {
   runAgentAnalysis: () => Promise<void>;
   steerAgent: () => Promise<void>;
   abortAgent: () => Promise<void>;
-  resetAgentConversation: () => Promise<void>;
+  resetAgentConversation: (agentId?: string) => Promise<void>;
   resumeAgentConversation: (sessionId: string) => Promise<void>;
   deleteAgentConversation: (sessionId: string) => Promise<void>;
 }
@@ -913,13 +913,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
-  resetAgentConversation: async () => {
+  resetAgentConversation: async (agentId = 'default') => {
     if (get().agentSessionActionKey) return;
-    const { agentProvider, agentModel } = get();
     const actionKey = 'new';
     set({ agentSessionActionKey: actionKey });
     try {
-      const payload = await createAgentSession({ provider: agentProvider, model: agentModel });
+      const payload = await createAgentSession({ agentId });
       const sessionId = payload.session?.id ?? null;
       set((s) => {
         const agentSessionById = cacheSession(s.agentSessionById, payload);

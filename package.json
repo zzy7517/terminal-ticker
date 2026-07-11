@@ -11,6 +11,7 @@
     "build:backend": "tsc -p tsconfig.json",
     "typecheck": "tsc -b web/tsconfig.json && tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:backend": "vitest run --config vitest.backend.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -24,7 +25,6 @@
     "croner": "^10.0.1",
     "diff": "^8.0.4",
     "hono": "^4.12.18",
-    "ignore": "^7.0.5",
     "lucide-react": "^0.468.0",
     "open-browser-use-sdk": "^0.1.40",
     "react": "^19.0.0",
@@ -37,7 +37,6 @@
     "viem": "^2.48.11",
     "wreq-js": "^2.3.0",
     "ws": "^8.20.0",
-    "yaml": "^2.9.0",
     "zustand": "^5.0.13"
   },
   "devDependencies": {

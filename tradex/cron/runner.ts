@@ -8,7 +8,7 @@
 import type { CronJobConfig } from "../config/index.js";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import { createPiAgentRuntime } from "../agent/pi_runtime.js";
-import { agentConfigForModelSelection } from "../agent/model_runtime.js";
+import { agentConfigForModelSelection } from "../agent/models/runtime.js";
 import { createPiSession, piProviderName } from "../agent/pi_sessions.js";
 import { buildMarketTools } from "../agent/tools/market.js";
 import { buildNewsTools } from "../agent/tools/news.js";
@@ -19,7 +19,6 @@ import { buildSocialFeedTools } from "../agent/tools/social.js";
 import { buildBrowserTools } from "../agent/tools/browser.js";
 import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../mcp/index.js";
-import { loadSkills, formatSkillsForPrompt } from "../agent/skills.js";
 import { MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { jobDir } from "./store.js";
 import type { AppRuntime } from "../api/runtime.js";
@@ -127,7 +126,7 @@ export async function executeCronJob(input: {
   let iterations = 0;
 
   try {
-    // Build system prompt: optionally prepend MAIN_AGENT_PROMPT + job-specific prompt + skills
+    // Build system prompt: optionally prepend MAIN_AGENT_PROMPT + job-specific prompt.
     let systemPrompt = "";
     if (job.useMainPrompt) {
       systemPrompt = MAIN_AGENT_PROMPT;
@@ -141,19 +140,6 @@ export async function executeCronJob(input: {
     if (memoryContext) {
       systemPrompt = systemPrompt ? `${systemPrompt}\n${memoryContext}` : memoryContext;
     }
-    const skillsConfig = runtime.config.agent.skills;
-    if (skillsConfig.enabled) {
-      const { skills: loadedSkills } = loadSkills({
-        cwd: process.cwd(),
-        skillPaths: skillsConfig.paths,
-        includeDefaults: skillsConfig.includeDefaults,
-      });
-      const skillsBlock = formatSkillsForPrompt(loadedSkills);
-      if (skillsBlock) {
-        systemPrompt = systemPrompt ? `${systemPrompt}\n${skillsBlock}` : skillsBlock;
-      }
-    }
-
     const maxIterations = job.maxIterations ?? DEFAULT_CRON_MAX_ITERATIONS;
 
     const agent = await createPiAgentRuntime({

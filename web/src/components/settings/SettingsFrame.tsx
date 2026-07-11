@@ -47,6 +47,14 @@ export function SettingsFrame({
 
           <div className="settings-nav-group">
             <button
+              className={`settings-nav-item ${section === 'agents' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onSection('agents')}
+            >
+              <Bot size={18} />
+              <span>Agents</span>
+            </button>
+            <button
               className={`settings-nav-item ${section === 'providers' ? 'active' : ''}`}
               type="button"
               onClick={() => onSection('providers')}

@@ -4,7 +4,7 @@
  */
 
 import { fetch as browserFetch } from "wreq-js";
-import type { AgentConfig } from "../config/index.js";
+import type { AgentConfig } from "../../config/index.js";
 import {
   ANTHROPIC_PROVIDER,
   CODEX_PROVIDER,
@@ -12,8 +12,9 @@ import {
   DEFAULT_OPENAI_BASE_URL,
   OPENAI_PROVIDER,
   normalizeProvider,
-} from "../config/agent_models.js";
-import { resolveProviderAccess } from "./models.js";
+  jwtClaims,
+} from "./constants.js";
+import { resolveProviderAccess } from "./resolve.js";
 
 const ANTHROPIC_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
@@ -133,20 +134,6 @@ function accountIdFromToken(accessToken: string): string | null {
       ? (nestedAuth as Record<string, unknown>).chatgpt_account_id
       : null);
   return typeof accountId === "string" && accountId.trim() ? accountId.trim() : null;
-}
-
-function jwtClaims(token: string): Record<string, unknown> {
-  try {
-    const parts = token.split(".");
-    if (parts.length < 2) return {};
-    const payload = parts[1] + "=".repeat((4 - (parts[1].length % 4)) % 4);
-    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {};
-  } catch {
-    return {};
-  }
 }
 
 function normalizeCodexModelOption(item: unknown): Record<string, unknown> | null {

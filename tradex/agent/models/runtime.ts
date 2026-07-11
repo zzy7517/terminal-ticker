@@ -1,9 +1,22 @@
+/**
+ * runtime.ts — 把 Tradex AgentConfig 桥接到 Pi 的 ModelRegistry。
+ *
+ * 构建不可变的 ModelRuntimeSnapshot：根据 provider 配置 / 自定义模型
+ * 一次性注册 AuthStorage + ModelRegistry，供 agent 运行、memory 流水线
+ * 和设置页 DTO 共享使用。
+ *
+ * 模型元数据来源：
+ *  - "pi"     — Pi 内置目录
+ *  - "custom" — watchlist.toml 里显式的 CustomModelDefinition
+ *  - "legacy" — 只配了 model id、没有元数据（用占位默认值）
+ */
+
 import {
   AuthStorage,
   ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
 import type { Model } from "@earendil-works/pi-ai/compat";
-import type { AgentConfig, CustomModelDefinition, ProviderProfile } from "../config/index.js";
+import type { AgentConfig, CustomModelDefinition, ProviderProfile } from "../../config/index.js";
 import {
   ANTHROPIC_PROVIDER,
   CODEX_PROVIDER,
@@ -12,24 +25,21 @@ import {
   normalizeProvider,
   OPENAI_PROVIDER,
   toPiProviderId,
-} from "../config/agent_models.js";
+} from "./constants.js";
 import {
   resolveAgentModelFromConfig,
   resolveProviderAccess,
-} from "./models.js";
+} from "./resolve.js";
 
+/** Pi 能实际流式调用的 wire-format；用于前端 `runnable` 标记。 */
 const RUNNABLE_APIS = new Set([
   "openai-completions",
-  "mistral-conversations",
   "openai-responses",
-  "azure-openai-responses",
   "openai-codex-responses",
   "anthropic-messages",
-  "bedrock-converse-stream",
-  "google-generative-ai",
-  "google-vertex",
 ]);
 
+/** 单次 LLM 调用拿到的句柄：Pi Model + 共享的鉴权 / registry。 */
 export interface ModelRuntimeAccess {
   provider: string;
   model: Model<any>;
@@ -38,6 +48,7 @@ export interface ModelRuntimeAccess {
   requiresAuth: boolean;
 }
 
+/** GET /api/agent/model-registry 返回的 provider 行。 */
 export interface ModelRegistryProviderDTO {
   providerId: string;
   configProviderId: string;
@@ -51,6 +62,7 @@ export interface ModelRegistryProviderDTO {
   runnable: boolean;
 }
 
+/** GET /api/agent/model-registry 返回的 model 行。 */
 export interface ModelRegistryModelDTO {
   providerId: string;
   id: string;
@@ -71,11 +83,16 @@ export interface ModelRegistryDTO {
   models: ModelRegistryModelDTO[];
 }
 
+/** 限定选型：`provider:modelId`（model id 本身也可以含 `:`）。 */
 export interface ModelSelection {
   provider: string;
   id: string;
 }
 
+/**
+ * 解析 `"provider:modelId"` 或纯 model id。
+ * 第一个 `:` 分隔 provider，其余整段是 model id（如 `codex:gpt:extra` → id 为 `gpt:extra`）。
+ */
 export function parseModelSelection(
   value: string | null | undefined,
   fallback: ModelSelection,
@@ -90,6 +107,7 @@ export function parseModelSelection(
   };
 }
 
+/** 把选型覆盖到 AgentConfig 上（cron / memory 阶段选模型用）。 */
 export function agentConfigForModelSelection(
   config: AgentConfig,
   value: string | null | undefined,
@@ -110,8 +128,9 @@ export function agentConfigForModelSelection(
 }
 
 /**
- * Immutable runtime handle. Its AuthStorage and ModelRegistry are built once,
- * then shared by every consumer that captures this snapshot.
+ * 不可变的运行时句柄。AuthStorage 与 ModelRegistry 构建一次后，
+ * 由所有持有该快照的消费者共享。
+ * 配置热更新时 `generation` 递增，前端可据此判断 DTO 是否过期。
  */
 export class ModelRuntimeSnapshot {
   readonly generation: number;
@@ -137,6 +156,7 @@ export class ModelRuntimeSnapshot {
     this.providerProfiles = input.providerProfiles;
   }
 
+  /** 按 config 当前选型查找 Pi Model（未注册则抛错）。 */
   resolve(config: AgentConfig): ModelRuntimeAccess {
     const selection = resolveAgentModelFromConfig(config);
     const provider = toPiProviderId(selection.provider);
@@ -155,6 +175,7 @@ export class ModelRuntimeSnapshot {
     };
   }
 
+  /** 把 UI/API 选型解析成 model DTO（接受 logical 或 Pi 的 provider id）。 */
   resolveSelection(selection: ModelSelection): ModelRegistryModelDTO {
     const logicalProvider = normalizeProvider(fromPiProviderId(selection.provider.trim().toLowerCase()));
     const providerId = toPiProviderId(logicalProvider);
@@ -163,15 +184,18 @@ export class ModelRuntimeSnapshot {
     return this.toModelDTO(model);
   }
 
+  /** 设置页模型选择器用的完整 registry 载荷。 */
   toDTO(): ModelRegistryDTO {
+    // 只暴露后端 config.providerProfiles 里声明过的 provider；
+    // Pi 内置目录仍留在内存 registry 里供解析，但不进前端列表。
+    const allowedProviderIds = new Set(
+      [...this.providerProfiles.keys()].map(toPiProviderId),
+    );
     const models = this.modelRegistry.getAll()
+      .filter((model) => allowedProviderIds.has(model.provider))
       .map((model) => this.toModelDTO(model))
       .sort((a, b) => a.providerId.localeCompare(b.providerId) || a.name.localeCompare(b.name));
-    const providerIds = new Set([
-      ...models.map((model) => model.providerId),
-      ...[...this.providerProfiles.keys()].map(toPiProviderId),
-    ]);
-    const providers = [...providerIds]
+    const providers = [...allowedProviderIds]
       .map((providerId) => ({
         ...this.providerDTO(providerId),
         runnable: models.some((model) => model.providerId === providerId && model.runnable),
@@ -197,6 +221,7 @@ export class ModelRuntimeSnapshot {
       maxTokens: model.maxTokens,
       selected: this.selectedModels.has(key),
       source: this.modelSources.get(key) ?? "pi",
+      // 已启用 + 鉴权就绪 + Pi 能流式调用该 wire-format。
       runnable: Boolean(profile?.enabled && authConfigured && RUNNABLE_APIS.has(String(model.api))),
     };
   }
@@ -215,6 +240,7 @@ export class ModelRuntimeSnapshot {
       baseUrlConfigured: Boolean(profile?.baseUrl),
       authConfigured: profile?.requiresAuth === false || this.modelRegistry.getAll()
         .some((model) => model.provider === providerId && this.modelRegistry.hasConfiguredAuth(model)),
+      // 仅这三个 provider 支持拉远端 /models。
       discoverable: [CODEX_PROVIDER, ANTHROPIC_PROVIDER, OPENAI_PROVIDER].includes(logicalProvider),
     };
   }
@@ -223,10 +249,12 @@ export class ModelRuntimeSnapshot {
 const LEGACY_CONTEXT_WINDOW = 32_768;
 const LEGACY_MAX_TOKENS = 4_096;
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
 function modelKey(provider: string, id: string): string {
   return `${provider}\0${id}`;
 }
 
+/** 用显式 CustomModelDefinition 构造 Pi Model。 */
 function configuredModel(
   definition: CustomModelDefinition,
   baseUrl: string,
@@ -245,6 +273,10 @@ function configuredModel(
   };
 }
 
+/**
+ * 占位元数据：配置里有 model id，但既没有 CustomModelDefinition，
+ * 也不在 Pi 内置目录中。
+ */
 function legacyModel(id: string, profile: ProviderProfile, baseUrl: string): Model<any> {
   return configuredModel({
     id,
@@ -274,6 +306,10 @@ function registryModelConfig(model: Model<any>) {
   };
 }
 
+/**
+ * 把所有 provider profile 注册进一份全新的内存 Pi ModelRegistry。
+ * 启动时以及 agent 配置热更新时调用（`generation` 递增）。
+ */
 export function buildModelRuntimeSnapshot(
   config: AgentConfig,
   generation: number,
@@ -292,6 +328,7 @@ export function buildModelRuntimeSnapshot(
     for (const id of profile.models) selectedModels.add(modelKey(logicalProvider, id));
     if (access.apiKey) authStorage.setRuntimeApiKey(providerId, access.apiKey);
 
+    // 先取 Pi 内置模型，再叠加 custom / legacy。
     const existing = modelRegistry.getAll().filter((model) => model.provider === providerId);
     const providerBaseUrl = access.baseUrl || existing[0]?.baseUrl || "";
     const merged = new Map(existing.map((model) => [model.id, model]));
@@ -313,6 +350,7 @@ export function buildModelRuntimeSnapshot(
     const requiresModelRegistration = profile.customModelDefinitions.length > 0
       || [...configuredIds].some((id) => !existing.some((model) => model.id === id));
     if (requiresModelRegistration) {
+      // 替换/扩展 provider 条目，让 custom + legacy 对 Pi 可见。
       modelRegistry.registerProvider(providerId, {
         name: profile.displayName,
         api: profile.api,
@@ -324,8 +362,7 @@ export function buildModelRuntimeSnapshot(
         models: [...merged.values()].map(registryModelConfig),
       });
     } else if (access.baseUrl || access.apiKey || !profile.requiresAuth) {
-      // Built-in providers retain Pi's complete catalog; only request endpoint
-      // and auth are overridden when no configured model metadata is needed.
+      // 内置 provider 保留 Pi 完整目录；无需额外模型元数据时，只覆盖端点与鉴权。
       modelRegistry.registerProvider(providerId, {
         ...(access.baseUrl ? { baseUrl: access.baseUrl } : {}),
         ...(profile.requiresAuth
@@ -338,8 +375,7 @@ export function buildModelRuntimeSnapshot(
     }
   }
 
-  // Preserve compatibility with minimal AgentConfig objects whose selected
-  // provider is absent from providerProfiles.
+  // 兼容极简 AgentConfig：当前选型的 provider 不在 providerProfiles 里。
   const selected = resolveAgentModelFromConfig(config);
   const selectedProviderId = toPiProviderId(selected.provider);
   if (selected.apiKey) authStorage.setRuntimeApiKey(selectedProviderId, selected.apiKey);
@@ -350,7 +386,7 @@ export function buildModelRuntimeSnapshot(
     });
   }
 
-  // Validate the configured default before publishing the snapshot.
+  // 发布快照前校验默认模型已注册。
   if (!modelRegistry.find(selectedProviderId, selected.id)) {
     throw new Error(
       `Pi does not know model ${selectedProviderId}/${selected.id}; register model metadata before using it`,

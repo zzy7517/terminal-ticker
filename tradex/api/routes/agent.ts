@@ -1,16 +1,21 @@
 import { Hono } from "hono";
 import crypto from "node:crypto";
-import { AgentModelRegistry } from "../../agent/model_registry.js";
+import { AgentModelRegistry } from "../../agent/models/registry.js";
 import {
   clonePiSession,
   createPiSession,
   deletePiSession,
   EXTERNAL_CONTEXT_ENTRY,
+  AGENT_SNAPSHOT_ENTRY,
+  appendAgentSnapshot,
+  readAgentSnapshot,
+  listPiSessionManagersSync,
   forkPiSessionBeforeUser,
   piProviderName,
   piSessionFileExists,
   piSessionPayload,
 } from "../../agent/pi_sessions.js";
+import type { AgentDefinition, AgentFileInput } from "../../agent/agent_store.js";
 import { buildMarketTools } from "../../agent/tools/market.js";
 import { buildNewsTools } from "../../agent/tools/news.js";
 import { buildJin10Tools } from "../../agent/tools/jin10.js";
@@ -26,7 +31,6 @@ import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent, ImageContent, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
-import { loadSkills, formatSkillsForPrompt } from "../../agent/skills.js";
 import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
 import type { AppRuntime } from "../runtime.js";
 import {
@@ -45,21 +49,77 @@ import {
 export function agentRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
 
+  app.get("/api/agents", (c) => c.json({ agents: runtime.agentStore.list() }));
+
+  app.post("/api/agents", async (c) => {
+    try {
+      const body = await c.req.json() as AgentFileInput;
+      return c.json({ agent: runtime.agentStore.create(body), agents: runtime.agentStore.list() }, 201);
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : "Agent create failed" }, 400);
+    }
+  });
+
+  app.put("/api/agents/:id", async (c) => {
+    try {
+      const body = await c.req.json() as Partial<AgentFileInput>;
+      if (typeof body.id === "string" && body.id !== c.req.param("id")) {
+        return c.json({ detail: "Agent id cannot be changed" }, 400);
+      }
+      const agent = runtime.agentStore.update(c.req.param("id"), body);
+      return c.json({ agent, agents: runtime.agentStore.list() });
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : "Agent update failed" }, 400);
+    }
+  });
+
+  app.delete("/api/agents/:id", (c) => {
+    const agentId = c.req.param("id");
+    try {
+      runtime.agentStore.remove(agentId, (candidateId) => listPiSessionManagersSync().some((manager) => {
+        const payload = piSessionPayload(manager);
+        const stats = payload.sessionStats as { totalMessages?: number };
+        return readAgentSnapshot(manager).agentId === candidateId && Number(stats.totalMessages ?? 0) > 0;
+      }));
+      for (const [sessionId, snapshot] of runtime.pendingAgentSnapshots) {
+        if (snapshot.agentId !== agentId) continue;
+        runtime.pendingAgentSnapshots.delete(sessionId);
+        runtime.pendingSessionManagers.delete(sessionId);
+      }
+      return c.json({ agents: runtime.agentStore.list() });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Agent delete failed";
+      return c.json({ detail }, detail === "Agent has persisted Sessions" ? 409 : 400);
+    }
+  });
+
   // Lists all persisted agent sessions with summary metadata.
   app.get("/api/agent/sessions", async (c) => c.json(await sessionHistory(runtime)));
 
   // Creates a new agent session and returns it alongside the updated history.
   app.post("/api/agent/sessions", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : "default";
+    const selectedAgent = runtime.agentStore.get(agentId);
+    if (!selectedAgent) return c.json({ detail: "Agent not found" }, 404);
+    const snapshot = snapshotForAgent(selectedAgent, runtime);
     const mgr = createPiSession({
       title: String(body.title || "New Agent Session"),
     });
     mgr.appendModelChange(
-      piProviderName(String(body.provider || runtime.config.agent.provider)),
-      String(body.model || runtime.config.agent.model),
+      piProviderName(String(body.provider || snapshot.provider)),
+      String(body.model || snapshot.model),
     );
+    mgr.appendThinkingLevelChange(snapshot.reasoningEffort);
     runtime.pendingSessionManagers.set(mgr.getSessionId(), mgr);
+    runtime.pendingAgentSnapshots.set(mgr.getSessionId(), snapshot);
     const payload = piSessionPayload(mgr);
+    payload.session = {
+      ...(payload.session as Record<string, unknown>),
+      agentId: snapshot.agentId,
+      agentName: snapshot.agentName,
+      runtime: snapshot.runtime,
+    };
     const sessionResp = { ...payload, run: idleRun(mgr.getSessionId()) };
     return c.json({
       ...sessionResp,
@@ -81,6 +141,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     runtime.lockedAgentSessions.add(sessionId);
     try {
       runtime.pendingSessionManagers.delete(sessionId);
+      runtime.pendingAgentSnapshots.delete(sessionId);
       await deletePiSession(sessionId);
       return c.json({ session: { session: null, messages: [] }, history: await sessionHistory(runtime), state: await runtime.state() });
     } finally {
@@ -181,6 +242,15 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     }
     runtime.lockedAgentSessions.add(sessionId);
 
+    let agentSnapshot = readAgentSnapshot(mgr);
+    const hasSnapshot = mgr.getEntries().some((entry) => entry.type === "custom" && entry.customType === AGENT_SNAPSHOT_ENTRY);
+    if (!hasSnapshot) {
+      agentSnapshot = runtime.pendingAgentSnapshots.get(sessionId)
+        ?? snapshotForAgent(runtime.agentStore.get("default")!, runtime);
+      appendAgentSnapshot(mgr, agentSnapshot);
+      runtime.pendingAgentSnapshots.delete(sessionId);
+    }
+
     const encoder = new TextEncoder();
     const runId = crypto.randomUUID();
     let assistantClientId = "";
@@ -204,26 +274,15 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         sendFrame(controller, { type: "agent_start" });
 
         try {
-          // ---- Load skills ----
-          const requestConfig = agentConfigForRequest(runtime.config.agent, body);
+          const requestConfig = agentConfigForRequest(runtime.config.agent, {
+            ...body,
+            provider: typeof body.provider === "string" && body.provider ? body.provider : agentSnapshot.provider,
+            model: typeof body.model === "string" && body.model ? body.model : agentSnapshot.model,
+          });
+          requestConfig.reasoningEffort = typeof body.reasoningEffort === "string" && body.reasoningEffort.trim()
+            ? body.reasoningEffort.trim()
+            : mgr.buildSessionContext().thinkingLevel || agentSnapshot.reasoningEffort || requestConfig.reasoningEffort;
           const modelRuntime = runtime.modelRuntimeSnapshot;
-          const skillsConfig = runtime.config.agent.skills;
-          let skillsPromptBlock = "";
-          const allowedSkillPaths = new Set<string>();
-          if (skillsConfig.enabled) {
-            const { skills: loadedSkills, diagnostics: skillDiagnostics } = loadSkills({
-              cwd: process.cwd(),
-              skillPaths: skillsConfig.paths,
-              includeDefaults: skillsConfig.includeDefaults,
-            });
-            if (skillDiagnostics.length > 0) {
-              for (const d of skillDiagnostics) {
-                console.warn(`[skills] ${d.type}: ${d.message} (${d.path})`);
-              }
-            }
-            for (const s of loadedSkills) allowedSkillPaths.add(s.filePath);
-            skillsPromptBlock = formatSkillsForPrompt(loadedSkills);
-          }
 
           // ---- Build tools ----
           const mcpRegistry = runtime.mcpManager
@@ -278,7 +337,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
             buildWebTools(),
             ...(runtime.config.browser.enabled ? [buildBrowserTools(runtime.browserManager)] : []),
             ...(runtime.optionsService ? [buildOptionsTools(runtime)] : []),
-            createFilesystemRegistry({ allowedSkillPaths }),
+            createFilesystemRegistry(),
             ...(mcpRegistry ? [mcpRegistry] : []),
           );
 
@@ -290,8 +349,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           const sessionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
           const sessionDateLine = `\nSession date: ${sessionDate} (Asia/Shanghai)`;
 
-          const baseSystemPrompt = requestConfig.systemPrompt.trim() || MAIN_AGENT_PROMPT;
-          const systemPrompt = [baseSystemPrompt, memoryInstructions ?? "", skillsPromptBlock].filter(Boolean).join("\n") + sessionDateLine;
+          const baseSystemPrompt = agentSnapshot.systemPrompt.trim() || MAIN_AGENT_PROMPT;
+          const systemPrompt = [baseSystemPrompt, memoryInstructions ?? ""].filter(Boolean).join("\n") + sessionDateLine;
 
           const agent = await createPiAgentRuntime({
             config: requestConfig,
@@ -618,6 +677,19 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   });
 
   return app;
+}
+
+function snapshotForAgent(agent: AgentDefinition, runtime: AppRuntime) {
+  const defaultConfig = runtime.config.agent;
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    runtime: "pi" as const,
+    systemPrompt: agent.systemPrompt?.trim() || defaultConfig.systemPrompt.trim() || MAIN_AGENT_PROMPT,
+    provider: agent.provider || defaultConfig.provider,
+    model: agent.model || defaultConfig.model,
+    reasoningEffort: agent.reasoningEffort || defaultConfig.reasoningEffort,
+  };
 }
 
 function agentEventMessageDto(

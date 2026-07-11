@@ -126,16 +126,6 @@ export interface AgentConfig {
   candleContextMode: CandleContextMode;
   reasoningEffort: string;
   providerProfiles: Record<string, ProviderProfile>;
-  skills: SkillsConfig;
-}
-
-export interface SkillsConfig {
-  /** Enable skill loading. Default: true */
-  enabled: boolean;
-  /** Include default skill directories (~/.agents/skills, .agents/skills). Default: true */
-  includeDefaults: boolean;
-  /** Extra skill directories or file paths */
-  paths: string[];
 }
 
 export interface MemoryConfig {
@@ -687,24 +677,6 @@ function parseCandleContextMode(rawValue: unknown): CandleContextMode {
   return "raw";
 }
 
-export function parseSkillsConfig(rawSkillsValue: unknown): SkillsConfig {
-  if (rawSkillsValue === undefined || rawSkillsValue === null) {
-    return { enabled: true, includeDefaults: true, paths: [] };
-  }
-  const raw = asRecord(rawSkillsValue, "agent.skills");
-  const paths: string[] = [];
-  if (Array.isArray(raw.paths)) {
-    for (const p of raw.paths) {
-      if (typeof p === "string" && p.trim()) paths.push(p.trim());
-    }
-  }
-  return {
-    enabled: normalizeBool(raw.enabled, "agent.skills.enabled", true),
-    includeDefaults: normalizeBool(raw.include_defaults, "agent.skills.include_defaults", true),
-    paths,
-  };
-}
-
 export function parseAgentConfig(rawAgentValue: unknown): AgentConfig {
   const rawAgent = asRecord(rawAgentValue, "agent");
   const profiles = parseProviderProfiles(rawAgent);
@@ -737,7 +709,6 @@ export function parseAgentConfig(rawAgentValue: unknown): AgentConfig {
     candleContextMode: parseCandleContextMode(rawAgent.candle_context_mode),
     reasoningEffort,
     providerProfiles: profiles,
-    skills: parseSkillsConfig(rawAgent.skills),
   };
 }
 

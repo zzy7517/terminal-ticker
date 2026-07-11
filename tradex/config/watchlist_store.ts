@@ -400,17 +400,6 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
     `max_candles = ${config.maxCandles}`,
     `candle_context_mode = ${tomlString(config.candleContextMode)}`,
   ];
-  // [agent.skills] is part of the [agent] table block replaced below — it
-  // must be re-emitted or a config save silently drops it.
-  lines.push(
-    "",
-    "[agent.skills]",
-    `enabled = ${config.skills.enabled ? "true" : "false"}`,
-    `include_defaults = ${config.skills.includeDefaults ? "true" : "false"}`,
-  );
-  if (config.skills.paths.length > 0) {
-    lines.push(`paths = [${config.skills.paths.map(tomlString).join(", ")}]`);
-  }
   for (const [name, profile] of Object.entries(config.providerProfiles)) {
     lines.push("", `[agent.providers.${tomlKey(name)}]`, `enabled = ${profile.enabled ? "true" : "false"}`);
     lines.push(`api = ${tomlString(profile.api)}`);
@@ -575,5 +564,4 @@ async function replaceTable(watchlistPath: string, tableName: string, lines: str
     return true;
   });
 }
-
 

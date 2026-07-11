@@ -191,9 +191,11 @@ function AgentTranscriptMessage({
 export function AgentSessionPanel({
   providerProfiles: _providerProfiles,
   disabled,
+  onNewSession,
 }: {
   providerProfiles: Record<string, { enabled: boolean; models: string[]; modelEfforts: Record<string, string> }>;
   disabled: boolean;
+  onNewSession: () => void;
 }) {
   const agentSession = useAgentStore((s) => s.agentSession);
   const agentPrompt = useAgentStore((s) => s.agentPrompt);
@@ -220,7 +222,6 @@ export function AgentSessionPanel({
   const runAgentAnalysis = useAgentStore((s) => s.runAgentAnalysis);
   const steerAgent = useAgentStore((s) => s.steerAgent);
   const abortAgent = useAgentStore((s) => s.abortAgent);
-  const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
 
   const instruments = useMarketStore((s) => s.state?.instruments) ?? [];
 
@@ -423,7 +424,7 @@ export function AgentSessionPanel({
         }
         break;
       case 'new':
-        void resetAgentConversation();
+        onNewSession();
         break;
       case 'compact':
         // TODO: trigger context compaction
@@ -437,7 +438,7 @@ export function AgentSessionPanel({
         }
         break;
     }
-  }, [setAgentPrompt, setAgentSession, setAgentSessionHistory, resetAgentConversation, agentPrompt, sessionId]);
+  }, [setAgentPrompt, setAgentSession, setAgentSessionHistory, onNewSession, agentPrompt, sessionId]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 

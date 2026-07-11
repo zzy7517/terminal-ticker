@@ -14,10 +14,55 @@ import type {
   UserMessage,
 } from "@earendil-works/pi-ai";
 import { defaultCacheDir } from "../db.js";
-import { toPiProviderId } from "../config/agent_models.js";
+import { toPiProviderId } from "./models/constants.js";
+import { DEFAULT_AGENT_ID } from "./agent_store.js";
 
 const PI_SESSIONS_SUBDIR = "pi_sessions";
 export const EXTERNAL_CONTEXT_ENTRY = "tradex_external_context";
+export const AGENT_SNAPSHOT_ENTRY = "tradex_agent_snapshot";
+
+export interface SessionAgentSnapshot {
+  agentId: string;
+  agentName: string;
+  runtime: "pi";
+  systemPrompt: string;
+  provider: string;
+  model: string;
+  reasoningEffort: string;
+}
+
+const LEGACY_AGENT_SNAPSHOT: SessionAgentSnapshot = {
+  agentId: DEFAULT_AGENT_ID,
+  agentName: "Default Agent",
+  runtime: "pi",
+  systemPrompt: "",
+  provider: "",
+  model: "",
+  reasoningEffort: "",
+};
+
+export function appendAgentSnapshot(manager: SessionManager, snapshot: SessionAgentSnapshot): void {
+  if (manager.getEntries().some((entry) => entry.type === "custom" && entry.customType === AGENT_SNAPSHOT_ENTRY)) return;
+  manager.appendCustomEntry(AGENT_SNAPSHOT_ENTRY, snapshot);
+}
+
+export function readAgentSnapshot(manager: SessionManager): SessionAgentSnapshot {
+  const entry = manager.getEntries().find((candidate) =>
+    candidate.type === "custom" && candidate.customType === AGENT_SNAPSHOT_ENTRY
+  );
+  if (!entry || entry.type !== "custom") return { ...LEGACY_AGENT_SNAPSHOT };
+  const value = entry.data as Partial<SessionAgentSnapshot> | undefined;
+  if (!value || typeof value.agentId !== "string") return { ...LEGACY_AGENT_SNAPSHOT };
+  return {
+    agentId: value.agentId,
+    agentName: typeof value.agentName === "string" ? value.agentName : value.agentId,
+    runtime: "pi",
+    systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : "",
+    provider: typeof value.provider === "string" ? value.provider : "",
+    model: typeof value.model === "string" ? value.model : "",
+    reasoningEffort: typeof value.reasoningEffort === "string" ? value.reasoningEffort : "",
+  };
+}
 
 export function piSessionsDir(): string {
   return path.join(defaultCacheDir(), PI_SESSIONS_SUBDIR);
@@ -103,6 +148,7 @@ export function piSessionPayload(manager: SessionManager): Record<string, unknow
   const externalContext = entries.some((entry) =>
     entry.type === "custom" && entry.customType === EXTERNAL_CONTEXT_ENTRY
   ) || messageEntries.some((entry) => messageUsesExternalContext(entry.message));
+  const agentSnapshot = readAgentSnapshot(manager);
 
   return {
     session: {
@@ -115,6 +161,9 @@ export function piSessionPayload(manager: SessionManager): Record<string, unknow
       active: true,
       apiMode: null,
       reasoningEffort: context.thinkingLevel || null,
+      agentId: agentSnapshot.agentId,
+      agentName: agentSnapshot.agentName,
+      runtime: agentSnapshot.runtime,
       leafId: manager.getLeafId(),
       memory: { externalContext },
     },
