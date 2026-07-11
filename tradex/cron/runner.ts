@@ -277,6 +277,7 @@ function buildAgentConfigForJob(job: CronJobConfig, baseConfig: AgentConfig): Ag
           models: [],
           modelEfforts: [],
           apiKey: "",
+          apiKeyRaw: "",
           baseUrl: "",
           customModels: [],
         }),

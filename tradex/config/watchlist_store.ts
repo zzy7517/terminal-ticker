@@ -401,7 +401,9 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
   }
   for (const [name, profile] of Object.entries(config.providerProfiles)) {
     lines.push("", `[agent.providers.${name}]`, `enabled = ${profile.enabled ? "true" : "false"}`);
-    if (profile.apiKey) lines.push(`api_key = ${tomlString(profile.apiKey)}`);
+    if (profile.apiKeyRaw || profile.apiKey) {
+      lines.push(`api_key = ${tomlString(profile.apiKeyRaw || profile.apiKey)}`);
+    }
     if (profile.baseUrl) lines.push(`base_url = ${tomlString(profile.baseUrl)}`);
     lines.push(`models = [${profile.models.map(tomlString).join(", ")}]`);
     if (profile.modelEfforts.length > 0) {

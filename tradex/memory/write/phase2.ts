@@ -1,6 +1,5 @@
 import type { AgentConfig } from "../../config/index.js";
 import { nowMs } from "../../db.js";
-import type { LLMChatClient } from "../../agent/llm_client.js";
 import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import { ToolRegistry, type ToolDefinition } from "../../agent/tools/registry.js";
@@ -139,8 +138,6 @@ SAFETY AND HYGIENE
 - Do not delete extension note files.
 - Finish only after MEMORY.md and memory_summary.md are valid and saved.
 `;
-
-export type LLMProviderFactory = (config: AgentConfig) => LLMChatClient;
 
 const MAX_PHASE2_AGENT_TURNS = 12;
 
@@ -360,11 +357,17 @@ function createMemoryFileTools(root: string, assertLease?: () => void): ToolRegi
   return registry;
 }
 
+export interface MemoryRequestGuard {
+  reserveRequest(now?: number): { ok: true } | { ok: false; reason: string };
+  noteError(error: unknown): void;
+}
+
 export class Phase2Runner {
   readonly root: string;
   readonly stateStore: MemoryStateStore;
   readonly storage: MemoryFileStorage;
   readonly agentConfigProvider: (() => AgentConfig | null) | null;
+  readonly rateLimitGuard: MemoryRequestGuard;
   readonly consolidationModel: string | null;
   readonly heartbeatIntervalMs: number;
 
@@ -373,7 +376,7 @@ export class Phase2Runner {
     stateStore: MemoryStateStore;
     storage: MemoryFileStorage;
     agentConfigProvider: (() => AgentConfig | null) | null;
-    llmProviderFactory: LLMProviderFactory;
+    rateLimitGuard: MemoryRequestGuard;
     consolidationModel?: string | null;
     heartbeatIntervalMs: number;
   }) {
@@ -381,6 +384,7 @@ export class Phase2Runner {
     this.stateStore = input.stateStore;
     this.storage = input.storage;
     this.agentConfigProvider = input.agentConfigProvider;
+    this.rateLimitGuard = input.rateLimitGuard;
     this.consolidationModel = input.consolidationModel ?? null;
     this.heartbeatIntervalMs = Math.max(1, input.heartbeatIntervalMs);
   }
@@ -504,6 +508,12 @@ export class Phase2Runner {
       systemPrompt: PHASE2_SYSTEM_PROMPT,
       tools,
       maxTurns: MAX_PHASE2_AGENT_TURNS,
+      beforeProviderRequest: () => {
+        const allowed = this.rateLimitGuard.reserveRequest();
+        if (!allowed.ok) {
+          throw new Error(`memory rate-limit guard skipped agent request: ${allowed.reason}`);
+        }
+      },
     });
 
     agent.subscribe((event) => {
@@ -511,6 +521,7 @@ export class Phase2Runner {
       turns += 1;
       const message = event.message as AssistantMessage;
       finalError = message.errorMessage ?? finalError;
+      if (message.errorMessage) this.rateLimitGuard.noteError(message.errorMessage);
       const text = message.content
         .filter((item): item is TextContent => item.type === "text")
         .map((item) => item.text)
@@ -518,7 +529,12 @@ export class Phase2Runner {
       if (text) finalText = text;
     });
 
-    await agent.prompt(this._consolidationUserPrompt(outputs, diff, agentConfig));
+    try {
+      await agent.prompt(this._consolidationUserPrompt(outputs, diff, agentConfig));
+    } catch (error) {
+      this.rateLimitGuard.noteError(error);
+      throw error;
+    }
     if (finalError) throw new Error(`memory Phase 2 agent failed: ${finalError}`);
     if (turns >= MAX_PHASE2_AGENT_TURNS && !this._consolidatedOutputsLookReady()) {
       throw new Error(`memory Phase 2 agent reached ${MAX_PHASE2_AGENT_TURNS} turns before producing valid outputs: ${finalText.slice(0, 500)}`);

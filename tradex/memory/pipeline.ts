@@ -27,7 +27,7 @@ const DEFAULT_MAX_MEMORY_REQUESTS_PER_WINDOW = 16;
 
 type ChatInput = Parameters<LLMChatClient["chat"]>[0];
 
-class MemoryRateLimitGuard {
+export class MemoryRateLimitGuard {
   private readonly cooldownMs: number;
   private readonly requestWindowMs: number;
   private readonly maxRequestsPerWindow: number;
@@ -62,6 +62,12 @@ class MemoryRateLimitGuard {
     return { ok: true };
   }
 
+  noteError(error: unknown): void {
+    if (this.isRateLimitError(error)) {
+      this.blockedUntilMs = Date.now() + this.cooldownMs;
+    }
+  }
+
   async chat(provider: LLMChatClient, input: ChatInput): Promise<ChatResponse> {
     const allowed = this.reserveRequest();
     if (!allowed.ok) throw new Error(`memory rate-limit guard skipped LLM request: ${allowed.reason}`);
@@ -69,9 +75,7 @@ class MemoryRateLimitGuard {
     try {
       return await provider.chat(input);
     } catch (error) {
-      if (this.isRateLimitError(error)) {
-        this.blockedUntilMs = Date.now() + this.cooldownMs;
-      }
+      this.noteError(error);
       throw error;
     }
   }
@@ -157,7 +161,7 @@ export class MemoryPipeline {
       stateStore: this.state,
       storage: this.storage,
       agentConfigProvider: input.phase2ConfigProvider ?? agentConfigProvider,
-      llmProviderFactory: guardedLlmProviderFactory,
+      rateLimitGuard: this.rateLimitGuard,
       consolidationModel: input.config.consolidationModel,
       heartbeatIntervalMs: DEFAULT_PHASE2_HEARTBEAT_MS,
     });

@@ -62,10 +62,14 @@ export function createPiModelAccess(config: AgentConfig): PiModelAccess {
   }
 
   let model = modelRegistry.find(provider, resolved.id);
-  const profile = config.providerProfiles[resolved.provider];
-  if (!model && profile?.customModels.includes(resolved.id)) {
+  // Catalog-selected and custom models both live in config as free-form ids.
+  // Register unknown ids from a same-provider template so Fetch/toggle works
+  // without requiring a separate customModels entry.
+  if (!model) {
     const template = modelRegistry.getAll().find((candidate) => candidate.provider === provider);
-    if (!template) throw new Error(`Pi has no model template for provider ${provider}`);
+    if (!template) {
+      throw new Error(`Pi does not know model ${provider}/${resolved.id}; add it to Pi's model registry before using it`);
+    }
     modelRegistry.registerProvider(provider, {
       baseUrl: resolved.baseUrl || template.baseUrl,
       ...(resolved.apiKey ? { apiKey: resolved.apiKey } : {}),
@@ -94,6 +98,8 @@ export async function createPiAgentRuntime(input: {
   systemPrompt: string;
   tools: ToolRegistry;
   maxTurns?: number;
+  /** Called immediately before each provider stream request (e.g. rate-limit reserve). */
+  beforeProviderRequest?: () => void;
 }): Promise<PiAgentRuntime> {
   const { authStorage, modelRegistry, model } = createPiModelAccess(input.config);
 
@@ -127,6 +133,13 @@ export async function createPiAgentRuntime(input: {
     customTools,
   });
   session.agent.toolExecution = "sequential";
+  if (input.beforeProviderRequest) {
+    const baseStreamFn = session.agent.streamFn.bind(session.agent);
+    session.agent.streamFn = (modelArg, context, options) => {
+      input.beforeProviderRequest!();
+      return baseStreamFn(modelArg, context, options);
+    };
+  }
   if (input.maxTurns !== undefined) {
     let turns = 0;
     session.subscribe((event) => {
