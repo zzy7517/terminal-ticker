@@ -3,7 +3,6 @@ import * as bitget from "./bitget.js";
 import { ExchangeOrder, ExchangePosition, OrderResult, TradeSyncResult, orderResult } from "./exchange_models.js";
 import * as hyperliquid from "./hyperliquid.js";
 import { FillKind, Trade, TradeStatus } from "./models.js";
-import { TradeStore } from "./store.js";
 
 export const EXCHANGE_HYPERLIQUID = "hyperliquid";
 export const EXCHANGE_BITGET = "bitget-demo";
@@ -14,11 +13,9 @@ function hasEntryFill(trade: Trade): boolean {
 }
 
 export class ExchangeRouter {
-  private readonly tradeStore: TradeStore | null;
   tradingConfig: TradingConfig;
 
-  constructor(input: { tradeStore?: TradeStore | null; tradingConfig?: TradingConfig | null } = {}) {
-    this.tradeStore = input.tradeStore ?? null;
+  constructor(input: { tradingConfig?: TradingConfig | null } = {}) {
     this.tradingConfig = input.tradingConfig ?? { hyperliquidMode: "off", bitgetMode: "off" };
   }
 

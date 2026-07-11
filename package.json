@@ -8,8 +8,8 @@
     "dev:all": "concurrently -n api,web -c green,blue --kill-others-on-fail \"npm:dev:backend\" \"wait-on tcp:127.0.0.1:8765 && npm run dev\"",
     "start:backend": "node dist/backend/tradex/index.js",
     "build": "tsc -b web/tsconfig.json && vite build",
-    "build:backend": "tsc -p tsconfig.backend.json",
-    "typecheck": "tsc -b web/tsconfig.json && tsc -p tsconfig.backend.json",
+    "build:backend": "tsc -p tsconfig.json",
+    "typecheck": "tsc -b web/tsconfig.json && tsc -p tsconfig.json",
     "test": "vitest run",
     "preview": "vite preview"
   },
@@ -38,7 +38,6 @@
     "wreq-js": "^2.3.0",
     "ws": "^8.20.0",
     "yaml": "^2.9.0",
-    "zod": "^4.4.3",
     "zustand": "^5.0.13"
   },
   "devDependencies": {

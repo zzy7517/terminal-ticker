@@ -15,11 +15,11 @@
  */
 
 import { access, readFile, writeFile, mkdir, readdir, stat } from "node:fs/promises";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { constants } from "node:fs";
 import { execSync, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { resolve, relative, dirname, join, sep } from "node:path";
+import { relative, dirname, join, sep } from "node:path";
 import { ToolDefinition, ToolRegistry } from "./registry.js";
 import { resolveToCwd, resolveReadPath } from "./path-utils.js";
 import { withFileMutationQueue } from "./file-mutation-queue.js";
@@ -41,18 +41,13 @@ import {
   formatSize,
   truncateHead,
   truncateLine,
-  truncateTail,
 } from "./truncate.js";
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-let ROOT_CWD = process.cwd();
-
-export function setFilesystemRoot(root: string): void {
-  ROOT_CWD = resolve(root);
-}
+const ROOT_CWD = process.cwd();
 
 export function getFilesystemRoot(): string {
   return ROOT_CWD;
@@ -515,7 +510,7 @@ const findFilesTool: ToolDefinition = {
           rejectPromise(new Error(`Failed to run fd: ${err.message}`));
         });
 
-        child.on("close", (code) => {
+        child.on("close", () => {
           rl.close();
           signal?.removeEventListener("abort", onAbort);
           if (signal?.aborted) { rejectPromise(new Error("Operation aborted")); return; }
@@ -779,7 +774,7 @@ const grepSearchTool: ToolDefinition = {
         const hitLimit = lines.length > effectiveLimit;
         const outputLines = lines.slice(0, effectiveLimit).map((line) => {
           if (line.startsWith(searchPath)) line = line.slice(searchPath.length + 1);
-          const { text, wasTruncated } = truncateLine(line);
+          const { text } = truncateLine(line);
           return text;
         });
 
@@ -806,7 +801,7 @@ const runCommandTool: ToolDefinition = {
     },
     required: ["command"],
   },
-  execute: async (args, signal?, onUpdate?) => {
+  execute: async (args, signal?) => {
     const ops = createLocalBashOperations();
     const command = args.command as string;
     const timeout = args.timeout as number | undefined;

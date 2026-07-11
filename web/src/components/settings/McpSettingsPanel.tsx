@@ -63,7 +63,6 @@ export function McpSettingsPanel() {
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [tools, setTools] = useState<McpToolInfo[]>([]);
   const [toolsLoading, setToolsLoading] = useState(false);
-  const [toolsExpanded, setToolsExpanded] = useState(false);
   const [resources, setResources] = useState<McpResourceInfo[]>([]);
   const [resourceTemplates, setResourceTemplates] = useState<McpResourceTemplateInfo[]>([]);
   const [resourcesLoading, setResourcesLoading] = useState(false);
@@ -184,7 +183,7 @@ export function McpSettingsPanel() {
     setSelected(name);
     setFormMode('view');
     setDetailTab(name === 'jin10' ? 'jin10-config' : 'overview');
-    setTools([]); setToolsExpanded(false);
+    setTools([]);
     setResources([]); setResourceTemplates([]); setReadResult(null);
     setDeleteConfirm(false);
     setStatus('');
@@ -269,7 +268,7 @@ export function McpSettingsPanel() {
     setToolsLoading(true);
     try {
       const data = await fetchMcpServerTools(name);
-      setTools(data.tools); setToolsExpanded(true);
+      setTools(data.tools);
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load tools'); }
     finally { setToolsLoading(false); }
   }

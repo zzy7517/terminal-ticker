@@ -422,7 +422,7 @@ export class HyperliquidAllMidsWebSocket {
 
   async listen(messageHandler: (payload: Record<string, unknown>) => void | Promise<void>, signal?: AbortSignal): Promise<void> {
     await this.subscribe();
-    await Promise.all([...this.byDex.entries()].map(([dex, instruments], index) => this.listenSocket(
+    await Promise.all([...this.byDex.values()].map((instruments, index) => this.listenSocket(
       this.sockets[index],
       instruments,
       messageHandler,
