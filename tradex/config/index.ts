@@ -91,6 +91,8 @@ export interface ProviderProfile {
   models: string[];
   modelEfforts: Array<[string, string]>;
   apiKey: string;
+  /** Original TOML value (may be `${ENV}`); preserved on save so secrets stay as placeholders. */
+  apiKeyRaw: string;
   baseUrl: string;
   customModels: string[];
 }
@@ -102,6 +104,7 @@ export interface AgentConfig {
   provider: string;
   apiMode: string;
   model: string;
+  systemPrompt: string;
   maxCandles: number;
   candleContextMode: CandleContextMode;
   reasoningEffort: string;
@@ -260,6 +263,7 @@ function providerProfilesDefault(): Record<string, ProviderProfile> {
       models: [DEFAULT_CODEX_MODEL],
       modelEfforts: [],
       apiKey: "",
+      apiKeyRaw: "",
       baseUrl: "",
       customModels: [],
     },
@@ -268,6 +272,7 @@ function providerProfilesDefault(): Record<string, ProviderProfile> {
       models: [DEFAULT_ANTHROPIC_MODEL],
       modelEfforts: [],
       apiKey: "",
+      apiKeyRaw: "",
       baseUrl: "",
       customModels: [],
     },
@@ -276,6 +281,7 @@ function providerProfilesDefault(): Record<string, ProviderProfile> {
       models: [DEFAULT_OPENAI_MODEL],
       modelEfforts: [],
       apiKey: "",
+      apiKeyRaw: "",
       baseUrl: "",
       customModels: [],
     },
@@ -490,10 +496,16 @@ function expandEnvRefs(value: string, field: string): string {
   });
 }
 
-function parseProviderSecret(raw: Record<string, unknown>, field: string): string {
+function parseProviderSecretRaw(raw: Record<string, unknown>, field: string): string {
   const value = raw[field];
   if (typeof value !== "string") return "";
-  return expandEnvRefs(value.trim(), `agent.providers.*.${field}`);
+  return value.trim();
+}
+
+function parseProviderSecret(raw: Record<string, unknown>, field: string): string {
+  const value = parseProviderSecretRaw(raw, field);
+  if (!value) return "";
+  return expandEnvRefs(value, `agent.providers.*.${field}`);
 }
 
 function parseModelsField(name: string, raw: Record<string, unknown>): string[] {
@@ -541,6 +553,7 @@ function parseProviderProfiles(rawAgent: Record<string, unknown>): Record<string
         models: parseModelsField(name, raw),
         modelEfforts: parseModelEfforts(name, raw),
         apiKey: parseProviderSecret(raw, "api_key"),
+        apiKeyRaw: parseProviderSecretRaw(raw, "api_key"),
         baseUrl: parseProviderSecret(raw, "base_url"),
         customModels: parseCustomModelsField(raw),
       };
@@ -555,8 +568,8 @@ function parseProviderProfiles(rawAgent: Record<string, unknown>): Record<string
     for (const name of Object.keys(defaults)) {
       defaults[name] =
         name === provider
-          ? { enabled: true, models: [model], modelEfforts: [[model, effort]], apiKey: "", baseUrl: "", customModels: [] }
-          : { enabled: false, models: [normalizeModel(name, null)], modelEfforts: [], apiKey: "", baseUrl: "", customModels: [] };
+          ? { enabled: true, models: [model], modelEfforts: [[model, effort]], apiKey: "", apiKeyRaw: "", baseUrl: "", customModels: [] }
+          : { enabled: false, models: [normalizeModel(name, null)], modelEfforts: [], apiKey: "", apiKeyRaw: "", baseUrl: "", customModels: [] };
     }
   }
   return defaults;
@@ -609,6 +622,7 @@ export function parseAgentConfig(rawAgentValue: unknown): AgentConfig {
     provider,
     apiMode: normalizeApiMode(provider),
     model,
+    systemPrompt: typeof rawAgent.system_prompt === "string" ? rawAgent.system_prompt.trim() : "",
     maxCandles: coerceMinInt(rawAgent.max_candles, "agent.max_candles", 40, 10),
     candleContextMode: parseCandleContextMode(rawAgent.candle_context_mode),
     reasoningEffort,

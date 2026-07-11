@@ -2,6 +2,7 @@ import { AppConfig } from "../config/index.js";
 import { LocalMemoryBackend } from "../memory/backend.js";
 import { MemoryPipeline } from "../memory/pipeline.js";
 import { MemoryRuntimePolicy } from "../memory/policy.js";
+import { LocalMemoryPort, type MemoryPort } from "../memory/port.js";
 import { NewsService } from "../news/service.js";
 import { SocialFeedService } from "../social_feed/service.js";
 import { XAuthStore } from "../social_feed/auth.js";
@@ -16,7 +17,7 @@ import { resolveInstruments, MarketInstrument } from "../market_data/router.js";
 import { serializeState } from "./serializers.js";
 import { CronScheduler } from "../cron/scheduler.js";
 import { CronJobStore } from "../cron/job_store.js";
-import type { Agent } from "../agent/core/index.js";
+import type { ActiveAgentRun } from "../agent/pi_runtime.js";
 import { AgentModelRegistry } from "../agent/model_registry.js";
 import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 import { Jin10Service } from "../jin10/index.js";
@@ -35,6 +36,7 @@ export class AppRuntime {
   readonly xAuthStore: XAuthStore;
   readonly memoryBackend: LocalMemoryBackend;
   memoryPipeline: MemoryPipeline | null;
+  memoryPort: MemoryPort;
   readonly sessionIndex: SessionIndex;
   readonly cronJobStore: CronJobStore;
   readonly cronScheduler: CronScheduler;
@@ -44,7 +46,7 @@ export class AppRuntime {
   optionsService: OptionsService | null;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
-  readonly activeAgents = new Map<string, Agent>();
+  readonly activeAgents = new Map<string, ActiveAgentRun>();
   private running = false;
 
   // Private to enforce async construction via `create`; wires all subsystems
@@ -64,6 +66,7 @@ export class AppRuntime {
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
     this.sessionIndex = new SessionIndex();
     this.memoryPipeline = this._buildMemoryPipeline(config);
+    this.memoryPort = new LocalMemoryPort(config.memory, () => this.memoryPipeline);
 
     // Wire MCP client manager
     if (config.mcp.enabled) {
@@ -153,6 +156,7 @@ export class AppRuntime {
     this.optionsService = config.options.enabled ? new OptionsService(config.options) : null;
     await this.memoryPipeline?.shutdown();
     this.memoryPipeline = this._buildMemoryPipeline(config);
+    this.memoryPort = new LocalMemoryPort(config.memory, () => this.memoryPipeline);
     if (shouldRestart) {
       this.controller.start();
       await this.newsService.start();

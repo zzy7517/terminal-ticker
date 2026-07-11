@@ -21,7 +21,12 @@ import {
 import type { OptionsConfig } from "../options/domain.js";
 
 function tomlString(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `"${value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t")}"`;
 }
 
 /**
@@ -379,6 +384,7 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
   const lines = [
     "[agent]",
     `enabled = ${config.enabled ? "true" : "false"}`,
+    `system_prompt = ${tomlString(config.systemPrompt)}`,
     `max_candles = ${config.maxCandles}`,
     `candle_context_mode = ${tomlString(config.candleContextMode)}`,
   ];
@@ -395,7 +401,9 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
   }
   for (const [name, profile] of Object.entries(config.providerProfiles)) {
     lines.push("", `[agent.providers.${name}]`, `enabled = ${profile.enabled ? "true" : "false"}`);
-    if (profile.apiKey) lines.push(`api_key = ${tomlString(profile.apiKey)}`);
+    if (profile.apiKeyRaw || profile.apiKey) {
+      lines.push(`api_key = ${tomlString(profile.apiKeyRaw || profile.apiKey)}`);
+    }
     if (profile.baseUrl) lines.push(`base_url = ${tomlString(profile.baseUrl)}`);
     lines.push(`models = [${profile.models.map(tomlString).join(", ")}]`);
     if (profile.modelEfforts.length > 0) {

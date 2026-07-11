@@ -98,6 +98,7 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       provider: config.agent.provider,
       apiMode: config.agent.apiMode,
       model: config.agent.model,
+      systemPrompt: config.agent.systemPrompt,
       maxCandles: config.agent.maxCandles,
       candleContextMode: config.agent.candleContextMode,
       reasoningEffort: config.agent.reasoningEffort,
@@ -179,7 +180,9 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
 }
 
 function providerApiKeyFromEnv(provider: string): boolean {
-  if (provider === "anthropic") return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  if (provider === "anthropic") {
+    return Boolean(process.env.ANTHROPIC_AUTH_TOKEN?.trim() || process.env.ANTHROPIC_API_KEY?.trim());
+  }
   return false;
 }
 

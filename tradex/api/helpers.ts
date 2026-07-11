@@ -93,6 +93,7 @@ export function agentConfigForRequest(config: AgentConfig, body: Record<string, 
           models: [],
           modelEfforts: [],
           apiKey: "",
+          apiKeyRaw: "",
           baseUrl: "",
           customModels: [],
         }),
@@ -124,6 +125,7 @@ export function mergeProviderProfile(config: AgentConfig, provider: string, body
     models: [],
     modelEfforts: [],
     apiKey: "",
+    apiKeyRaw: "",
     baseUrl: "",
     customModels: [],
   };
@@ -152,12 +154,24 @@ export function mergeProviderProfile(config: AgentConfig, provider: string, body
     models = models.filter((item) => item !== slug);
     modelEfforts = modelEfforts.filter(([item]) => item !== slug);
   }
+  const clearApiKey = body.clearApiKey === true;
+  const nextApiKey = clearApiKey
+    ? ""
+    : typeof body.apiKey === "string" && body.apiKey
+      ? body.apiKey
+      : current.apiKey;
+  const nextApiKeyRaw = clearApiKey
+    ? ""
+    : typeof body.apiKey === "string" && body.apiKey
+      ? body.apiKey
+      : current.apiKeyRaw;
   const nextProfile: ProviderProfile = {
     ...current,
     enabled: typeof body.enabled === "boolean" ? body.enabled : current.enabled,
     models,
     modelEfforts,
-    apiKey: body.clearApiKey === true ? "" : typeof body.apiKey === "string" && body.apiKey ? body.apiKey : current.apiKey,
+    apiKey: nextApiKey,
+    apiKeyRaw: nextApiKeyRaw,
     baseUrl: typeof body.baseUrl === "string" ? body.baseUrl.trim() : current.baseUrl,
     customModels,
   };

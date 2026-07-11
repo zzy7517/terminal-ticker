@@ -1,4 +1,4 @@
-import type { Usage } from "../agent/core/types.js";
+import type { Usage } from "@earendil-works/pi-ai";
 import { redactStructuredValue } from "./write/renderers.js";
 
 type MemoryLogLevel = "debug" | "info" | "warn" | "error";

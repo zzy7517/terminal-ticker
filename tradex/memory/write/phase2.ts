@@ -1,10 +1,7 @@
 import type { AgentConfig } from "../../config/index.js";
 import { nowMs } from "../../db.js";
-import type { LLMChatClient } from "../../agent/llm_client.js";
-import { resolveAgentModelFromConfig } from "../../agent/models.js";
-import { Agent, registryToAgentTools } from "../../agent/core/index.js";
-import { agentModelToDescriptor } from "../../agent/core/model-descriptor.js";
-import type { AgentEvent, StreamFn, TextContent } from "../../agent/core/types.js";
+import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
+import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import { ToolRegistry, type ToolDefinition } from "../../agent/tools/registry.js";
 import { DEFAULT_RETRY_DELAY_MS, type MemoryStateStore, type Stage1Output } from "../state.js";
 import type { MemoryWorkspaceDiff } from "../workspace.js";
@@ -141,8 +138,6 @@ SAFETY AND HYGIENE
 - Do not delete extension note files.
 - Finish only after MEMORY.md and memory_summary.md are valid and saved.
 `;
-
-export type LLMProviderFactory = (config: AgentConfig) => LLMChatClient;
 
 const MAX_PHASE2_AGENT_TURNS = 12;
 
@@ -362,12 +357,17 @@ function createMemoryFileTools(root: string, assertLease?: () => void): ToolRegi
   return registry;
 }
 
+export interface MemoryRequestGuard {
+  reserveRequest(now?: number): { ok: true } | { ok: false; reason: string };
+  noteError(error: unknown): void;
+}
+
 export class Phase2Runner {
   readonly root: string;
   readonly stateStore: MemoryStateStore;
   readonly storage: MemoryFileStorage;
   readonly agentConfigProvider: (() => AgentConfig | null) | null;
-  readonly agentStreamFn: StreamFn | null;
+  readonly rateLimitGuard: MemoryRequestGuard;
   readonly consolidationModel: string | null;
   readonly heartbeatIntervalMs: number;
 
@@ -376,8 +376,7 @@ export class Phase2Runner {
     stateStore: MemoryStateStore;
     storage: MemoryFileStorage;
     agentConfigProvider: (() => AgentConfig | null) | null;
-    llmProviderFactory: LLMProviderFactory;
-    agentStreamFn?: StreamFn | null;
+    rateLimitGuard: MemoryRequestGuard;
     consolidationModel?: string | null;
     heartbeatIntervalMs: number;
   }) {
@@ -385,7 +384,7 @@ export class Phase2Runner {
     this.stateStore = input.stateStore;
     this.storage = input.storage;
     this.agentConfigProvider = input.agentConfigProvider;
-    this.agentStreamFn = input.agentStreamFn ?? null;
+    this.rateLimitGuard = input.rateLimitGuard;
     this.consolidationModel = input.consolidationModel ?? null;
     this.heartbeatIntervalMs = Math.max(1, input.heartbeatIntervalMs);
   }
@@ -499,45 +498,43 @@ export class Phase2Runner {
     const agentConfig = this.consolidationModel
       ? { ...baseAgentConfig, model: this.consolidationModel }
       : baseAgentConfig;
-    const resolved = resolveAgentModelFromConfig(agentConfig);
-    const modelDescriptor = agentModelToDescriptor(resolved);
     const tools = createMemoryFileTools(this.root, () => this._assertPhase2Ownership(ownershipToken));
-    const streamFn = this.agentStreamFn;
-    if (!streamFn) throw new Error("memory Phase 2 requires an agent stream function");
 
     let turns = 0;
     let finalError: string | null = null;
     let finalText = "";
-    const agent = new Agent({
-      initialState: {
-        systemPrompt: PHASE2_SYSTEM_PROMPT,
-        model: modelDescriptor,
-        thinkingLevel: "off",
-        tools: registryToAgentTools(tools),
-        messages: [],
+    const agent = await createPiAgentRuntime({
+      config: agentConfig,
+      systemPrompt: PHASE2_SYSTEM_PROMPT,
+      tools,
+      maxTurns: MAX_PHASE2_AGENT_TURNS,
+      beforeProviderRequest: () => {
+        const allowed = this.rateLimitGuard.reserveRequest();
+        if (!allowed.ok) {
+          throw new Error(`memory rate-limit guard skipped agent request: ${allowed.reason}`);
+        }
       },
-      streamFn,
-      apiKey: resolved.apiKey,
-      getApiKey: () => {
-        const fresh = resolveAgentModelFromConfig(agentConfig);
-        return fresh.apiKey;
-      },
-      toolExecution: "sequential",
-      shouldStopAfterTurn: () => turns >= MAX_PHASE2_AGENT_TURNS,
     });
 
-    agent.subscribe((event: AgentEvent) => {
+    agent.subscribe((event) => {
       if (event.type !== "turn_end") return;
       turns += 1;
-      finalError = event.message.errorMessage ?? finalError;
-      const text = event.message.content
+      const message = event.message as AssistantMessage;
+      finalError = message.errorMessage ?? finalError;
+      if (message.errorMessage) this.rateLimitGuard.noteError(message.errorMessage);
+      const text = message.content
         .filter((item): item is TextContent => item.type === "text")
         .map((item) => item.text)
         .join("");
       if (text) finalText = text;
     });
 
-    await agent.prompt(this._consolidationUserPrompt(outputs, diff, agentConfig));
+    try {
+      await agent.prompt(this._consolidationUserPrompt(outputs, diff, agentConfig));
+    } catch (error) {
+      this.rateLimitGuard.noteError(error);
+      throw error;
+    }
     if (finalError) throw new Error(`memory Phase 2 agent failed: ${finalError}`);
     if (turns >= MAX_PHASE2_AGENT_TURNS && !this._consolidatedOutputsLookReady()) {
       throw new Error(`memory Phase 2 agent reached ${MAX_PHASE2_AGENT_TURNS} turns before producing valid outputs: ${finalText.slice(0, 500)}`);
