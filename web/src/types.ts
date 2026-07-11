@@ -68,7 +68,24 @@ export interface AgentSession {
   active: boolean;
   apiMode: string | null;
   reasoningEffort: string | null;
+  agentId: string;
+  agentName: string;
+  runtime: 'pi';
 }
+
+export interface AgentDefinition {
+  id: string;
+  name: string;
+  description: string;
+  systemPrompt: string | null;
+  runtime: 'pi';
+  provider: string | null;
+  model: string | null;
+  reasoningEffort: string | null;
+  builtIn: boolean;
+}
+
+export type AgentDefinitionInput = Omit<AgentDefinition, 'builtIn'>;
 
 export interface AgentSessionRun {
   sessionId: string;

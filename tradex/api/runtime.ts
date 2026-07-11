@@ -18,16 +18,18 @@ import { serializeState } from "./serializers.js";
 import { CronScheduler } from "../cron/scheduler.js";
 import { CronJobStore } from "../cron/job_store.js";
 import type { ActiveAgentRun } from "../agent/pi_runtime.js";
-import { AgentModelRegistry } from "../agent/model_registry.js";
+import { AgentModelRegistry } from "../agent/models/registry.js";
 import {
   buildModelRuntimeSnapshot,
   type ModelRuntimeSnapshot,
-} from "../agent/model_runtime.js";
+} from "../agent/models/runtime.js";
 import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 import { Jin10Service } from "../jin10/index.js";
 import { BrowserManager } from "../browser/index.js";
 import { OptionsService } from "../options/service.js";
 import { applyProxyConfig } from "../runtime/proxy.js";
+import { AgentStore } from "../agent/agent_store.js";
+import type { SessionAgentSnapshot } from "../agent/pi_sessions.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -48,6 +50,8 @@ export class AppRuntime {
   readonly browserManager: BrowserManager;
   optionsService: OptionsService | null;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
+  readonly pendingAgentSnapshots = new Map<string, SessionAgentSnapshot>();
+  readonly agentStore: AgentStore;
   /** Session-level mutation lock covering setup, streaming, fork/clone, and delete. */
   readonly lockedAgentSessions = new Set<string>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
@@ -63,6 +67,7 @@ export class AppRuntime {
     modelRuntimeSnapshot: ModelRuntimeSnapshot,
   ) {
     this.config = config;
+    this.agentStore = new AgentStore();
     this._modelRuntimeSnapshot = modelRuntimeSnapshot;
     this.instruments = instruments;
     this.controller = new TickerController({ config, instruments });

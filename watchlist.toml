@@ -25,21 +25,25 @@ stock_poll_interval_seconds = 5
 
 [agent]
 enabled = true
+default_provider = "codex"
+default_model = "gpt-5.4-mini"
 system_prompt = ""
 max_candles = 40
 candle_context_mode = "raw"
 
-[agent.skills]
-enabled = true
-include_defaults = true
-
 [agent.providers.codex]
 enabled = true
+api = "openai-codex-responses"
+display_name = "codex"
+requires_auth = true
 models = ["gpt-5.4-mini", "gpt-5.4"]
 model_efforts = {"gpt-5.5" = "high", "gpt-5.4-mini" = "medium", "gpt-5.4" = "high"}
 
 [agent.providers.anthropic]
 enabled = true
+api = "anthropic-messages"
+display_name = "anthropic"
+requires_auth = true
 api_key = "${ANTHROPIC_AUTH_TOKEN}"
 base_url = "https://co.yes.vg"
 models = ["claude-haiku-4-5"]
@@ -47,7 +51,10 @@ model_efforts = {"claude-haiku-4-5" = "medium"}
 
 [agent.providers.openai]
 enabled = true
-api_key = "sk-hwdObkjNuUv2Px9H4UdpSA"
+api = "openai-completions"
+display_name = "openai"
+requires_auth = true
+api_key = "${OPENAI_API_KEY}"
 base_url = "https://infra-litellm-api.winktech.net"
 models = ["openrouter/anthropic/claude-opus-4.7", "openrouter/anthropic/claude-opus-4.6"]
 model_efforts = {"openrouter/anthropic/claude-opus-4.7" = "medium", "openrouter/anthropic/claude-opus-4.6" = "medium"}

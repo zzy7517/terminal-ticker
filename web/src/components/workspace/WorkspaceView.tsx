@@ -17,6 +17,8 @@ import { PositionsPanel } from './PositionsPanel';
 import { CronPanel } from './CronPanel';
 import { CalendarPanel } from './CalendarPanel';
 import { OptionsPanel } from './OptionsPanel';
+import { AgentPicker } from './AgentPicker';
+import { useAgentStore } from '../../stores/agentStore';
 
 export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);
@@ -25,6 +27,8 @@ export function WorkspaceView() {
   const openSettings = useUiStore((s) => s.openSettings);
 
   const [activeTab, setActiveTab] = useState<'agent' | 'news' | 'social' | 'calendar' | 'positions' | 'options' | 'cron'>('agent');
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
 
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
   const optionsAvailable = Boolean((state as any)?.options?.snapshots && Object.keys((state as any).options.snapshots).length > 0);
@@ -74,10 +78,11 @@ export function WorkspaceView() {
         <section className="main-content">
           {activeTab === 'agent' && (
             <div className="agent-tab-layout">
-              <AgentSessionHistoryList />
+              <AgentSessionHistoryList onNewSession={() => setAgentPickerOpen(true)} />
               <AgentSessionPanel
                 providerProfiles={state?.config.agent.providerProfiles ?? {}}
                 disabled={!state}
+                onNewSession={() => setAgentPickerOpen(true)}
               />
             </div>
           )}
@@ -111,6 +116,7 @@ export function WorkspaceView() {
         </section>
       </section>
       </div>{/* end .app-main */}
+      {agentPickerOpen && <AgentPicker onClose={() => setAgentPickerOpen(false)} onSelect={(agent) => { setAgentPickerOpen(false); void resetAgentConversation(agent.id); }} />}
     </main>
   );
 }

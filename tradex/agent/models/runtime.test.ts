@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { AgentConfig, ProviderProfile } from "../config/index.js";
+import type { AgentConfig, ProviderProfile } from "../../config/index.js";
 import {
   agentConfigForModelSelection,
   buildModelRuntimeSnapshot,
   parseModelSelection,
-} from "./model_runtime.js";
+} from "./runtime.js";
 
 function profile(overrides: Partial<ProviderProfile> = {}): ProviderProfile {
   return {
@@ -42,7 +42,6 @@ function config(): AgentConfig {
     candleContextMode: "raw",
     reasoningEffort: "high",
     providerProfiles: { acme: profile() },
-    skills: { enabled: true, includeDefaults: true, paths: [] },
   };
 }
 
@@ -101,5 +100,13 @@ describe("ModelRuntimeSnapshot", () => {
       ok: true,
       apiKey: "no-auth",
     });
+  });
+
+  it("exposes only providers declared in backend providerProfiles", () => {
+    const dto = buildModelRuntimeSnapshot(config(), 1).toDTO();
+
+    expect(dto.providers.map((item) => item.providerId)).toEqual(["acme"]);
+    expect(dto.models.every((item) => item.providerId === "acme")).toBe(true);
+    expect(dto.providers.some((item) => item.providerId === "openrouter")).toBe(false);
   });
 });

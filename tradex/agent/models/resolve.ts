@@ -1,12 +1,12 @@
 /**
- * models.ts — AgentModel value object.
+ * resolve.ts — AgentModel value object.
  *
  * An AgentModel is a pure data structure that carries everything needed to
  * route and authenticate a single LLM request. No I/O, no state.
  * Switching models mid-conversation is just replacing this object.
  */
 
-import { AgentConfig, ProviderProfile } from "../config/index.js";
+import { AgentConfig, ProviderProfile } from "../../config/index.js";
 import {
   CODEX_PROVIDER,
   ANTHROPIC_PROVIDER,
@@ -17,7 +17,8 @@ import {
   normalizeModel,
   normalizeReasoningEffort,
   normalizeApiMode,
-} from "../config/agent_models.js";
+  jwtClaims,
+} from "./constants.js";
 
 /**
  * A pure-data model descriptor. Acts as the routing key for the API registry.
@@ -167,16 +168,4 @@ function resolveCodexCredentials(profile?: ProviderProfile | null): { accessToke
 function accessTokenIsExpired(accessToken: string): boolean {
   const exp = jwtClaims(accessToken).exp;
   return typeof exp === "number" && exp <= Date.now() / 1000;
-}
-
-function jwtClaims(token: string): Record<string, unknown> {
-  try {
-    const parts = token.split(".");
-    if (parts.length < 2) return {};
-    const payload = parts[1] + "=".repeat((4 - (parts[1].length % 4)) % 4);
-    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-  } catch {
-    return {};
-  }
 }

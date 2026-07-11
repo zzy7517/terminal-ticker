@@ -2,6 +2,7 @@ export { SettingsFrame } from './SettingsFrame';
 export { WatchlistSettingsPanel } from './WatchlistSettingsPanel';
 export { ProviderSettingsPanel } from './ProviderSettingsPanel';
 export { AgentContextSettingsPanel } from './AgentContextSettingsPanel';
+export { AgentsSettingsPanel } from './AgentsSettingsPanel';
 export { NewsSettingsPanel } from './NewsSettingsPanel';
 export { MemorySettingsPanel } from './MemorySettingsPanel';
 export { SocialSettingsPanel } from './SocialSettingsPanel';

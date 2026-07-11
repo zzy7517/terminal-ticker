@@ -45,6 +45,8 @@ import type {
   McpServerToolsResponse,
   McpSettings,
   McpServerEntry,
+  AgentDefinition,
+  AgentDefinitionInput,
 } from './types';
 
 const DEFAULT_DEV_BACKEND_ORIGIN = 'http://127.0.0.1:8765';
@@ -166,6 +168,7 @@ export async function createAgentSession(options?: {
   title?: string;
   provider?: string;
   model?: string;
+  agentId?: string;
 }): Promise<AgentSessionResponse & { history: AgentSessionHistoryResponse }> {
   const response = await fetch('/api/agent/sessions', {
     method: 'POST',
@@ -175,6 +178,34 @@ export async function createAgentSession(options?: {
   if (!response.ok) {
     throw await responseError(response, 'agent session create failed');
   }
+  return response.json();
+}
+
+export async function fetchAgents(): Promise<{ agents: AgentDefinition[] }> {
+  const response = await fetch('/api/agents');
+  if (!response.ok) throw await responseError(response, 'agents fetch failed');
+  return response.json();
+}
+
+export async function createAgent(input: AgentDefinitionInput): Promise<{ agent: AgentDefinition; agents: AgentDefinition[] }> {
+  const response = await fetch('/api/agents', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await responseError(response, 'agent create failed');
+  return response.json();
+}
+
+export async function updateAgent(id: string, input: Partial<AgentDefinitionInput>): Promise<{ agent: AgentDefinition; agents: AgentDefinition[] }> {
+  const response = await fetch(`/api/agents/${encodeURIComponent(id)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await responseError(response, 'agent update failed');
+  return response.json();
+}
+
+export async function deleteAgent(id: string): Promise<{ agents: AgentDefinition[] }> {
+  const response = await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!response.ok) throw await responseError(response, 'agent delete failed');
   return response.json();
 }
 
@@ -960,4 +991,3 @@ export async function saveJin10Config(config: {
   const payload = await response.json();
   return payload.state;
 }
-

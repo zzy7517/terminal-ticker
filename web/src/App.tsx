@@ -9,6 +9,7 @@ import {
   SettingsFrame,
   ProviderSettingsPanel,
   AgentContextSettingsPanel,
+  AgentsSettingsPanel,
   NewsSettingsPanel,
   MemorySettingsPanel,
   SocialSettingsPanel,
@@ -76,6 +77,8 @@ export default function App() {
       <SettingsFrame>
         {route.section === 'providers' ? (
           <ProviderSettingsPanel />
+        ) : route.section === 'agents' ? (
+          <AgentsSettingsPanel />
         ) : route.section === 'agent-context' ? (
           <AgentContextSettingsPanel />
         ) : route.section === 'news' ? (

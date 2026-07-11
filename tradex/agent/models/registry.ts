@@ -1,5 +1,5 @@
 /**
- * model_registry.ts — Convenience wrapper around AgentModel resolution +
+ * registry.ts — Convenience wrapper around AgentModel resolution +
  * remote model catalog fetch.
  *
  * Used by:
@@ -7,19 +7,19 @@
  *  - memory pipeline (via LLMProviderFactory)
  */
 
-import { AgentConfig } from "../config/index.js";
+import { AgentConfig } from "../../config/index.js";
 import {
   ANTHROPIC_PROVIDER,
   CODEX_PROVIDER,
-} from "../config/agent_models.js";
-import type { LLMChatClient, ChatResponse } from "./llm_client.js";
-import type { AgentModel } from "./models.js";
-import { resolveAgentModelFromConfig } from "./models.js";
+} from "./constants.js";
+import type { LLMChatClient, ChatResponse } from "../llm_client.js";
+import type { AgentModel } from "./resolve.js";
+import { resolveAgentModelFromConfig } from "./resolve.js";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { TextContent } from "@earendil-works/pi-ai";
-import type { ModelRuntimeSnapshot } from "./model_runtime.js";
-import { fetchProviderModelCatalog } from "./list_models.js";
+import type { ModelRuntimeSnapshot } from "./runtime.js";
+import { fetchProviderModelCatalog } from "./model_fetch.js";
 
 export class LLMProviderUnavailable extends Error {}
 

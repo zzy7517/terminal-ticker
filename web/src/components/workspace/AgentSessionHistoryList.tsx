@@ -4,14 +4,13 @@ import type { AgentContextUsage } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
 import { contextUsagePercent, formatContextPercent, resolveContextWindow } from '../../utils/contextUsage';
 
-export function AgentSessionHistoryList() {
+export function AgentSessionHistoryList({ onNewSession }: { onNewSession: () => void }) {
   const agentSession = useAgentStore((s) => s.agentSession);
   const history = useAgentStore((s) => s.agentSessionHistory);
   const runStateBySessionId = useAgentStore((s) => s.runStateBySessionId);
   const modelRegistry = useAgentStore((s) => s.modelRegistry);
   const busyActionKey = useAgentStore((s) => s.agentSessionActionKey);
   const loading = useAgentStore((s) => s.agentSessionHistoryLoadingKey) !== null;
-  const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
   const resumeAgentConversation = useAgentStore((s) => s.resumeAgentConversation);
   const deleteAgentConversation = useAgentStore((s) => s.deleteAgentConversation);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
@@ -59,7 +58,7 @@ export function AgentSessionHistoryList() {
           disabled={Boolean(busyActionKey)}
           onClick={() => {
             setConfirmingDeleteId(null);
-            void resetAgentConversation();
+            onNewSession();
           }}
           title="New Chat"
           type="button"
@@ -109,7 +108,7 @@ export function AgentSessionHistoryList() {
               >
                 <span>{title}</span>
                 <small>
-                  {item.model} · {relativeTime(item.updatedAt)}
+                  {item.agentName || 'Default Agent'} · {item.model} · {relativeTime(item.updatedAt)}
                   {contextLabel ? ` · ${contextLabel}` : ''}
                   {isRunning ? ' · running' : hasError ? ' · error' : ''}
                 </small>

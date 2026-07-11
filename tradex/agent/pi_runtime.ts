@@ -2,6 +2,7 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   defineTool,
+  getAgentDir,
   SessionManager as PiSessionManager,
   SettingsManager,
   type ToolDefinition,
@@ -14,7 +15,7 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { AgentConfig } from "../config/index.js";
-import type { ModelRuntimeSnapshot } from "./model_runtime.js";
+import type { ModelRuntimeSnapshot } from "./models/runtime.js";
 import {
   normalizeToolReturn,
   type ToolDefinition as TradexToolDefinition,
@@ -46,7 +47,6 @@ export async function createPiAgentRuntime(input: {
     authStorage,
     modelRegistry,
     model,
-    requiresAuth,
   } = input.modelRuntime.resolve(input.config);
 
   const settingsManager = SettingsManager.inMemory({
@@ -54,11 +54,10 @@ export async function createPiAgentRuntime(input: {
   });
   const resourceLoader = new DefaultResourceLoader({
     cwd: process.cwd(),
-    agentDir: process.cwd(),
+    agentDir: getAgentDir(),
     settingsManager,
     systemPromptOverride: () => input.systemPrompt,
     extensionFactories: [],
-    skillsOverride: () => ({ skills: [], diagnostics: [] }),
     agentsFilesOverride: () => ({ agentsFiles: [] }),
     promptsOverride: () => ({ prompts: [], diagnostics: [] }),
   });
@@ -74,25 +73,18 @@ export async function createPiAgentRuntime(input: {
     resourceLoader,
     settingsManager,
     sessionManager: input.sessionManager ?? PiSessionManager.inMemory(),
-    noTools: "all",
-    tools: customTools.map((tool) => tool.name),
+    tools: ["read", ...customTools.map((tool) => tool.name)],
     customTools,
   });
   session.agent.toolExecution = "sequential";
-  if (!requiresAuth) {
-    const baseStreamFn = session.agent.streamFn.bind(session.agent);
-    session.agent.streamFn = (modelArg, context, options) => baseStreamFn(modelArg, context, {
-      ...options,
-      headers: {
-        ...options?.headers,
-        Authorization: null as unknown as string,
-      },
-    });
-  }
+  // Single wrapper for cross-cutting concerns on the provider stream. Auth for
+  // no-auth providers is handled at registration time (authHeader:false +
+  // apiKey:"no-auth" in buildModelRuntimeSnapshot), so it is not repeated here.
   if (input.beforeProviderRequest) {
+    const beforeProviderRequest = input.beforeProviderRequest;
     const baseStreamFn = session.agent.streamFn.bind(session.agent);
     session.agent.streamFn = (modelArg, context, options) => {
-      input.beforeProviderRequest!();
+      beforeProviderRequest();
       return baseStreamFn(modelArg, context, options);
     };
   }

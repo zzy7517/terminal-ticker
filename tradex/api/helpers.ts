@@ -1,5 +1,5 @@
 import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type ProxyConfig, type ProxyType, type SocialFeedConfig } from "../config/index.js";
-import { defaultProviderApi, normalizeApiMode, normalizeProvider } from "../config/agent_models.js";
+import { defaultProviderApi, normalizeApiMode, normalizeProvider } from "../agent/models/constants.js";
 import {
   listPiSessions,
   openPiSession,
