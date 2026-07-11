@@ -8,6 +8,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { defaultCacheDir } from "../db.js";
 
 const CRON_SESSIONS_SUBDIR = "cron_sessions";
@@ -34,14 +35,6 @@ export function jobDir(jobName: string): string {
   // Sanitize job name for filesystem safety
   const safe = jobName.replace(/[^a-zA-Z0-9一-鿿_-]/g, "_").slice(0, 64);
   return path.join(cronSessionsDir(), safe);
-}
-
-/** Generates the JSONL file path for a new cron run. */
-export function newCronSessionPath(jobName: string, sessionId: string): string {
-  const dir = jobDir(jobName);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return path.join(dir, `${timestamp}_${sessionId}.jsonl`);
 }
 
 /**
@@ -126,20 +119,27 @@ export function clearJobRuns(jobName: string): number {
   return files.length;
 }
 
-/** Reads a JSONL cron session file and returns all parsed entries. */
+/** Reads a native Pi session and projects message entries to the frontend DTO. */
 export function readSessionEntries(filePath: string): Array<Record<string, unknown>> {
   if (!fs.existsSync(filePath)) return [];
-  const content = fs.readFileSync(filePath, "utf8");
-  const entries: Array<Record<string, unknown>> = [];
-  for (const line of content.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      entries.push(JSON.parse(line) as Record<string, unknown>);
-    } catch {
-      // skip malformed lines
-    }
+  try {
+    const manager = SessionManager.open(filePath, path.dirname(filePath), process.cwd());
+    return [
+      manager.getHeader() as unknown as Record<string, unknown>,
+      ...manager.getEntries().map((entry) => {
+        if (entry.type !== "message") return entry as unknown as Record<string, unknown>;
+        const message = entry.message;
+        return {
+          ...entry,
+          role: message.role,
+          content: textContent("content" in message ? message.content : ""),
+          error: message.role === "assistant" ? message.errorMessage ?? null : null,
+        } as Record<string, unknown>;
+      }),
+    ];
+  } catch {
+    return [];
   }
-  return entries;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,4 +184,15 @@ function parseRunRecord(jobName: string, filePath: string): CronRunRecord | null
   } catch {
     return null;
   }
+}
+
+function textContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((item): item is { type: "text"; text: string } =>
+      Boolean(item && typeof item === "object" && (item as { type?: unknown }).type === "text")
+    )
+    .map((item) => item.text)
+    .join("");
 }

@@ -7,8 +7,8 @@ import { NewsService } from "../news/service.js";
 import { SocialFeedService } from "../social_feed/service.js";
 import { XAuthStore } from "../social_feed/auth.js";
 import { XInternalClient } from "../social_feed/providers/x_internal.js";
-import { SessionIndex } from "../agent/session_index.js";
-import { SessionManager } from "../agent/session_manager.js";
+import type { SessionManager } from "@earendil-works/pi-coding-agent";
+import { listPiSessionManagersSync, piSessionPayload } from "../agent/pi_sessions.js";
 import { ExchangeRouter } from "../trading/exchange_router.js";
 import { TradeStore } from "../trading/store.js";
 import { TradeStatus } from "../trading/models.js";
@@ -37,7 +37,6 @@ export class AppRuntime {
   readonly memoryBackend: LocalMemoryBackend;
   memoryPipeline: MemoryPipeline | null;
   memoryPort: MemoryPort;
-  readonly sessionIndex: SessionIndex;
   readonly cronJobStore: CronJobStore;
   readonly cronScheduler: CronScheduler;
   readonly mcpManager: McpClientManager | null;
@@ -45,6 +44,8 @@ export class AppRuntime {
   readonly browserManager: BrowserManager;
   optionsService: OptionsService | null;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
+  /** Session-level mutation lock covering setup, streaming, fork/clone, and delete. */
+  readonly lockedAgentSessions = new Set<string>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
   readonly activeAgents = new Map<string, ActiveAgentRun>();
   private running = false;
@@ -64,7 +65,6 @@ export class AppRuntime {
       clientFactory: () => new XInternalClient(this.xAuthStore.load()),
     });
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
-    this.sessionIndex = new SessionIndex();
     this.memoryPipeline = this._buildMemoryPipeline(config);
     this.memoryPort = new LocalMemoryPort(config.memory, () => this.memoryPipeline);
 
@@ -116,7 +116,6 @@ export class AppRuntime {
     this.tradeStore.onTradeClosed((tradeId) => this.enqueueTradeForMemory(tradeId));
     this.cronJobStore = new CronJobStore();
     this.cronScheduler = new CronScheduler(this, this.cronJobStore);
-    SessionManager.reconcileIndex(this.sessionIndex);
   }
 
   // Resolves the instrument list asynchronously before constructing the runtime,
@@ -314,25 +313,24 @@ export class AppRuntime {
 
     const registry = new AgentModelRegistry();
     const tradeStore = this.tradeStore;
-    const sessionIndex = this.sessionIndex;
-
     const sessionSource = {
       listSessions(input: { limit?: number }) {
-        return sessionIndex.listSessions({ limit: input.limit }).map((row) => ({
-          id: row.id,
-          updatedAt: row.updatedAt,
-          messageCount: row.messageCount,
-        }));
+        return listPiSessionManagersSync().slice(0, input.limit).map((manager) => {
+          const payload = piSessionPayload(manager);
+          const session = payload.session as Record<string, unknown>;
+          const stats = payload.sessionStats as Record<string, unknown>;
+          return {
+            id: manager.getSessionId(),
+            updatedAt: String(session.updatedAt),
+            messageCount: Number(stats.totalMessages ?? 0),
+          };
+        });
       },
       sessionPayload(sessionId: string) {
-        const row = sessionIndex.get(sessionId);
-        if (!row) return null;
-        try {
-          const mgr = SessionManager.open(row.filePath);
-          return mgr.sessionPayload();
-        } catch {
-          return null;
-        }
+        const manager = listPiSessionManagersSync().find(
+          (candidate) => candidate.getSessionId() === sessionId,
+        );
+        return manager ? piSessionPayload(manager) : null;
       },
     };
 
