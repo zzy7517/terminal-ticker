@@ -4,6 +4,11 @@
   padding: 0;
 }
 
+.workspace-page {
+  min-height: 100dvh;
+  padding: 0 22px 18px;
+}
+
 .app-shell--with-sidebar {
   display: flex;
   gap: 0;
@@ -14,7 +19,7 @@
   flex: 1;
   min-width: 0;
   overflow: auto;
-  padding: 8px 10px 10px;
+  padding: 10px 12px 12px;
 }
 
 .settings-shell-page {
@@ -24,7 +29,7 @@
 /* ── Workspace layout ─────────────────────────────────────────────── */
 .workspace {
   margin: 0 auto;
-  max-width: 1740px;
+  max-width: 1760px;
 }
 
 /* ── Main content area ────────────────────────────────────────────── */
@@ -32,7 +37,7 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: calc(100vh - 80px);
+  max-height: calc(100dvh - 82px);
   min-width: 0;
   overflow: auto;
 }
@@ -44,7 +49,7 @@
   border: 1px solid var(--line-strong);
   display: flex;
   gap: 0;
-  margin: 0 auto 8px 0;
+  margin: 0 auto 10px 0;
   max-width: 1740px;
   padding: 0;
   width: fit-content;
@@ -60,7 +65,7 @@
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.03em;
-  min-height: 32px;
+  min-height: 34px;
   padding: 0 16px;
   text-transform: uppercase;
 }
@@ -87,15 +92,33 @@
   display: flex;
   gap: 12px;
   justify-content: space-between;
-  margin: 0 auto 8px;
+  margin: 0 auto 14px;
   max-width: 1740px;
-  padding: 6px 0;
+  min-height: 64px;
+  padding: 10px 0;
 }
 
 .topbar-left {
   align-items: center;
   display: flex;
-  gap: 8px;
+  gap: 10px;
+}
+
+.workspace-title-icon {
+  align-items: center;
+  color: var(--accent);
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+  border-radius: var(--radius-sm);
+}
+
+.workspace-subtitle {
+  color: var(--text-muted);
+  font-family: var(--ui);
+  font-size: 12px;
+  margin-top: 2px;
 }
 
 .topbar-right {
@@ -133,10 +156,21 @@
 /* ── Agent tab layout ─────────────────────────────────────────────── */
 .agent-tab-layout {
   display: grid;
-  gap: 1px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  gap: 0;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-  height: calc(100vh - 140px);
+  height: calc(100dvh - 98px);
   min-height: 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.market-workspace {
+  height: calc(100dvh - 98px);
+  min-height: 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 /* ── Responsive ───────────────────────────────────────────────────── */
@@ -188,30 +222,19 @@
     min-height: 0;
   }
 
-  /* Auto-collapse sidebar on tablets */
-  .watchlist-sidebar {
-    width: 44px;
-  }
-  .watchlist-sidebar .sb-groups,
-  .watchlist-sidebar .sb-jin10-editor,
-  .watchlist-sidebar .sb-row-left,
-  .watchlist-sidebar .sb-row-right {
-    display: none;
-  }
 }
 
 @media (max-width: 640px) {
+  .workspace-page {
+    padding: 0 10px 10px;
+  }
+
   .app-shell,
   .settings-shell-page {
     max-width: 100vw;
     overflow-x: hidden;
     padding: 6px;
     width: 100vw;
-  }
-
-  /* Hide sidebar entirely on mobile */
-  .watchlist-sidebar {
-    display: none;
   }
 
   .app-shell--with-sidebar {

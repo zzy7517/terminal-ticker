@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -11,6 +11,7 @@ import {
   KeyRound,
   Network,
   Newspaper,
+  Search,
   Settings,
 } from 'lucide-react';
 import type { SettingsSection } from '../../constants';
@@ -26,136 +27,118 @@ export function SettingsFrame({
   const state = useMarketStore((s) => s.state);
   const route = useUiStore((s) => s.route);
   const section: SettingsSection = route.view === 'settings' ? route.section : 'providers';
+  const [query, setQuery] = useState('');
+
+  const groups = useMemo(() => [
+    {
+      label: 'Agent',
+      items: [
+        { id: 'agents' as const, label: 'Agents', icon: Bot },
+        { id: 'providers' as const, label: 'Providers', icon: Settings },
+        { id: 'agent-context' as const, label: 'Agent Context', icon: Bot },
+        { id: 'memory' as const, label: 'Memory', icon: Brain },
+      ],
+    },
+    {
+      label: 'Market Data',
+      items: [
+        { id: 'watchlist' as const, label: 'Watchlist', icon: CircleDot },
+        { id: 'news' as const, label: 'News', icon: Newspaper },
+        { id: 'social' as const, label: 'Social', icon: KeyRound },
+        { id: 'options' as const, label: 'Options', icon: Activity },
+      ],
+    },
+    {
+      label: 'Automation',
+      items: [{ id: 'cron' as const, label: 'Cron', icon: Clock }],
+    },
+    {
+      label: 'Integrations',
+      items: [
+        { id: 'mcp' as const, label: 'MCP', icon: Cable },
+        { id: 'browser' as const, label: 'Browser', icon: Chrome },
+        { id: 'proxy' as const, label: 'Proxy', icon: Network },
+      ],
+    },
+  ], []);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.label.toLowerCase().includes(normalizedQuery)),
+    }))
+    .filter((group) => group.items.length > 0);
 
   const onSection = (next: SettingsSection) => {
     useUiStore.getState().openSettings(next);
   };
-  const onBack = () => {
-    useUiStore.getState().openWorkspace();
-  };
+  const onBack = () => useUiStore.getState().openWorkspace();
+
+  const wide = section === 'providers' || section === 'mcp' || section === 'watchlist';
 
   return (
-    <main className="app-shell settings-shell-page">
+    <main className="settings-page">
       <section className="settings-frame">
         <aside className="settings-nav">
           <div className="settings-nav-top">
-            <div>
-              <div className="eyebrow">System Settings</div>
-              <h3>Settings</h3>
-            </div>
+            <button
+              aria-label="Back to Tradex"
+              className="settings-return"
+              type="button"
+              onClick={onBack}
+            >
+              <ArrowLeft size={15} />
+              <span>Back to Tradex</span>
+            </button>
+            <label className="settings-search">
+              <Search size={15} aria-hidden="true" />
+              <input
+                aria-label="Search settings"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search settings"
+                type="search"
+                value={query}
+              />
+            </label>
           </div>
 
-          <div className="settings-nav-group">
-            <button
-              className={`settings-nav-item ${section === 'agents' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('agents')}
-            >
-              <Bot size={18} />
-              <span>Agents</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'providers' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('providers')}
-            >
-              <Settings size={18} />
-              <span>Providers</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'agent-context' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('agent-context')}
-            >
-              <Bot size={18} />
-              <span>Agent Context</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'watchlist' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('watchlist')}
-            >
-              <CircleDot size={18} />
-              <span>Watchlist</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'news' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('news')}
-            >
-              <Newspaper size={18} />
-              <span>News</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'memory' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('memory')}
-            >
-              <Brain size={18} />
-              <span>Memory</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'cron' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('cron')}
-            >
-              <Clock size={18} />
-              <span>Cron</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'social' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('social')}
-            >
-              <KeyRound size={18} />
-              <span>Social</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'mcp' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('mcp')}
-            >
-              <Cable size={18} />
-              <span>MCP</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'options' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('options')}
-            >
-              <Activity size={18} />
-              <span>Options</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'browser' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('browser')}
-            >
-              <Chrome size={18} />
-              <span>Browser</span>
-            </button>
-            <button
-              className={`settings-nav-item ${section === 'proxy' ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSection('proxy')}
-            >
-              <Network size={18} />
-              <span>Proxy</span>
-            </button>
-          </div>
+          <nav className="settings-nav-groups" aria-label="Settings navigation">
+            {visibleGroups.map((group) => (
+              <section className="settings-nav-section" key={group.label}>
+                <div className="settings-nav-label">{group.label}</div>
+                <div className="settings-nav-group">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        className={`settings-nav-item ${section === item.id ? 'active' : ''}`}
+                        key={item.id}
+                        type="button"
+                        onClick={() => onSection(item.id)}
+                      >
+                        <Icon size={17} />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+            {visibleGroups.length === 0 ? (
+              <p className="settings-search-empty">No matching settings</p>
+            ) : null}
+          </nav>
 
           <div className="settings-nav-meta">
-            <span className="panel-label">Source</span>
+            <span>Configuration source</span>
             <strong>{state?.config.sourcePath ?? 'Runtime only'}</strong>
           </div>
-
-          <button className="settings-back" type="button" onClick={onBack}>
-            <ArrowLeft size={16} />
-            Back to workspace
-          </button>
         </aside>
 
-        <section className="settings-stage">{children}</section>
+        <section className={`settings-stage ${wide ? 'settings-stage-wide' : ''}`}>
+          <div className="settings-stage-inner">{children}</div>
+        </section>
       </section>
     </main>
   );

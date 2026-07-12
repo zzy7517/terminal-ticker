@@ -1,6 +1,6 @@
 /* ── Watchlist Sidebar — Bloomberg Terminal Panel ─────────────────── */
 .watchlist-sidebar {
-  background: var(--canvas);
+  background: var(--panel);
   border-right: 1px solid var(--line-strong);
   display: flex;
   flex-direction: column;
@@ -10,6 +10,48 @@
   transition: width 150ms linear;
   width: 260px;
   z-index: 50;
+}
+
+.watchlist-sidebar.workspace-mode {
+  border: 1px solid var(--line-soft);
+  height: 100%;
+  position: static;
+  width: 100%;
+  z-index: auto;
+  border-radius: var(--radius-lg);
+}
+
+.watchlist-sidebar.workspace-mode .sb-head {
+  min-height: 48px;
+  padding-inline: 14px;
+}
+
+.watchlist-sidebar.workspace-mode .sb-list {
+  align-content: start;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  overflow: auto;
+  padding: 10px;
+}
+
+.watchlist-sidebar.workspace-mode .sb-row {
+  border: 1px solid var(--line-soft);
+  margin: 4px;
+  min-height: 60px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+}
+
+@media (max-width: 1280px) {
+  .watchlist-sidebar.workspace-mode .sb-list {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .watchlist-sidebar.workspace-mode .sb-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .watchlist-sidebar.collapsed {
@@ -88,6 +130,7 @@
   padding: 5px 9px;
   text-transform: uppercase;
   white-space: nowrap;
+  border-radius: var(--radius-sm);
 }
 
 .sb-group-btn:hover:not(.active) {
@@ -126,6 +169,7 @@
   position: relative;
   text-align: left;
   width: 100%;
+  border-radius: var(--radius-sm);
 }
 
 .sb-row:active {

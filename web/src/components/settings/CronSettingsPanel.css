@@ -3,7 +3,7 @@
 .cron-preset-dropdown {
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   box-shadow: none;
   display: flex;
   flex-direction: column;
@@ -79,7 +79,7 @@
 .cron-visual-field select {
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   font-family: var(--mono);
   font-size: 12px;

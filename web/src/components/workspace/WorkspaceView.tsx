@@ -1,13 +1,17 @@
 import { useState } from 'react';
 import {
-  Settings,
-  Zap,
+  Bot,
+  CalendarDays,
+  Clock,
+  LineChart,
+  Newspaper,
+  Users,
+  WalletCards,
 } from 'lucide-react';
 import './WorkspaceView.css';
 import { useMarketStore } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
 
-import { ConnectionBadge } from './ConnectionBadge';
 import { WatchlistSidebar } from './WatchlistSidebar';
 import { AgentSessionHistoryList } from './AgentSessionHistoryList';
 import { AgentSessionPanel } from './AgentSessionPanel';
@@ -22,60 +26,42 @@ import { useAgentStore } from '../../stores/agentStore';
 
 export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);
-  const socketStatus = useMarketStore((s) => s.socketStatus);
-
-  const openSettings = useUiStore((s) => s.openSettings);
-
-  const [activeTab, setActiveTab] = useState<'agent' | 'news' | 'social' | 'calendar' | 'positions' | 'options' | 'cron'>('agent');
+  const activeTab = useUiStore((s) => s.activeWorkspace);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
 
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
-  const optionsAvailable = Boolean((state as any)?.options?.snapshots && Object.keys((state as any).options.snapshots).length > 0);
-
   return (
-    <main className="app-shell app-shell--with-sidebar">
-      {/* Left sidebar: persistent watchlist */}
-      <WatchlistSidebar />
-
-      <div className="app-main">
+    <main className="workspace-page">
       <header className="topbar">
         <div className="topbar-left">
-          <div className="brand-lockup">
-            <div className="brand-mark" aria-hidden="true">
-              <Zap size={21} />
-            </div>
-            <div>
-              <h1>tradex</h1>
-            </div>
+          <span className="workspace-title-icon" aria-hidden="true">
+            {activeTab === 'agent' ? <Bot size={17} />
+              : activeTab === 'market' ? <LineChart size={17} />
+              : activeTab === 'news' ? <Newspaper size={17} />
+              : activeTab === 'social' ? <Users size={17} />
+              : activeTab === 'calendar' ? <CalendarDays size={17} />
+              : activeTab === 'cron' ? <Clock size={17} />
+              : <WalletCards size={17} />}
+          </span>
+          <div>
+            <h1>{activeTab === 'market' ? 'Market' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
+            <p className="workspace-subtitle">
+              {activeTab === 'agent' ? 'Research and analysis workspace'
+                : activeTab === 'market' ? 'Watchlist and live market overview'
+                : 'Tradex workspace'}
+            </p>
           </div>
-        </div>
-        <div className="topbar-right">
-          <ConnectionBadge socketStatus={socketStatus} streamStatus={state?.streamStatus ?? 'idle'} />
-          <button className="shell-button" type="button" onClick={() => openSettings()}>
-            <Settings size={16} />
-            Settings
-          </button>
         </div>
       </header>
 
-      <div className="workspace-tabs" role="tablist">
-        {(['agent', 'news', 'social', ...(jin10Available ? ['calendar' as const] : []), 'positions', ...(optionsAvailable ? ['options' as const] : []), 'cron'] as const).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab}
-            className={`workspace-tab ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab === 'calendar' ? 'Calendar' : tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
-
       <section className="workspace">
         <section className="main-content">
+          {activeTab === 'market' && (
+            <div className="market-workspace">
+              <WatchlistSidebar mode="workspace" />
+            </div>
+          )}
           {activeTab === 'agent' && (
             <div className="agent-tab-layout">
               <AgentSessionHistoryList onNewSession={() => setAgentPickerOpen(true)} />
@@ -115,7 +101,6 @@ export function WorkspaceView() {
           {activeTab === 'cron' && <CronPanel />}
         </section>
       </section>
-      </div>{/* end .app-main */}
       {agentPickerOpen && <AgentPicker onClose={() => setAgentPickerOpen(false)} onSelect={(agent) => { setAgentPickerOpen(false); void resetAgentConversation(agent.id); }} />}
     </main>
   );

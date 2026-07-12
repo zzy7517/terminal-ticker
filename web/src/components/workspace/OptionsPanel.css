@@ -28,6 +28,7 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   padding: 4px 10px;
+  border-radius: var(--radius-sm);
   text-transform: uppercase;
   transition: color 0.15s;
 }
@@ -37,7 +38,7 @@
 }
 
 .options-panel__tab.active {
-  border-bottom: 2px solid var(--accent);
+  background: var(--accent-tint);
   color: var(--accent);
 }
 
@@ -58,6 +59,7 @@
 .options-stat {
   background: var(--panel);
   border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -95,6 +97,7 @@
 .options-levels {
   background: var(--panel);
   border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -119,6 +122,7 @@
 .options-levels__track {
   background: var(--canvas);
   border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   height: 8px;
   left: 0;
   position: absolute;
@@ -173,6 +177,7 @@
 .gex-profile {
   background: var(--panel);
   border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -304,6 +309,7 @@
 .options-activity {
   background: var(--panel);
   border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -342,7 +348,7 @@
 }
 
 .options-activity__signal {
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.04em;

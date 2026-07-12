@@ -1,12 +1,13 @@
 /* ═══════════════════════════════════════════════════════════════════
    TRADEX — Shared Controls: Bloomberg Terminal Style
-   Zero radius · 1px borders · monospace · no shadows · dense
+   Soft radius · 1px borders · calibrated density
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Panel container ──────────────────────────────────────────────── */
 .panel {
   background: var(--panel);
   border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
   padding: 8px 10px;
 }
 
@@ -65,6 +66,7 @@
   padding: 2px 8px;
   text-transform: uppercase;
   white-space: nowrap;
+  border-radius: var(--radius-sm);
 }
 
 .badge.sm {
@@ -121,6 +123,7 @@
   min-height: var(--ctl-h-md);
   padding: 0 var(--ctl-px-md);
   text-transform: uppercase;
+  border-radius: var(--ctl-radius);
 }
 
 .shell-button > svg {
@@ -146,22 +149,23 @@
 }
 
 .shell-button:active:not(:disabled) {
-  background: var(--accent);
-  color: var(--accent-contrast);
+  background: var(--control-accent-tint);
+  border-color: var(--control-accent);
+  color: var(--control-accent-hover);
 }
 
-/* Primary — Bloomberg orange fill */
+/* Primary — neutral graphite fill */
 .shell-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-contrast);
+  background: var(--control-accent);
+  border-color: var(--control-accent);
+  color: var(--control-accent-contrast);
   font-weight: 700;
 }
 
 .shell-button.primary:hover:not(:disabled) {
-  background: #e68a00;
-  border-color: #e68a00;
-  color: var(--accent-contrast);
+  background: var(--control-accent-hover);
+  border-color: var(--control-accent-hover);
+  color: var(--control-accent-contrast);
 }
 
 /* Ghost / Muted — no border */
@@ -253,6 +257,7 @@
   outline: 0;
   padding: 0 12px;
   width: 100%;
+  border-radius: var(--ctl-radius);
 }
 
 .input::placeholder {
@@ -260,12 +265,12 @@
 }
 
 .input:hover:not(:disabled):not(:focus) {
-  border-color: var(--accent);
+  border-color: var(--control-accent-ring);
 }
 
 .input:focus {
-  border-color: var(--accent);
-  box-shadow: none;
+  border-color: var(--control-accent);
+  box-shadow: 0 0 0 2px var(--control-accent-tint);
 }
 
 .input:disabled {
@@ -303,6 +308,7 @@
   height: 14px;
   position: relative;
   width: 28px;
+  border-radius: 999px;
 }
 
 .switch-slider::after {
@@ -314,14 +320,15 @@
   top: 2px;
   transition: transform 100ms linear;
   width: 10px;
+  border-radius: 50%;
 }
 
 .switch-row input:checked + .switch-slider {
-  background: var(--accent);
+  background: var(--control-accent);
 }
 
 .switch-row input:checked + .switch-slider::after {
-  background: var(--accent-contrast);
+  background: var(--control-accent-contrast);
   transform: translateX(14px);
 }
 
@@ -359,6 +366,8 @@
   position: absolute;
   top: calc(100% + 2px);
   z-index: 200;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 /* ── Dropdown search ──────────────────────────────────────────────── */

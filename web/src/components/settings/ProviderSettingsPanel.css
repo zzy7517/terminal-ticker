@@ -10,7 +10,7 @@
 .provider-catalog {
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -38,7 +38,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: inherit;
   cursor: pointer;
   display: flex;
@@ -63,7 +63,7 @@
   align-items: center;
   background: linear-gradient(135deg, var(--accent-tint-strong), var(--accent-tint));
   border: 1px solid var(--accent-tint-strong);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--accent);
   display: inline-flex;
   height: 40px;
@@ -89,7 +89,7 @@
 
 .provider-item-dot {
   background: var(--accent);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: block;
   flex-shrink: 0;
   height: 10px;
@@ -103,7 +103,7 @@
 .provider-detail {
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -114,7 +114,7 @@
 
 .provider-hero {
   background: var(--canvas);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   padding: 16px;
 }
 
@@ -239,7 +239,7 @@
 .models-panel {
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: grid;
   gap: 12px;
   padding: 16px;
@@ -273,7 +273,7 @@
   background: transparent;
   border: 0;
   border-bottom: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: inherit;
   cursor: pointer;
   display: flex;

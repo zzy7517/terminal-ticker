@@ -21,7 +21,7 @@
   align-items: center;
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   gap: 12px;
   padding: 14px;
@@ -29,8 +29,8 @@
 
 .social-auth-state__icon {
   align-items: center;
-  background: linear-gradient(135deg, var(--accent), color-mix(in oklch, var(--accent), #6d28d9 40%));
-  border-radius: 0;
+  background: var(--accent);
+  border-radius: var(--radius-md);
   box-shadow: none;
   color: var(--accent-contrast);
   display: inline-flex;
@@ -63,7 +63,7 @@
   align-items: center;
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   gap: 12px;
   justify-content: space-between;
@@ -101,7 +101,7 @@
 .social-cache-form label {
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: grid;
   gap: 6px;
   padding: 12px;
@@ -122,7 +122,7 @@
 .social-test-panel {
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -152,7 +152,7 @@
 .social-test-preview__item {
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: grid;
   gap: 4px;
   padding: 10px 12px;
