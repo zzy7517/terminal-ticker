@@ -64,7 +64,7 @@
 .memory-model-dropdown {
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   box-shadow: none;
   display: flex;
   flex-direction: column;
@@ -159,7 +159,7 @@
   align-items: center;
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   cursor: pointer;
   display: flex;
@@ -198,7 +198,7 @@
 .memory-storage-path-input {
   background: var(--canvas);
   border: 1px solid var(--accent);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   box-shadow: none;
   color: var(--text-primary);
   flex: 1;
@@ -226,7 +226,7 @@
   align-items: center;
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
@@ -282,7 +282,7 @@
 .memory-error {
   background: rgba(220, 50, 50, 0.08);
   border: 1px solid rgba(220, 50, 50, 0.2);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--danger);
   font-size: 12px;
   margin-bottom: 8px;
@@ -316,7 +316,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   cursor: pointer;
   display: flex;
@@ -380,7 +380,7 @@
 .memory-file-content {
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   flex: 1;
   font-family: var(--mono);
@@ -419,7 +419,7 @@
 .memory-search-hit {
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -446,7 +446,7 @@
 
 .memory-line-badge {
   background: var(--accent-tint-strong);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;

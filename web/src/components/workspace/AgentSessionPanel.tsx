@@ -830,7 +830,8 @@ export function AgentSessionPanel({
             }}
           />
           <button
-            className="shell-button primary lg full-width"
+            aria-label={busy ? (canSteer ? 'Steer Agent' : 'Analyzing') : 'Ask Agent'}
+            className="shell-button primary lg session-submit"
             type="button"
             onClick={() => {
               if (canSteer) void steerAgent();
@@ -839,7 +840,9 @@ export function AgentSessionPanel({
             disabled={!canSend && !canSteer}
           >
             {busy && !canSteer ? <Loader2 className="spin" size={16} /> : busy ? <Zap size={16} /> : <Bot size={16} />}
-            {busy ? (canSteer ? 'Steer Agent' : 'Analyzing') : 'Ask Agent'}
+            <span className="session-submit-label">
+              {busy ? (canSteer ? 'Steer Agent' : 'Analyzing') : 'Ask Agent'}
+            </span>
           </button>
         </div>
       </div>

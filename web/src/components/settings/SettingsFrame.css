@@ -1,27 +1,106 @@
-/* ── Settings frame — Bloomberg Terminal ───────────────────────────── */
+/* Settings is a focused application mode with its own navigation. */
+.settings-page {
+  min-height: 100dvh;
+}
+
 .settings-frame {
   background: var(--canvas);
-  border: 1px solid var(--line-strong);
   display: grid;
-  gap: 0;
-  grid-template-columns: 200px minmax(0, 1fr);
-  margin: 0 auto;
-  max-width: 1600px;
-  min-height: calc(100vh - 20px);
+  grid-template-columns: 276px minmax(0, 1fr);
+  min-height: 100dvh;
 }
 
 .settings-nav {
-  background: var(--canvas);
-  border-right: 1px solid var(--line-strong);
+  background: var(--sidebar);
+  border-right: 1px solid var(--line-soft);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 10px 8px;
+  min-height: 100dvh;
+  padding: 24px 10px 14px;
 }
 
 .settings-nav-top {
   display: grid;
+  gap: 16px;
+}
+
+.settings-return {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
   gap: 8px;
+  justify-self: start;
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.settings-return:hover {
+  color: var(--text-bright);
+}
+
+.settings-return:active {
+  transform: translateY(1px);
+}
+
+.settings-search {
+  align-items: center;
+  background: var(--panel-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.settings-search:focus-within {
+  border-color: var(--control-accent);
+  box-shadow: 0 0 0 2px var(--control-accent-tint);
+}
+
+.settings-search input {
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  flex: 1;
+  font-family: var(--ui);
+  font-size: 13px;
+  min-width: 0;
+  outline: 0;
+  padding: 0;
+}
+
+.settings-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.settings-search input::-webkit-search-cancel-button {
+  opacity: 0.45;
+}
+
+.settings-nav-groups {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+  overflow-y: auto;
+  padding: 0 0 16px;
+}
+
+.settings-nav-section {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-nav-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 10px 3px;
 }
 
 .settings-nav-group {
@@ -33,94 +112,166 @@
   align-items: center;
   background: transparent;
   border: 0;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   cursor: pointer;
   display: flex;
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: 14px;
-  font-weight: 600;
-  gap: 6px;
-  letter-spacing: 0.02em;
-  min-height: 32px;
+  font-weight: 550;
+  gap: 9px;
+  min-height: 34px;
   padding: 0 10px;
-  text-transform: uppercase;
+  text-align: left;
 }
 
 .settings-nav-item.active {
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font-weight: 700;
+  background: var(--accent-tint-strong);
+  color: var(--text-bright);
+  font-weight: 650;
+}
+
+.settings-nav-item.active svg {
+  color: var(--control-accent-hover);
 }
 
 .settings-nav-item:hover:not(.active) {
   background: var(--accent-tint);
-  color: var(--accent);
+  color: var(--text-primary);
+}
+
+.settings-nav-item:active {
+  transform: translateY(1px);
+}
+
+.settings-search-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 8px 10px;
 }
 
 .settings-nav-meta {
-  border: 1px solid var(--line-strong);
+  border-top: 1px solid var(--line-soft);
+  color: var(--text-muted);
   display: grid;
-  gap: 4px;
+  font-size: 11px;
+  gap: 3px;
   margin-top: auto;
-  padding: 8px;
+  padding: 12px 10px 0;
 }
 
 .settings-nav-meta strong {
   color: var(--text-secondary);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
   line-height: 1.4;
-  word-break: break-all;
-}
-
-.settings-back {
-  align-items: center;
-  background: transparent;
-  border: 1px solid var(--line-strong);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 600;
-  gap: 4px;
-  justify-content: center;
-  margin-top: 4px;
-  min-height: var(--ctl-h-sm);
-  padding: 0 8px;
-  text-transform: uppercase;
-}
-
-.settings-back:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-stage {
-  display: flex;
-  flex-direction: column;
-  height: calc(100vh - 20px);
+  height: 100dvh;
   min-width: 0;
   overflow-y: auto;
-  padding: 12px 16px;
+  padding: 48px clamp(28px, 5vw, 72px) 64px;
 }
 
-.settings-stage > *:last-child {
-  flex: 1;
-  min-height: 0;
+.settings-stage-inner {
+  margin: 0 auto;
+  max-width: 960px;
+  min-height: 100%;
+}
+
+.settings-stage-wide .settings-stage-inner {
+  max-width: 1320px;
 }
 
 .settings-stage-head {
   align-items: center;
-  border-bottom: 1px solid var(--line-strong);
   display: flex;
-  gap: 8px;
+  gap: 12px;
   justify-content: space-between;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
+  margin-bottom: 24px;
+  min-height: 38px;
+}
+
+.settings-stage-head .eyebrow {
+  display: none;
+}
+
+.settings-stage-head h2 {
+  font-size: 24px;
+  letter-spacing: -0.02em;
 }
 
 .settings-stage-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
+}
+
+@media (max-width: 979px) {
+  .settings-frame {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .settings-stage {
+    padding: 36px 24px 48px;
+  }
+}
+
+@media (max-width: 719px) {
+  .settings-frame {
+    display: block;
+  }
+
+  .settings-nav {
+    border-bottom: 1px solid var(--line-soft);
+    border-right: 0;
+    min-height: auto;
+    padding: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  .settings-nav-top {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .settings-return span {
+    display: none;
+  }
+
+  .settings-nav-groups {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .settings-nav-section,
+  .settings-nav-group {
+    display: contents;
+  }
+
+  .settings-nav-label,
+  .settings-nav-meta {
+    display: none;
+  }
+
+  .settings-nav-item {
+    flex-shrink: 0;
+    padding-inline: 11px;
+  }
+
+  .settings-stage {
+    height: auto;
+    min-height: calc(100dvh - 112px);
+    overflow: visible;
+    padding: 28px 16px 40px;
+  }
 }

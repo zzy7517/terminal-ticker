@@ -95,7 +95,7 @@ function SidebarRow({
   );
 }
 
-export function WatchlistSidebar() {
+export function WatchlistSidebar({ mode = 'sidebar' }: { mode?: 'sidebar' | 'workspace' }) {
   const selectedKey = useUiStore((s) => s.selectedKey);
   const setSelectedKey = useUiStore((s) => s.setSelectedKey);
   const activeGroup = useUiStore((s) => s.activeGroup);
@@ -106,6 +106,7 @@ export function WatchlistSidebar() {
 
   // Sidebar collapsed state (persisted in localStorage)
   const [collapsed, setCollapsed] = useState(() => {
+    if (mode === 'workspace') return false;
     try { return window.localStorage.getItem('tradex_sidebar_collapsed') === '1'; } catch { return false; }
   });
 
@@ -115,12 +116,13 @@ export function WatchlistSidebar() {
     : (activeGroup && state ? state.groups[activeGroup] ?? [] : []);
 
   const toggleCollapse = useCallback(() => {
+    if (mode === 'workspace') return;
     setCollapsed((prev) => {
       const next = !prev;
       try { window.localStorage.setItem('tradex_sidebar_collapsed', next ? '1' : '0'); } catch {}
       return next;
     });
-  }, []);
+  }, [mode]);
 
   // ── Drag-and-drop state ────────────────────────────────────────────────────
   const [dragKey, setDragKey] = useState<string | null>(null);
@@ -282,6 +284,7 @@ export function WatchlistSidebar() {
 
   // Global Cmd+B shortcut to toggle collapse
   useEffect(() => {
+    if (mode === 'workspace') return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
         e.preventDefault();
@@ -290,10 +293,10 @@ export function WatchlistSidebar() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [toggleCollapse]);
+  }, [mode, toggleCollapse]);
 
   return (
-    <aside className={`watchlist-sidebar ${collapsed ? 'collapsed' : ''}`}>
+    <aside className={`watchlist-sidebar ${mode === 'workspace' ? 'workspace-mode' : ''} ${collapsed ? 'collapsed' : ''}`}>
       {/* Header */}
       <div className="sb-head">
         {!collapsed && <span className="sb-title">{'\u884c\u60c5'}</span>}
@@ -309,15 +312,17 @@ export function WatchlistSidebar() {
               <Settings size={13} />
             </button>
           )}
-          <button
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="sb-icon-btn"
-            onClick={toggleCollapse}
-            type="button"
-            title={collapsed ? '\u5c55\u5f00 (\u2318B)' : '\u6536\u8d77 (\u2318B)'}
-          >
-            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
+          {mode === 'sidebar' && (
+            <button
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="sb-icon-btn"
+              onClick={toggleCollapse}
+              type="button"
+              title={collapsed ? '\u5c55\u5f00 (\u2318B)' : '\u6536\u8d77 (\u2318B)'}
+            >
+              {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            </button>
+          )}
         </div>
       </div>
 

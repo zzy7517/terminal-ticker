@@ -22,6 +22,7 @@
   background: var(--panel);
   border: 1px solid var(--line-strong);
   padding: 8px 10px;
+  border-radius: var(--radius-lg);
 }
 
 .agent-card-head {
@@ -29,6 +30,14 @@
   display: flex;
   gap: 8px;
   justify-content: space-between;
+}
+
+.agent-session-card > .agent-card-head,
+.agent-session-card > .session-toolbar,
+.agent-session-card > .session-pickers-row {
+  margin-inline: auto;
+  max-width: 920px;
+  width: 100%;
 }
 
 .agent-card p {
@@ -39,7 +48,7 @@
 }
 
 .agent-readout {
-  border-color: var(--accent);
+  border-color: var(--line-strong);
 }
 
 .agent-bias {
@@ -50,12 +59,13 @@
   font-weight: 700;
   padding: 1px 4px;
   text-transform: uppercase;
+  border-radius: var(--radius-sm);
 }
 
 /* ── Agent session card ───────────────────────────────────────────── */
 .agent-session-card {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .session-toolbar {
@@ -127,6 +137,7 @@
   gap: 4px;
   padding: 3px 6px 3px 6px;
   position: relative;
+  border-radius: var(--radius-sm);
 }
 
 .session-history-row:not(.active):hover {
@@ -163,7 +174,7 @@
 }
 
 .session-history-main span {
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: 14px;
   font-weight: 600;
 }
@@ -223,26 +234,29 @@
 .session-transcript {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 10px;
   max-height: 440px;
   min-height: 100px;
   overflow: auto;
+  padding: 8px max(16px, calc((100% - 880px) / 2));
 }
 
 .session-message {
-  background: var(--canvas-2);
-  border: 1px solid var(--line-soft);
+  background: transparent;
+  border: 0;
   display: grid;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: 7px;
+  padding: 9px 14px;
 }
 
 .session-message.user {
   align-self: flex-end;
   background: var(--accent-tint);
-  border-color: var(--accent);
+  border: 1px solid var(--line-strong);
   inline-size: fit-content;
   max-inline-size: min(50ch, 80%);
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
 }
 
 .session-message-head {
@@ -273,14 +287,148 @@
 }
 
 .session-message-text {
-  font-family: var(--mono);
+  font-family: var(--reading);
   font-size: 15px;
-  line-height: 1.55;
+  line-height: 1.72;
   white-space: pre-wrap;
 }
 
+.session-message.user .session-message-text,
+.session-message.system .session-message-text {
+  font-family: var(--mono);
+  line-height: 1.55;
+}
+
 .session-message-text.markdown-body {
+  color: var(--text-primary);
+  max-width: 100%;
   white-space: normal;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body table,
+.markdown-body pre,
+.markdown-body blockquote {
+  margin: 0 0 12px;
+}
+
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  color: var(--text-bright);
+  font-family: var(--reading);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.markdown-body h2 {
+  border-bottom: 1px solid var(--line-strong);
+  font-size: 18px;
+  line-height: 1.4;
+  margin: 22px 0 12px;
+  padding-bottom: 7px;
+}
+
+.markdown-body h3 {
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1.45;
+  margin: 18px 0 8px;
+}
+
+.markdown-body h4 {
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 14px 0 6px;
+}
+
+.markdown-body strong {
+  color: var(--text-bright);
+  font-weight: 650;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 22px;
+}
+
+.markdown-body li {
+  margin: 4px 0;
+}
+
+.markdown-body li::marker {
+  color: var(--accent);
+}
+
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--line-strong);
+  margin: 18px 0;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 100%;
+  overflow-x: auto;
+  width: max-content;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 6px 14px 6px 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.markdown-body th {
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.markdown-body blockquote {
+  border-left: 2px solid var(--accent);
+  color: var(--text-secondary);
+  padding: 2px 0 2px 12px;
+}
+
+.markdown-body code,
+.markdown-body pre {
+  font-family: var(--mono);
+}
+
+.markdown-body :not(pre) > code {
+  background: var(--panel-raised);
+  border: 1px solid var(--line-soft);
+  color: var(--accent);
+  font-size: 0.88em;
+  padding: 1px 4px;
+}
+
+.markdown-body pre {
+  background: var(--canvas);
+  border: 1px solid var(--line-strong);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow: auto;
+  padding: 10px 12px;
 }
 
 .streaming-cursor {
@@ -326,25 +474,37 @@
 }
 
 .session-compose {
+  background: var(--canvas-2);
+  border: 1px solid var(--line-strong);
   display: grid;
-  gap: 4px;
+  gap: 0;
+  margin-inline: auto;
+  max-width: 880px;
+  width: 100%;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+.session-compose:focus-within {
+  border-color: var(--control-accent);
+  box-shadow: 0 0 0 2px var(--control-accent-tint);
 }
 
 .session-compose textarea {
-  background: var(--canvas-2);
-  border: 1px solid var(--line-strong);
+  background: transparent;
+  border: 0;
   color: var(--text-primary);
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: 15px;
-  min-height: 64px;
+  min-height: 72px;
   outline: 0;
-  padding: 10px 12px;
+  padding: 12px 14px 8px;
   resize: vertical;
   width: 100%;
 }
 
 .session-compose textarea:focus {
-  border-color: var(--accent);
+  border-color: transparent;
 }
 
 .session-compose textarea::placeholder {
@@ -361,6 +521,7 @@
   background: var(--panel-raised);
   border: 1px solid var(--line-strong);
   overflow: hidden;
+  border-radius: var(--radius-lg);
 }
 
 .slash-command-head {
@@ -465,10 +626,22 @@
   align-items: center;
   display: flex;
   gap: 6px;
+  justify-content: space-between;
+  padding: 4px 6px 6px;
 }
 
 .session-compose-actions .shell-button.sm {
   flex-shrink: 0;
+}
+
+.session-submit {
+  min-width: var(--ctl-h-lg);
+  padding: 0;
+  width: var(--ctl-h-lg);
+}
+
+.session-submit-label {
+  display: none;
 }
 
 .session-message-images {
@@ -530,6 +703,7 @@
   background: var(--canvas-2);
   border: 1px solid var(--line-soft);
   overflow: hidden;
+  border-radius: var(--radius-sm);
 }
 
 .agent-tool-step:last-child {
@@ -704,6 +878,7 @@
   font-size: 12px;
   gap: 4px;
   padding: 3px 8px;
+  border-radius: var(--radius-md);
 }
 
 .session-model-trigger:hover {
@@ -727,6 +902,8 @@
   z-index: 100;
   display: flex;
   flex-direction: column;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .session-model-dropdown-search {
@@ -803,13 +980,14 @@
 
 /* ── Agent tab: session history in main area ─────────────────────── */
 .agent-tab-layout .session-history {
-  border: 1px solid var(--line-strong);
+  border: 0;
+  border-right: 1px solid var(--line-soft);
   background: var(--panel);
   height: 100%;
   max-height: none;
   min-height: 0;
   overflow: hidden;
-  padding: 8px 10px;
+  padding: 10px;
 }
 
 .agent-tab-layout .session-history-list {
@@ -823,10 +1001,12 @@
 }
 
 .agent-tab-layout .agent-session-card {
+  border: 0;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  padding: 12px 18px 12px;
 }
 
 .agent-tab-layout .session-transcript {
@@ -841,6 +1021,8 @@
   }
 
   .agent-tab-layout .session-history {
+    border-bottom: 1px solid var(--line-strong);
+    border-right: 0;
     height: auto;
     max-height: 200px;
   }
@@ -853,13 +1035,14 @@
     min-height: 200px;
   }
 }
+
 /* Fork Selector Panel — replaces transcript when open */
 .fork-selector-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--surface-bg, #1a1a1a);
+  background: var(--panel);
   font-size: 12px;
 }
 
@@ -869,8 +1052,8 @@
   justify-content: space-between;
   padding: 6px 12px;
   font-size: 12px;
-  color: var(--accent-color, #58a6ff);
-  border-bottom: 1px solid var(--border-color, #2a2a2a);
+  color: var(--accent);
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .fork-selector-close {
@@ -880,7 +1063,6 @@
   cursor: pointer;
   font-size: 12px;
   padding: 2px 4px;
-  border-radius: 3px;
 }
 
 .fork-selector-close:hover {
@@ -904,8 +1086,6 @@
   cursor: pointer;
   font-size: 12px;
   text-align: left;
-  border-radius: 4px;
-  transition: background 0.12s;
 }
 
 .fork-selector-item:hover {

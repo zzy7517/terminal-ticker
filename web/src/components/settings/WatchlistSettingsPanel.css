@@ -38,7 +38,7 @@
   align-items: center;
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: inline-flex;
   gap: 8px;
   padding: 5px 6px 5px 12px;
@@ -87,7 +87,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--text-muted);
   cursor: pointer;
   display: inline-flex;
@@ -111,7 +111,7 @@
 .wl-browse {
   background: var(--panel);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -129,7 +129,7 @@
 .wl-source-tabs {
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: inline-flex;
   gap: 2px;
   padding: 3px;
@@ -139,7 +139,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--text-muted);
   cursor: pointer;
   display: inline-flex;
@@ -164,7 +164,7 @@
 
 .wl-source-tab-count {
   background: var(--accent-tint);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--accent);
   font-family: var(--mono);
   font-size: 12px;
@@ -186,7 +186,7 @@
   align-items: center;
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   gap: 8px;
   min-height: 38px;
@@ -223,7 +223,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--text-muted);
   cursor: pointer;
   display: inline-flex;
@@ -263,7 +263,7 @@
 .wl-quote-pill {
   background: transparent;
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   cursor: pointer;
   font-family: var(--mono);
@@ -297,7 +297,7 @@
 .wl-errors div {
   background: rgba(255, 68, 102, 0.08);
   border: 1px solid rgba(255, 68, 102, 0.16);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: grid;
   gap: 2px;
   padding: 8px 10px;
@@ -333,7 +333,7 @@
 .wl-alpha-key {
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--text-muted);
   cursor: pointer;
   font-family: var(--mono);
@@ -356,7 +356,7 @@
 
 .wl-catalog-scroller {
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -464,7 +464,7 @@
   align-items: center;
   background: var(--accent);
   border: 1px solid var(--accent);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--accent-contrast);
   cursor: pointer;
   display: inline-flex;
@@ -510,7 +510,7 @@
 .wl-status {
   background: var(--canvas);
   border: 1px solid var(--line-soft);
-  border-radius: 0;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-family: var(--mono);
   font-size: 13px;

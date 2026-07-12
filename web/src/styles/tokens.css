@@ -1,66 +1,74 @@
 /* ═══════════════════════════════════════════════════════════════════
    TRADEX — Design Tokens
-   Terminal aesthetic · cool dark · monospace · zero radius
+   Professional workstation · daylight · neutral interface
    Tuned for sustained viewing comfort during long sessions
    ═══════════════════════════════════════════════════════════════════ */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* Surfaces — neutral cool black (no warm tint, no pure #000) */
-  --canvas: #0c0c0c;
-  --canvas-2: #111111;
-  --panel: #0c0c0c;
-  --panel-raised: #151515;
+  --canvas: #f9f9f7;
+  --canvas-2: #f1f1ef;
+  --panel: #fcfcfb;
+  --panel-raised: #ffffff;
+  --sidebar: #f0f0ee;
 
-  /* Borders — neutral cool grays */
-  --line-soft: #1f1f1f;
-  --line-strong: #2e2e2e;
+  /* Borders — quiet neutral grays */
+  --line-soft: #e7e7e4;
+  --line-strong: #d8d8d4;
 
-  /* Text — neutral cool grays for low fatigue */
-  --text-primary: #c8c8c8;
-  --text-secondary: #888888;
-  --text-muted: #555555;
+  /* Text — neutral hierarchy without pure black */
+  --text-primary: #2d2d2b;
+  --text-secondary: #696966;
+  --text-muted: #969692;
 
   /* Semantic — market (desaturated for sustained viewing) */
-  --up: #3dba7a;
-  --down: #d35f5f;
-  --success: #3dba7a;
-  --danger: #d35f5f;
-  --warning: #d4a032;
+  --up: #24734d;
+  --down: #b64b47;
+  --success: #24734d;
+  --danger: #b64b47;
+  --warning: #8a6a2b;
 
-  /* Accent — muted amber (lower saturation, less eye strain than pure orange) */
-  --accent: #d4952a;
-  --accent-contrast: #000000;
-  --accent-tint: rgba(212, 149, 42, 0.12);
-  --accent-tint-strong: rgba(212, 149, 42, 0.22);
-  --accent-ring: rgba(212, 149, 42, 0.45);
+  /* Interface accent — graphite, intentionally non-brand-colored */
+  --accent: #5d5d59;
+  --accent-contrast: #ffffff;
+  --accent-tint: rgba(52, 52, 50, 0.055);
+  --accent-tint-strong: rgba(52, 52, 50, 0.095);
+  --accent-ring: rgba(52, 52, 50, 0.28);
+
+  /* Absolutely light theme — reserved for interactive control states */
+  --control-accent: #cc7d5e;
+  --control-accent-hover: #b96d50;
+  --control-accent-contrast: #ffffff;
+  --control-accent-tint: rgba(204, 125, 94, 0.10);
+  --control-accent-ring: rgba(204, 125, 94, 0.34);
 
   /* Tints (matched to desaturated semantic colors) */
-  --danger-tint: rgba(211, 95, 95, 0.10);
-  --danger-tint-strong: rgba(211, 95, 95, 0.20);
-  --warning-tint: rgba(212, 160, 50, 0.10);
-  --warning-tint-strong: rgba(212, 160, 50, 0.20);
-  --success-tint: rgba(61, 186, 122, 0.08);
-  --success-tint-strong: rgba(61, 186, 122, 0.16);
+  --danger-tint: rgba(182, 75, 71, 0.08);
+  --danger-tint-strong: rgba(182, 75, 71, 0.15);
+  --warning-tint: rgba(138, 103, 28, 0.08);
+  --warning-tint-strong: rgba(138, 103, 28, 0.15);
+  --success-tint: rgba(36, 115, 77, 0.07);
+  --success-tint-strong: rgba(36, 115, 77, 0.13);
 
   /* Highlight — clean white for prices and key numbers */
-  --text-bright: #f0f0f0;
+  --text-bright: #20201e;
 
   /* Elevation — no shadows, borders only */
   --shadow-soft: none;
   --shadow-md: none;
 
-  /* Radii — zero everywhere */
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
+  /* Shape system — soft, consistent, never pill-heavy */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
 
   /* Typography — monospace only */
   --mono: "JetBrains Mono", "SF Mono", "Cascadia Mono", "Consolas", "Courier New", monospace;
-  --display: "JetBrains Mono", "SF Mono", "Cascadia Mono", "Consolas", "Courier New", monospace;
-  --ui: "JetBrains Mono", "SF Mono", "Cascadia Mono", "Consolas", "Courier New", monospace;
+  --display: "SF Pro Display", "PingFang SC", system-ui, -apple-system, sans-serif;
+  --ui: "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --reading: "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
 
   /* Control tokens — terminal-grade density */
   --ctl-h-sm: 28px;
@@ -69,8 +77,8 @@
   --ctl-px-sm: 10px;
   --ctl-px-md: 12px;
   --ctl-px-lg: 16px;
-  --ctl-radius: 0px;
-  --ctl-radius-sm: 0px;
+  --ctl-radius: var(--radius-md);
+  --ctl-radius-sm: var(--radius-sm);
   --ctl-font: 14px;
   --ctl-weight: 500;
   --ctl-weight-strong: 700;

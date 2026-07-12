@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useMarketStore } from './stores/marketStore';
 import { useAgentStore } from './stores/agentStore';
 import { useUiStore } from './stores/uiStore';
+import { AppSidebar } from './components/AppSidebar';
 
 import { orderedGroups, readRouteFromHash } from './utils';
 import { WorkspaceView } from './components/workspace';
@@ -104,5 +105,10 @@ export default function App() {
     );
   }
 
-  return <WorkspaceView />;
+  return (
+    <div className="application-frame">
+      <AppSidebar />
+      <div className="application-content"><WorkspaceView /></div>
+    </div>
+  );
 }
