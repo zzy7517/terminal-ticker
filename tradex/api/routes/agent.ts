@@ -25,6 +25,7 @@ import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
 import { purgeClaudeProject } from "../../agent/runtime/claude/purge.js";
 import { CLAUDE_CODE_CAPABILITIES } from "../../agent/runtime/claude/code.js";
 import { detectClaudeCode } from "../../agent/runtime/claude/availability.js";
+import { claudeModelCatalog } from "../../agent/runtime/claude/models.js";
 import { PI_SDK_CAPABILITIES } from "../../agent/runtime/types.js";
 import type { AppRuntime } from "../runtime.js";
 import { buildTradexToolRegistry } from "../agent_tools.js";
@@ -59,6 +60,11 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       },
       { ...await detectClaudeCode(), capabilities: CLAUDE_CODE_CAPABILITIES },
     ],
+  }));
+
+  app.get("/api/agent/runtimes/claude-code/models", (c) => c.json({
+    models: claudeModelCatalog(),
+    supportsCustomModel: true,
   }));
 
   app.post("/api/agents", async (c) => {

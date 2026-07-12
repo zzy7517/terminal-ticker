@@ -1,0 +1,34 @@
+.claude-agent-model-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.agent-editor .agent-model-fetch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--text-primary);
+  font: 12px var(--mono);
+  cursor: pointer;
+}
+
+.agent-editor .agent-model-fetch:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+  .claude-agent-model-field {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-editor .agent-model-fetch {
+    justify-content: center;
+  }
+}

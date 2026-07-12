@@ -65,4 +65,29 @@ describe("AgentStore", () => {
     expect(() => store.remove("ict", () => true)).toThrow("Agent has persisted Sessions");
     expect(() => store.update(DEFAULT_AGENT_ID, { runtime: "claude-code" })).toThrow("Default Agent must use the Pi runtime");
   });
+
+  it("validates Claude Code effort while allowing custom model ids", () => {
+    const store = new AgentStore(tempAgentsDir());
+    expect(store.create({
+      id: "claude-reader",
+      name: "Claude Reader",
+      description: "Local Claude",
+      systemPrompt: null,
+      runtime: "claude-code",
+      provider: null,
+      model: "private-claude-model",
+      reasoningEffort: "high",
+    })).toMatchObject({ model: "private-claude-model", reasoningEffort: "high" });
+
+    expect(() => store.create({
+      id: "bad-claude",
+      name: "Bad Claude",
+      description: "Invalid effort",
+      systemPrompt: null,
+      runtime: "claude-code",
+      provider: null,
+      model: "sonnet",
+      reasoningEffort: "ultra",
+    })).toThrow("reasoningEffort is not supported");
+  });
 });

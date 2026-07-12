@@ -8,7 +8,7 @@ import { orderedGroups, readRouteFromHash } from './utils';
 import { WorkspaceView } from './components/workspace';
 import {
   SettingsFrame,
-  ProviderSettingsPanel,
+  LocalAgentsSettingsPanel,
   AgentContextSettingsPanel,
   AgentsSettingsPanel,
   NewsSettingsPanel,
@@ -77,7 +77,7 @@ export default function App() {
     return (
       <SettingsFrame>
         {route.section === 'providers' ? (
-          <ProviderSettingsPanel />
+          <LocalAgentsSettingsPanel />
         ) : route.section === 'agents' ? (
           <AgentsSettingsPanel />
         ) : route.section === 'agent-context' ? (

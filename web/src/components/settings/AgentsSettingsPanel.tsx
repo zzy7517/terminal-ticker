@@ -1,10 +1,11 @@
 /** 提供 Pi 与 Claude Code Agent 的创建和编辑界面。 */
 import { useEffect, useMemo, useState } from 'react';
-import { Bot, Plus, Save, Trash2 } from 'lucide-react';
-import { createAgent, deleteAgent, fetchAgentRuntimes, fetchAgents, updateAgent } from '../../api';
-import type { AgentDefinition, AgentDefinitionInput, AgentRuntimeStatus } from '../../types';
+import { Bot, Loader2, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { createAgent, deleteAgent, fetchAgentRuntimes, fetchAgents, fetchClaudeCodeModels, updateAgent } from '../../api';
+import type { AgentDefinition, AgentDefinitionInput, AgentRuntimeStatus, ClaudeCodeModelsResponse } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
 import './AgentsSettingsPanel.css';
+import './AgentsSettingsPanel.runtime.css';
 
 const EMPTY: AgentDefinitionInput = { id: '', name: '', description: '', systemPrompt: '', runtime: 'pi', provider: null, model: null, reasoningEffort: null };
 
@@ -16,6 +17,8 @@ export function AgentsSettingsPanel() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [runtimes, setRuntimes] = useState<AgentRuntimeStatus[]>([]);
+  const [claudeCatalog, setClaudeCatalog] = useState<ClaudeCodeModelsResponse | null>(null);
+  const [fetchingClaudeModels, setFetchingClaudeModels] = useState(false);
   const registry = useAgentStore((s) => s.modelRegistry);
   const models = useMemo(() => (registry?.models ?? []).filter((model) => model.selected && model.runnable), [registry]);
 
@@ -44,6 +47,21 @@ export function AgentsSettingsPanel() {
   };
   const modelValue = draft.provider && draft.model ? `${draft.provider}:${draft.model}` : '';
   const runtimeStatus = runtimes.find((runtime) => runtime.id === draft.runtime);
+  const selectedClaudeModel = claudeCatalog?.models.find((model) => model.id === draft.model) ?? null;
+  const claudeEfforts = selectedClaudeModel?.thinking.supportedLevels ?? ['low', 'medium', 'high', 'xhigh', 'max'];
+  const loadClaudeModels = async () => {
+    setFetchingClaudeModels(true); setMessage('');
+    try {
+      const payload = await fetchClaudeCodeModels();
+      setClaudeCatalog(payload);
+      setMessage(payload.models.length ? `Loaded ${payload.models.length} Claude Code model options.` : 'No known models; enter a full model ID.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    finally { setFetchingClaudeModels(false); }
+  };
+  useEffect(() => {
+    if (draft.runtime !== 'claude-code' || claudeCatalog || fetchingClaudeModels) return;
+    void loadClaudeModels();
+  }, [draft.runtime, claudeCatalog, fetchingClaudeModels]);
   return <section className="agents-settings">
     <header><div className="eyebrow">Agent Identities</div><h2>Agents</h2><p>Create reusable identities and default models for new Sessions.</p></header>
     <div className="agents-settings-layout">
@@ -61,8 +79,15 @@ export function AgentsSettingsPanel() {
           <label>Default model<select value={modelValue} onChange={(e) => { const selected = models.find((item) => `${item.providerId}:${item.id}` === e.target.value); setDraft({ ...draft, provider: selected?.providerId ?? null, model: selected?.id ?? null }); }}><option value="">Use global default</option>{models.map((model) => <option key={`${model.providerId}:${model.id}`} value={`${model.providerId}:${model.id}`}>{model.name} ({model.providerId})</option>)}</select></label>
           <label>Default reasoning effort<select value={draft.reasoningEffort ?? ''} onChange={(e) => setDraft({ ...draft, reasoningEffort: e.target.value || null })}><option value="">Use global default</option>{['minimal','low','medium','high','xhigh'].map((effort) => <option key={effort}>{effort}</option>)}</select></label>
         </> : <>
-          <label>Claude model override<input value={draft.model ?? ''} onChange={(e) => setDraft({ ...draft, model: e.target.value || null })} placeholder="Empty uses the local Claude CLI default" /></label>
-          <label>Claude effort override<select value={draft.reasoningEffort ?? ''} onChange={(e) => setDraft({ ...draft, reasoningEffort: e.target.value || null })}><option value="">Use local CLI default</option>{['low','medium','high','xhigh','max'].map((effort) => <option key={effort}>{effort}</option>)}</select></label>
+          <div className="claude-agent-model-field">
+            <label>Claude model override<select value={selectedClaudeModel?.id ?? ''} onChange={(e) => {
+              const selected = claudeCatalog?.models.find((model) => model.id === e.target.value);
+              setDraft({ ...draft, model: selected?.id ?? null, reasoningEffort: selected?.thinking.defaultLevel ?? null });
+            }}><option value="">Use local CLI default</option>{claudeCatalog?.models.map((model) => <option key={model.id} value={model.id}>{model.label}{model.default ? ' · recommended' : ''}</option>)}</select></label>
+            <button type="button" className="agent-model-fetch" disabled={fetchingClaudeModels || !runtimeStatus?.available} onClick={() => void loadClaudeModels()}>{fetchingClaudeModels ? <Loader2 className="spin" size={14}/> : <RefreshCw size={14}/>} Fetch</button>
+          </div>
+          <label>Full Claude model ID<input value={selectedClaudeModel ? '' : draft.model ?? ''} onChange={(e) => setDraft({ ...draft, model: e.target.value || null })} placeholder="Optional custom model ID" /></label>
+          <label>Claude effort override<select value={draft.reasoningEffort ?? ''} onChange={(e) => setDraft({ ...draft, reasoningEffort: e.target.value || null })}><option value="">Use local CLI default</option>{claudeEfforts.map((effort) => <option key={effort}>{effort}</option>)}</select></label>
         </>}
         <label>{draft.runtime === 'claude-code' ? 'Instructions appended to Claude Code' : 'System prompt'}<textarea rows={16} value={draft.systemPrompt ?? ''} onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value || null })} placeholder={selectedId === 'default' ? 'Empty uses the built-in MAIN_AGENT_PROMPT' : 'Describe this Agent identity and instructions'} /></label>
         {message && <div className="agent-editor-message">{message}</div>}

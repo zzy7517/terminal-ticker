@@ -71,8 +71,8 @@ function runProbe(executablePath: string, args: string[]): Promise<{ output: str
       finish({ output: "", error: "Claude Code probe timed out" });
     }, 3_000);
     timer.unref();
-    child.stdout.on("data", (chunk: Buffer) => { stdout = (stdout + chunk.toString("utf8")).slice(-8_192); });
-    child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("utf8")).slice(-8_192); });
+    child.stdout.on("data", (chunk: Buffer) => { stdout = (stdout + chunk.toString("utf8")).slice(-32_768); });
+    child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("utf8")).slice(-32_768); });
     child.once("error", (error) => finish({ output: "", error: error.message }));
     child.once("close", (code) => finish(code === 0
       ? { output: stdout.trim() || stderr.trim(), error: null }

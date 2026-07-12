@@ -1,6 +1,7 @@
 export { SettingsFrame } from './SettingsFrame';
 export { WatchlistSettingsPanel } from './WatchlistSettingsPanel';
 export { ProviderSettingsPanel } from './ProviderSettingsPanel';
+export { LocalAgentsSettingsPanel } from './LocalAgentsSettingsPanel';
 export { AgentContextSettingsPanel } from './AgentContextSettingsPanel';
 export { AgentsSettingsPanel } from './AgentsSettingsPanel';
 export { NewsSettingsPanel } from './NewsSettingsPanel';

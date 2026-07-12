@@ -107,6 +107,17 @@ export interface AgentRuntimeStatus {
   };
 }
 
+export interface ClaudeCodeModelsResponse {
+  models: Array<{
+    id: string;
+    label: string;
+    provider: string;
+    default?: boolean;
+    thinking: { supportedLevels: string[]; defaultLevel: string };
+  }>;
+  supportsCustomModel: boolean;
+}
+
 export interface AgentSessionRun {
   sessionId: string;
   runId: string | null;

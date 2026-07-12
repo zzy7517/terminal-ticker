@@ -49,6 +49,7 @@ import type {
   AgentDefinition,
   AgentDefinitionInput,
   AgentRuntimeStatus,
+  ClaudeCodeModelsResponse,
 } from './types';
 
 const DEFAULT_DEV_BACKEND_ORIGIN = 'http://127.0.0.1:8765';
@@ -192,6 +193,12 @@ export async function fetchAgents(): Promise<{ agents: AgentDefinition[] }> {
 export async function fetchAgentRuntimes(): Promise<{ runtimes: AgentRuntimeStatus[] }> {
   const response = await fetch('/api/agent/runtimes');
   if (!response.ok) throw await responseError(response, 'agent runtimes fetch failed');
+  return response.json();
+}
+
+export async function fetchClaudeCodeModels(): Promise<ClaudeCodeModelsResponse> {
+  const response = await fetch('/api/agent/runtimes/claude-code/models');
+  if (!response.ok) throw await responseError(response, 'Claude models fetch failed');
   return response.json();
 }
 

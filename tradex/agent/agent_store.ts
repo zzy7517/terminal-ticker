@@ -1,6 +1,7 @@
 /** 将可复用 Agent 定义保存为经过校验的 JSON 文件。 */
 import fs from "node:fs";
 import path from "node:path";
+import { isClaudeThinkingLevel } from "./runtime/claude/models.js";
 
 export const DEFAULT_AGENT_ID = "default";
 
@@ -104,6 +105,9 @@ function validateAgent(value: AgentFileInput, source = "Agent"): AgentFileInput 
   if (value.systemPrompt !== null && typeof value.systemPrompt !== "string") throw new Error(`${source} systemPrompt must be a string or null`);
   if (value.runtime !== "pi" && value.runtime !== "claude-code") throw new Error(`${source} runtime must be pi or claude-code`);
   if (value.runtime === "claude-code" && value.provider !== null) throw new Error(`${source} Claude Code provider must be null`);
+  if (value.runtime === "claude-code" && !isClaudeThinkingLevel(value.reasoningEffort)) {
+    throw new Error(`${source} Claude Code reasoningEffort is not supported`);
+  }
   for (const key of ["provider", "model", "reasoningEffort"] as const) {
     if (value[key] !== null && typeof value[key] !== "string") throw new Error(`${source} ${key} must be a string or null`);
   }

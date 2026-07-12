@@ -56,6 +56,19 @@ function runtime(): AppRuntime {
 }
 
 describe("Agent HTTP API", () => {
+  it("returns Pi as the built-in runtime without probing it", async () => {
+    const response = await agentRoutes(runtime()).request("/api/agent/runtimes");
+    const payload = await response.json() as { runtimes: Array<Record<string, unknown>> };
+    expect(payload.runtimes[0]).toMatchObject({ id: "pi", available: true, version: null, error: null });
+  });
+
+  it("returns the structured Claude model catalog", async () => {
+    const response = await agentRoutes(runtime()).request("/api/agent/runtimes/claude-code/models");
+    const payload = await response.json() as { models: Array<Record<string, unknown>>; supportsCustomModel: boolean };
+    expect(payload.supportsCustomModel).toBe(true);
+    expect(payload.models).toContainEqual(expect.objectContaining({ id: "sonnet", default: true, thinking: expect.any(Object) }));
+  });
+
   it("creates an in-memory Session projected under the selected Agent", async () => {
     const appRuntime = runtime();
     const response = await agentRoutes(appRuntime).request("/api/agent/sessions", {
