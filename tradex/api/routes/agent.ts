@@ -15,27 +15,26 @@ import {
   piProviderName,
   piSessionFileExists,
   piSessionPayload,
-} from "../../agent/pi_sessions.js";
+} from "../../agent/runtime/pi-sessions.js";
 import type { AgentDefinition, AgentFileInput } from "../../agent/agent_store.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent, ImageContent, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
-import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
+import { createPiAgentRuntime } from "../../agent/runtime/pi.js";
 import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
-import { purgeClaudeProject } from "../../agent/runtime/claude/purge.js";
-import { CLAUDE_CODE_CAPABILITIES } from "../../agent/runtime/claude/code.js";
-import { detectClaudeCode } from "../../agent/runtime/claude/availability.js";
-import { claudeModelCatalog } from "../../agent/runtime/claude/models.js";
-import { PI_SDK_CAPABILITIES } from "../../agent/runtime/types.js";
+import { CLAUDE_CODE_CAPABILITIES, PI_SDK_CAPABILITIES } from "../../agent/runtime/capabilities.js";
+import { detectClaudeCode, claudeModelCatalog } from "../../agent/runtime/claude-code/discovery.js";
+import { purgeClaudeProject } from "../../agent/runtime/claude-code/runtime.js";
 import type { AppRuntime } from "../runtime.js";
 import { buildTradexToolRegistry } from "../agent_tools.js";
 import { AgentSseWriter } from "../agent_sse.js";
-import { streamClaudeSession, validateClaudeImages } from "../agent/claude-session-stream.js";
+import { streamClaudeSession, validateClaudeImages } from "../claude-session-stream.js";
 import {
   idleRun,
   openSessionManager,
   sessionResponse,
   sessionHistory,
+  sessionCapabilities,
   agentConfigForRequest,
   requireConfigPath,
   reloadAndState,
@@ -193,8 +192,10 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   // frontend can place it in the editor for modification.
   app.post("/api/agent/sessions/:id/fork", async (c) => {
     const sessionId = c.req.param("id");
-    if (runtime.claudeSessions.getMetadata(sessionId)) {
-      return c.json({ detail: "Claude Code runtime does not support Session fork" }, 409);
+    const capabilities = await sessionCapabilities(runtime, sessionId);
+    if (!capabilities) return c.json({ detail: "session not found" }, 404);
+    if (!capabilities.forkFromMessage) {
+      return c.json({ detail: "runtime does not support Session fork", code: "runtime_capability_unsupported" }, 409);
     }
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const entryId = String(body.entryId || "").trim();
@@ -227,8 +228,10 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   // the current position.
   app.post("/api/agent/sessions/:id/clone", async (c) => {
     const sessionId = c.req.param("id");
-    if (runtime.claudeSessions.getMetadata(sessionId)) {
-      return c.json({ detail: "Claude Code runtime does not support Session clone" }, 409);
+    const capabilities = await sessionCapabilities(runtime, sessionId);
+    if (!capabilities) return c.json({ detail: "session not found" }, 404);
+    if (!capabilities.cloneFromMessage) {
+      return c.json({ detail: "runtime does not support Session clone", code: "runtime_capability_unsupported" }, 409);
     }
     if (runtime.lockedAgentSessions.has(sessionId)) {
       return c.json({ detail: "cannot clone a running session" }, 409);

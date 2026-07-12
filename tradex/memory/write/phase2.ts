@@ -1,6 +1,6 @@
 import type { AgentConfig } from "../../config/index.js";
 import { nowMs } from "../../db.js";
-import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
+import { createPiAgentRuntime } from "../../agent/runtime/pi.js";
 import {
   agentConfigForModelSelection,
   type ModelRuntimeSnapshot,

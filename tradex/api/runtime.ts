@@ -9,7 +9,7 @@ import { SocialFeedService } from "../social_feed/service.js";
 import { XAuthStore } from "../social_feed/auth.js";
 import { XInternalClient } from "../social_feed/providers/x_internal.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
-import { listPiSessionManagersSync, piSessionPayload } from "../agent/pi_sessions.js";
+import { listPiSessionManagersSync, piSessionPayload } from "../agent/runtime/pi-sessions.js";
 import { ExchangeRouter } from "../trading/exchange_router.js";
 import { TradeStore } from "../trading/store.js";
 import { TradeStatus } from "../trading/models.js";
@@ -30,9 +30,9 @@ import { BrowserManager } from "../browser/index.js";
 import { OptionsService } from "../options/service.js";
 import { applyProxyConfig } from "../runtime/proxy.js";
 import { AgentStore } from "../agent/agent_store.js";
-import type { SessionAgentSnapshot } from "../agent/pi_sessions.js";
+import type { SessionAgentSnapshot } from "../agent/runtime/pi-sessions.js";
 import { McpRunGrantStore } from "../mcp/server/grants.js";
-import { ClaudeSessionStore } from "../agent/runtime/claude/session-store.js";
+import { ClaudeSessionStore } from "../agent/runtime/claude-code/session-store.js";
 
 export class AppRuntime {
   config: AppConfig;

@@ -7,21 +7,12 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import type { ToolRegistry } from "../../tools/registry.js";
 import type { McpRunGrantStore } from "../../../mcp/server/grants.js";
+import { CLAUDE_CODE_CAPABILITIES } from "../capabilities.js";
 import type { ActiveRuntimeRun, RuntimeEvent, RuntimeRunResult } from "../types.js";
 import { claudeLineType, classifyClaudeError, parseClaudeLine } from "./protocol.js";
 
 export { classifyClaudeError, parseClaudeLine } from "./protocol.js";
-
-export const CLAUDE_CODE_CAPABILITIES = {
-  streaming: true,
-  abort: true,
-  steer: false,
-  resume: true,
-  forkFromMessage: false,
-  cloneFromMessage: false,
-  imageInput: true,
-  toolProgress: false,
-} as const;
+export { CLAUDE_CODE_CAPABILITIES } from "../capabilities.js";
 
 export interface ClaudeArgsInput {
   prompt: string;
@@ -112,43 +103,54 @@ export class ClaudeCodeRuntime {
       ttlMs: this.grantTtlMs,
     });
     const mcpConfigPath = path.join(runtimeDir, `mcp-${randomUUID()}.json`);
-    await writeFile(mcpConfigPath, `${JSON.stringify({
-      mcpServers: {
-        tradex: {
-          type: "http",
-          url: this.mcpUrl,
-          headers: { Authorization: `Bearer ${issued.token}` },
+    let handedOff = false;
+    try {
+      await writeFile(mcpConfigPath, `${JSON.stringify({
+        mcpServers: {
+          tradex: {
+            type: "http",
+            url: this.mcpUrl,
+            headers: { Authorization: `Bearer ${issued.token}` },
+          },
         },
-      },
-    })}\n`, { encoding: "utf8", mode: 0o600 });
+      })}\n`, { encoding: "utf8", mode: 0o600 });
 
-    const assignedNativeSessionId = input.nativeSessionId ? undefined : randomUUID();
-    const allowedMcpTools = input.registry.listToolsForRuntime("claude-code", "read").map((tool) => tool.name);
-    const args = buildClaudeArgs({
-      prompt: input.prompt,
-      instructions: input.instructions,
-      mcpConfigPath,
-      allowedMcpTools,
-      nativeSessionId: input.nativeSessionId,
-      assignedNativeSessionId,
-      model: input.model,
-      effort: input.effort,
-    });
-    const child = spawn(this.executablePath, args, {
-      cwd: input.cwd,
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: process.platform !== "win32",
-      env: sanitizedClaudeEnv(process.env),
-    });
-    return new ClaudeActiveRun({
-      child,
-      assignedNativeSessionId,
-      runTimeoutMs: this.runTimeoutMs,
-      inactivityTimeoutMs: this.inactivityTimeoutMs,
-      revoke: () => this.grants.revoke(issued.token),
-      cleanup: () => rm(mcpConfigPath, { force: true }),
-    });
+      const assignedNativeSessionId = input.nativeSessionId ? undefined : randomUUID();
+      const allowedMcpTools = input.registry.listToolsForRuntime("claude-code", "read").map((tool) => tool.name);
+      const args = buildClaudeArgs({
+        prompt: input.prompt,
+        instructions: input.instructions,
+        mcpConfigPath,
+        allowedMcpTools,
+        nativeSessionId: input.nativeSessionId,
+        assignedNativeSessionId,
+        model: input.model,
+        effort: input.effort,
+      });
+      const child = spawn(this.executablePath, args, {
+        cwd: input.cwd,
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: process.platform !== "win32",
+        env: sanitizedClaudeEnv(process.env),
+      });
+      const run = new ClaudeActiveRun({
+        child,
+        assignedNativeSessionId,
+        runTimeoutMs: this.runTimeoutMs,
+        inactivityTimeoutMs: this.inactivityTimeoutMs,
+        revoke: () => this.grants.revoke(issued.token),
+        cleanup: () => rm(mcpConfigPath, { force: true }),
+      });
+      handedOff = true;
+      return run;
+    } finally {
+      // issue 成功后、ActiveRun 接管之前若失败，必须立刻撤销 grant 并清掉含 Bearer 的临时配置。
+      if (!handedOff) {
+        this.grants.revoke(issued.token);
+        await rm(mcpConfigPath, { force: true });
+      }
+    }
   }
 }
 
@@ -316,4 +318,56 @@ function sanitizedClaudeEnv(parent: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     if (/^TRADEX_MCP_TOKEN$/i.test(key)) delete env[key];
   }
   return env;
+}
+
+/** 在删除 Tradex 投影前，清理 Claude 原生 project 状态。项目不存在时按幂等成功处理。 */
+export async function purgeClaudeProject(executablePath: string, cwd: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(executablePath, ["project", "purge", cwd, "--yes"], {
+      shell: false,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("utf8")).slice(-8_192); });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0 || /(?:no project state|project .* not found|nothing to purge)/i.test(stderr)) resolve();
+      else reject(new Error(`Claude project purge failed with code ${code ?? "unknown"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
+    });
+  });
+}
+
+/** 定义 Claude Code 首期可以使用的显式只读 Tradex Tool 集合。 */
+const CLAUDE_READ_TOOLS = new Set([
+  "browser_open_page", "browser_screenshot", "browser_status",
+  "check_trade_status", "get_candles", "get_dealer_levels", "get_economic_calendar",
+  "get_exchange_fills", "get_exchange_orders", "get_exchange_positions", "get_exposure_breakdown",
+  "get_gamma_regime", "get_gex_by_strike", "get_gex_snapshot", "get_hedge_impulse", "get_jin10_quote",
+  "get_options_flow", "get_pressure_cloud", "get_quote", "get_recent_news", "get_recent_social_feed",
+  "get_trade_history", "get_trade_review_context", "list_instruments", "list_open_trades",
+  "refresh_news", "refresh_x_following_feed", "search_x_tweets", "web_fetch", "web_search",
+]);
+
+/** 将显式 allowlist 中的只读工具标记为可暴露给 Claude 的工具。 */
+export function exposeClaudeReadTools(registry: ToolRegistry): ToolRegistry {
+  // Claude 首期只拿到显式 allowlist；不能根据工具名前缀推断读写权限。
+  for (const tool of registry.listTools()) {
+    if (!CLAUDE_READ_TOOLS.has(tool.name)) continue;
+    registry.setPolicy(tool.name, {
+      access: "read",
+      domain: inferDomain(tool.name),
+      runtimeExposure: ["pi", "claude-code"],
+    });
+  }
+  return registry;
+}
+
+/** 根据工具名映射展示和审计所需的业务域。 */
+function inferDomain(name: string): "market" | "news" | "social" | "browser" | "trading" | "other" {
+  if (name.startsWith("browser_")) return "browser";
+  if (name.includes("news") || name.includes("jin10") || name.includes("economic")) return "news";
+  if (name.includes("social") || name.includes("tweet") || name.includes("following")) return "social";
+  if (name.includes("trade") || name.includes("exchange") || name.includes("position")) return "trading";
+  if (name.includes("quote") || name.includes("candle") || name.includes("gex") || name.includes("gamma") || name.includes("options") || name.includes("pressure") || name.includes("exposure") || name.includes("hedge")) return "market";
+  return "other";
 }

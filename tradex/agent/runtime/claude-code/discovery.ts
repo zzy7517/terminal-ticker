@@ -1,4 +1,4 @@
-/** 探测本机 Claude Code CLI 及其必需命令是否可用。 */
+/** 探测本机 Claude Code CLI，并维护已知 model/effort 目录。 */
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -11,6 +11,26 @@ export interface ClaudeCodeAvailability {
   version: string | null;
   error: string | null;
 }
+
+export interface ClaudeModelThinking {
+  supportedLevels: string[];
+  defaultLevel: string;
+}
+
+export interface ClaudeModelOption {
+  id: string;
+  label: string;
+  provider: "anthropic";
+  default?: boolean;
+  thinking: ClaudeModelThinking;
+}
+
+export const CLAUDE_THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+
+const DEFAULT_THINKING: ClaudeModelThinking = {
+  supportedLevels: [...CLAUDE_THINKING_LEVELS],
+  defaultLevel: "high",
+};
 
 /** 检查 CLI 版本和 project purge 能力，生成前端可展示的可用性结果。 */
 export async function detectClaudeCode(configuredPath = process.env.TRADEX_CLAUDE_PATH?.trim() || "claude"): Promise<ClaudeCodeAvailability> {
@@ -30,6 +50,21 @@ export async function detectClaudeCode(configuredPath = process.env.TRADEX_CLAUD
     };
   }
   return { id: "claude-code", available: true, executablePath, version: version.output || null, error: null };
+}
+
+/** Claude Code 没有账号级 model list 命令，因此维护一份短小的已知目录，同时允许 Agent 保存自定义完整 ID。 */
+export function claudeModelCatalog(): ClaudeModelOption[] {
+  return [
+    { id: "sonnet", label: "Sonnet (latest)", provider: "anthropic", default: true, thinking: DEFAULT_THINKING },
+    { id: "opus", label: "Opus (latest)", provider: "anthropic", thinking: DEFAULT_THINKING },
+    { id: "haiku", label: "Haiku (latest)", provider: "anthropic", thinking: DEFAULT_THINKING },
+    { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", provider: "anthropic", thinking: DEFAULT_THINKING },
+    { id: "claude-opus-4-6", label: "Claude Opus 4.6", provider: "anthropic", thinking: DEFAULT_THINKING },
+  ];
+}
+
+export function isClaudeThinkingLevel(value: string | null | undefined): boolean {
+  return !value || (CLAUDE_THINKING_LEVELS as readonly string[]).includes(value);
 }
 
 /** 将显式路径或 PATH 中的命令名解析为可执行文件路径。 */

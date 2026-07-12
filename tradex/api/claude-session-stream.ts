@@ -3,15 +3,14 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { writeFile } from "node:fs/promises";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
-import { detectClaudeCode } from "../../agent/runtime/claude/availability.js";
-import { ClaudeCodeRuntime } from "../../agent/runtime/claude/code.js";
-import { exposeClaudeReadTools } from "../../agent/runtime/claude/tool-policy.js";
-import type { RuntimeEvent } from "../../agent/runtime/types.js";
-import { AgentSseWriter } from "../agent_sse.js";
-import { buildTradexToolRegistry } from "../agent_tools.js";
-import { sessionHistory, sessionResponse } from "../helpers.js";
-import type { AppRuntime } from "../runtime.js";
+import { MAIN_AGENT_PROMPT } from "../agent/prompts.js";
+import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
+import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claude-code/runtime.js";
+import type { RuntimeEvent } from "../agent/runtime/types.js";
+import { AgentSseWriter } from "./agent_sse.js";
+import { buildTradexToolRegistry } from "./agent_tools.js";
+import { sessionHistory, sessionResponse } from "./helpers.js";
+import type { AppRuntime } from "./runtime.js";
 
 export interface ClaudeSessionStreamInput {
   runtime: AppRuntime;

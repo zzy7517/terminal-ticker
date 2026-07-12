@@ -2,7 +2,7 @@ import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { detectClaudeCode } from "./availability.js";
+import { detectClaudeCode } from "./discovery.js";
 
 describe("Claude Code availability", () => {
   it("reports the local CLI version", async () => {

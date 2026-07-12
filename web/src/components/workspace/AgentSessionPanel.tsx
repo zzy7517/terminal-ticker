@@ -259,7 +259,7 @@ export function AgentSessionPanel({
     return results;
   }, [messages]);
   const canSend = !disabled && !busy && !sessionLoading && !sessionActionKey;
-  const canSteer = sessionCapabilities?.steer !== false && !disabled && busy && !!agentPrompt.trim();
+  const canSteer = sessionCapabilities?.steer === true && !disabled && busy && !!agentPrompt.trim();
   const sessionTime = agentSession?.session
     ? new Date(agentSession.session.updatedAt).toLocaleTimeString()
     : 'No session';
@@ -409,11 +409,11 @@ export function AgentSessionPanel({
     setAutocomplete(null);
     switch (command.name) {
       case 'fork':
-        if (sessionCapabilities?.forkFromMessage === false) break;
+        if (sessionCapabilities?.forkFromMessage !== true) break;
         setForkSelectorOpen(true);
         break;
       case 'clone':
-        if (sessionCapabilities?.cloneFromMessage === false) break;
+        if (sessionCapabilities?.cloneFromMessage !== true) break;
         if (sessionId) {
           void (async () => {
             try {

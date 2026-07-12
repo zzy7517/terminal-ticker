@@ -1,7 +1,7 @@
 /** 将可复用 Agent 定义保存为经过校验的 JSON 文件。 */
 import fs from "node:fs";
 import path from "node:path";
-import { isClaudeThinkingLevel } from "./runtime/claude/models.js";
+import { isClaudeThinkingLevel } from "./runtime/claude-code/discovery.js";
 
 export const DEFAULT_AGENT_ID = "default";
 

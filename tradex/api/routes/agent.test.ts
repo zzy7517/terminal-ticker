@@ -5,10 +5,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AgentStore } from "../../agent/agent_store.js";
 import { agentRoutes } from "./agent.js";
 import type { AppRuntime } from "../runtime.js";
-import { piSessionFileExists } from "../../agent/pi_sessions.js";
-import { ClaudeSessionStore } from "../../agent/runtime/claude/session-store.js";
+import { piSessionFileExists } from "../../agent/runtime/pi-sessions.js";
+import { ClaudeSessionStore } from "../../agent/runtime/claude-code/session-store.js";
 import { McpRunGrantStore } from "../../mcp/server/grants.js";
-import { promptWithAttachments } from "../agent/claude-session-stream.js";
+import { promptWithAttachments } from "../claude-session-stream.js";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
@@ -168,7 +168,10 @@ describe("Agent HTTP API", () => {
         body: JSON.stringify({ entryId: "message-id" }),
       });
       expect(response.status).toBe(409);
-      await expect(response.json()).resolves.toMatchObject({ detail: expect.stringContaining("not support") });
+      await expect(response.json()).resolves.toMatchObject({
+        detail: expect.stringContaining("not support"),
+        code: "runtime_capability_unsupported",
+      });
     }
   });
 

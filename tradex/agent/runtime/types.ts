@@ -42,14 +42,3 @@ export interface ActiveRunHandle {
   abort(): void | Promise<void>;
   steer?(message: unknown): void | Promise<void>;
 }
-
-export const PI_SDK_CAPABILITIES: RuntimeCapabilities = {
-  streaming: true,
-  abort: true,
-  steer: true,
-  resume: true,
-  forkFromMessage: true,
-  cloneFromMessage: true,
-  imageInput: true,
-  toolProgress: true,
-};

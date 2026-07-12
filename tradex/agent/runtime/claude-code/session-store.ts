@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { CLAUDE_CODE_CAPABILITIES } from "./code.js";
+import { CLAUDE_CODE_CAPABILITIES } from "../capabilities.js";
 
 export interface ClaudeAgentSnapshot {
   agentId: string;
