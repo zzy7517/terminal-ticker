@@ -6,9 +6,6 @@ web/dist/
 dist/
 *.tsbuildinfo
 docs/
-!docs/
-docs/*
-!docs/ui-layout-redesign.md
 CLAUDE.md
 .cursor
 .claude
