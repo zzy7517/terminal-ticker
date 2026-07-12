@@ -1,12 +1,12 @@
 /** 提供 Agent、Session 和配置路由共用的投影及校验辅助函数。 */
 import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type ProxyConfig, type ProxyType, type SocialFeedConfig } from "../config/index.js";
-import { defaultProviderApi, normalizeApiMode, normalizeProvider } from "../agent/models/constants.js";
+import { defaultProviderApi, normalizeApiMode, normalizeProvider } from "../agent/runtime/pi/models/constants.js";
 import {
   listPiSessions,
   openPiSession,
   piSessionPayload,
   piSessionSummary,
-} from "../agent/runtime/pi-sessions.js";
+} from "../agent/runtime/pi/sessions.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AppRuntime } from "./runtime.js";
 import { CLAUDE_CODE_CAPABILITIES, PI_SDK_CAPABILITIES } from "../agent/runtime/capabilities.js";

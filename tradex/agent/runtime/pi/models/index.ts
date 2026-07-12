@@ -1,5 +1,5 @@
 /**
- * agent/models — LLM model selection, credentials, Pi runtime registry,
+ * runtime/pi/models — LLM model selection, credentials, Pi runtime registry,
  * and remote catalog fetch.
  */
 

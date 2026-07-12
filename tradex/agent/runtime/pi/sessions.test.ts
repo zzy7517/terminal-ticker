@@ -2,14 +2,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_AGENT_ID } from "../agent_store.js";
+import { DEFAULT_AGENT_ID } from "../../agent_store.js";
 import {
   appendAgentSnapshot,
   createPiSession,
   piSessionPayload,
   readAgentSnapshot,
   piSessionFileExists,
-} from "./pi-sessions.js";
+} from "./sessions.js";
 
 const dirs: string[] = [];
 function tempDir(): string {

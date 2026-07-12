@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentConfig, ProviderProfile } from "../../config/index.js";
+import type { AgentConfig, ProviderProfile } from "../../../../config/index.js";
 import {
   agentConfigForModelSelection,
   buildModelRuntimeSnapshot,

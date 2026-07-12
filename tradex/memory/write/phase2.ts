@@ -1,10 +1,10 @@
 import type { AgentConfig } from "../../config/index.js";
 import { nowMs } from "../../db.js";
-import { createPiAgentRuntime } from "../../agent/runtime/pi.js";
+import { createPiAgentRuntime } from "../../agent/runtime/pi/runtime.js";
 import {
   agentConfigForModelSelection,
   type ModelRuntimeSnapshot,
-} from "../../agent/models/runtime.js";
+} from "../../agent/runtime/pi/models/runtime.js";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import { ToolRegistry, type ToolDefinition } from "../../agent/tools/registry.js";
 import { DEFAULT_RETRY_DELAY_MS, type MemoryStateStore, type Stage1Output } from "../state.js";

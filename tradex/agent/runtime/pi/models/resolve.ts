@@ -6,7 +6,7 @@
  * Switching models mid-conversation is just replacing this object.
  */
 
-import { AgentConfig, ProviderProfile } from "../../config/index.js";
+import { AgentConfig, ProviderProfile } from "../../../../config/index.js";
 import {
   CODEX_PROVIDER,
   ANTHROPIC_PROVIDER,

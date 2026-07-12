@@ -1,7 +1,7 @@
 /** 提供 Agent/Session REST API，并把运行请求分发给对应 Runtime。 */
 import { Hono } from "hono";
 import crypto from "node:crypto";
-import { AgentModelRegistry } from "../../agent/models/registry.js";
+import { AgentModelRegistry } from "../../agent/runtime/pi/models/registry.js";
 import {
   clonePiSession,
   createPiSession,
@@ -15,12 +15,12 @@ import {
   piProviderName,
   piSessionFileExists,
   piSessionPayload,
-} from "../../agent/runtime/pi-sessions.js";
+} from "../../agent/runtime/pi/sessions.js";
 import type { AgentDefinition, AgentFileInput } from "../../agent/agent_store.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent, ImageContent, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
-import { createPiAgentRuntime } from "../../agent/runtime/pi.js";
+import { createPiAgentRuntime } from "../../agent/runtime/pi/runtime.js";
 import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
 import { CLAUDE_CODE_CAPABILITIES, PI_SDK_CAPABILITIES } from "../../agent/runtime/capabilities.js";
 import { detectClaudeCode, claudeModelCatalog } from "../../agent/runtime/claude-code/discovery.js";

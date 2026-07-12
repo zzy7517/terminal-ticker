@@ -13,9 +13,9 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from "@earendil-works/pi-ai";
-import { defaultCacheDir } from "../../db.js";
-import { toPiProviderId } from "../models/constants.js";
-import { DEFAULT_AGENT_ID } from "../agent_store.js";
+import { defaultCacheDir } from "../../../db.js";
+import { toPiProviderId } from "./models/constants.js";
+import { DEFAULT_AGENT_ID } from "../../agent_store.js";
 
 const PI_SESSIONS_SUBDIR = "pi_sessions";
 export const EXTERNAL_CONTEXT_ENTRY = "tradex_external_context";

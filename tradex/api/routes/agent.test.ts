@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AgentStore } from "../../agent/agent_store.js";
 import { agentRoutes } from "./agent.js";
 import type { AppRuntime } from "../runtime.js";
-import { piSessionFileExists } from "../../agent/runtime/pi-sessions.js";
+import { piSessionFileExists } from "../../agent/runtime/pi/sessions.js";
 import { ClaudeSessionStore } from "../../agent/runtime/claude-code/session-store.js";
 import { McpRunGrantStore } from "../../mcp/server/grants.js";
 import { promptWithAttachments } from "../claude-session-stream.js";

@@ -3,7 +3,7 @@ import type { ChatResponse, LLMChatClient } from "../agent/llm_client.js";
 import {
   agentConfigForModelSelection,
   type ModelRuntimeSnapshot,
-} from "../agent/models/runtime.js";
+} from "../agent/runtime/pi/models/runtime.js";
 import type { TradeStore } from "../trading/store.js";
 import { ensureMemoryLayout } from "./paths.js";
 import { MemoryRuntimePolicy } from "./policy.js";
