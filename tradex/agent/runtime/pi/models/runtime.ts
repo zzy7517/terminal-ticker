@@ -16,7 +16,7 @@ import {
   ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
 import type { Model } from "@earendil-works/pi-ai/compat";
-import type { AgentConfig, CustomModelDefinition, ProviderProfile } from "../../config/index.js";
+import type { AgentConfig, CustomModelDefinition, ProviderProfile } from "../../../../config/index.js";
 import {
   ANTHROPIC_PROVIDER,
   CODEX_PROVIDER,

@@ -7,12 +7,12 @@
  *  - memory pipeline (via LLMProviderFactory)
  */
 
-import { AgentConfig } from "../../config/index.js";
+import { AgentConfig } from "../../../../config/index.js";
 import {
   ANTHROPIC_PROVIDER,
   CODEX_PROVIDER,
 } from "./constants.js";
-import type { LLMChatClient, ChatResponse } from "../llm_client.js";
+import type { LLMChatClient, ChatResponse } from "../../../llm_client.js";
 import type { AgentModel } from "./resolve.js";
 import { resolveAgentModelFromConfig } from "./resolve.js";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";

@@ -1,5 +1,7 @@
+/** 将可复用 Agent 定义保存为经过校验的 JSON 文件。 */
 import fs from "node:fs";
 import path from "node:path";
+import { isClaudeThinkingLevel } from "./runtime/claude-code/discovery.js";
 
 export const DEFAULT_AGENT_ID = "default";
 
@@ -8,7 +10,7 @@ export interface AgentDefinition {
   name: string;
   description: string;
   systemPrompt: string | null;
-  runtime: "pi";
+  runtime: "pi" | "claude-code";
   provider: string | null;
   model: string | null;
   reasoningEffort: string | null;
@@ -56,6 +58,9 @@ export class AgentStore {
   update(id: string, patch: Partial<Omit<AgentFileInput, "id">>): AgentDefinition {
     const current = this.get(id);
     if (!current) throw new Error(`Agent not found: ${id}`);
+    if (id === DEFAULT_AGENT_ID && patch.runtime && patch.runtime !== "pi") {
+      throw new Error("Default Agent must use the Pi runtime");
+    }
     const next = validateAgent({ ...current, ...patch, id });
     this.write(next);
     return { ...next, builtIn: id === DEFAULT_AGENT_ID };
@@ -98,7 +103,11 @@ function validateAgent(value: AgentFileInput, source = "Agent"): AgentFileInput 
   if (typeof value.name !== "string" || !value.name.trim()) throw new Error(`${source} name is required`);
   if (typeof value.description !== "string") throw new Error(`${source} description must be a string`);
   if (value.systemPrompt !== null && typeof value.systemPrompt !== "string") throw new Error(`${source} systemPrompt must be a string or null`);
-  if (value.runtime !== "pi") throw new Error(`${source} runtime must be pi`);
+  if (value.runtime !== "pi" && value.runtime !== "claude-code") throw new Error(`${source} runtime must be pi or claude-code`);
+  if (value.runtime === "claude-code" && value.provider !== null) throw new Error(`${source} Claude Code provider must be null`);
+  if (value.runtime === "claude-code" && !isClaudeThinkingLevel(value.reasoningEffort)) {
+    throw new Error(`${source} Claude Code reasoningEffort is not supported`);
+  }
   for (const key of ["provider", "model", "reasoningEffort"] as const) {
     if (value[key] !== null && typeof value[key] !== "string") throw new Error(`${source} ${key} must be a string or null`);
   }
@@ -107,8 +116,8 @@ function validateAgent(value: AgentFileInput, source = "Agent"): AgentFileInput 
     name: value.name.trim(),
     description: value.description.trim(),
     systemPrompt: value.systemPrompt,
-    runtime: "pi",
-    provider: value.provider?.trim() || null,
+    runtime: value.runtime,
+    provider: value.runtime === "claude-code" ? null : value.provider?.trim() || null,
     model: value.model?.trim() || null,
     reasoningEffort: value.reasoningEffort?.trim() || null,
   };

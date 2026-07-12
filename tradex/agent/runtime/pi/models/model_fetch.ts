@@ -4,7 +4,7 @@
  */
 
 import { fetch as browserFetch } from "wreq-js";
-import type { AgentConfig } from "../../config/index.js";
+import type { AgentConfig } from "../../../../config/index.js";
 import {
   ANTHROPIC_PROVIDER,
   CODEX_PROVIDER,

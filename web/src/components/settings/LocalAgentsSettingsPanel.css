@@ -1,0 +1,21 @@
+.local-agents-settings { width: 100%; }
+.local-agents-head p { margin: 7px 0 0; color: var(--text-secondary); }
+.runtime-tabs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 18px 0; padding-bottom: 14px; border-bottom: 1px solid var(--line-strong); }
+.runtime-tabs button { position: relative; display: flex; align-items: center; gap: 12px; padding: 14px 16px; text-align: left; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--line-strong); cursor: pointer; }
+.runtime-tabs button:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.runtime-tabs button.active { color: var(--text-primary); border-color: var(--accent); background: var(--accent-tint); }
+.runtime-tabs button span { display: grid; gap: 3px; }
+.runtime-tabs strong { font: 600 13px var(--mono); }
+.runtime-tabs small { font-size: 11px; color: var(--text-secondary); }
+.runtime-dot { position: absolute; right: 12px; top: 12px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.runtime-dot.available { background: var(--success); }
+.runtime-built-in { position: absolute; right: 11px; top: 10px; color: var(--accent); font: 10px var(--mono); font-style: normal; text-transform: uppercase; letter-spacing: .06em; }
+.claude-runtime-panel { display: grid; gap: 14px; }
+.claude-runtime-status,.claude-runtime-actions { border: 1px solid var(--line-strong); background: var(--surface); padding: 20px; }
+.claude-runtime-status,.claude-runtime-actions { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.runtime-kicker { font: 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--text-secondary); }
+.claude-runtime-panel h3 { margin: 7px 0 0; font-size: 17px; }
+.claude-runtime-status p,.claude-runtime-actions p { margin: 7px 0 0; color: var(--text-secondary); font: 12px var(--mono); }
+.runtime-status-badge { display: flex; align-items: center; gap: 6px; max-width: 55%; padding: 6px 9px; border: 1px solid var(--danger); color: var(--danger); font: 11px var(--mono); }
+.runtime-status-badge.available { border-color: var(--success); color: var(--success); }
+@media (max-width: 760px) { .runtime-tabs { grid-template-columns: 1fr; } .claude-runtime-status,.claude-runtime-actions { align-items: stretch; flex-direction: column; } .runtime-status-badge { max-width: none; } }

@@ -7,9 +7,9 @@
 
 import type { CronJobConfig } from "../config/index.js";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
-import { createPiAgentRuntime } from "../agent/pi_runtime.js";
-import { agentConfigForModelSelection } from "../agent/models/runtime.js";
-import { createPiSession, piProviderName } from "../agent/pi_sessions.js";
+import { createPiAgentRuntime } from "../agent/runtime/pi/runtime.js";
+import { agentConfigForModelSelection } from "../agent/runtime/pi/models/runtime.js";
+import { createPiSession, piProviderName } from "../agent/runtime/pi/sessions.js";
 import { buildMarketTools } from "../agent/tools/market.js";
 import { buildNewsTools } from "../agent/tools/news.js";
 import { buildWebTools } from "../agent/tools/web.js";

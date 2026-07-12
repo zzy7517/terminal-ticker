@@ -1,3 +1,4 @@
+/** 将现有 Pi SDK Agent loop 适配到 Runtime-neutral 接口。 */
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -14,17 +15,17 @@ import type {
   ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import type { AgentConfig } from "../config/index.js";
+import type { AgentConfig } from "../../../config/index.js";
 import type { ModelRuntimeSnapshot } from "./models/runtime.js";
 import {
   normalizeToolReturn,
   type ToolDefinition as TradexToolDefinition,
   type ToolRegistry,
-} from "./tools/registry.js";
+} from "../../tools/registry.js";
 
 export interface ActiveAgentRun {
   abort(): void | Promise<void>;
-  steer(message: AgentMessage): void | Promise<void>;
+  steer?(message: AgentMessage): void | Promise<void>;
 }
 
 export interface PiAgentRuntime extends ActiveAgentRun {

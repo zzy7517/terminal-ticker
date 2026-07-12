@@ -34,7 +34,7 @@ export function SettingsFrame({
       label: 'Agent',
       items: [
         { id: 'agents' as const, label: 'Agents', icon: Bot },
-        { id: 'providers' as const, label: 'Providers', icon: Settings },
+        { id: 'providers' as const, label: 'Runtimes', icon: Settings },
         { id: 'agent-context' as const, label: 'Agent Context', icon: Bot },
         { id: 'memory' as const, label: 'Memory', icon: Brain },
       ],

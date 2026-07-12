@@ -1,3 +1,4 @@
+/** 管理 Agent 选择、Session 历史、流式消息和操作状态的 Zustand store。 */
 import { create } from 'zustand';
 import type {
   AgentContextUsage,
@@ -637,7 +638,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       await streamAgentMessage(
         runSessionId,
         prompt,
-        { provider: agentProvider, model: agentModel, images: imagesToSend },
+        agentSession?.session?.runtime === 'claude-code'
+          ? { images: imagesToSend }
+          : { provider: agentProvider, model: agentModel, images: imagesToSend },
         (envelope) => {
           const sessionId = envelope.sessionId || runSessionId;
           const event = envelope.event;

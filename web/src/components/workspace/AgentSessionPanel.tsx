@@ -1,3 +1,4 @@
+/** 展示聊天 Session、Runtime 能力、附件和流式控制。 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import './AgentSessionPanel.css';
 
@@ -241,6 +242,8 @@ export function AgentSessionPanel({
   const shouldFollowTranscriptRef = useRef(true);
   const messages = agentSession?.messages ?? [];
   const sessionId = agentSession?.session?.id ?? null;
+  const isClaudeSession = agentSession?.session?.runtime === 'claude-code';
+  const sessionCapabilities = agentSession?.session?.capabilities;
   const lastMessage = messages[messages.length - 1] ?? null;
   const lastMessageToolCallCount = (lastMessage?.metadata?.toolCalls as AgentToolCall[] | undefined)?.length ?? 0;
 
@@ -256,7 +259,7 @@ export function AgentSessionPanel({
     return results;
   }, [messages]);
   const canSend = !disabled && !busy && !sessionLoading && !sessionActionKey;
-  const canSteer = !disabled && busy && !!agentPrompt.trim();
+  const canSteer = sessionCapabilities?.steer === true && !disabled && busy && !!agentPrompt.trim();
   const sessionTime = agentSession?.session
     ? new Date(agentSession.session.updatedAt).toLocaleTimeString()
     : 'No session';
@@ -406,9 +409,11 @@ export function AgentSessionPanel({
     setAutocomplete(null);
     switch (command.name) {
       case 'fork':
+        if (sessionCapabilities?.forkFromMessage !== true) break;
         setForkSelectorOpen(true);
         break;
       case 'clone':
+        if (sessionCapabilities?.cloneFromMessage !== true) break;
         if (sessionId) {
           void (async () => {
             try {
@@ -438,7 +443,7 @@ export function AgentSessionPanel({
         }
         break;
     }
-  }, [setAgentPrompt, setAgentSession, setAgentSessionHistory, onNewSession, agentPrompt, sessionId]);
+  }, [setAgentPrompt, setAgentSession, setAgentSessionHistory, onNewSession, agentPrompt, sessionId, sessionCapabilities]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -482,7 +487,7 @@ export function AgentSessionPanel({
 
   const contextProvider = agentSession?.session?.provider ?? agentProvider;
   const contextModel = agentSession?.session?.model ?? agentModel;
-  const contextWindow = resolveContextWindow(contextProvider, contextModel, modelRegistry);
+  const contextWindow = isClaudeSession ? null : resolveContextWindow(contextProvider, contextModel, modelRegistry);
   const rawContextPercent = contextUsagePercent(contextUsage, contextWindow);
   const contextPercentLabel = formatContextPercent(rawContextPercent);
   const contextPercentLevel = rawContextPercent ?? 0;
@@ -496,6 +501,7 @@ export function AgentSessionPanel({
         <span className="panel-label with-icon">
           <Sparkles size={14} /> Agent Session
         </span>
+        {agentSession?.session && <span className="badge mono">{isClaudeSession ? 'Claude Code' : 'Pi SDK'}</span>}
         {busy && <span className="agent-bias neutral">running</span>}
         {busy && (
           <button
@@ -526,7 +532,13 @@ export function AgentSessionPanel({
         )}
       </div>
       <div className="session-pickers-row">
-        <div className="session-model-picker" ref={pickerRef}>
+        {isClaudeSession ? (
+          <div className="session-model-picker">
+            <button className="session-model-trigger" type="button" disabled>
+              <span>{agentSession?.session?.model || 'Local Claude default'}</span>
+            </button>
+          </div>
+        ) : <div className="session-model-picker" ref={pickerRef}>
           <button
             className="session-model-trigger"
             type="button"
@@ -599,7 +611,7 @@ export function AgentSessionPanel({
               </div>
             </div>
           )}
-        </div>
+        </div>}
       </div>
       {/* Fork selector: replaces transcript when open */}
       {forkSelectorOpen && sessionId ? (() => {
@@ -775,7 +787,7 @@ export function AgentSessionPanel({
           }}
           placeholder={
             busy
-              ? "Type to steer agent. Esc to abort."
+              ? isClaudeSession ? "Claude Code is running. Esc to abort." : "Type to steer agent. Esc to abort."
               : pendingImages.length > 0
                 ? "Add a question, or send the image alone. / for commands, @ for instruments."
                 : "Ask the agent. / for commands, @ for instruments."

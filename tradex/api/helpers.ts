@@ -1,13 +1,16 @@
+/** 提供 Agent、Session 和配置路由共用的投影及校验辅助函数。 */
 import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type ProxyConfig, type ProxyType, type SocialFeedConfig } from "../config/index.js";
-import { defaultProviderApi, normalizeApiMode, normalizeProvider } from "../agent/models/constants.js";
+import { defaultProviderApi, normalizeApiMode, normalizeProvider } from "../agent/runtime/pi/models/constants.js";
 import {
   listPiSessions,
   openPiSession,
   piSessionPayload,
   piSessionSummary,
-} from "../agent/pi_sessions.js";
+} from "../agent/runtime/pi/sessions.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AppRuntime } from "./runtime.js";
+import { CLAUDE_CODE_CAPABILITIES, PI_SDK_CAPABILITIES } from "../agent/runtime/capabilities.js";
+import type { RuntimeCapabilities } from "../agent/runtime/types.js";
 
 // Returns a stable idle run descriptor for sessions that have no active agent loop.
 export function idleRun(sessionId: string): Record<string, unknown> {
@@ -31,10 +34,19 @@ export async function openSessionManager(sessionId: string, runtime?: AppRuntime
 
 // Builds the session + messages payload returned by the single-session endpoints.
 export async function sessionResponse(runtime: AppRuntime, sessionId: string): Promise<Record<string, unknown>> {
+  const claude = runtime.claudeSessions.payload(sessionId);
+  if (claude) {
+    return {
+      ...claude,
+      run: runtime.lockedAgentSessions.has(sessionId)
+        ? { ...idleRun(sessionId), status: "running" }
+        : idleRun(sessionId),
+    };
+  }
   const mgr = await openSessionManager(sessionId, runtime);
   if (!mgr) return { session: null, messages: [], run: idleRun(sessionId) };
   return {
-    ...piSessionPayload(mgr),
+    ...withPiCapabilities(piSessionPayload(mgr)),
     run: runtime.lockedAgentSessions.has(sessionId)
       ? { ...idleRun(sessionId), status: "running" }
       : idleRun(sessionId),
@@ -46,22 +58,49 @@ export async function sessionResponse(runtime: AppRuntime, sessionId: string): P
 export async function sessionHistory(runtime: AppRuntime): Promise<Record<string, unknown>> {
   const listed = (await listPiSessions()).filter((row) => row.messageCount > 0).slice(0, 200);
   const managers = await Promise.all(listed.map((row) => openPiSession(row.id)));
-  const summaries: Array<Record<string, unknown>> = listed.flatMap((row, index) => {
+  const piSummaries: Array<Record<string, unknown>> = listed.flatMap((row, index) => {
     const manager = managers[index];
     if (!manager) return [];
     return [{
-      ...piSessionSummary(row, manager),
+      ...withPiCapabilities(piSessionSummary(row, manager)),
       run: runtime.lockedAgentSessions.has(row.id)
         ? { ...idleRun(row.id), status: "running" }
         : idleRun(row.id),
     }];
   });
+  const claudeSummaries: Array<Record<string, unknown>> = runtime.claudeSessions.list().map((item) => ({
+    ...item,
+    run: runtime.lockedAgentSessions.has(String(item.id))
+      ? { ...idleRun(String(item.id)), status: "running" }
+      : idleRun(String(item.id)),
+  }));
+  const summaries = [...piSummaries, ...claudeSummaries]
+    .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))
+    .slice(0, 200);
   return {
     sessions: summaries,
     preloadedSessions: await Promise.all(
       summaries.slice(0, 5).map((item) => sessionResponse(runtime, String(item.id))),
     ),
   };
+}
+
+function withPiCapabilities<T extends Record<string, unknown>>(payload: T): T {
+  if (payload.session && typeof payload.session === "object" && !Array.isArray(payload.session)) {
+    return { ...payload, session: { ...(payload.session as Record<string, unknown>), capabilities: PI_SDK_CAPABILITIES } };
+  }
+  return { ...payload, capabilities: PI_SDK_CAPABILITIES };
+}
+
+/** 解析 Session 的 Runtime 能力矩阵；Session 不存在时返回 null。 */
+export async function sessionCapabilities(
+  runtime: AppRuntime,
+  sessionId: string,
+): Promise<RuntimeCapabilities | null> {
+  if (runtime.claudeSessions.getMetadata(sessionId)) return CLAUDE_CODE_CAPABILITIES;
+  const mgr = await openSessionManager(sessionId, runtime);
+  if (!mgr) return null;
+  return PI_SDK_CAPABILITIES;
 }
 
 // Shapes an instrument into the catalog item format consumed by the add-instrument UI.

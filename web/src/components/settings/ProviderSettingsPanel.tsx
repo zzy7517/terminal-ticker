@@ -7,7 +7,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { fetchProviderModels, saveProviderProfile } from '../../api';
 import { formatContextWindow } from '../../utils';
 
-export function ProviderSettingsPanel() {
+export function ProviderSettingsPanel({ embedded = false }: { embedded?: boolean }) {
   const state = useMarketStore((s) => s.state);
   const registry = useAgentStore((s) => s.modelRegistry);
   const registryLoading = useAgentStore((s) => s.modelRegistryLoading);
@@ -178,12 +178,12 @@ export function ProviderSettingsPanel() {
 
   return (
     <>
-      <header className="settings-stage-head">
+      {!embedded && <header className="settings-stage-head">
         <div>
           <div className="eyebrow">Configuration</div>
           <h2>Providers</h2>
         </div>
-      </header>
+      </header>}
 
       <div className="provider-layout">
         {/* ── Left: provider catalog ── */}

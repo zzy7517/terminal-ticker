@@ -1,3 +1,4 @@
+/** 持有进程级服务、存储、Session 锁和活动 Runtime 句柄。 */
 import { AppConfig } from "../config/index.js";
 import { LocalMemoryBackend } from "../memory/backend.js";
 import { MemoryPipeline } from "../memory/pipeline.js";
@@ -8,7 +9,7 @@ import { SocialFeedService } from "../social_feed/service.js";
 import { XAuthStore } from "../social_feed/auth.js";
 import { XInternalClient } from "../social_feed/providers/x_internal.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
-import { listPiSessionManagersSync, piSessionPayload } from "../agent/pi_sessions.js";
+import { listPiSessionManagersSync, piSessionPayload } from "../agent/runtime/pi/sessions.js";
 import { ExchangeRouter } from "../trading/exchange_router.js";
 import { TradeStore } from "../trading/store.js";
 import { TradeStatus } from "../trading/models.js";
@@ -17,19 +18,21 @@ import { resolveInstruments, MarketInstrument } from "../market_data/router.js";
 import { serializeState } from "./serializers.js";
 import { CronScheduler } from "../cron/scheduler.js";
 import { CronJobStore } from "../cron/job_store.js";
-import type { ActiveAgentRun } from "../agent/pi_runtime.js";
-import { AgentModelRegistry } from "../agent/models/registry.js";
+import type { ActiveRunHandle } from "../agent/runtime/types.js";
+import { AgentModelRegistry } from "../agent/runtime/pi/models/registry.js";
 import {
   buildModelRuntimeSnapshot,
   type ModelRuntimeSnapshot,
-} from "../agent/models/runtime.js";
+} from "../agent/runtime/pi/models/runtime.js";
 import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 import { Jin10Service } from "../jin10/index.js";
 import { BrowserManager } from "../browser/index.js";
 import { OptionsService } from "../options/service.js";
 import { applyProxyConfig } from "../runtime/proxy.js";
 import { AgentStore } from "../agent/agent_store.js";
-import type { SessionAgentSnapshot } from "../agent/pi_sessions.js";
+import type { SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
+import { McpRunGrantStore } from "../mcp/server/grants.js";
+import { ClaudeSessionStore } from "../agent/runtime/claude-code/session-store.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -55,7 +58,9 @@ export class AppRuntime {
   /** Session-level mutation lock covering setup, streaming, fork/clone, and delete. */
   readonly lockedAgentSessions = new Set<string>();
   /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
-  readonly activeAgents = new Map<string, ActiveAgentRun>();
+  readonly activeAgents = new Map<string, ActiveRunHandle>();
+  readonly mcpRunGrants = new McpRunGrantStore();
+  readonly claudeSessions = new ClaudeSessionStore();
   private _modelRuntimeSnapshot: ModelRuntimeSnapshot;
   private running = false;
 

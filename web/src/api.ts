@@ -1,3 +1,4 @@
+/** 浏览器端 Tradex HTTP、SSE 和 Agent API 客户端。 */
 import type {
   AgentConfigUpdate,
   AgentModelRegistry,
@@ -47,6 +48,8 @@ import type {
   McpServerEntry,
   AgentDefinition,
   AgentDefinitionInput,
+  AgentRuntimeStatus,
+  ClaudeCodeModelsResponse,
 } from './types';
 
 const DEFAULT_DEV_BACKEND_ORIGIN = 'http://127.0.0.1:8765';
@@ -184,6 +187,18 @@ export async function createAgentSession(options?: {
 export async function fetchAgents(): Promise<{ agents: AgentDefinition[] }> {
   const response = await fetch('/api/agents');
   if (!response.ok) throw await responseError(response, 'agents fetch failed');
+  return response.json();
+}
+
+export async function fetchAgentRuntimes(): Promise<{ runtimes: AgentRuntimeStatus[] }> {
+  const response = await fetch('/api/agent/runtimes');
+  if (!response.ok) throw await responseError(response, 'agent runtimes fetch failed');
+  return response.json();
+}
+
+export async function fetchClaudeCodeModels(): Promise<ClaudeCodeModelsResponse> {
+  const response = await fetch('/api/agent/runtimes/claude-code/models');
+  if (!response.ok) throw await responseError(response, 'Claude models fetch failed');
   return response.json();
 }
 

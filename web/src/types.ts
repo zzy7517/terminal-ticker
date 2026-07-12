@@ -1,3 +1,4 @@
+/** 前端使用的 Market、Agent、Session 和 Runtime DTO 定义。 */
 export interface LoopToolCall {
   id: string;
   name: string;
@@ -61,7 +62,7 @@ export interface AgentMessageMetadata {
 export interface AgentSession {
   id: string;
   title: string;
-  provider: string;
+  provider: string | null;
   model: string;
   createdAt: string;
   updatedAt: string;
@@ -70,7 +71,8 @@ export interface AgentSession {
   reasoningEffort: string | null;
   agentId: string;
   agentName: string;
-  runtime: 'pi';
+  runtime: 'pi' | 'claude-code';
+  capabilities: AgentRuntimeStatus['capabilities'];
 }
 
 export interface AgentDefinition {
@@ -78,7 +80,7 @@ export interface AgentDefinition {
   name: string;
   description: string;
   systemPrompt: string | null;
-  runtime: 'pi';
+  runtime: 'pi' | 'claude-code';
   provider: string | null;
   model: string | null;
   reasoningEffort: string | null;
@@ -86,6 +88,35 @@ export interface AgentDefinition {
 }
 
 export type AgentDefinitionInput = Omit<AgentDefinition, 'builtIn'>;
+
+export interface AgentRuntimeStatus {
+  id: 'pi' | 'claude-code';
+  available: boolean;
+  executablePath?: string;
+  version: string | null;
+  error: string | null;
+  capabilities: {
+    streaming: boolean;
+    abort: boolean;
+    steer: boolean;
+    resume: boolean;
+    forkFromMessage: boolean;
+    cloneFromMessage: boolean;
+    imageInput: boolean;
+    toolProgress: boolean;
+  };
+}
+
+export interface ClaudeCodeModelsResponse {
+  models: Array<{
+    id: string;
+    label: string;
+    provider: string;
+    default?: boolean;
+    thinking: { supportedLevels: string[]; defaultLevel: string };
+  }>;
+  supportsCustomModel: boolean;
+}
 
 export interface AgentSessionRun {
   sessionId: string;

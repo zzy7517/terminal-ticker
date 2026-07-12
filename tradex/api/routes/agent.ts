@@ -1,6 +1,7 @@
+/** 提供 Agent/Session REST API，并把运行请求分发给对应 Runtime。 */
 import { Hono } from "hono";
 import crypto from "node:crypto";
-import { AgentModelRegistry } from "../../agent/models/registry.js";
+import { AgentModelRegistry } from "../../agent/runtime/pi/models/registry.js";
 import {
   clonePiSession,
   createPiSession,
@@ -14,30 +15,26 @@ import {
   piProviderName,
   piSessionFileExists,
   piSessionPayload,
-} from "../../agent/pi_sessions.js";
+} from "../../agent/runtime/pi/sessions.js";
 import type { AgentDefinition, AgentFileInput } from "../../agent/agent_store.js";
-import { buildMarketTools } from "../../agent/tools/market.js";
-import { buildNewsTools } from "../../agent/tools/news.js";
-import { buildJin10Tools } from "../../agent/tools/jin10.js";
-import { buildSocialFeedTools } from "../../agent/tools/social.js";
-import { buildTradingTools } from "../../agent/tools/trading.js";
-import { buildWebTools } from "../../agent/tools/web.js";
-import { buildBrowserTools } from "../../agent/tools/browser.js";
-import { buildOptionsTools } from "../../agent/tools/options.js";
-import { createFilesystemRegistry } from "../../agent/tools/filesystem.js";
-import { mergeRegistries } from "../../agent/tools/registry.js";
-import { buildMcpToolRegistry } from "../../mcp/index.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent, ImageContent, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
-import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
+import { createPiAgentRuntime } from "../../agent/runtime/pi/runtime.js";
 import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
+import { CLAUDE_CODE_CAPABILITIES, PI_SDK_CAPABILITIES } from "../../agent/runtime/capabilities.js";
+import { detectClaudeCode, claudeModelCatalog } from "../../agent/runtime/claude-code/discovery.js";
+import { purgeClaudeProject } from "../../agent/runtime/claude-code/runtime.js";
 import type { AppRuntime } from "../runtime.js";
+import { buildTradexToolRegistry } from "../agent_tools.js";
+import { AgentSseWriter } from "../agent_sse.js";
+import { streamClaudeSession, validateClaudeImages } from "../claude-session-stream.js";
 import {
   idleRun,
   openSessionManager,
   sessionResponse,
   sessionHistory,
+  sessionCapabilities,
   agentConfigForRequest,
   requireConfigPath,
   reloadAndState,
@@ -50,6 +47,24 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
 
   app.get("/api/agents", (c) => c.json({ agents: runtime.agentStore.list() }));
+
+  app.get("/api/agent/runtimes", async (c) => c.json({
+    runtimes: [
+      {
+        id: "pi",
+        available: true,
+        version: null,
+        error: null,
+        capabilities: PI_SDK_CAPABILITIES,
+      },
+      { ...await detectClaudeCode(), capabilities: CLAUDE_CODE_CAPABILITIES },
+    ],
+  }));
+
+  app.get("/api/agent/runtimes/claude-code/models", (c) => c.json({
+    models: claudeModelCatalog(),
+    supportsCustomModel: true,
+  }));
 
   app.post("/api/agents", async (c) => {
     try {
@@ -76,16 +91,13 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   app.delete("/api/agents/:id", (c) => {
     const agentId = c.req.param("id");
     try {
-      runtime.agentStore.remove(agentId, (candidateId) => listPiSessionManagersSync().some((manager) => {
-        const payload = piSessionPayload(manager);
-        const stats = payload.sessionStats as { totalMessages?: number };
-        return readAgentSnapshot(manager).agentId === candidateId && Number(stats.totalMessages ?? 0) > 0;
-      }));
-      for (const [sessionId, snapshot] of runtime.pendingAgentSnapshots) {
-        if (snapshot.agentId !== agentId) continue;
-        runtime.pendingAgentSnapshots.delete(sessionId);
-        runtime.pendingSessionManagers.delete(sessionId);
-      }
+      runtime.agentStore.remove(agentId, (candidateId) => (
+        runtime.claudeSessions.hasPersistedSessionForAgent(candidateId)
+        || [...runtime.pendingAgentSnapshots.values()].some((snapshot) => snapshot.agentId === candidateId)
+        || listPiSessionManagersSync().some((manager) => {
+          return readAgentSnapshot(manager).agentId === candidateId;
+        })
+      ));
       return c.json({ agents: runtime.agentStore.list() });
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Agent delete failed";
@@ -103,6 +115,16 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const selectedAgent = runtime.agentStore.get(agentId);
     if (!selectedAgent) return c.json({ detail: "Agent not found" }, 404);
     const snapshot = snapshotForAgent(selectedAgent, runtime);
+    if (snapshot.runtime === "claude-code") {
+      const metadata = runtime.claudeSessions.create({
+        title: String(body.title || "New Agent Session"),
+        snapshot,
+      });
+      return c.json({
+        ...await sessionResponse(runtime, metadata.id),
+        history: await sessionHistory(runtime),
+      });
+    }
     const mgr = createPiSession({
       title: String(body.title || "New Agent Session"),
     });
@@ -119,6 +141,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       agentId: snapshot.agentId,
       agentName: snapshot.agentName,
       runtime: snapshot.runtime,
+      capabilities: PI_SDK_CAPABILITIES,
     };
     const sessionResp = { ...payload, run: idleRun(mgr.getSessionId()) };
     return c.json({
@@ -140,10 +163,21 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     }
     runtime.lockedAgentSessions.add(sessionId);
     try {
+      const claude = runtime.claudeSessions.getMetadata(sessionId);
+      if (claude) {
+        await purgeClaudeProject(
+          process.env.TRADEX_CLAUDE_PATH?.trim() || "claude",
+          runtime.claudeSessions.sessionDir(sessionId),
+        );
+        runtime.claudeSessions.removeFiles(sessionId);
+        return c.json({ session: { session: null, messages: [] }, history: await sessionHistory(runtime), state: await runtime.state() });
+      }
       runtime.pendingSessionManagers.delete(sessionId);
       runtime.pendingAgentSnapshots.delete(sessionId);
       await deletePiSession(sessionId);
       return c.json({ session: { session: null, messages: [] }, history: await sessionHistory(runtime), state: await runtime.state() });
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : String(error) }, 502);
     } finally {
       runtime.lockedAgentSessions.delete(sessionId);
     }
@@ -158,6 +192,11 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   // frontend can place it in the editor for modification.
   app.post("/api/agent/sessions/:id/fork", async (c) => {
     const sessionId = c.req.param("id");
+    const capabilities = await sessionCapabilities(runtime, sessionId);
+    if (!capabilities) return c.json({ detail: "session not found" }, 404);
+    if (!capabilities.forkFromMessage) {
+      return c.json({ detail: "runtime does not support Session fork", code: "runtime_capability_unsupported" }, 409);
+    }
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const entryId = String(body.entryId || "").trim();
 
@@ -189,6 +228,11 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   // the current position.
   app.post("/api/agent/sessions/:id/clone", async (c) => {
     const sessionId = c.req.param("id");
+    const capabilities = await sessionCapabilities(runtime, sessionId);
+    if (!capabilities) return c.json({ detail: "session not found" }, 404);
+    if (!capabilities.cloneFromMessage) {
+      return c.json({ detail: "runtime does not support Session clone", code: "runtime_capability_unsupported" }, 409);
+    }
     if (runtime.lockedAgentSessions.has(sessionId)) {
       return c.json({ detail: "cannot clone a running session" }, 409);
     }
@@ -233,6 +277,18 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     if (!message && requestImages.length === 0) {
       return c.json({ detail: "message or images is required" }, 400);
     }
+    const claudeMetadata = runtime.claudeSessions.getMetadata(sessionId);
+    if (claudeMetadata) {
+      const imageError = validateClaudeImages(requestImages);
+      if (imageError) return c.json({ detail: imageError }, 400);
+      return streamClaudeSession({
+        runtime,
+        requestUrl: c.req.url,
+        sessionId,
+        message,
+        requestImages,
+      });
+    }
     const mgr = await openSessionManager(sessionId, runtime);
     if (!mgr) {
       return c.json({ detail: "agent session not found" }, 404);
@@ -245,29 +301,26 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     let agentSnapshot = readAgentSnapshot(mgr);
     const hasSnapshot = mgr.getEntries().some((entry) => entry.type === "custom" && entry.customType === AGENT_SNAPSHOT_ENTRY);
     if (!hasSnapshot) {
-      agentSnapshot = runtime.pendingAgentSnapshots.get(sessionId)
-        ?? snapshotForAgent(runtime.agentStore.get("default")!, runtime);
+      const defaultAgent = runtime.agentStore.get("default")!;
+      const fallback = {
+        agentId: defaultAgent.id,
+        agentName: defaultAgent.name,
+        runtime: "pi" as const,
+        systemPrompt: defaultAgent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || MAIN_AGENT_PROMPT,
+        provider: runtime.config.agent.provider,
+        model: runtime.config.agent.model,
+        reasoningEffort: runtime.config.agent.reasoningEffort,
+      };
+      agentSnapshot = runtime.pendingAgentSnapshots.get(sessionId) ?? fallback;
       appendAgentSnapshot(mgr, agentSnapshot);
       runtime.pendingAgentSnapshots.delete(sessionId);
     }
 
-    const encoder = new TextEncoder();
     const runId = crypto.randomUUID();
     let assistantClientId = "";
     const toolCallsById = new Map<string, Record<string, unknown>>();
-    let seq = 0;
-
-    let streamCancelled = false;
-    const sendFrame = (controller: ReadableStreamDefaultController<Uint8Array>, event: Record<string, unknown>) => {
-      if (streamCancelled) return;
-      seq += 1;
-      try {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ sessionId, runId, seq, event })}\n\n`));
-      } catch {
-        // Client went away mid-run; the cancel() hook aborts the agent.
-        streamCancelled = true;
-      }
-    };
+    const sse = new AgentSseWriter(sessionId, runId);
+    const sendFrame = (controller: ReadableStreamDefaultController<Uint8Array>, event: Record<string, unknown>) => sse.send(controller, event);
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -285,61 +338,13 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           const modelRuntime = runtime.modelRuntimeSnapshot;
 
           // ---- Build tools ----
-          const mcpRegistry = runtime.mcpManager
-            ? await buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig())
-            : null;
-          const memoryRegistry = await runtime.memoryPort.buildTools();
-          const externalContextToolNames = new Set([
-            "web_search",
-            "web_fetch",
-            "get_recent_news",
-            "refresh_news",
-            "refresh_x_following_feed",
-            "get_recent_social_feed",
-            "search_x_tweets",
-            "browser_open_page",
-            "browser_screenshot",
-            "browser_status",
-            ...(mcpRegistry?.listTools().map((tool) => tool.name) ?? []),
-          ]);
-          const tools = mergeRegistries(
-            buildMarketTools({
-              quotes: runtime.controller.quotes,
-              maxCandles: requestConfig.maxCandles,
-              candleContextMode: requestConfig.candleContextMode,
-            }),
-            buildNewsTools({
-              recent: (limit, sinceMinutes) => runtime.newsService.recent(limit ?? undefined).filter((item) => {
-                if (sinceMinutes == null) return true;
-                return item.publishedAtMs >= Date.now() - sinceMinutes * 60_000;
-              }),
-              refresh: () => runtime.newsService.refreshNow(),
-            }),
-            buildSocialFeedTools({
-              refreshFollowing: (count) => runtime.socialFeedService.refreshXFollowing({ count }),
-              recent: async (args) => runtime.socialFeedService.recentItems({
-                limit: Number(args.limit) || runtime.config.socialFeed.recentLimit,
-              }),
-              search: async (args) => (await runtime.socialFeedService.searchXTweets({
-                query: String(args.query || ""),
-                count: Number(args.count) || 20,
-                product: typeof args.product === "string" ? args.product : undefined,
-              })).items,
-            }),
-            ...(memoryRegistry ? [memoryRegistry] : []),
-            buildTradingTools({
-              tradeStore: runtime.tradeStore,
-              exchangeRouter: runtime.exchangeRouter,
-              tradingConfig: runtime.config.trading,
-              resolveSessionId: () => sessionId,
-            }),
-            buildJin10Tools(runtime.jin10Service),
-            buildWebTools(),
-            ...(runtime.config.browser.enabled ? [buildBrowserTools(runtime.browserManager)] : []),
-            ...(runtime.optionsService ? [buildOptionsTools(runtime)] : []),
-            createFilesystemRegistry(),
-            ...(mcpRegistry ? [mcpRegistry] : []),
-          );
+          const { tools, externalContextToolNames } = await buildTradexToolRegistry(runtime, {
+            sessionId,
+            config: requestConfig,
+            includeMemory: true,
+            includeExternalMcp: true,
+            includeFilesystem: true,
+          });
 
           // Inject memory context into system prompt when available.
           const memoryInstructions = await runtime.memoryPort.getPromptContext();
@@ -567,7 +572,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       cancel() {
         // Client disconnected (page refresh, tab close, network drop): stop
         // the agent run instead of letting it burn LLM/tool budget unobserved.
-        streamCancelled = true;
+        sse.cancel();
         runtime.activeAgents.get(sessionId)?.abort();
       },
     });
@@ -589,6 +594,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     if (!agent) {
       return c.json({ detail: "no active agent run for this session" }, 409);
     }
+    if (!agent.steer) return c.json({ detail: "runtime does not support steering" }, 409);
     agent.steer({ role: "user", content: message, timestamp: Date.now() });
     return c.json({ ok: true });
   });
@@ -681,6 +687,17 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
 function snapshotForAgent(agent: AgentDefinition, runtime: AppRuntime) {
   const defaultConfig = runtime.config.agent;
+  if (agent.runtime === "claude-code") {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      runtime: "claude-code" as const,
+      systemPrompt: agent.systemPrompt?.trim() || defaultConfig.systemPrompt.trim() || MAIN_AGENT_PROMPT,
+      provider: null,
+      model: agent.model,
+      reasoningEffort: agent.reasoningEffort,
+    };
+  }
   return {
     agentId: agent.id,
     agentName: agent.name,
