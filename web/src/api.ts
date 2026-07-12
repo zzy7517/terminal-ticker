@@ -259,7 +259,9 @@ export interface ImageAttachment {
   mimeType: string;  // image/png, image/jpeg, etc.
 }
 
+// 标识未收到终止帧的网络或 SSE 传输中断。
 export class AgentStreamDisconnectError extends Error {
+  // 构造可与后端业务错误区分的 Agent 流断线错误。
   constructor(message = 'agent stream disconnected before completion') {
     super(message);
     this.name = 'AgentStreamDisconnectError';

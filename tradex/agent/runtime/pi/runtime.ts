@@ -45,16 +45,19 @@ export type PiRuntimeRunInput = Parameters<typeof createPiAgentRuntime>[0] & {
   images?: ImageContent[];
 };
 
+// 将进程内 Pi SDK Agent 适配为统一 Runtime 入口。
 export class PiSdkRuntime {
   readonly id = "pi" as const;
   readonly capabilities = PI_SDK_CAPABILITIES;
 
+  // 创建一次延迟启动且可订阅的 Pi Runtime run。
   async start(input: PiRuntimeRunInput): Promise<ActiveRuntimeRun> {
     const agent = await createPiAgentRuntime(input);
     return new PiActiveRuntimeRun(agent, input.prompt, input.images);
   }
 }
 
+// 管理单次 Pi run 的事件订阅、取消和异步结算。
 class PiActiveRuntimeRun implements ActiveRuntimeRun {
   readonly runtime = "pi" as const;
   readonly capabilities = PI_SDK_CAPABILITIES;
@@ -67,6 +70,7 @@ class PiActiveRuntimeRun implements ActiveRuntimeRun {
   private listenerError: Error | null = null;
   private turnIndex = 0;
 
+  // 绑定 Pi Agent、缓存早期事件并安排 prompt 执行。
   constructor(agent: PiAgentRuntime, prompt: string, images?: ImageContent[]) {
     let output = "";
     let error: string | null = null;
@@ -121,6 +125,7 @@ class PiActiveRuntimeRun implements ActiveRuntimeRun {
     };
   }
 
+  // 注册有序异步事件 listener，并回放订阅前事件。
   subscribe(listener: (event: RuntimeEvent, signal: AbortSignal) => void | Promise<void>): () => void {
     this.listeners.add(listener);
     if (!this.hasSubscribed) {
@@ -131,13 +136,16 @@ class PiActiveRuntimeRun implements ActiveRuntimeRun {
     return () => this.listeners.delete(listener);
   }
 
+  // 中止底层 Pi Agent，并向 listener 传播取消信号。
   abort: () => void | Promise<void>;
 
+  // 向当前 listener 发送事件，或在订阅前暂存事件。
   private emit(event: RuntimeEvent): void {
     if (!this.hasSubscribed) this.pendingEvents.push(event);
     else for (const listener of this.listeners) this.deliver(event, listener);
   }
 
+  // 串行执行 listener，并将监听异常纳入 run 结算。
   private deliver(event: RuntimeEvent, listener: (event: RuntimeEvent, signal: AbortSignal) => void | Promise<void>): void {
     this.delivery = this.delivery.then(() => listener(event, this.abortController.signal)).catch((cause) => {
       this.listenerError ??= cause instanceof Error ? cause : new Error(String(cause));

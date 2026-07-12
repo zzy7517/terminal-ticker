@@ -1,3 +1,4 @@
+// 验证 Pi SDK 事件到统一 Runtime 事件的转换行为。
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import { piEventToRuntimeEvents, piMessageToRuntimeMessage } from "./events.js";

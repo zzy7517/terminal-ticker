@@ -1,3 +1,4 @@
+// 为所有 Agent Runtime 提供统一的 Session SSE 生命周期编排。
 import crypto from "node:crypto";
 import type { ActiveRuntimeRun, RuntimeEvent, RuntimeRunResult } from "../agent/runtime/types.js";
 import { AgentSseWriter } from "./agent_sse.js";
@@ -7,12 +8,17 @@ export type SessionStreamSend = (event: Record<string, unknown>) => void;
 
 export interface SessionRunBinding {
   run: ActiveRuntimeRun;
+  // 消费并投影单个统一 Runtime 事件。
   onEvent(event: RuntimeEvent, send: SessionStreamSend): void | Promise<void>;
+  // 在 Runtime 正常结算后发送最终状态。
   complete(result: RuntimeRunResult, send: SessionStreamSend): void | Promise<void>;
+  // 在运行或持久化失败后发送错误状态。
   fail(error: unknown, send: SessionStreamSend): void | Promise<void>;
+  // 释放 Runtime 绑定持有的临时资源。
   cleanup?(): void | Promise<void>;
 }
 
+// 锁定 Session、运行 Runtime 并保证结算后释放所有活动状态。
 export function streamSessionRun(input: {
   runtime: AppRuntime;
   sessionId: string;
@@ -28,6 +34,7 @@ export function streamSessionRun(input: {
   let activeRun: ActiveRuntimeRun | null = null;
   let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
+    // 启动 Runtime 并将有序事件持续写入 SSE 响应。
     async start(controller) {
       const send: SessionStreamSend = (event) => sse.send(controller, event);
       let binding: SessionRunBinding | null = null;
@@ -63,6 +70,7 @@ export function streamSessionRun(input: {
         }
       }
     },
+    // 在客户端断开时取消 SSE 并中止活动 Runtime。
     cancel() {
       cancelled = true;
       sse.cancel();

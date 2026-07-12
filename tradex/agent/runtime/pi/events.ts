@@ -1,7 +1,9 @@
+// 负责将 Pi SDK 的消息和事件转换为 Runtime 中立结构。
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { RuntimeContent, RuntimeEvent, RuntimeMessage, RuntimeToolResult } from "../types.js";
 
+// 将单个 Pi AgentEvent 转换为统一 RuntimeEvent 序列。
 export function piEventToRuntimeEvents(event: AgentEvent, turnId: string): RuntimeEvent[] {
   switch (event.type) {
     case "agent_start": return [{ type: "run-start" }];
@@ -44,6 +46,7 @@ export function piEventToRuntimeEvents(event: AgentEvent, turnId: string): Runti
   }
 }
 
+// 将 Pi AgentMessage 转换为统一 RuntimeMessage。
 export function piMessageToRuntimeMessage(message: AgentMessage): RuntimeMessage {
   if (message.role === "user") {
     const user = message as UserMessage;
@@ -83,6 +86,7 @@ export function piMessageToRuntimeMessage(message: AgentMessage): RuntimeMessage
   };
 }
 
+// 提取统一 RuntimeMessage 中的全部文本内容。
 function runtimeMessageText(message: RuntimeMessage): string {
   return message.content
     .filter((item): item is Extract<RuntimeContent, { type: "text" }> => item.type === "text")
@@ -90,6 +94,7 @@ function runtimeMessageText(message: RuntimeMessage): string {
     .join("");
 }
 
+// 将 Pi Tool 结果转换为统一的结构化 Tool 结果。
 function piToolResult(result: { content?: unknown; details?: unknown; terminate?: boolean }): RuntimeToolResult {
   return {
     content: piContent(Array.isArray(result.content) ? result.content : []),
@@ -98,6 +103,7 @@ function piToolResult(result: { content?: unknown; details?: unknown; terminate?
   };
 }
 
+// 将 Pi 的文本或图片内容转换为统一 RuntimeContent。
 function piContent(content: unknown): RuntimeContent[] {
   if (typeof content === "string") return [{ type: "text", text: content }];
   if (!Array.isArray(content)) return [];

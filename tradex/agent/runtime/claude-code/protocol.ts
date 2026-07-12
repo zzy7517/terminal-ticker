@@ -131,6 +131,7 @@ export function parseClaudeLine(line: string): RuntimeEvent[] {
   return [];
 }
 
+// 为 Claude 文本增量构造统一的 assistant RuntimeMessage。
 function claudeAssistantMessage(content: string, model = ""): Extract<RuntimeEvent, { type: "message-update" }>["message"] {
   return {
     id: "claude:assistant",

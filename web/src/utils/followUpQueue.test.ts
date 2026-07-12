@@ -1,3 +1,4 @@
+// 验证批量 follow-up 的合并、自动执行和图片限制规则。
 import { describe, expect, it } from 'vitest';
 import type { QueuedFollowUp } from '../types';
 import { mergeFollowUps, shouldAutoRunFollowUps, validateFollowUpImages } from './followUpQueue';

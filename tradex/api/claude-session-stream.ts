@@ -53,6 +53,7 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
   return streamSessionRun({
     runtime,
     sessionId,
+    // 准备附件、Claude CLI、Tool 注册表和本轮 Runtime 句柄。
     async prepare() {
       const attachmentPaths = await saveClaudeAttachments(runtime, sessionId, requestImages);
       prompt = promptWithAttachments(prompt, attachmentPaths);
@@ -89,6 +90,7 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
       if (run.nativeSessionId) runtime.claudeSessions.setNativeSessionId(sessionId, run.nativeSessionId);
       return {
         run,
+        // 将统一 Runtime 事件持久化并投影为前端 SSE 事件。
         onEvent(event: RuntimeEvent, send: (event: Record<string, unknown>) => void) {
           if (event.type === "run-start" && event.nativeSessionId) {
             runtime.claudeSessions.setNativeSessionId(sessionId, event.nativeSessionId);
@@ -137,6 +139,7 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
             usage.cacheWrite += event.cacheWrite;
           }
         },
+        // 结算 Claude run、持久化 assistant 消息并发送最终状态。
         async complete(result, send) {
           runError = result.error;
           runErrorCode = result.errorCode ?? null;
@@ -190,6 +193,7 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
           state: await runtime.state(),
         });
         },
+        // 记录未结算异常，并避免重复持久化 assistant 消息。
         fail(error, send) {
           if (error instanceof ClaudeSessionStreamError) runErrorCode = error.code;
           runError = error instanceof Error ? error.message : String(error);

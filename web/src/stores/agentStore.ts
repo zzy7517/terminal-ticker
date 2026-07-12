@@ -416,6 +416,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const next = { ...s, pendingImagesBySessionId };
     return { pendingImagesBySessionId, ...activeFields(next) };
   }),
+  // 从当前 Session 的 follow-up 队列移除指定项目。
   removeFollowUp: (id) => set((s) => {
     const sessionId = s.activeAgentSessionId;
     if (!sessionId) return s;
@@ -427,6 +428,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const next = { ...s, queuedFollowUpsBySessionId };
     return { queuedFollowUpsBySessionId, ...activeFields(next) };
   }),
+  // 清空当前 Session 的全部 follow-up 项目。
   clearFollowUps: () => set((s) => {
     const sessionId = s.activeAgentSessionId;
     if (!sessionId || !s.queuedFollowUpsBySessionId[sessionId]?.length) return s;
@@ -536,6 +538,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return () => { disposed = true; };
   },
 
+  // 发送普通消息，或在运行中将输入加入当前 Session 的 follow-up 队列。
   runAgentAnalysis: async (requestedSessionId, options) => {
     const state = get();
     const agentSession = requestedSessionId ? responseForSession(state, requestedSessionId) : state.agentSession;

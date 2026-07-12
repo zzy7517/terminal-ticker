@@ -1,3 +1,4 @@
+// 编排 Pi Runtime 运行并投影为现有 Agent SSE 协议。
 import crypto from "node:crypto";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -11,6 +12,7 @@ import { sessionHistory, sessionResponse } from "./helpers.js";
 import { streamSessionRun } from "./session-stream.js";
 import type { AppRuntime } from "./runtime.js";
 
+// 启动一次 Pi Session 消息流并返回 SSE 响应。
 export function streamPiSession(input: {
   runtime: AppRuntime;
   sessionId: string;
@@ -35,6 +37,7 @@ export function streamPiSession(input: {
   return streamSessionRun({
     runtime,
     sessionId,
+    // 准备 Pi Tool、系统提示词和本轮 Runtime 句柄。
     async prepare() {
       const { tools, externalContextToolNames } = await buildTradexToolRegistry(runtime, {
         sessionId,
@@ -60,6 +63,7 @@ export function streamPiSession(input: {
       });
       return {
         run,
+        // 按顺序持久化 Runtime 事件并发送对应 SSE 事件。
         async onEvent(event: RuntimeEvent, send: (event: Record<string, unknown>) => void) {
           if (event.type === "message-start" && event.message.role === "assistant") {
             toolCalls.clear();
@@ -122,6 +126,7 @@ export function streamPiSession(input: {
             send({ type: "message_end", message: runtimeMessageDto(sessionId, message, message.role === "assistant" ? assistantClientId : undefined) });
           }
         },
+        // 汇总本轮统计并发送最终 Session 状态。
         async complete(result, send) {
           finalError = result.error ?? finalError;
           send({
@@ -146,11 +151,13 @@ export function streamPiSession(input: {
             state: await runtime.state(),
           });
         },
+        // 将运行或持久化异常投影为稳定的错误终止事件。
         fail(error, send) {
           const detail = error instanceof Error ? error.message : String(error);
           send({ type: "error", error: detail });
           send({ type: "agent_end", error: detail, totalTokens: 0, promptTokens: 0, sessionStats: null });
         },
+        // 清理已经落盘的临时 Pi SessionManager。
         cleanup() {
           if (piSessionFileExists(manager)) runtime.pendingSessionManagers.delete(sessionId);
         },
@@ -159,6 +166,7 @@ export function streamPiSession(input: {
   });
 }
 
+// 创建前端流式渲染所需的空 assistant 消息。
 function emptyAssistantMessage(sessionId: string, clientId: string): Record<string, unknown> {
   return {
     id: clientId,
@@ -172,6 +180,7 @@ function emptyAssistantMessage(sessionId: string, clientId: string): Record<stri
   };
 }
 
+// 将统一 RuntimeMessage 投影为前端 AgentMessage DTO。
 function runtimeMessageDto(sessionId: string, message: RuntimeMessage, clientId?: string): Record<string, unknown> {
   return {
     id: clientId ?? message.id,
@@ -201,10 +210,12 @@ function runtimeMessageDto(sessionId: string, message: RuntimeMessage, clientId?
   };
 }
 
+// 拼接 RuntimeMessage 中的文本内容用于 SSE 和持久化。
 function runtimeMessageText(message: RuntimeMessage): string {
   return message.content.filter((item) => item.type === "text").map((item) => item.text).join("");
 }
 
+// 提取 RuntimeMessage 图片并转换为前端 metadata。
 function runtimeImageMetadata(message: RuntimeMessage): Record<string, unknown> | null {
   const images = message.content
     .filter((item): item is Extract<typeof item, { type: "image" }> => item.type === "image")

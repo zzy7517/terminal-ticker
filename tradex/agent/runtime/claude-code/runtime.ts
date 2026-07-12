@@ -326,6 +326,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
     for (const listener of this.listeners) this.deliver(event, listener);
   }
 
+  // 串行调用异步 listener，并记录首个监听失败。
   private deliver(event: RuntimeEvent, listener: (event: RuntimeEvent, signal: AbortSignal) => void | Promise<void>): void {
     this.delivery = this.delivery.then(() => listener(event, this.abortController.signal)).catch((error) => {
       this.listenerError ??= error instanceof Error ? error : new Error(String(error));

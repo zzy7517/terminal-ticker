@@ -1,8 +1,10 @@
+// 验证公共 Session 流编排器的结算、取消和清理行为。
 import { describe, expect, it } from "vitest";
 import type { ActiveRuntimeRun, RuntimeEvent } from "../agent/runtime/types.js";
 import { streamSessionRun } from "./session-stream.js";
 import type { AppRuntime } from "./runtime.js";
 
+// 创建仅包含运行状态容器的测试 AppRuntime。
 function fakeRuntime(): AppRuntime {
   return {
     activeAgents: new Map(),
@@ -10,6 +12,7 @@ function fakeRuntime(): AppRuntime {
   } as unknown as AppRuntime;
 }
 
+// 创建按顺序发送指定事件的测试 Runtime run。
 function fakeRun(events: RuntimeEvent[]): ActiveRuntimeRun {
   let listener: ((event: RuntimeEvent, signal: AbortSignal) => void | Promise<void>) | null = null;
   const signal = new AbortController().signal;
@@ -29,6 +32,7 @@ function fakeRun(events: RuntimeEvent[]): ActiveRuntimeRun {
   };
 }
 
+// 创建由测试直接控制结果和中止行为的 Runtime run。
 function controlledRun(result: ActiveRuntimeRun["result"], abort: () => void = () => {}): ActiveRuntimeRun {
   return {
     runtime: "pi",
