@@ -40,7 +40,7 @@ export function LocalAgentsSettingsPanel() {
       <header className="settings-stage-head local-agents-head">
         <div>
           <div className="eyebrow">Execution</div>
-          <h2>Local Agents</h2>
+          <h2>Runtimes</h2>
           <p>Configure the runtimes that execute Agent identities on this machine.</p>
         </div>
       </header>
