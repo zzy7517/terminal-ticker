@@ -637,7 +637,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       await streamAgentMessage(
         runSessionId,
         prompt,
-        { provider: agentProvider, model: agentModel, images: imagesToSend },
+        agentSession?.session?.runtime === 'claude-code'
+          ? { images: imagesToSend }
+          : { provider: agentProvider, model: agentModel, images: imagesToSend },
         (envelope) => {
           const sessionId = envelope.sessionId || runSessionId;
           const event = envelope.event;

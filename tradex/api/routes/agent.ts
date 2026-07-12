@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import crypto from "node:crypto";
+import path from "node:path";
+import { writeFile } from "node:fs/promises";
 import { AgentModelRegistry } from "../../agent/models/registry.js";
 import {
   clonePiSession,
@@ -16,23 +18,22 @@ import {
   piSessionPayload,
 } from "../../agent/pi_sessions.js";
 import type { AgentDefinition, AgentFileInput } from "../../agent/agent_store.js";
-import { buildMarketTools } from "../../agent/tools/market.js";
-import { buildNewsTools } from "../../agent/tools/news.js";
-import { buildJin10Tools } from "../../agent/tools/jin10.js";
-import { buildSocialFeedTools } from "../../agent/tools/social.js";
-import { buildTradingTools } from "../../agent/tools/trading.js";
-import { buildWebTools } from "../../agent/tools/web.js";
-import { buildBrowserTools } from "../../agent/tools/browser.js";
-import { buildOptionsTools } from "../../agent/tools/options.js";
-import { createFilesystemRegistry } from "../../agent/tools/filesystem.js";
-import { mergeRegistries } from "../../agent/tools/registry.js";
-import { buildMcpToolRegistry } from "../../mcp/index.js";
+import { buildSessionAttachmentTools } from "../../agent/tools/session-attachments.js";
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent, ImageContent, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { createPiAgentRuntime } from "../../agent/pi_runtime.js";
 import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
+import { purgeClaudeProject } from "../../agent/runtime/claude-purge.js";
+import { ClaudeCodeRuntime } from "../../agent/runtime/claude-code.js";
+import { detectClaudeCode } from "../../agent/runtime/claude-availability.js";
+import { CLAUDE_CODE_CAPABILITIES } from "../../agent/runtime/claude-code.js";
+import type { RuntimeEvent } from "../../agent/runtime/types.js";
+import { PI_SDK_CAPABILITIES } from "../../agent/runtime/types.js";
+import { exposeClaudeReadTools } from "../../agent/tools/claude-policy.js";
 import type { AppRuntime } from "../runtime.js";
+import { buildTradexToolRegistry } from "../agent_tools.js";
+import { AgentSseWriter } from "../agent_sse.js";
 import {
   idleRun,
   openSessionManager,
@@ -50,6 +51,19 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
 
   app.get("/api/agents", (c) => c.json({ agents: runtime.agentStore.list() }));
+
+  app.get("/api/agent/runtimes", async (c) => c.json({
+    runtimes: [
+      {
+        id: "pi",
+        available: true,
+        version: null,
+        error: null,
+        capabilities: PI_SDK_CAPABILITIES,
+      },
+      { ...await detectClaudeCode(), capabilities: CLAUDE_CODE_CAPABILITIES },
+    ],
+  }));
 
   app.post("/api/agents", async (c) => {
     try {
@@ -76,16 +90,13 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   app.delete("/api/agents/:id", (c) => {
     const agentId = c.req.param("id");
     try {
-      runtime.agentStore.remove(agentId, (candidateId) => listPiSessionManagersSync().some((manager) => {
-        const payload = piSessionPayload(manager);
-        const stats = payload.sessionStats as { totalMessages?: number };
-        return readAgentSnapshot(manager).agentId === candidateId && Number(stats.totalMessages ?? 0) > 0;
-      }));
-      for (const [sessionId, snapshot] of runtime.pendingAgentSnapshots) {
-        if (snapshot.agentId !== agentId) continue;
-        runtime.pendingAgentSnapshots.delete(sessionId);
-        runtime.pendingSessionManagers.delete(sessionId);
-      }
+      runtime.agentStore.remove(agentId, (candidateId) => (
+        runtime.claudeSessions.hasPersistedSessionForAgent(candidateId)
+        || [...runtime.pendingAgentSnapshots.values()].some((snapshot) => snapshot.agentId === candidateId)
+        || listPiSessionManagersSync().some((manager) => {
+          return readAgentSnapshot(manager).agentId === candidateId;
+        })
+      ));
       return c.json({ agents: runtime.agentStore.list() });
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Agent delete failed";
@@ -103,6 +114,16 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const selectedAgent = runtime.agentStore.get(agentId);
     if (!selectedAgent) return c.json({ detail: "Agent not found" }, 404);
     const snapshot = snapshotForAgent(selectedAgent, runtime);
+    if (snapshot.runtime === "claude-code") {
+      const metadata = runtime.claudeSessions.create({
+        title: String(body.title || "New Agent Session"),
+        snapshot,
+      });
+      return c.json({
+        ...await sessionResponse(runtime, metadata.id),
+        history: await sessionHistory(runtime),
+      });
+    }
     const mgr = createPiSession({
       title: String(body.title || "New Agent Session"),
     });
@@ -119,6 +140,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       agentId: snapshot.agentId,
       agentName: snapshot.agentName,
       runtime: snapshot.runtime,
+      capabilities: PI_SDK_CAPABILITIES,
     };
     const sessionResp = { ...payload, run: idleRun(mgr.getSessionId()) };
     return c.json({
@@ -140,10 +162,21 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     }
     runtime.lockedAgentSessions.add(sessionId);
     try {
+      const claude = runtime.claudeSessions.getMetadata(sessionId);
+      if (claude) {
+        await purgeClaudeProject(
+          process.env.TRADEX_CLAUDE_PATH?.trim() || "claude",
+          runtime.claudeSessions.sessionDir(sessionId),
+        );
+        runtime.claudeSessions.removeFiles(sessionId);
+        return c.json({ session: { session: null, messages: [] }, history: await sessionHistory(runtime), state: await runtime.state() });
+      }
       runtime.pendingSessionManagers.delete(sessionId);
       runtime.pendingAgentSnapshots.delete(sessionId);
       await deletePiSession(sessionId);
       return c.json({ session: { session: null, messages: [] }, history: await sessionHistory(runtime), state: await runtime.state() });
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : String(error) }, 502);
     } finally {
       runtime.lockedAgentSessions.delete(sessionId);
     }
@@ -158,6 +191,9 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   // frontend can place it in the editor for modification.
   app.post("/api/agent/sessions/:id/fork", async (c) => {
     const sessionId = c.req.param("id");
+    if (runtime.claudeSessions.getMetadata(sessionId)) {
+      return c.json({ detail: "Claude Code runtime does not support Session fork" }, 409);
+    }
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const entryId = String(body.entryId || "").trim();
 
@@ -189,6 +225,9 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   // the current position.
   app.post("/api/agent/sessions/:id/clone", async (c) => {
     const sessionId = c.req.param("id");
+    if (runtime.claudeSessions.getMetadata(sessionId)) {
+      return c.json({ detail: "Claude Code runtime does not support Session clone" }, 409);
+    }
     if (runtime.lockedAgentSessions.has(sessionId)) {
       return c.json({ detail: "cannot clone a running session" }, 409);
     }
@@ -233,6 +272,18 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     if (!message && requestImages.length === 0) {
       return c.json({ detail: "message or images is required" }, 400);
     }
+    const claudeMetadata = runtime.claudeSessions.getMetadata(sessionId);
+    if (claudeMetadata) {
+      const imageError = validateClaudeImages(requestImages);
+      if (imageError) return c.json({ detail: imageError }, 400);
+      return streamClaudeSession({
+        runtime,
+        requestUrl: c.req.url,
+        sessionId,
+        message,
+        requestImages,
+      });
+    }
     const mgr = await openSessionManager(sessionId, runtime);
     if (!mgr) {
       return c.json({ detail: "agent session not found" }, 404);
@@ -245,29 +296,26 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     let agentSnapshot = readAgentSnapshot(mgr);
     const hasSnapshot = mgr.getEntries().some((entry) => entry.type === "custom" && entry.customType === AGENT_SNAPSHOT_ENTRY);
     if (!hasSnapshot) {
-      agentSnapshot = runtime.pendingAgentSnapshots.get(sessionId)
-        ?? snapshotForAgent(runtime.agentStore.get("default")!, runtime);
+      const defaultAgent = runtime.agentStore.get("default")!;
+      const fallback = {
+        agentId: defaultAgent.id,
+        agentName: defaultAgent.name,
+        runtime: "pi" as const,
+        systemPrompt: defaultAgent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || MAIN_AGENT_PROMPT,
+        provider: runtime.config.agent.provider,
+        model: runtime.config.agent.model,
+        reasoningEffort: runtime.config.agent.reasoningEffort,
+      };
+      agentSnapshot = runtime.pendingAgentSnapshots.get(sessionId) ?? fallback;
       appendAgentSnapshot(mgr, agentSnapshot);
       runtime.pendingAgentSnapshots.delete(sessionId);
     }
 
-    const encoder = new TextEncoder();
     const runId = crypto.randomUUID();
     let assistantClientId = "";
     const toolCallsById = new Map<string, Record<string, unknown>>();
-    let seq = 0;
-
-    let streamCancelled = false;
-    const sendFrame = (controller: ReadableStreamDefaultController<Uint8Array>, event: Record<string, unknown>) => {
-      if (streamCancelled) return;
-      seq += 1;
-      try {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ sessionId, runId, seq, event })}\n\n`));
-      } catch {
-        // Client went away mid-run; the cancel() hook aborts the agent.
-        streamCancelled = true;
-      }
-    };
+    const sse = new AgentSseWriter(sessionId, runId);
+    const sendFrame = (controller: ReadableStreamDefaultController<Uint8Array>, event: Record<string, unknown>) => sse.send(controller, event);
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -285,61 +333,13 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           const modelRuntime = runtime.modelRuntimeSnapshot;
 
           // ---- Build tools ----
-          const mcpRegistry = runtime.mcpManager
-            ? await buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig())
-            : null;
-          const memoryRegistry = await runtime.memoryPort.buildTools();
-          const externalContextToolNames = new Set([
-            "web_search",
-            "web_fetch",
-            "get_recent_news",
-            "refresh_news",
-            "refresh_x_following_feed",
-            "get_recent_social_feed",
-            "search_x_tweets",
-            "browser_open_page",
-            "browser_screenshot",
-            "browser_status",
-            ...(mcpRegistry?.listTools().map((tool) => tool.name) ?? []),
-          ]);
-          const tools = mergeRegistries(
-            buildMarketTools({
-              quotes: runtime.controller.quotes,
-              maxCandles: requestConfig.maxCandles,
-              candleContextMode: requestConfig.candleContextMode,
-            }),
-            buildNewsTools({
-              recent: (limit, sinceMinutes) => runtime.newsService.recent(limit ?? undefined).filter((item) => {
-                if (sinceMinutes == null) return true;
-                return item.publishedAtMs >= Date.now() - sinceMinutes * 60_000;
-              }),
-              refresh: () => runtime.newsService.refreshNow(),
-            }),
-            buildSocialFeedTools({
-              refreshFollowing: (count) => runtime.socialFeedService.refreshXFollowing({ count }),
-              recent: async (args) => runtime.socialFeedService.recentItems({
-                limit: Number(args.limit) || runtime.config.socialFeed.recentLimit,
-              }),
-              search: async (args) => (await runtime.socialFeedService.searchXTweets({
-                query: String(args.query || ""),
-                count: Number(args.count) || 20,
-                product: typeof args.product === "string" ? args.product : undefined,
-              })).items,
-            }),
-            ...(memoryRegistry ? [memoryRegistry] : []),
-            buildTradingTools({
-              tradeStore: runtime.tradeStore,
-              exchangeRouter: runtime.exchangeRouter,
-              tradingConfig: runtime.config.trading,
-              resolveSessionId: () => sessionId,
-            }),
-            buildJin10Tools(runtime.jin10Service),
-            buildWebTools(),
-            ...(runtime.config.browser.enabled ? [buildBrowserTools(runtime.browserManager)] : []),
-            ...(runtime.optionsService ? [buildOptionsTools(runtime)] : []),
-            createFilesystemRegistry(),
-            ...(mcpRegistry ? [mcpRegistry] : []),
-          );
+          const { tools, externalContextToolNames } = await buildTradexToolRegistry(runtime, {
+            sessionId,
+            config: requestConfig,
+            includeMemory: true,
+            includeExternalMcp: true,
+            includeFilesystem: true,
+          });
 
           // Inject memory context into system prompt when available.
           const memoryInstructions = await runtime.memoryPort.getPromptContext();
@@ -567,7 +567,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       cancel() {
         // Client disconnected (page refresh, tab close, network drop): stop
         // the agent run instead of letting it burn LLM/tool budget unobserved.
-        streamCancelled = true;
+        sse.cancel();
         runtime.activeAgents.get(sessionId)?.abort();
       },
     });
@@ -589,6 +589,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     if (!agent) {
       return c.json({ detail: "no active agent run for this session" }, 409);
     }
+    if (!agent.steer) return c.json({ detail: "runtime does not support steering" }, 409);
     agent.steer({ role: "user", content: message, timestamp: Date.now() });
     return c.json({ ok: true });
   });
@@ -679,8 +680,306 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   return app;
 }
 
+interface ClaudeStreamInput {
+  runtime: AppRuntime;
+  requestUrl: string;
+  sessionId: string;
+  message: string;
+  requestImages: ImageContent[];
+}
+
+async function streamClaudeSession(input: ClaudeStreamInput): Promise<Response> {
+  const { runtime, sessionId, requestImages } = input;
+  const metadata = runtime.claudeSessions.getMetadata(sessionId);
+  if (!metadata) return Response.json({ detail: "agent session not found" }, { status: 404 });
+  if (runtime.lockedAgentSessions.has(sessionId)) {
+    return Response.json({ detail: "an agent run is already active for this session" }, { status: 409 });
+  }
+  runtime.lockedAgentSessions.add(sessionId);
+
+  let prompt = input.message;
+  try {
+    const attachmentPaths = await saveClaudeAttachments(runtime, sessionId, requestImages);
+    if (attachmentPaths.length > 0) {
+      prompt = [
+        prompt,
+        "Attached images are available through the read_session_attachment tool:",
+        ...attachmentPaths.map((file) => `- ${path.basename(file)}`),
+      ].filter(Boolean).join("\n\n");
+    }
+    runtime.claudeSessions.appendMessage(sessionId, {
+      role: "user",
+      content: input.message,
+      metadata: attachmentPaths.length > 0
+        ? { images: requestImages.map((image, index) => ({ mimeType: image.mimeType, filename: path.basename(attachmentPaths[index]) })) }
+        : null,
+    });
+  } catch (error) {
+    runtime.lockedAgentSessions.delete(sessionId);
+    return Response.json({ detail: error instanceof Error ? error.message : String(error) }, { status: 400 });
+  }
+
+  const runId = crypto.randomUUID();
+  const sse = new AgentSseWriter(sessionId, runId);
+  const sendFrame = (controller: ReadableStreamDefaultController<Uint8Array>, event: Record<string, unknown>) => sse.send(controller, event);
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      sendFrame(controller, { type: "agent_start" });
+      let assistantClientId = `assistant:${crypto.randomUUID()}`;
+      let assistantStarted = false;
+      let assistantText = "";
+      let runError: string | null = null;
+      let runErrorCode: string | null = null;
+      let model = metadata.snapshot.model;
+      const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+      const toolCalls = new Map<string, { id: string; name: string; arguments: Record<string, unknown> }>();
+
+      try {
+        runtime.claudeSessions.beginRun(sessionId);
+        const executablePath = process.env.TRADEX_CLAUDE_PATH?.trim() || "claude";
+        const availability = await detectClaudeCode(executablePath);
+        if (!availability.available) {
+          runErrorCode = "runtime_unavailable";
+          throw new Error(availability.error ?? "Claude Code runtime is unavailable");
+        }
+        const { tools: claudeTools } = await buildTradexToolRegistry(runtime, {
+          sessionId,
+          config: runtime.config.agent,
+          includeMemory: false,
+          includeExternalMcp: false,
+          includeFilesystem: false,
+          additionalRegistries: [buildSessionAttachmentTools(runtime.claudeSessions.sessionDir(sessionId))],
+        });
+        const tools = exposeClaudeReadTools(claudeTools);
+        const nativeSessionId = runtime.claudeSessions.getMetadata(sessionId)?.nativeSessionId ?? undefined;
+        const claude = new ClaudeCodeRuntime({
+          executablePath: availability.executablePath,
+          mcpUrl: claudeMcpUrl(input.requestUrl),
+          grants: runtime.mcpRunGrants,
+        });
+        const run = await claude.start({
+          tradexSessionId: sessionId,
+          cwd: runtime.claudeSessions.sessionDir(sessionId),
+          prompt,
+          instructions: claudeInstructions(metadata.snapshot.systemPrompt),
+          registry: tools,
+          nativeSessionId,
+          model: metadata.snapshot.model,
+          effort: metadata.snapshot.reasoningEffort,
+        });
+        runtime.activeAgents.set(sessionId, run);
+        if (run.nativeSessionId) runtime.claudeSessions.setNativeSessionId(sessionId, run.nativeSessionId);
+
+        const unsubscribe = run.subscribe((event: RuntimeEvent) => {
+          if (event.type === "run-start" && event.nativeSessionId) {
+            runtime.claudeSessions.setNativeSessionId(sessionId, event.nativeSessionId);
+            return;
+          }
+          if (event.type === "text-delta") {
+            if (!assistantStarted) {
+              assistantStarted = true;
+              sendFrame(controller, {
+                type: "message_start",
+                message: claudeMessageDto(sessionId, assistantClientId, "", { toolCalls: [] }, null),
+              });
+            }
+            assistantText += event.delta;
+            sendFrame(controller, {
+              type: "message_update",
+              message: { clientId: assistantClientId, role: "assistant", content: "", metadata: null, error: null },
+              delta: event.delta,
+            });
+            return;
+          }
+          if (event.type === "tool-start") {
+            const toolCall = { id: event.callId, name: event.name, arguments: event.args };
+            toolCalls.set(event.callId, toolCall);
+            sendFrame(controller, { type: "tool_execution_start", toolCall });
+            return;
+          }
+          if (event.type === "tool-end") {
+            const toolName = toolCalls.get(event.callId)?.name ?? "unknown";
+            runtime.claudeSessions.appendMessage(sessionId, {
+              role: "toolResult",
+              content: event.output,
+              metadata: { toolCallId: event.callId, toolName, error: event.isError },
+              error: event.isError ? event.output : null,
+            });
+            sendFrame(controller, {
+              type: "tool_execution_end",
+              toolCall: toolCalls.get(event.callId) ?? { id: event.callId, name: "unknown", arguments: {} },
+              toolResult: {
+                callId: event.callId,
+                name: toolName,
+                output: event.output.slice(0, 2_000),
+                error: event.isError,
+              },
+            });
+            return;
+          }
+          if (event.type === "usage") {
+            model = event.model;
+            usage.input += event.input;
+            usage.output += event.output;
+            usage.cacheRead += event.cacheRead;
+            usage.cacheWrite += event.cacheWrite;
+          }
+        });
+
+        const result = await run.result;
+        unsubscribe();
+        runError = result.error;
+        runErrorCode = result.errorCode ?? null;
+        runtime.claudeSessions.endRun(sessionId, {
+          status: runErrorCode === "aborted" ? "cancelled" : runError ? "error" : "completed",
+          error: runError,
+        });
+        if (result.nativeSessionId) runtime.claudeSessions.setNativeSessionId(sessionId, result.nativeSessionId);
+        if (!assistantText && result.output) assistantText = result.output;
+        const persisted = runtime.claudeSessions.appendMessage(sessionId, {
+          role: "assistant",
+          content: assistantText,
+          error: runError,
+          metadata: {
+            errorCode: runErrorCode,
+            model,
+            promptTokens: usage.input,
+            completionTokens: usage.output,
+            cacheRead: usage.cacheRead,
+            cacheWrite: usage.cacheWrite,
+            totalTokens: usage.input + usage.output + usage.cacheRead + usage.cacheWrite,
+            toolCalls: [...toolCalls.values()],
+          },
+        });
+        if (!assistantStarted) {
+          assistantStarted = true;
+          sendFrame(controller, {
+            type: "message_start",
+            message: claudeMessageDto(sessionId, assistantClientId, "", { toolCalls: [] }, null),
+          });
+          if (assistantText) {
+            sendFrame(controller, {
+              type: "message_update",
+              message: { clientId: assistantClientId, role: "assistant", content: "", metadata: null, error: null },
+              delta: assistantText,
+            });
+          }
+        }
+        sendFrame(controller, { type: "message_end", message: { ...persisted, id: assistantClientId, clientId: assistantClientId } });
+        sendFrame(controller, {
+          type: "agent_end",
+          error: runError,
+          errorCode: runErrorCode,
+          totalTokens: usage.input + usage.output + usage.cacheRead + usage.cacheWrite,
+          promptTokens: usage.input,
+          sessionStats: { tokens: { ...usage, total: usage.input + usage.output + usage.cacheRead + usage.cacheWrite }, cost: 0 },
+        });
+        sendFrame(controller, {
+          type: "session_update",
+          session: await sessionResponse(runtime, sessionId),
+          history: await sessionHistory(runtime),
+          state: await runtime.state(),
+        });
+      } catch (error) {
+        runError = error instanceof Error ? error.message : String(error);
+        runtime.claudeSessions.endRun(sessionId, { status: "error", error: runError });
+        runtime.claudeSessions.appendMessage(sessionId, { role: "assistant", content: assistantText, error: runError });
+        sendFrame(controller, { type: "error", code: runErrorCode ?? "runtime_failure", error: runError });
+        sendFrame(controller, { type: "agent_end", error: runError, errorCode: runErrorCode, totalTokens: 0, promptTokens: 0, sessionStats: null });
+      } finally {
+        runtime.activeAgents.delete(sessionId);
+        runtime.lockedAgentSessions.delete(sessionId);
+        try { controller.close(); } catch { /* stream already cancelled */ }
+      }
+    },
+    cancel() {
+      sse.cancel();
+      runtime.activeAgents.get(sessionId)?.abort();
+    },
+  });
+  return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+}
+
+function claudeInstructions(agentInstructions: string): string {
+  const now = new Date();
+  const sessionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return [
+    MAIN_AGENT_PROMPT,
+    ...(agentInstructions.trim() && agentInstructions.trim() !== MAIN_AGENT_PROMPT.trim() ? [agentInstructions.trim()] : []),
+    `Session date: ${sessionDate} (Asia/Shanghai).`,
+    "You are running inside Tradex via Claude Code. Use only the explicitly allowed Tradex MCP read tools. Read image attachments only with read_session_attachment.",
+    "Do not place trades, modify files, use shell commands, access Memory, configure external MCP servers, or claim those capabilities are available.",
+  ].join("\n\n");
+}
+
+function claudeMcpUrl(requestUrl: string): string {
+  const url = new URL(requestUrl);
+  const host = url.port ? `127.0.0.1:${url.port}` : "127.0.0.1";
+  return `${url.protocol}//${host}/mcp/tradex`;
+}
+
+const CLAUDE_IMAGE_TYPES: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+function validateClaudeImages(images: ImageContent[]): string | null {
+  if (images.length > 10) return "at most 10 images are allowed";
+  for (const image of images) {
+    if (!CLAUDE_IMAGE_TYPES[image.mimeType]) return `unsupported image type: ${image.mimeType}`;
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(image.data)) return "image data must be valid base64";
+    if (Buffer.byteLength(image.data, "base64") > 20 * 1024 * 1024) return "each image must be at most 20 MB";
+  }
+  return null;
+}
+
+async function saveClaudeAttachments(runtime: AppRuntime, sessionId: string, images: ImageContent[]): Promise<string[]> {
+  const directory = path.join(runtime.claudeSessions.sessionDir(sessionId), "attachments");
+  return Promise.all(images.map(async (image) => {
+    const file = path.join(directory, `${crypto.randomUUID()}.${CLAUDE_IMAGE_TYPES[image.mimeType]}`);
+    await writeFile(file, Buffer.from(image.data, "base64"), { mode: 0o600 });
+    return file;
+  }));
+}
+
+function claudeMessageDto(
+  sessionId: string,
+  clientId: string,
+  content: string,
+  metadata: Record<string, unknown> | null,
+  error: string | null,
+): Record<string, unknown> {
+  return {
+    id: clientId,
+    clientId,
+    sessionId,
+    role: "assistant",
+    content,
+    createdAt: new Date().toISOString(),
+    metadata,
+    error,
+    entryId: null,
+    parentId: null,
+    entryType: "message",
+  };
+}
+
 function snapshotForAgent(agent: AgentDefinition, runtime: AppRuntime) {
   const defaultConfig = runtime.config.agent;
+  if (agent.runtime === "claude-code") {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      runtime: "claude-code" as const,
+      systemPrompt: agent.systemPrompt?.trim() || defaultConfig.systemPrompt.trim() || MAIN_AGENT_PROMPT,
+      provider: null,
+      model: agent.model,
+      reasoningEffort: agent.reasoningEffort,
+    };
+  }
   return {
     agentId: agent.id,
     agentName: agent.name,

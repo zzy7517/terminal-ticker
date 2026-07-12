@@ -63,5 +63,6 @@ describe("AgentStore", () => {
 
     expect(() => store.remove(DEFAULT_AGENT_ID, () => false)).toThrow("Default Agent cannot be removed");
     expect(() => store.remove("ict", () => true)).toThrow("Agent has persisted Sessions");
+    expect(() => store.update(DEFAULT_AGENT_ID, { runtime: "claude-code" })).toThrow("Default Agent must use the Pi runtime");
   });
 });

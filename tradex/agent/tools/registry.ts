@@ -14,11 +14,21 @@
  * agent loop. New tools should prefer the canonical result shape.
  */
 
-import type {
-  AgentToolUpdateCallback,
-  ToolExecutionMode,
-} from "@earendil-works/pi-agent-core";
-import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import type { AgentRuntimeId } from "../runtime/types.js";
+
+export interface TextContent {
+  type: "text";
+  text: string;
+}
+
+export interface ImageContent {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
+export type ToolExecutionMode = "sequential" | "parallel";
+export type ToolProgressCallback<TDetails = unknown> = (update: ToolHandlerResult<TDetails>) => void;
 
 /** Single text or image block returned to the model. */
 export type ContentBlock = TextContent | ImageContent;
@@ -57,8 +67,14 @@ export type ToolReturnValue<TDetails = unknown> =
 export type ToolExecuteFn<TDetails = unknown> = (
   args: Record<string, unknown>,
   signal?: AbortSignal,
-  onUpdate?: AgentToolUpdateCallback<TDetails>,
+  onUpdate?: ToolProgressCallback<TDetails>,
 ) => Promise<ToolReturnValue<TDetails>> | ToolReturnValue<TDetails>;
+
+export interface ToolPolicy {
+  access: "read" | "write";
+  domain: "market" | "news" | "social" | "browser" | "filesystem" | "trading" | "external" | "other";
+  runtimeExposure: readonly AgentRuntimeId[];
+}
 
 export interface ToolDefinition<TDetails = unknown> {
   name: string;
@@ -71,6 +87,8 @@ export interface ToolDefinition<TDetails = unknown> {
   execute: ToolExecuteFn<TDetails>;
   /** Per-tool execution mode override. */
   executionMode?: ToolExecutionMode;
+  /** Missing policy is deliberately Pi-only. */
+  policy?: ToolPolicy;
 }
 
 export interface ToolCall {
@@ -133,8 +151,21 @@ export class ToolRegistry {
     return this.tools.get(name) ?? null;
   }
 
+  setPolicy(name: string, policy: ToolPolicy): void {
+    const tool = this.tools.get(name);
+    if (!tool) throw new Error(`Unknown tool: ${name}`);
+    tool.policy = policy;
+  }
+
   listTools(): ToolDefinition[] {
     return [...this.tools.values()];
+  }
+
+  listToolsForRuntime(runtime: AgentRuntimeId, access: "read" | "write" = "read"): ToolDefinition[] {
+    return this.listTools().filter((tool) => {
+      const policy = tool.policy ?? { access: "read" as const, domain: "other" as const, runtimeExposure: ["pi"] as const };
+      return policy.runtimeExposure.includes(runtime) && (access === "write" || policy.access === "read");
+    });
   }
 
   openaiToolSchemas(): Array<Record<string, unknown>> {

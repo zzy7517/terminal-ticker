@@ -6,6 +6,8 @@ import { AgentStore } from "../../agent/agent_store.js";
 import { agentRoutes } from "./agent.js";
 import type { AppRuntime } from "../runtime.js";
 import { piSessionFileExists } from "../../agent/pi_sessions.js";
+import { ClaudeSessionStore } from "../../agent/claude_sessions.js";
+import { McpRunGrantStore } from "../../mcp/server/grants.js";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
@@ -26,10 +28,30 @@ function runtime(): AppRuntime {
   });
   return {
     agentStore,
-    config: { agent: { provider: "codex", model: "gpt-5.4", reasoningEffort: "high", systemPrompt: "" } },
+    config: {
+      agent: {
+        provider: "codex", model: "gpt-5.4", reasoningEffort: "high", systemPrompt: "",
+        maxCandles: 100, candleContextMode: "raw", providerProfiles: {},
+      },
+      browser: { enabled: false },
+      socialFeed: { recentLimit: 20 },
+      trading: {},
+    },
+    controller: { quotes: new Map() },
+    newsService: { recent: () => [], refreshNow: async () => [] },
+    socialFeedService: { refreshXFollowing: async () => [], recentItems: async () => [], searchXTweets: async () => ({ items: [] }) },
+    tradeStore: {},
+    exchangeRouter: {},
+    jin10Service: {},
+    browserManager: {},
+    optionsService: null,
     pendingSessionManagers: new Map(),
     pendingAgentSnapshots: new Map(),
     lockedAgentSessions: new Set(),
+    activeAgents: new Map(),
+    claudeSessions: new ClaudeSessionStore(path.join(dir, "claude-sessions")),
+    mcpRunGrants: new McpRunGrantStore(),
+    state: async () => ({}),
   } as unknown as AppRuntime;
 }
 
@@ -57,5 +79,142 @@ describe("Agent HTTP API", () => {
     });
 
     expect(response.status).toBe(400);
+  });
+
+  it("does not delete an Agent while an empty Pi Session still belongs to it", async () => {
+    const appRuntime = runtime();
+    await agentRoutes(appRuntime).request("/api/agent/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "ict" }),
+    });
+
+    const response = await agentRoutes(appRuntime).request("/api/agents/ict", { method: "DELETE" });
+
+    expect(response.status).toBe(409);
+    expect(appRuntime.agentStore.get("ict")).not.toBeNull();
+  });
+
+  it("creates a Claude Code Session without adding it to the Pi provider registry", async () => {
+    const appRuntime = runtime();
+    appRuntime.agentStore.create({
+      id: "claude-reader",
+      name: "Claude Reader",
+      description: "Local Claude Code",
+      systemPrompt: "Read-only analysis",
+      runtime: "claude-code",
+      provider: null,
+      model: "opus",
+      reasoningEffort: "high",
+    });
+
+    const response = await agentRoutes(appRuntime).request("/api/agent/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "claude-reader" }),
+    });
+    const payload = await response.json() as { session: Record<string, unknown> };
+
+    expect(response.status).toBe(200);
+    expect(payload.session).toMatchObject({
+      runtime: "claude-code",
+      provider: null,
+      model: "opus",
+      agentId: "claude-reader",
+    });
+    expect(appRuntime.pendingSessionManagers.size).toBe(0);
+  });
+
+  it("capability-gates fork and clone for Claude Code Sessions", async () => {
+    const appRuntime = runtime();
+    const metadata = appRuntime.claudeSessions.create({
+      title: "Claude",
+      snapshot: {
+        agentId: "claude-reader",
+        agentName: "Claude Reader",
+        runtime: "claude-code",
+        systemPrompt: "Read only",
+        provider: null,
+        model: null,
+        reasoningEffort: null,
+      },
+    });
+
+    for (const endpoint of ["fork", "clone"]) {
+      const response = await agentRoutes(appRuntime).request(`/api/agent/sessions/${metadata.id}/${endpoint}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ entryId: "message-id" }),
+      });
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({ detail: expect.stringContaining("not support") });
+    }
+  });
+
+  it("streams a Claude Code run, persists its projection, and resumes by native id", async () => {
+    const appRuntime = runtime();
+    const metadata = appRuntime.claudeSessions.create({
+      title: "Claude",
+      snapshot: {
+        agentId: "claude-reader",
+        agentName: "Claude Reader",
+        runtime: "claude-code",
+        systemPrompt: "Read only",
+        provider: null,
+        model: null,
+        reasoningEffort: null,
+      },
+    });
+    const executable = path.join(path.dirname(appRuntime.claudeSessions.root), "fake-claude.mjs");
+    fs.writeFileSync(executable, `#!/usr/bin/env node
+console.log(JSON.stringify({type:"system",session_id:"11111111-1111-4111-8111-111111111111"}));
+console.log(JSON.stringify({type:"assistant",message:{model:"claude",content:[{type:"text",text:"Market is calm."}],usage:{input_tokens:8,output_tokens:3}}}));
+console.log(JSON.stringify({type:"result",session_id:"11111111-1111-4111-8111-111111111111",result:"Market is calm.",is_error:false}));
+`);
+    fs.chmodSync(executable, 0o755);
+    const previous = process.env.TRADEX_CLAUDE_PATH;
+    process.env.TRADEX_CLAUDE_PATH = executable;
+    try {
+      const response = await agentRoutes(appRuntime).request(`/api/agent/sessions/${metadata.id}/messages/stream`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "Analyze" }),
+      });
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(body).toContain('"type":"message_update"');
+      expect(body).toContain("Market is calm.");
+      expect(body).toContain('"type":"session_update"');
+      expect(appRuntime.claudeSessions.getMetadata(metadata.id)?.nativeSessionId).toBe("11111111-1111-4111-8111-111111111111");
+      expect(appRuntime.claudeSessions.messages(metadata.id).map((message) => message.role)).toEqual(["user", "assistant"]);
+    } finally {
+      if (previous === undefined) delete process.env.TRADEX_CLAUDE_PATH;
+      else process.env.TRADEX_CLAUDE_PATH = previous;
+    }
+  });
+
+  it("keeps the Tradex projection when native Claude project purge fails", async () => {
+    const appRuntime = runtime();
+    const metadata = appRuntime.claudeSessions.create({
+      title: "Claude",
+      snapshot: {
+        agentId: "claude-reader", agentName: "Claude Reader", runtime: "claude-code",
+        systemPrompt: "Read only", provider: null, model: null, reasoningEffort: null,
+      },
+    });
+    const executable = path.join(path.dirname(appRuntime.claudeSessions.root), "failing-claude.mjs");
+    fs.writeFileSync(executable, "#!/usr/bin/env node\nprocess.exit(9);\n");
+    fs.chmodSync(executable, 0o755);
+    const previous = process.env.TRADEX_CLAUDE_PATH;
+    process.env.TRADEX_CLAUDE_PATH = executable;
+    try {
+      const response = await agentRoutes(appRuntime).request(`/api/agent/sessions/${metadata.id}`, { method: "DELETE" });
+      expect(response.status).toBe(502);
+      expect(appRuntime.claudeSessions.getMetadata(metadata.id)).not.toBeNull();
+    } finally {
+      if (previous === undefined) delete process.env.TRADEX_CLAUDE_PATH;
+      else process.env.TRADEX_CLAUDE_PATH = previous;
+    }
   });
 });

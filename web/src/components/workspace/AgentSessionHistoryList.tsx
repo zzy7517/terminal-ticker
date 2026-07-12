@@ -83,7 +83,9 @@ export function AgentSessionHistoryList({ onNewSession }: { onNewSession: () => 
           const isConfirmingDelete = confirmingDeleteId === item.id;
           const title = item.preview || item.title || item.id;
           const contextUsage = runStateBySessionId[item.id]?.contextUsage ?? item.contextUsage;
-          const contextLabel = contextPercentLabel(contextUsage, item.provider, item.model);
+          const contextLabel = item.runtime === 'pi' && item.provider
+            ? contextPercentLabel(contextUsage, item.provider, item.model)
+            : null;
           const deleteButtonTitle = isRunning
             ? 'Session is running'
             : isConfirmingDelete
@@ -108,7 +110,7 @@ export function AgentSessionHistoryList({ onNewSession }: { onNewSession: () => 
               >
                 <span>{title}</span>
                 <small>
-                  {item.agentName || 'Default Agent'} · {item.model} · {relativeTime(item.updatedAt)}
+                  {item.agentName || 'Default Agent'} · {item.runtime === 'claude-code' ? item.model || 'Local Claude default' : item.model} · {relativeTime(item.updatedAt)}
                   {contextLabel ? ` · ${contextLabel}` : ''}
                   {isRunning ? ' · running' : hasError ? ' · error' : ''}
                 </small>

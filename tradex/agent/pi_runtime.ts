@@ -24,7 +24,7 @@ import {
 
 export interface ActiveAgentRun {
   abort(): void | Promise<void>;
-  steer(message: AgentMessage): void | Promise<void>;
+  steer?(message: AgentMessage): void | Promise<void>;
 }
 
 export interface PiAgentRuntime extends ActiveAgentRun {

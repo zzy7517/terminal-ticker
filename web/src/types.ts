@@ -61,7 +61,7 @@ export interface AgentMessageMetadata {
 export interface AgentSession {
   id: string;
   title: string;
-  provider: string;
+  provider: string | null;
   model: string;
   createdAt: string;
   updatedAt: string;
@@ -70,7 +70,8 @@ export interface AgentSession {
   reasoningEffort: string | null;
   agentId: string;
   agentName: string;
-  runtime: 'pi';
+  runtime: 'pi' | 'claude-code';
+  capabilities: AgentRuntimeStatus['capabilities'];
 }
 
 export interface AgentDefinition {
@@ -78,7 +79,7 @@ export interface AgentDefinition {
   name: string;
   description: string;
   systemPrompt: string | null;
-  runtime: 'pi';
+  runtime: 'pi' | 'claude-code';
   provider: string | null;
   model: string | null;
   reasoningEffort: string | null;
@@ -86,6 +87,23 @@ export interface AgentDefinition {
 }
 
 export type AgentDefinitionInput = Omit<AgentDefinition, 'builtIn'>;
+
+export interface AgentRuntimeStatus {
+  id: 'pi' | 'claude-code';
+  available: boolean;
+  executablePath?: string;
+  version: string | null;
+  error: string | null;
+  capabilities: {
+    streaming: boolean;
+    abort: boolean;
+    steer: boolean;
+    resume: boolean;
+    forkFromMessage: boolean;
+    cloneFromMessage: boolean;
+    imageInput: boolean;
+  };
+}
 
 export interface AgentSessionRun {
   sessionId: string;
