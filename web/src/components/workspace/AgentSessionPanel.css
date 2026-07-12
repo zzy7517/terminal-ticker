@@ -442,11 +442,10 @@
 }
 
 /*
- * Fixed pending region for steering messages queued during a run. Pinned at the
- * bottom of the transcript (below streaming text) so its position never shifts
- * while the agent streams; entries leave only once the backend confirms them.
+ * Pending follow-ups are client-side only and run as one merged message after
+ * the active request settles.
  */
-.session-steering-queue {
+.session-follow-up-queue {
   align-self: flex-end;
   display: grid;
   gap: 4px;
@@ -454,7 +453,8 @@
   max-inline-size: min(50ch, 80%);
 }
 
-.session-steering-item {
+.session-follow-up-head,
+.session-follow-up-item {
   align-items: center;
   background: var(--canvas-2);
   border: 1px dashed var(--accent);
@@ -465,7 +465,22 @@
   padding: 6px 10px;
 }
 
-.session-steering-text {
+.session-follow-up-head {
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.session-follow-up-clear,
+.session-follow-up-remove {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.session-follow-up-text {
   font-family: var(--mono);
   font-size: 14px;
   line-height: 1.5;
@@ -1034,67 +1049,4 @@
   .agent-tab-layout .session-transcript {
     min-height: 200px;
   }
-}
-
-/* Fork Selector Panel — replaces transcript when open */
-.fork-selector-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--panel);
-  font-size: 12px;
-}
-
-.fork-selector-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
-  font-size: 12px;
-  color: var(--accent);
-  border-bottom: 1px solid var(--line-strong);
-}
-
-.fork-selector-close {
-  border: none;
-  background: transparent;
-  color: var(--text-muted, #888);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 2px 4px;
-}
-
-.fork-selector-close:hover {
-  color: var(--text-primary, #ddd);
-  background: var(--hover-bg, rgba(255, 255, 255, 0.05));
-}
-
-.fork-selector-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px;
-}
-
-.fork-selector-item {
-  display: block;
-  width: 100%;
-  padding: 6px 8px;
-  border: none;
-  background: transparent;
-  color: var(--text-primary, #ddd);
-  cursor: pointer;
-  font-size: 12px;
-  text-align: left;
-}
-
-.fork-selector-item:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.06));
-}
-
-.fork-selector-preview {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: block;
 }

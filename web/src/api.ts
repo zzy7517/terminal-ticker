@@ -244,46 +244,6 @@ export async function deleteAgentSessionById(sessionId: string): Promise<AgentSe
   return response.json();
 }
 
-// Forks the session at a user message entry: creates a NEW session file with
-// history up to (but not including) that message, and returns the message text
-// as `prompt` for the editor.
-export async function forkSession(sessionId: string, entryId: string): Promise<AgentSessionResponse & { prompt: string; history: { sessions: AgentSessionSummary[] } }> {
-  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/fork`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entryId }),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'session fork failed');
-  }
-  return response.json();
-}
-
-// Clones the current active branch into a new session file at the current
-// position. Full history preserved.
-export async function cloneSession(sessionId: string): Promise<AgentSessionResponse & { history: { sessions: AgentSessionSummary[] } }> {
-  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/clone`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'session clone failed');
-  }
-  return response.json();
-}
-
-// Injects a steering message into an actively-running agent session.
-export async function steerAgentSession(sessionId: string, message: string): Promise<void> {
-  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/steer`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'agent steer failed');
-  }
-}
-
 // Aborts the currently-running agent for a session.
 export async function abortAgentSession(sessionId: string): Promise<void> {
   const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/abort`, {
@@ -299,6 +259,15 @@ export interface ImageAttachment {
   mimeType: string;  // image/png, image/jpeg, etc.
 }
 
+// 标识未收到终止帧的网络或 SSE 传输中断。
+export class AgentStreamDisconnectError extends Error {
+  // 构造可与后端业务错误区分的 Agent 流断线错误。
+  constructor(message = 'agent stream disconnected before completion') {
+    super(message);
+    this.name = 'AgentStreamDisconnectError';
+  }
+}
+
 export async function streamAgentMessage(
   key: string,
   message: string,
@@ -310,11 +279,16 @@ export async function streamAgentMessage(
   if (options?.model) body.model = options.model;
   if (typeof options?.afterSeq === 'number') body.afterSeq = options.afterSeq;
   if (options?.images && options.images.length > 0) body.images = options.images;
-  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages/stream`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new AgentStreamDisconnectError(error instanceof Error ? error.message : undefined);
+  }
   if (!response.ok) {
     throw await responseError(response, 'agent stream failed');
   }
@@ -358,8 +332,22 @@ export async function streamAgentMessage(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let terminalFrameSeen = false;
+  let errorFrameSeen = false;
+  const emitEvent = (data: string) => {
+    const event = parseEvent(data);
+    if (event.event?.type === 'agent_end') terminalFrameSeen = true;
+    if (event.event?.type === 'error') errorFrameSeen = true;
+    onEvent(event);
+  };
   while (true) {
-    const { value, done } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (error) {
+      throw new AgentStreamDisconnectError(error instanceof Error ? error.message : undefined);
+    }
+    const { value, done } = chunk;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const frames = buffer.split('\n\n');
@@ -370,7 +358,7 @@ export async function streamAgentMessage(
         .filter((line) => line.startsWith('data:'))
         .map((line) => line.slice(5).trimStart())
         .join('\n');
-      if (data) onEvent(parseEvent(data));
+      if (data) emitEvent(data);
     }
   }
   buffer += decoder.decode();
@@ -379,7 +367,11 @@ export async function streamAgentMessage(
     .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice(5).trimStart())
     .join('\n');
-  if (data) onEvent(parseEvent(data));
+  if (data) emitEvent(data);
+  if (!terminalFrameSeen) {
+    if (errorFrameSeen) throw new Error('agent stream ended after an error without a terminal frame');
+    throw new AgentStreamDisconnectError();
+  }
 }
 
 // Fetches model catalog for a specific provider.

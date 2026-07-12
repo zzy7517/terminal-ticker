@@ -25,6 +25,7 @@ describe("Session Agent snapshot", () => {
 
     expect(readAgentSnapshot(manager).agentId).toBe(DEFAULT_AGENT_ID);
     expect((piSessionPayload(manager).session as { agentId: string }).agentId).toBe(DEFAULT_AGENT_ID);
+    expect(piSessionPayload(manager).session).not.toHaveProperty("leafId");
   });
 
   it("persists and restores the selected Agent configuration", () => {

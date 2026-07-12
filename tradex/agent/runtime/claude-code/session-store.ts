@@ -23,9 +23,6 @@ export interface ClaudeProjectedMessage {
   createdAt: string;
   metadata: Record<string, unknown> | null;
   error: string | null;
-  entryId: string;
-  parentId: null;
-  entryType: "message";
 }
 
 interface ClaudeSessionMetadata {
@@ -122,9 +119,6 @@ export class ClaudeSessionStore {
       createdAt: new Date().toISOString(),
       metadata: input.metadata ?? null,
       error: input.error ?? null,
-      entryId: crypto.randomUUID(),
-      parentId: null,
-      entryType: "message",
     };
     fs.appendFileSync(path.join(this.sessionDir(id), "session.jsonl"), `${JSON.stringify(message)}\n`, { encoding: "utf8", mode: 0o600 });
     metadata.updatedAt = message.createdAt;
@@ -164,7 +158,6 @@ export class ClaudeSessionStore {
         apiMode: null,
         agentId: metadata.snapshot.agentId,
         agentName: metadata.snapshot.agentName,
-        leafId: null,
         memory: { externalContext: false },
         lastRun: metadata.lastRun,
       },

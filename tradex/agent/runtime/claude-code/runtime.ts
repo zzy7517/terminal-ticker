@@ -159,11 +159,14 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
   readonly capabilities = CLAUDE_CODE_CAPABILITIES;
   readonly nativeSessionId?: string;
   readonly result: Promise<RuntimeRunResult>;
-  private readonly listeners = new Set<(event: RuntimeEvent) => void>();
+  private readonly listeners = new Set<(event: RuntimeEvent, signal: AbortSignal) => void | Promise<void>>();
+  private readonly abortController = new AbortController();
   private readonly child: ChildProcessByStdio<null, Readable, Readable>;
   private readonly pendingEvents: RuntimeEvent[] = [];
   private hasSubscribed = false;
   private settled = false;
+  private delivery = Promise.resolve();
+  private listenerError: Error | null = null;
   private terminationCode: "aborted" | "run_timeout" | "inactivity_timeout" | null = null;
 
   constructor(input: {
@@ -184,6 +187,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
       let resultErrorCode: string | null = null;
       let stderr = "";
       let sawPartialText = false;
+      let sawRunEnd = false;
       let inactivityTimer: NodeJS.Timeout;
       const stopFor = (code: "run_timeout" | "inactivity_timeout") => {
         if (this.settled) return;
@@ -203,13 +207,14 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
         resetInactivityTimer();
         const lineType = claudeLineType(line);
         for (const event of parseClaudeLine(line)) {
-          if (lineType === "stream_event" && event.type === "text-delta") sawPartialText = true;
-          if (lineType === "assistant" && sawPartialText && event.type === "text-delta") continue;
+          if (lineType === "stream_event" && event.type === "message-update") sawPartialText = true;
+          if (lineType === "assistant" && sawPartialText && event.type === "message-update") continue;
           if (event.type === "run-start" && event.nativeSessionId) nativeSessionId = event.nativeSessionId;
           if (event.type === "run-end") {
+            sawRunEnd = true;
             nativeSessionId = event.nativeSessionId ?? nativeSessionId;
             output = event.result || output;
-            if (event.isError) {
+            if (event.status === "error") {
               resultError = event.result || "Claude Code run failed";
               resultErrorCode = classifyClaudeError(event.result);
             }
@@ -218,7 +223,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
             resultError = event.message;
             resultErrorCode = event.code;
           }
-          if (event.type === "text-delta") output += event.delta;
+          if (event.type === "message-update") output += event.delta;
           this.emit(event);
         }
       });
@@ -247,17 +252,31 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
           resultError = `Claude Code exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}${stderr.trim() ? `: ${stderr.trim()}` : ""}`;
           resultErrorCode = this.terminationCode ?? classifyClaudeError(stderr);
         }
-        resolve({ output, nativeSessionId, error: resultError, errorCode: resultErrorCode });
+        if (!sawRunEnd) {
+          this.emit({
+            type: "run-end",
+            ...(nativeSessionId ? { nativeSessionId } : {}),
+            result: output,
+            status: this.terminationCode === "aborted" ? "aborted" : resultError ? "error" : "completed",
+          });
+        }
+        void this.delivery.then(() => {
+          if (this.listenerError) {
+            resultError = this.listenerError.message;
+            resultErrorCode = "runtime_listener_failed";
+          }
+          resolve({ output, nativeSessionId, error: resultError, errorCode: resultErrorCode });
+        });
       });
     });
   }
 
   /** 订阅规范化事件，并先回放订阅前已经收到的事件。 */
-  subscribe(listener: (event: RuntimeEvent) => void): () => void {
+  subscribe(listener: (event: RuntimeEvent, signal: AbortSignal) => void | Promise<void>): () => void {
     this.listeners.add(listener);
     if (!this.hasSubscribed) {
       this.hasSubscribed = true;
-      for (const event of this.pendingEvents.splice(0)) listener(event);
+      for (const event of this.pendingEvents.splice(0)) this.deliver(event, listener);
     }
     return () => this.listeners.delete(listener);
   }
@@ -265,6 +284,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
   /** 终止 Claude 进程组，并让最终结果标记为 aborted。 */
   abort(): void {
     if (this.settled || !this.child.pid) return;
+    this.abortController.abort();
     this.terminationCode = "aborted";
     this.stopChild();
   }
@@ -303,7 +323,14 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
       this.pendingEvents.push(event);
       return;
     }
-    for (const listener of this.listeners) listener(event);
+    for (const listener of this.listeners) this.deliver(event, listener);
+  }
+
+  // 串行调用异步 listener，并记录首个监听失败。
+  private deliver(event: RuntimeEvent, listener: (event: RuntimeEvent, signal: AbortSignal) => void | Promise<void>): void {
+    this.delivery = this.delivery.then(() => listener(event, this.abortController.signal)).catch((error) => {
+      this.listenerError ??= error instanceof Error ? error : new Error(String(error));
+    });
   }
 }
 

@@ -8,16 +8,16 @@ import type {
   AgentSessionRun,
   AgentSessionStats,
   AgentSessionSummary,
-  QueuedSteeringMessage,
+  QueuedFollowUp,
 } from '../types';
 import {
   abortAgentSession,
+  AgentStreamDisconnectError,
   createAgentSession,
   deleteAgentSessionById,
   fetchAgentModelRegistry,
   fetchAgentSession,
   fetchAgentSessions,
-  steerAgentSession,
   streamAgentMessage,
   type ImageAttachment,
 } from '../api';
@@ -85,6 +85,7 @@ function registrySelection(
 const initialProvider = loadPersistedProvider();
 const initialModels = loadPersistedModels();
 import { useMarketStore } from './marketStore';
+import { mergeFollowUps, shouldAutoRunFollowUps, validateFollowUpImages } from '../utils/followUpQueue';
 
 type ContextUsage = AgentContextUsage | null;
 type SessionStatsState = AgentSessionStats | null;
@@ -114,6 +115,7 @@ interface AgentState {
   agentSessionById: Record<string, AgentSessionResponse>;
   runStateBySessionId: Record<string, SessionRunProjection>;
   draftBySessionId: Record<string, string>;
+  streamingMessageBySessionId: Record<string, AgentMessage>;
   /** The assistant message currently being streamed (dual-zone pattern). */
   streamingMessage: AgentMessage | null;
   /**
@@ -122,9 +124,8 @@ interface AgentState {
    * transcript instead of being spliced into `messages`, so their position
    * stays stable while the agent streams.
    */
-  queuedSteeringBySessionId: Record<string, QueuedSteeringMessage[]>;
-  /** Queued steering messages for the currently-active session (derived). */
-  queuedSteering: QueuedSteeringMessage[];
+  queuedFollowUpsBySessionId: Record<string, QueuedFollowUp[]>;
+  queuedFollowUps: QueuedFollowUp[];
   /**
    * Image attachments queued for the next send, keyed by session id.
    * The active session's bucket is mirrored to `pendingImages` for read-only
@@ -147,8 +148,9 @@ interface AgentState {
 
   initSessions: () => () => void;
   refreshModelRegistry: () => Promise<void>;
-  runAgentAnalysis: () => Promise<void>;
-  steerAgent: () => Promise<void>;
+  runAgentAnalysis: (sessionId?: string, options?: { includeDraft?: boolean }) => Promise<void>;
+  removeFollowUp: (id: string) => void;
+  clearFollowUps: () => void;
   abortAgent: () => Promise<void>;
   resetAgentConversation: (agentId?: string) => Promise<void>;
   resumeAgentConversation: (sessionId: string) => Promise<void>;
@@ -157,11 +159,12 @@ interface AgentState {
 
 type ActiveMirrorSource = Pick<
   AgentState,
-  'activeAgentSessionId' | 'agentSessionById' | 'agentSessionHistory' | 'runStateBySessionId' | 'draftBySessionId' | 'pendingImagesBySessionId' | 'queuedSteeringBySessionId'
+  'activeAgentSessionId' | 'agentSessionById' | 'agentSessionHistory' | 'runStateBySessionId' | 'draftBySessionId' | 'streamingMessageBySessionId' | 'pendingImagesBySessionId' | 'queuedFollowUpsBySessionId'
 >;
 
 const NEW_SESSION_PENDING_KEY = '__new__';
 let modelRegistryRequest: Promise<AgentModelRegistry> | null = null;
+const userAbortedSessions = new Set<string>();
 
 function idleRun(sessionId: string): SessionRunProjection {
   return {
@@ -226,7 +229,7 @@ function pendingImagesKey(activeId: string | null): string {
 
 function activeFields(state: ActiveMirrorSource): Pick<
   AgentState,
-  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'contextUsage' | 'sessionStats' | 'agentBusyKey' | 'pendingImages' | 'queuedSteering'
+  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'contextUsage' | 'sessionStats' | 'agentBusyKey' | 'streamingMessage' | 'pendingImages' | 'queuedFollowUps'
 > {
   const activeId = state.activeAgentSessionId;
   const run = activeId ? state.runStateBySessionId[activeId] : undefined;
@@ -239,8 +242,9 @@ function activeFields(state: ActiveMirrorSource): Pick<
     contextUsage: run?.contextUsage ?? session?.contextUsage ?? null,
     sessionStats: run?.sessionStats ?? session?.sessionStats ?? null,
     agentBusyKey: activeId && run?.status === 'running' ? activeId : null,
+    streamingMessage: activeId ? state.streamingMessageBySessionId[activeId] ?? null : null,
     pendingImages: state.pendingImagesBySessionId[key] ?? [],
-    queuedSteering: activeId ? state.queuedSteeringBySessionId[activeId] ?? [] : [],
+    queuedFollowUps: activeId ? state.queuedFollowUpsBySessionId[activeId] ?? [] : [],
   };
 }
 
@@ -257,24 +261,6 @@ function appendSessionMessage(
       messages: [...session.messages, message],
     },
   };
-}
-
-/**
- * Remove the first queued steering message matching `content` from a session's
- * pending queue. Called when the backend confirms a steered user message,
- * which is the moment it transitions from the pending region into `messages`.
- */
-function removeQueuedSteering(
-  map: Record<string, QueuedSteeringMessage[]>,
-  sessionId: string,
-  content: string,
-): Record<string, QueuedSteeringMessage[]> {
-  const queue = map[sessionId];
-  if (!queue || queue.length === 0) return map;
-  const index = queue.findIndex((item) => item.content === content);
-  if (index === -1) return map;
-  const next = [...queue.slice(0, index), ...queue.slice(index + 1)];
-  return { ...map, [sessionId]: next };
 }
 
 function cacheSession(
@@ -352,9 +338,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentSessionById: {},
   runStateBySessionId: {},
   draftBySessionId: {},
+  streamingMessageBySessionId: {},
   streamingMessage: null,
-  queuedSteeringBySessionId: {},
-  queuedSteering: [],
+  queuedFollowUpsBySessionId: {},
+  queuedFollowUps: [],
   pendingImagesBySessionId: {},
   pendingImages: [],
 
@@ -428,6 +415,26 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     delete pendingImagesBySessionId[key];
     const next = { ...s, pendingImagesBySessionId };
     return { pendingImagesBySessionId, ...activeFields(next) };
+  }),
+  // 从当前 Session 的 follow-up 队列移除指定项目。
+  removeFollowUp: (id) => set((s) => {
+    const sessionId = s.activeAgentSessionId;
+    if (!sessionId) return s;
+    const queue = s.queuedFollowUpsBySessionId[sessionId] ?? [];
+    const queuedFollowUpsBySessionId = {
+      ...s.queuedFollowUpsBySessionId,
+      [sessionId]: queue.filter((item) => item.id !== id),
+    };
+    const next = { ...s, queuedFollowUpsBySessionId };
+    return { queuedFollowUpsBySessionId, ...activeFields(next) };
+  }),
+  // 清空当前 Session 的全部 follow-up 项目。
+  clearFollowUps: () => set((s) => {
+    const sessionId = s.activeAgentSessionId;
+    if (!sessionId || !s.queuedFollowUpsBySessionId[sessionId]?.length) return s;
+    const queuedFollowUpsBySessionId = { ...s.queuedFollowUpsBySessionId, [sessionId]: [] };
+    const next = { ...s, queuedFollowUpsBySessionId };
+    return { queuedFollowUpsBySessionId, ...activeFields(next) };
   }),
   changeProviderModel: (provider, defaultModel) => {
     set({ agentProvider: provider, agentModel: defaultModel });
@@ -531,15 +538,51 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return () => { disposed = true; };
   },
 
-  runAgentAnalysis: async () => {
-    const { agentSession, agentPrompt, agentProvider, agentModel } = get();
-    let targetSessionId = agentSession?.session?.id ?? null;
+  // 发送普通消息，或在运行中将输入加入当前 Session 的 follow-up 队列。
+  runAgentAnalysis: async (requestedSessionId, options) => {
+    const state = get();
+    const agentSession = requestedSessionId ? responseForSession(state, requestedSessionId) : state.agentSession;
+    const includeDraft = options?.includeDraft !== false;
+    const agentPrompt = includeDraft
+      ? requestedSessionId ? state.draftBySessionId[requestedSessionId] ?? '' : state.agentPrompt
+      : '';
+    const agentProvider = agentSession?.session?.provider ?? state.agentProvider;
+    const agentModel = agentSession?.session?.model ?? state.agentModel;
+    let targetSessionId = requestedSessionId ?? agentSession?.session?.id ?? null;
+    let drainedFollowUps: QueuedFollowUp[] = [];
+    let restoredFollowUps = false;
+    let runFailed = false;
     // Capture pending images from the *current* session bucket. We resolve the
     // bucket again after possibly creating a new session, so that pending images
     // queued under the "__new__" placeholder are migrated to the new session id.
     const initialBucketKey = pendingImagesKey(targetSessionId);
     let idCounter = 0;
     const nextId = () => { idCounter += 1; return -(Date.now() * 100 + idCounter); };
+
+    if (targetSessionId && get().runStateBySessionId[targetSessionId]?.status === 'running') {
+      const sessionId = targetSessionId;
+      const images = [...(get().pendingImagesBySessionId[initialBucketKey] ?? [])];
+      const content = agentPrompt.trim();
+      if (!content && images.length === 0) return;
+      const queued: QueuedFollowUp = {
+        id: `follow-up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        content,
+        images,
+        createdAt: new Date().toISOString(),
+      };
+      set((s) => {
+        const queuedFollowUpsBySessionId = {
+          ...s.queuedFollowUpsBySessionId,
+          [sessionId]: [...(s.queuedFollowUpsBySessionId[sessionId] ?? []), queued],
+        };
+        const draftBySessionId = { ...s.draftBySessionId, [sessionId]: '' };
+        const pendingImagesBySessionId = { ...s.pendingImagesBySessionId };
+        delete pendingImagesBySessionId[initialBucketKey];
+        const next = { ...s, queuedFollowUpsBySessionId, draftBySessionId, pendingImagesBySessionId };
+        return { queuedFollowUpsBySessionId, draftBySessionId, pendingImagesBySessionId, ...activeFields(next) };
+      });
+      return;
+    }
 
     try {
       if (!targetSessionId) {
@@ -582,24 +625,45 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const runSessionId = targetSessionId;
       // Drain images from the bucket that now matches this run.
       const bucketKey = pendingImagesKey(runSessionId);
-      const bucketImages = get().pendingImagesBySessionId[bucketKey] ?? get().pendingImagesBySessionId[initialBucketKey] ?? [];
-      const imagesToSend = bucketImages.length > 0 ? [...bucketImages] : undefined;
-      if (imagesToSend) {
+      const bucketImages = includeDraft
+        ? get().pendingImagesBySessionId[bucketKey] ?? get().pendingImagesBySessionId[initialBucketKey] ?? []
+        : [];
+      const queuedFollowUps = get().queuedFollowUpsBySessionId[runSessionId] ?? [];
+      drainedFollowUps = queuedFollowUps;
+      const mergedFollowUps = mergeFollowUps(queuedFollowUps, agentPrompt, bucketImages);
+      const combinedImages = mergedFollowUps.images;
+      const imageError = validateFollowUpImages(combinedImages);
+      if (imageError) {
+        set((s) => {
+          const previous = s.runStateBySessionId[runSessionId] ?? idleRun(runSessionId);
+          const runStateBySessionId = replaceRunState(s.runStateBySessionId, runSessionId, {
+            ...previous,
+            status: 'error',
+            error: imageError,
+          });
+          const next = { ...s, runStateBySessionId };
+          return { runStateBySessionId, ...activeFields(next) };
+        });
+        return;
+      }
+      const imagesToSend = combinedImages.length > 0 ? combinedImages : undefined;
+      if (imagesToSend || queuedFollowUps.length > 0) {
         set((s) => {
           const pendingImagesBySessionId = { ...s.pendingImagesBySessionId };
           delete pendingImagesBySessionId[bucketKey];
           delete pendingImagesBySessionId[initialBucketKey];
-          const next = { ...s, pendingImagesBySessionId };
-          return { pendingImagesBySessionId, ...activeFields(next) };
+          const queuedFollowUpsBySessionId = { ...s.queuedFollowUpsBySessionId, [runSessionId]: [] };
+          const next = { ...s, pendingImagesBySessionId, queuedFollowUpsBySessionId };
+          return { pendingImagesBySessionId, queuedFollowUpsBySessionId, ...activeFields(next) };
         });
       }
       if (get().runStateBySessionId[runSessionId]?.status === 'running') return;
       // Allow image-only sends: when the user pastes/drops a screenshot and
       // hits Enter without any text, fill in a default prompt so the model
       // gets an instruction to act on. Mirrors what users would type by hand.
-      const trimmedPrompt = agentPrompt.trim();
-      const prompt = trimmedPrompt.length > 0
-        ? agentPrompt
+      const combinedText = mergedFollowUps.prompt;
+      const prompt = combinedText.length > 0
+        ? combinedText
         : (imagesToSend && imagesToSend.length > 0 ? '分析这张图片' : agentPrompt);
       // Bail out if there's nothing to send at all.
       if (prompt.trim().length === 0 && !imagesToSend) return;
@@ -650,15 +714,22 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             const raw = event.message;
             if (raw.role === 'assistant') {
               streamingContent = '';
-              set({ streamingMessage: {
-                id: nextId(),
-                sessionId,
-                role: 'assistant',
-                content: '',
-                createdAt: raw.createdAt ?? new Date().toISOString(),
-                metadata: null,
-                error: null,
-              }});
+              set((s) => {
+                const streamingMessageBySessionId = {
+                  ...s.streamingMessageBySessionId,
+                  [sessionId]: {
+                    id: nextId(),
+                    sessionId,
+                    role: 'assistant' as const,
+                    content: '',
+                    createdAt: raw.createdAt ?? new Date().toISOString(),
+                    metadata: null,
+                    error: null,
+                  },
+                };
+                const next = { ...s, streamingMessageBySessionId };
+                return { streamingMessageBySessionId, ...activeFields(next) };
+              });
             }
             return;
           }
@@ -667,18 +738,22 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             const delta = event.delta ?? '';
             if (delta) {
               streamingContent += delta;
-              set((s) => ({
-                streamingMessage: s.streamingMessage
-                  ? { ...s.streamingMessage, content: streamingContent }
-                  : s.streamingMessage,
-              }));
+              set((s) => {
+                const current = s.streamingMessageBySessionId[sessionId];
+                if (!current) return {};
+                const streamingMessageBySessionId = {
+                  ...s.streamingMessageBySessionId,
+                  [sessionId]: { ...current, content: streamingContent },
+                };
+                const next = { ...s, streamingMessageBySessionId };
+                return { streamingMessageBySessionId, ...activeFields(next) };
+              });
             }
             return;
           }
 
           if (event.type === 'message_end') {
             const raw = event.message;
-            const isUserMessage = (raw.role ?? 'assistant') === 'user';
             const message: AgentMessage = {
               id: nextId(),
               sessionId,
@@ -697,18 +772,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 { ...previous, status: 'running', runId: envelope.runId, lastSeq: envelope.seq },
               );
               const clearStreaming = raw.role === 'assistant';
-              // A confirmed user message means the backend just injected a
-              // queued steering message into the transcript — drop it from the
-              // pending region now that it lives in `messages`.
-              const queuedSteeringBySessionId = isUserMessage
-                ? removeQueuedSteering(s.queuedSteeringBySessionId, sessionId, message.content)
-                : s.queuedSteeringBySessionId;
-              const next = { ...s, agentSessionById, runStateBySessionId, queuedSteeringBySessionId };
+              const streamingMessageBySessionId = { ...s.streamingMessageBySessionId };
+              if (clearStreaming) delete streamingMessageBySessionId[sessionId];
+              const next = { ...s, agentSessionById, runStateBySessionId, streamingMessageBySessionId };
               return {
                 agentSessionById,
                 runStateBySessionId,
-                queuedSteeringBySessionId,
-                ...(clearStreaming ? { streamingMessage: null } : {}),
+                streamingMessageBySessionId,
                 ...activeFields(next),
               };
             });
@@ -754,6 +824,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             const stats = event.sessionStats ?? null;
             set((s) => {
               const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
+              const unexpectedError = event.error && !userAbortedSessions.has(sessionId) ? event.error : null;
+              if (unexpectedError) runFailed = true;
               const runStateBySessionId = replaceRunState(
                 s.runStateBySessionId,
                 sessionId,
@@ -763,15 +835,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                   lastSeq: envelope.seq,
                   contextUsage: { promptTokens, totalTokens },
                   sessionStats: stats,
+                  status: unexpectedError ? 'error' : previous.status,
+                  error: unexpectedError ?? previous.error,
                 },
               );
-              // The run is over: any steering still queued for this session was
-              // never injected, so clear its pending region.
-              const queuedSteeringBySessionId = s.queuedSteeringBySessionId[sessionId]?.length
-                ? { ...s.queuedSteeringBySessionId, [sessionId]: [] }
-                : s.queuedSteeringBySessionId;
-              const next = { ...s, runStateBySessionId, queuedSteeringBySessionId, streamingMessage: null };
-              return { runStateBySessionId, queuedSteeringBySessionId, streamingMessage: null, ...activeFields(next) };
+              const streamingMessageBySessionId = { ...s.streamingMessageBySessionId };
+              delete streamingMessageBySessionId[sessionId];
+              const queuedFollowUpsBySessionId = unexpectedError && !restoredFollowUps
+                ? {
+                    ...s.queuedFollowUpsBySessionId,
+                    [sessionId]: [...drainedFollowUps, ...(s.queuedFollowUpsBySessionId[sessionId] ?? [])],
+                  }
+                : s.queuedFollowUpsBySessionId;
+              if (unexpectedError) restoredFollowUps = true;
+              const next = { ...s, runStateBySessionId, queuedFollowUpsBySessionId, streamingMessageBySessionId };
+              return { runStateBySessionId, queuedFollowUpsBySessionId, streamingMessageBySessionId, ...activeFields(next) };
             });
             return;
           }
@@ -791,6 +869,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           }
 
           if (event.type === 'error') {
+            runFailed = true;
             set((s) => {
               const message: AgentMessage = {
                 id: nextId(),
@@ -808,13 +887,24 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                 sessionId,
                 { ...previous, status: 'error', error: event.error, runId: envelope.runId, lastSeq: envelope.seq },
               );
-              const next = { ...s, agentSessionById, runStateBySessionId };
-              return { agentSessionById, runStateBySessionId, streamingMessage: null, ...activeFields(next) };
+              const queuedFollowUpsBySessionId = restoredFollowUps
+                ? s.queuedFollowUpsBySessionId
+                : {
+                    ...s.queuedFollowUpsBySessionId,
+                    [sessionId]: [...drainedFollowUps, ...(s.queuedFollowUpsBySessionId[sessionId] ?? [])],
+                  };
+              restoredFollowUps = true;
+              const streamingMessageBySessionId = { ...s.streamingMessageBySessionId };
+              delete streamingMessageBySessionId[sessionId];
+              const next = { ...s, agentSessionById, runStateBySessionId, queuedFollowUpsBySessionId, streamingMessageBySessionId };
+              return { agentSessionById, runStateBySessionId, queuedFollowUpsBySessionId, streamingMessageBySessionId, ...activeFields(next) };
             });
           }
         },
       );
     } catch (error) {
+      runFailed = true;
+      const disconnected = error instanceof AgentStreamDisconnectError;
       const message = error instanceof Error ? error.message : 'agent analysis failed';
       if (targetSessionId) {
         const errorSessionId = targetSessionId;
@@ -835,8 +925,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             errorSessionId,
             { ...previous, status: 'error', error: message, pendingToolCalls: new Set<string>() },
           );
-          const next = { ...s, agentSessionById, runStateBySessionId };
-          return { agentSessionById, runStateBySessionId, streamingMessage: null, ...activeFields(next) };
+          const queuedFollowUpsBySessionId = disconnected || restoredFollowUps
+            ? s.queuedFollowUpsBySessionId
+            : {
+                ...s.queuedFollowUpsBySessionId,
+                [errorSessionId]: [...drainedFollowUps, ...(s.queuedFollowUpsBySessionId[errorSessionId] ?? [])],
+              };
+          if (!disconnected) restoredFollowUps = true;
+          const streamingMessageBySessionId = { ...s.streamingMessageBySessionId };
+          delete streamingMessageBySessionId[errorSessionId];
+          const next = { ...s, agentSessionById, runStateBySessionId, queuedFollowUpsBySessionId, streamingMessageBySessionId };
+          return { agentSessionById, runStateBySessionId, queuedFollowUpsBySessionId, streamingMessageBySessionId, ...activeFields(next) };
         });
       }
       console.error(error);
@@ -851,56 +950,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             finishedSessionId,
             { ...previous, status, pendingToolCalls: new Set<string>() },
           );
-          const next = { ...s, runStateBySessionId };
-          return { runStateBySessionId, streamingMessage: null, ...activeFields(next) };
+          const streamingMessageBySessionId = { ...s.streamingMessageBySessionId };
+          delete streamingMessageBySessionId[finishedSessionId];
+          const next = { ...s, runStateBySessionId, streamingMessageBySessionId };
+          return { runStateBySessionId, streamingMessageBySessionId, ...activeFields(next) };
         });
+        const stateAfterRun = get();
+        const wasUserAborted = userAbortedSessions.delete(finishedSessionId);
+        const outcome = wasUserAborted ? 'user-aborted' : runFailed ? 'failed' : 'completed';
+        if (shouldAutoRunFollowUps(outcome, Boolean(stateAfterRun.queuedFollowUpsBySessionId[finishedSessionId]?.length))) {
+          await get().runAgentAnalysis(finishedSessionId, { includeDraft: false });
+        }
       }
-    }
-  },
-
-  steerAgent: async () => {
-    const { activeAgentSessionId, agentPrompt, runStateBySessionId } = get();
-    if (!activeAgentSessionId) return;
-    const sessionId = activeAgentSessionId;
-    const run = runStateBySessionId[sessionId];
-    if (run?.status !== 'running') return;
-    const prompt = agentPrompt.trim();
-    if (!prompt) return;
-
-    // Optimistically add to the fixed pending region (never spliced into
-    // `messages`, so its position stays stable while the agent streams) and
-    // clear the input immediately.
-    const queued: QueuedSteeringMessage = {
-      id: `steer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      content: prompt,
-      createdAt: new Date().toISOString(),
-    };
-    set((s) => {
-      const queuedSteeringBySessionId = {
-        ...s.queuedSteeringBySessionId,
-        [sessionId]: [...(s.queuedSteeringBySessionId[sessionId] ?? []), queued],
-      };
-      const draftBySessionId = { ...s.draftBySessionId, [sessionId]: '' };
-      const next = { ...s, draftBySessionId, queuedSteeringBySessionId };
-      // activeFields derives `agentPrompt` from the (now-cleared) draft.
-      return { draftBySessionId, queuedSteeringBySessionId, ...activeFields(next) };
-    });
-
-    try {
-      await steerAgentSession(sessionId, prompt);
-    } catch (error) {
-      console.error('steer failed:', error);
-      // Roll back the optimistic pending entry by its stable id.
-      set((s) => {
-        const queue = s.queuedSteeringBySessionId[sessionId];
-        if (!queue) return {};
-        const queuedSteeringBySessionId = {
-          ...s.queuedSteeringBySessionId,
-          [sessionId]: queue.filter((item) => item.id !== queued.id),
-        };
-        const next = { ...s, queuedSteeringBySessionId };
-        return { queuedSteeringBySessionId, ...activeFields(next) };
-      });
     }
   },
 
@@ -910,8 +971,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const run = runStateBySessionId[activeAgentSessionId];
     if (run?.status !== 'running') return;
     try {
+      userAbortedSessions.add(activeAgentSessionId);
       await abortAgentSession(activeAgentSessionId);
     } catch (error) {
+      userAbortedSessions.delete(activeAgentSessionId);
       console.error('abort failed:', error);
     }
   },
@@ -1016,8 +1079,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         delete runStateBySessionId[sessionId];
         const draftBySessionId = { ...s.draftBySessionId };
         delete draftBySessionId[sessionId];
-        const queuedSteeringBySessionId = { ...s.queuedSteeringBySessionId };
-        delete queuedSteeringBySessionId[sessionId];
+        const queuedFollowUpsBySessionId = { ...s.queuedFollowUpsBySessionId };
+        delete queuedFollowUpsBySessionId[sessionId];
+        const streamingMessageBySessionId = { ...s.streamingMessageBySessionId };
+        delete streamingMessageBySessionId[sessionId];
         const activeAgentSessionId = s.activeAgentSessionId === sessionId
           ? payload.history.sessions[0]?.id ?? null
           : s.activeAgentSessionId;
@@ -1026,7 +1091,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           agentSessionById,
           runStateBySessionId,
           draftBySessionId,
-          queuedSteeringBySessionId,
+          queuedFollowUpsBySessionId,
+          streamingMessageBySessionId,
           agentSessionHistory: payload.history.sessions,
           activeAgentSessionId,
         };
@@ -1034,7 +1100,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           agentSessionById,
           runStateBySessionId,
           draftBySessionId,
-          queuedSteeringBySessionId,
+          queuedFollowUpsBySessionId,
+          streamingMessageBySessionId,
           agentSessionHistory: payload.history.sessions,
           activeAgentSessionId,
           ...activeFields(next),

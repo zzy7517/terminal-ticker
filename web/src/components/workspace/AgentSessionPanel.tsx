@@ -21,7 +21,6 @@ import {
   Zap,
 } from 'lucide-react';
 import { ProviderIcon } from '../ProviderIcon';
-import { forkSession, cloneSession } from '../../api';
 import type { AgentMessage, AgentToolCall } from '../../types';
 import { parseSlashCommand, getAutocompleteSuggestions, applyCompletion, type SlashCommand, type AutocompleteSuggestion, type CommandContext } from '../../slash-commands';
 import { useAgentStore } from '../../stores/agentStore';
@@ -210,18 +209,17 @@ export function AgentSessionPanel({
   const contextUsage = useAgentStore((s) => s.contextUsage);
   const sessionStats = useAgentStore((s) => s.sessionStats);
   const streamingMessage = useAgentStore((s) => s.streamingMessage);
-  const queuedSteering = useAgentStore((s) => s.queuedSteering);
+  const queuedFollowUps = useAgentStore((s) => s.queuedFollowUps);
 
   const pendingImages = useAgentStore((s) => s.pendingImages);
   const addPendingImage = useAgentStore((s) => s.addPendingImage);
   const removePendingImage = useAgentStore((s) => s.removePendingImage);
 
   const setAgentPrompt = useAgentStore((s) => s.setAgentPrompt);
-  const setAgentSession = useAgentStore((s) => s.setAgentSession);
-  const setAgentSessionHistory = useAgentStore((s) => s.setAgentSessionHistory);
   const changeProviderModel = useAgentStore((s) => s.changeProviderModel);
   const runAgentAnalysis = useAgentStore((s) => s.runAgentAnalysis);
-  const steerAgent = useAgentStore((s) => s.steerAgent);
+  const removeFollowUp = useAgentStore((s) => s.removeFollowUp);
+  const clearFollowUps = useAgentStore((s) => s.clearFollowUps);
   const abortAgent = useAgentStore((s) => s.abortAgent);
 
   const instruments = useMarketStore((s) => s.state?.instruments) ?? [];
@@ -232,7 +230,6 @@ export function AgentSessionPanel({
 
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerSearch, setModelPickerSearch] = useState('');
-  const [forkSelectorOpen, setForkSelectorOpen] = useState(false);
   const [autocomplete, setAutocomplete] = useState<AutocompleteSuggestion | null>(null);
   const [autocompleteIndex, setAutocompleteIndex] = useState(0);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -243,7 +240,6 @@ export function AgentSessionPanel({
   const messages = agentSession?.messages ?? [];
   const sessionId = agentSession?.session?.id ?? null;
   const isClaudeSession = agentSession?.session?.runtime === 'claude-code';
-  const sessionCapabilities = agentSession?.session?.capabilities;
   const lastMessage = messages[messages.length - 1] ?? null;
   const lastMessageToolCallCount = (lastMessage?.metadata?.toolCalls as AgentToolCall[] | undefined)?.length ?? 0;
 
@@ -258,8 +254,8 @@ export function AgentSessionPanel({
     }
     return results;
   }, [messages]);
-  const canSend = !disabled && !busy && !sessionLoading && !sessionActionKey;
-  const canSteer = sessionCapabilities?.steer === true && !disabled && busy && !!agentPrompt.trim();
+  const canSend = !disabled && !sessionLoading && !sessionActionKey
+    && (!!agentPrompt.trim() || pendingImages.length > 0);
   const sessionTime = agentSession?.session
     ? new Date(agentSession.session.updatedAt).toLocaleTimeString()
     : 'No session';
@@ -312,7 +308,7 @@ export function AgentSessionPanel({
     lastMessageToolCallCount,
     pendingToolCalls.size,
     streamingMessage?.content,
-    queuedSteering.length,
+    queuedFollowUps.length,
   ]);
 
   const enabledProviders = (modelRegistry?.providers ?? []).filter((provider) =>
@@ -408,26 +404,6 @@ export function AgentSessionPanel({
     setAgentPrompt('');
     setAutocomplete(null);
     switch (command.name) {
-      case 'fork':
-        if (sessionCapabilities?.forkFromMessage !== true) break;
-        setForkSelectorOpen(true);
-        break;
-      case 'clone':
-        if (sessionCapabilities?.cloneFromMessage !== true) break;
-        if (sessionId) {
-          void (async () => {
-            try {
-              const resp = await cloneSession(sessionId);
-              setAgentSession(resp);
-              if (resp.history?.sessions) {
-                setAgentSessionHistory(resp.history.sessions);
-              }
-            } catch (err) {
-              console.error('Clone failed:', err);
-            }
-          })();
-        }
-        break;
       case 'new':
         onNewSession();
         break;
@@ -443,7 +419,7 @@ export function AgentSessionPanel({
         }
         break;
     }
-  }, [setAgentPrompt, setAgentSession, setAgentSessionHistory, onNewSession, agentPrompt, sessionId, sessionCapabilities]);
+  }, [setAgentPrompt, onNewSession, agentPrompt]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -527,7 +503,6 @@ export function AgentSessionPanel({
             {statsTokens.output > 0 && <span className="stat-item">↓{formatTokenCount(statsTokens.output)}</span>}
             {statsTokens.cacheRead > 0 && <span className="stat-item">R{formatTokenCount(statsTokens.cacheRead)}</span>}
             {statsTokens.cacheWrite > 0 && <span className="stat-item">W{formatTokenCount(statsTokens.cacheWrite)}</span>}
-            {(sessionStats?.cost ?? 0) > 0 && <span className="stat-item">${sessionStats!.cost.toFixed(3)}</span>}
           </span>
         )}
       </div>
@@ -613,49 +588,7 @@ export function AgentSessionPanel({
           )}
         </div>}
       </div>
-      {/* Fork selector: replaces transcript when open */}
-      {forkSelectorOpen && sessionId ? (() => {
-        const userMsgs = (agentSession?.messages ?? []).filter(m => m.role === 'user');
-        return (
-          <div className="fork-selector-panel">
-            <div className="fork-selector-header">
-              <span>Fork from message</span>
-              <button type="button" onClick={() => setForkSelectorOpen(false)} className="fork-selector-close">✕</button>
-            </div>
-            <div className="fork-selector-list">
-              {userMsgs.length === 0 && <div className="empty-state sm">No user messages</div>}
-              {userMsgs.map((msg) => (
-                <button
-                  key={String(msg.id)}
-                  type="button"
-                  className="fork-selector-item"
-                  onClick={() => {
-                    setForkSelectorOpen(false);
-                    void (async () => {
-                      try {
-                        const resp = await forkSession(sessionId, String(msg.id));
-                        setAgentSession(resp);
-                        if (resp.history?.sessions) {
-                          setAgentSessionHistory(resp.history.sessions);
-                        }
-                        if (resp.prompt) {
-                          setAgentPrompt(resp.prompt);
-                        }
-                      } catch (err) {
-                        console.error('Fork failed:', err);
-                      }
-                    })();
-                  }}
-                >
-                  <span className="fork-selector-preview">
-                    {msg.content.length > 80 ? msg.content.slice(0, 80) + '…' : msg.content}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })() : <div
+      <div
         className="session-transcript"
         ref={transcriptRef}
         onScroll={(event) => {
@@ -695,12 +628,19 @@ export function AgentSessionPanel({
             )}
           </div>
         )}
-        {!sessionLoading && queuedSteering.length > 0 && (
-          <div className="session-steering-queue">
-            {queuedSteering.map((item) => (
-              <div key={item.id} className="session-steering-item">
+        {!sessionLoading && queuedFollowUps.length > 0 && (
+          <div className="session-follow-up-queue">
+            <div className="session-follow-up-head">
+              <span>{queuedFollowUps.length} follow-up{queuedFollowUps.length === 1 ? '' : 's'} queued</span>
+              <button type="button" onClick={() => clearFollowUps()} className="session-follow-up-clear">Clear</button>
+            </div>
+            {queuedFollowUps.map((item) => (
+              <div key={item.id} className="session-follow-up-item">
                 <span className="badge sm warning">queued</span>
-                <span className="session-steering-text">{item.content}</span>
+                <span className="session-follow-up-text">{item.content || `${item.images.length} image${item.images.length === 1 ? '' : 's'}`}</span>
+                <button type="button" onClick={() => removeFollowUp(item.id)} className="session-follow-up-remove" title="Remove follow-up">
+                  <X size={12} />
+                </button>
               </div>
             ))}
           </div>
@@ -711,7 +651,7 @@ export function AgentSessionPanel({
             <span>No turns in this agent session.</span>
           </div>
         )}
-      </div>}
+      </div>
       <div className="session-compose" onDrop={handleDrop} onDragOver={handleDragOver}>
         {pendingImages.length > 0 && (
           <div className="session-pending-images">
@@ -777,8 +717,7 @@ export function AgentSessionPanel({
                 dispatchSlashCommand(parsed.command, parsed.args);
                 return;
               }
-              if (canSteer) void steerAgent();
-              else if (canSend) void runAgentAnalysis();
+              if (canSend) void runAgentAnalysis();
             }
           }}
           onKeyUp={(event) => {
@@ -787,7 +726,7 @@ export function AgentSessionPanel({
           }}
           placeholder={
             busy
-              ? isClaudeSession ? "Claude Code is running. Esc to abort." : "Type to steer agent. Esc to abort."
+              ? "Queue a follow-up. Esc to abort the current run."
               : pendingImages.length > 0
                 ? "Add a question, or send the image alone. / for commands, @ for instruments."
                 : "Ask the agent. / for commands, @ for instruments."
@@ -842,18 +781,17 @@ export function AgentSessionPanel({
             }}
           />
           <button
-            aria-label={busy ? (canSteer ? 'Steer Agent' : 'Analyzing') : 'Ask Agent'}
+            aria-label={busy ? 'Queue Follow-up' : 'Ask Agent'}
             className="shell-button primary lg session-submit"
             type="button"
             onClick={() => {
-              if (canSteer) void steerAgent();
-              else void runAgentAnalysis();
+              void runAgentAnalysis();
             }}
-            disabled={!canSend && !canSteer}
+            disabled={!canSend}
           >
-            {busy && !canSteer ? <Loader2 className="spin" size={16} /> : busy ? <Zap size={16} /> : <Bot size={16} />}
+            {busy ? <Zap size={16} /> : <Bot size={16} />}
             <span className="session-submit-label">
-              {busy ? (canSteer ? 'Steer Agent' : 'Analyzing') : 'Ask Agent'}
+              {busy ? 'Queue Follow-up' : 'Ask Agent'}
             </span>
           </button>
         </div>

@@ -18,7 +18,7 @@ import { resolveInstruments, MarketInstrument } from "../market_data/router.js";
 import { serializeState } from "./serializers.js";
 import { CronScheduler } from "../cron/scheduler.js";
 import { CronJobStore } from "../cron/job_store.js";
-import type { ActiveRunHandle } from "../agent/runtime/types.js";
+import type { ActiveRuntimeRun } from "../agent/runtime/types.js";
 import { AgentModelRegistry } from "../agent/runtime/pi/models/registry.js";
 import {
   buildModelRuntimeSnapshot,
@@ -55,10 +55,10 @@ export class AppRuntime {
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   readonly pendingAgentSnapshots = new Map<string, SessionAgentSnapshot>();
   readonly agentStore: AgentStore;
-  /** Session-level mutation lock covering setup, streaming, fork/clone, and delete. */
+  /** Session-level mutation lock covering setup, streaming, and delete. */
   readonly lockedAgentSessions = new Set<string>();
-  /** Active agent instances keyed by session ID. Allows steering/follow-up injection. */
-  readonly activeAgents = new Map<string, ActiveRunHandle>();
+  /** Active agent instances keyed by session ID for abort control. */
+  readonly activeAgents = new Map<string, ActiveRuntimeRun>();
   readonly mcpRunGrants = new McpRunGrantStore();
   readonly claudeSessions = new ClaudeSessionStore();
   private _modelRuntimeSnapshot: ModelRuntimeSnapshot;

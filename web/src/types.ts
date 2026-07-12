@@ -98,10 +98,7 @@ export interface AgentRuntimeStatus {
   capabilities: {
     streaming: boolean;
     abort: boolean;
-    steer: boolean;
     resume: boolean;
-    forkFromMessage: boolean;
-    cloneFromMessage: boolean;
     imageInput: boolean;
     toolProgress: boolean;
   };
@@ -137,7 +134,7 @@ export interface AgentContextUsage {
 }
 
 /**
- * Cumulative session token and cost statistics.
+ * Cumulative session token statistics.
  */
 export interface AgentSessionStats {
   tokens: {
@@ -147,7 +144,6 @@ export interface AgentSessionStats {
     cacheWrite: number;
     total: number;
   };
-  cost: number;
 }
 
 export interface AgentSessionSummary extends AgentSession {
@@ -168,16 +164,12 @@ export interface AgentMessage {
   error: string | null;
 }
 
-/**
- * A steering message that has been sent to a running agent but not yet
- * confirmed (injected into the transcript) by the backend. These are rendered
- * in a fixed pending region below the transcript — never spliced into the
- * `messages` array — so their position stays stable while the agent streams.
- */
-export interface QueuedSteeringMessage {
+/** A client-side follow-up queued while the Session has an active run. */
+export interface QueuedFollowUp {
   /** Stable client-side id for React keys. */
   id: string;
   content: string;
+  images: Array<{ data: string; mimeType: string }>;
   createdAt: string;
 }
 
