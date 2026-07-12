@@ -6,8 +6,8 @@
  */
 
 import type { CronJobConfig } from "../config/index.js";
-import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
-import { createPiAgentRuntime } from "../agent/runtime/pi/runtime.js";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
 import { agentConfigForModelSelection } from "../agent/runtime/pi/models/runtime.js";
 import { createPiSession, piProviderName } from "../agent/runtime/pi/sessions.js";
 import { buildMarketTools } from "../agent/tools/market.js";
@@ -142,33 +142,35 @@ export async function executeCronJob(input: {
     }
     const maxIterations = job.maxIterations ?? DEFAULT_CRON_MAX_ITERATIONS;
 
-    const agent = await createPiAgentRuntime({
+    const agent = await new PiSdkRuntime().start({
       config: agentConfig,
       modelRuntime,
       systemPrompt,
       tools,
       maxTurns: maxIterations,
       sessionManager: cronMgr,
+      prompt: job.userMessage,
     });
 
     agent.subscribe((event) => {
-      if (event.type === "turn_end") {
+      if (event.type === "turn-end") {
         iterations += 1;
-        const message = event.message as AssistantMessage;
-        if (message.errorMessage) {
-          error = message.errorMessage;
+        const message = event.message;
+        if (message.error) {
+          error = message.error;
         }
         // Capture text content from this assistant turn. The final turn's
         // text is what we surface as the cron run output.
         const text = message.content
-          .filter((c): c is TextContent => c.type === "text")
+          .filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
           .map((c) => c.text)
           .join("");
         if (text) content = text;
       }
     });
 
-    await agent.prompt(job.userMessage);
+    const result = await agent.result;
+    if (result.error) error = result.error;
 
   } catch (caught) {
     error = caught instanceof Error ? caught.message : String(caught);

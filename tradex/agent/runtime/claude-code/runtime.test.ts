@@ -80,7 +80,17 @@ describe("Claude Code runtime protocol", () => {
         usage: { input_tokens: 12, output_tokens: 4, cache_read_input_tokens: 3, cache_creation_input_tokens: 0 },
       },
     }))).toEqual([
-      { type: "text-delta", delta: "BTC is firm." },
+      {
+        type: "message-update",
+        message: {
+          id: "claude:assistant",
+          role: "assistant",
+          content: [{ type: "text", text: "BTC is firm." }],
+          timestamp: expect.any(Number),
+          usage: { model: "claude-sonnet", input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        delta: "BTC is firm.",
+      },
       { type: "tool-start", callId: "call-1", name: "get_market_context", args: { symbol: "BTC" } },
       { type: "usage", model: "claude-sonnet", input: 12, output: 4, cacheRead: 3, cacheWrite: 0 },
     ]);
@@ -88,14 +98,24 @@ describe("Claude Code runtime protocol", () => {
     expect(parseClaudeLine(JSON.stringify({
       type: "user",
       message: { role: "user", content: [{ type: "tool_result", tool_use_id: "call-1", content: "ok", is_error: false }] },
-    }))).toEqual([{ type: "tool-end", callId: "call-1", output: "ok", isError: false }]);
+    }))).toEqual([{
+      type: "tool-result",
+      callId: "call-1",
+      name: "unknown",
+      result: { content: [{ type: "text", text: "ok" }] },
+      isError: false,
+    }]);
   });
 
   it("projects Claude stream_event text deltas", () => {
     expect(parseClaudeLine(JSON.stringify({
       type: "stream_event",
       event: { type: "content_block_delta", delta: { type: "text_delta", text: "live" } },
-    }))).toEqual([{ type: "text-delta", delta: "live" }]);
+    }))).toEqual([{
+      type: "message-update",
+      message: { id: "claude:assistant", role: "assistant", content: [], timestamp: expect.any(Number) },
+      delta: "live",
+    }]);
   });
 
   it("classifies malformed protocol lines instead of silently dropping them", () => {
@@ -146,9 +166,9 @@ console.log(JSON.stringify({type:"result",session_id:"11111111-1111-4111-8111-11
     const runtime = new ClaudeCodeRuntime({ executablePath: executable, mcpUrl: "http://127.0.0.1/mcp/tradex", grants: new McpRunGrantStore() });
     const run = await runtime.start({ tradexSessionId: "s1", cwd, prompt: "go", instructions: "rules", registry: new ToolRegistry() });
     const events: string[] = [];
-    run.subscribe((event) => events.push(event.type));
+    run.subscribe((event) => { events.push(event.type); });
     const result = await run.result;
-    expect(events).toEqual(["run-start", "text-delta", "run-end"]);
+    expect(events).toEqual(["run-start", "message-update", "run-end"]);
     expect(result).toMatchObject({ output: "done", nativeSessionId: "11111111-1111-4111-8111-111111111111", error: null });
   });
 
@@ -165,9 +185,9 @@ console.log(JSON.stringify({type:"result",result:"fast",is_error:false}));
     const run = await runtime.start({ tradexSessionId: "s1", cwd, prompt: "go", instructions: "rules", registry: new ToolRegistry() });
     await new Promise((resolve) => setTimeout(resolve, 100));
     const events: string[] = [];
-    run.subscribe((event) => events.push(event.type));
+    run.subscribe((event) => { events.push(event.type); });
     await run.result;
-    expect(events).toEqual(["run-start", "text-delta", "run-end"]);
+    expect(events).toEqual(["run-start", "message-update", "run-end"]);
   });
 
   it("stops an inactive Claude process and classifies the timeout", async () => {

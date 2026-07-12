@@ -55,7 +55,7 @@ export function parseClaudeLine(line: string): RuntimeEvent[] {
   ) {
     // partial message 只负责增量文本；最终 assistant/result 事件由后续分支补齐。
     return typeof value.event.delta.text === "string"
-      ? [{ type: "text-delta", delta: value.event.delta.text }]
+      ? [{ type: "message-update", message: claudeAssistantMessage("", value.message?.model), delta: value.event.delta.text }]
       : [{ type: "runtime-error", code: "invalid_stream_delta", message: "Claude Code text delta is missing text" }];
   }
   if (value.type === "result") {
@@ -66,7 +66,7 @@ export function parseClaudeLine(line: string): RuntimeEvent[] {
       type: "run-end",
       ...(value.session_id ? { nativeSessionId: value.session_id } : {}),
       result: value.result,
-      isError: value.is_error === true,
+      status: value.is_error === true ? "error" : "completed",
     }];
   }
   const content = value.message?.content ?? [];
@@ -79,7 +79,11 @@ export function parseClaudeLine(line: string): RuntimeEvent[] {
       if (block.type === "text") {
         if (typeof block.text !== "string") {
           events.push({ type: "runtime-error", code: "invalid_text_block", message: "Claude Code text block is missing text" });
-        } else if (block.text) events.push({ type: "text-delta", delta: block.text });
+        } else if (block.text) events.push({
+          type: "message-update",
+          message: claudeAssistantMessage(block.text, value.message.model),
+          delta: block.text,
+        });
       }
       if (block.type === "tool_use") {
         if (!block.id || !block.name) {
@@ -114,15 +118,27 @@ export function parseClaudeLine(line: string): RuntimeEvent[] {
     return content.flatMap((block): RuntimeEvent[] => {
       if (block.type !== "tool_result") return [];
       if (!block.tool_use_id) return [{ type: "runtime-error", code: "invalid_tool_result", message: "Claude Code tool_result block is missing tool_use_id" }];
+      const output = contentToText(block.content);
       return [{
-        type: "tool-end",
+        type: "tool-result",
         callId: block.tool_use_id,
-        output: contentToText(block.content),
+        name: "unknown",
+        result: { content: output ? [{ type: "text", text: output }] : [] },
         isError: block.is_error === true,
       }];
     });
   }
   return [];
+}
+
+function claudeAssistantMessage(content: string, model = ""): Extract<RuntimeEvent, { type: "message-update" }>["message"] {
+  return {
+    id: "claude:assistant",
+    role: "assistant",
+    content: content ? [{ type: "text", text: content }] : [],
+    timestamp: Date.now(),
+    ...(model ? { usage: { model, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } : {}),
+  };
 }
 
 /** 读取原始 JSONL 的事件类型，用于处理 partial 文本去重。 */

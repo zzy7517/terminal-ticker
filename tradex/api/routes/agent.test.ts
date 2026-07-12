@@ -146,7 +146,7 @@ describe("Agent HTTP API", () => {
     expect(appRuntime.pendingSessionManagers.size).toBe(0);
   });
 
-  it("capability-gates fork and clone for Claude Code Sessions", async () => {
+  it("does not expose removed fork, clone, or steer routes", async () => {
     const appRuntime = runtime();
     const metadata = appRuntime.claudeSessions.create({
       title: "Claude",
@@ -161,17 +161,13 @@ describe("Agent HTTP API", () => {
       },
     });
 
-    for (const endpoint of ["fork", "clone"]) {
+    for (const endpoint of ["fork", "clone", "steer"]) {
       const response = await agentRoutes(appRuntime).request(`/api/agent/sessions/${metadata.id}/${endpoint}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ entryId: "message-id" }),
       });
-      expect(response.status).toBe(409);
-      await expect(response.json()).resolves.toMatchObject({
-        detail: expect.stringContaining("not support"),
-        code: "runtime_capability_unsupported",
-      });
+      expect(response.status).toBe(404);
     }
   });
 

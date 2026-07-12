@@ -21,7 +21,9 @@ export function memoryLog(
   else console.info(line);
 }
 
-export function usageFields(usage: Usage | null | undefined): Record<string, number> {
+export function usageFields(
+  usage: Pick<Usage, "input" | "output" | "cacheRead" | "cacheWrite" | "totalTokens"> | null | undefined,
+): Record<string, number> {
   if (!usage) return {};
   return {
     input_tokens: usage.input,

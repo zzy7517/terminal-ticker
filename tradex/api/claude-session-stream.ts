@@ -7,10 +7,10 @@ import { MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
 import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claude-code/runtime.js";
 import type { RuntimeEvent } from "../agent/runtime/types.js";
-import { AgentSseWriter } from "./agent_sse.js";
 import { buildTradexToolRegistry } from "./agent_tools.js";
 import { sessionHistory, sessionResponse } from "./helpers.js";
 import type { AppRuntime } from "./runtime.js";
+import { streamSessionRun } from "./session-stream.js";
 
 export interface ClaudeSessionStreamInput {
   runtime: AppRuntime;
@@ -38,46 +38,29 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
   const { runtime, sessionId, requestImages } = input;
   const metadata = runtime.claudeSessions.getMetadata(sessionId);
   if (!metadata) return Response.json({ detail: "agent session not found" }, { status: 404 });
-  if (runtime.lockedAgentSessions.has(sessionId)) {
-    return Response.json({ detail: "an agent run is already active for this session" }, { status: 409 });
-  }
-  runtime.lockedAgentSessions.add(sessionId);
-
   let prompt = input.message;
-  try {
-    const attachmentPaths = await saveClaudeAttachments(runtime, sessionId, requestImages);
-    prompt = promptWithAttachments(prompt, attachmentPaths);
-    runtime.claudeSessions.appendMessage(sessionId, {
-      role: "user",
-      content: input.message,
-      metadata: attachmentMetadata(requestImages, attachmentPaths),
-    });
-  } catch (error) {
-    runtime.lockedAgentSessions.delete(sessionId);
-    return Response.json({ detail: error instanceof Error ? error.message : String(error) }, { status: 400 });
-  }
 
-  const runId = crypto.randomUUID();
-  const sse = new AgentSseWriter(sessionId, runId);
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (event: Record<string, unknown>) => sse.send(controller, event);
-      send({ type: "agent_start" });
+  const assistantClientId = `assistant:${crypto.randomUUID()}`;
+  let assistantStarted = false;
+  let assistantText = "";
+  let runError: string | null = null;
+  let runErrorCode: string | null = null;
+  let assistantPersisted = false;
+  let model = metadata.snapshot.model;
+  const usage: UsageProjection = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const toolCalls = new Map<string, ToolCallProjection>();
 
-      const assistantClientId = `assistant:${crypto.randomUUID()}`;
-      let assistantStarted = false;
-      let assistantText = "";
-      let runError: string | null = null;
-      let runErrorCode: string | null = null;
-      let model = metadata.snapshot.model;
-      const usage: UsageProjection = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-      const toolCalls = new Map<string, ToolCallProjection>();
-
+  return streamSessionRun({
+    runtime,
+    sessionId,
+    async prepare() {
+      const attachmentPaths = await saveClaudeAttachments(runtime, sessionId, requestImages);
+      prompt = promptWithAttachments(prompt, attachmentPaths);
+      const availability = await requireClaudeCode();
+      const tools = await buildClaudeTools(runtime, sessionId);
+      let run;
       try {
-        runtime.claudeSessions.beginRun(sessionId);
-        const availability = await requireClaudeCode();
-        const tools = await buildClaudeTools(runtime, sessionId);
-        const run = await new ClaudeCodeRuntime({
+        run = await new ClaudeCodeRuntime({
           executablePath: availability.executablePath,
           mcpUrl: claudeMcpUrl(input.requestUrl),
           grants: runtime.mcpRunGrants,
@@ -91,13 +74,25 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
           model: metadata.snapshot.model,
           effort: metadata.snapshot.reasoningEffort,
         });
-        runtime.activeAgents.set(sessionId, run);
-        if (run.nativeSessionId) runtime.claudeSessions.setNativeSessionId(sessionId, run.nativeSessionId);
-
-        const unsubscribe = run.subscribe((event: RuntimeEvent) => {
+        runtime.claudeSessions.beginRun(sessionId);
+        runtime.claudeSessions.appendMessage(sessionId, {
+          role: "user",
+          content: input.message,
+          metadata: attachmentMetadata(requestImages, attachmentPaths),
+        });
+      } catch (error) {
+        await run?.abort();
+        await run?.result;
+        runtime.claudeSessions.endRun(sessionId, { status: "error", error: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
+      if (run.nativeSessionId) runtime.claudeSessions.setNativeSessionId(sessionId, run.nativeSessionId);
+      return {
+        run,
+        onEvent(event: RuntimeEvent, send: (event: Record<string, unknown>) => void) {
           if (event.type === "run-start" && event.nativeSessionId) {
             runtime.claudeSessions.setNativeSessionId(sessionId, event.nativeSessionId);
-          } else if (event.type === "text-delta") {
+          } else if (event.type === "message-update" && event.message.role === "assistant") {
             if (!assistantStarted) {
               assistantStarted = true;
               send({ type: "message_start", message: claudeMessageDto(sessionId, assistantClientId) });
@@ -112,13 +107,17 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
             const toolCall = { id: event.callId, name: event.name, arguments: event.args };
             toolCalls.set(event.callId, toolCall);
             send({ type: "tool_execution_start", toolCall });
-          } else if (event.type === "tool-end") {
+          } else if (event.type === "tool-result") {
             const toolCall = toolCalls.get(event.callId) ?? { id: event.callId, name: "unknown", arguments: {} };
+            const output = event.result.content
+              .filter((item): item is Extract<typeof item, { type: "text" }> => item.type === "text")
+              .map((item) => item.text)
+              .join("");
             runtime.claudeSessions.appendMessage(sessionId, {
               role: "toolResult",
-              content: event.output,
+              content: output,
               metadata: { toolCallId: event.callId, toolName: toolCall.name, error: event.isError },
-              error: event.isError ? event.output : null,
+              error: event.isError ? output : null,
             });
             send({
               type: "tool_execution_end",
@@ -126,7 +125,7 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
               toolResult: {
                 callId: event.callId,
                 name: toolCall.name,
-                output: event.output.slice(0, 2_000),
+                output: output.slice(0, 2_000),
                 error: event.isError,
               },
             });
@@ -137,13 +136,11 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
             usage.cacheRead += event.cacheRead;
             usage.cacheWrite += event.cacheWrite;
           }
-        });
-
-        const result = await run.result;
-        unsubscribe();
-        runError = result.error;
-        runErrorCode = result.errorCode ?? null;
-        runtime.claudeSessions.endRun(sessionId, {
+        },
+        async complete(result, send) {
+          runError = result.error;
+          runErrorCode = result.errorCode ?? null;
+          runtime.claudeSessions.endRun(sessionId, {
           status: runErrorCode === "aborted" ? "cancelled" : runError ? "error" : "completed",
           error: runError,
         });
@@ -166,6 +163,7 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
             toolCalls: [...toolCalls.values()],
           },
         });
+        assistantPersisted = true;
         if (!assistantStarted) {
           send({ type: "message_start", message: claudeMessageDto(sessionId, assistantClientId) });
           if (assistantText) {
@@ -183,38 +181,34 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
           errorCode: runErrorCode,
           totalTokens,
           promptTokens: usage.input,
-          sessionStats: { tokens: { ...usage, total: totalTokens }, cost: 0 },
+          sessionStats: { tokens: { ...usage, total: totalTokens } },
         });
-        send({
+          send({
           type: "session_update",
           session: await sessionResponse(runtime, sessionId),
           history: await sessionHistory(runtime),
           state: await runtime.state(),
         });
-      } catch (error) {
-        if (error instanceof ClaudeSessionStreamError) runErrorCode = error.code;
-        runError = error instanceof Error ? error.message : String(error);
-        runtime.claudeSessions.endRun(sessionId, { status: "error", error: runError });
-        runtime.claudeSessions.appendMessage(sessionId, {
-          role: "assistant",
-          content: assistantText,
-          error: runError,
-          metadata: { errorCode: runErrorCode, toolCalls: [...toolCalls.values()] },
-        });
-        send({ type: "error", code: runErrorCode ?? "runtime_failure", error: runError });
-        send({ type: "agent_end", error: runError, errorCode: runErrorCode, totalTokens: 0, promptTokens: 0, sessionStats: null });
-      } finally {
-        runtime.activeAgents.delete(sessionId);
-        runtime.lockedAgentSessions.delete(sessionId);
-        try { controller.close(); } catch { /* stream already cancelled */ }
-      }
-    },
-    cancel() {
-      sse.cancel();
-      runtime.activeAgents.get(sessionId)?.abort();
+        },
+        fail(error, send) {
+          if (error instanceof ClaudeSessionStreamError) runErrorCode = error.code;
+          runError = error instanceof Error ? error.message : String(error);
+          runtime.claudeSessions.endRun(sessionId, { status: "error", error: runError });
+          if (!assistantPersisted) {
+            runtime.claudeSessions.appendMessage(sessionId, {
+              role: "assistant",
+              content: assistantText,
+              error: runError,
+              metadata: { errorCode: runErrorCode, toolCalls: [...toolCalls.values()] },
+            });
+            assistantPersisted = true;
+          }
+          send({ type: "error", code: runErrorCode ?? "runtime_failure", error: runError });
+          send({ type: "agent_end", error: runError, errorCode: runErrorCode, totalTokens: 0, promptTokens: 0, sessionStats: null });
+        },
+      };
     },
   });
-  return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
 }
 
 /** 校验 Claude 图片附件的数量、格式、base64 内容和大小。 */
@@ -329,9 +323,6 @@ function claudeMessageDto(sessionId: string, clientId: string): Record<string, u
     createdAt: new Date().toISOString(),
     metadata: { toolCalls: [] },
     error: null,
-    entryId: null,
-    parentId: null,
-    entryType: "message",
   };
 }
 

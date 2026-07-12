@@ -9,6 +9,13 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type {
+  ActiveRuntimeRun,
+  RuntimeEvent,
+  RuntimeRunResult,
+} from "../types.js";
+import { PI_SDK_CAPABILITIES } from "../capabilities.js";
+import { piEventToRuntimeEvents } from "./events.js";
+import type {
   AgentEvent,
   AgentMessage,
   AgentToolResult,
@@ -25,13 +32,117 @@ import {
 
 export interface ActiveAgentRun {
   abort(): void | Promise<void>;
-  steer?(message: AgentMessage): void | Promise<void>;
 }
 
 export interface PiAgentRuntime extends ActiveAgentRun {
   messages: AgentMessage[];
-  subscribe(listener: (event: AgentEvent) => void): () => void;
+  subscribe(listener: (event: AgentEvent) => void | Promise<void>): () => void;
   prompt(text: string, images?: ImageContent[]): Promise<void>;
+}
+
+export type PiRuntimeRunInput = Parameters<typeof createPiAgentRuntime>[0] & {
+  prompt: string;
+  images?: ImageContent[];
+};
+
+export class PiSdkRuntime {
+  readonly id = "pi" as const;
+  readonly capabilities = PI_SDK_CAPABILITIES;
+
+  async start(input: PiRuntimeRunInput): Promise<ActiveRuntimeRun> {
+    const agent = await createPiAgentRuntime(input);
+    return new PiActiveRuntimeRun(agent, input.prompt, input.images);
+  }
+}
+
+class PiActiveRuntimeRun implements ActiveRuntimeRun {
+  readonly runtime = "pi" as const;
+  readonly capabilities = PI_SDK_CAPABILITIES;
+  readonly result: Promise<RuntimeRunResult>;
+  private readonly listeners = new Set<(event: RuntimeEvent, signal: AbortSignal) => void | Promise<void>>();
+  private readonly abortController = new AbortController();
+  private readonly pendingEvents: RuntimeEvent[] = [];
+  private hasSubscribed = false;
+  private delivery = Promise.resolve();
+  private listenerError: Error | null = null;
+  private turnIndex = 0;
+
+  constructor(agent: PiAgentRuntime, prompt: string, images?: ImageContent[]) {
+    let output = "";
+    let error: string | null = null;
+    let sawRunEnd = false;
+    agent.subscribe(async (event) => {
+      if (event.type === "turn_start") this.turnIndex += 1;
+      for (const convertedEvent of piEventToRuntimeEvents(event, `turn:${this.turnIndex}`)) {
+        const runtimeEvent = convertedEvent.type === "run-end" && this.abortController.signal.aborted
+          ? { ...convertedEvent, status: "aborted" as const }
+          : convertedEvent;
+        if (runtimeEvent.type === "run-end") sawRunEnd = true;
+        if (runtimeEvent.type === "message-end" && runtimeEvent.message.role === "assistant") {
+          output = runtimeEvent.message.content
+            .filter((item): item is TextContent => item.type === "text")
+            .map((item) => item.text)
+            .join("");
+          error = runtimeEvent.message.error ?? null;
+        }
+        if (!this.hasSubscribed) this.pendingEvents.push(runtimeEvent);
+        else for (const listener of this.listeners) this.deliver(runtimeEvent, listener);
+      }
+    });
+    this.result = new Promise((resolve) => {
+      queueMicrotask(() => {
+        void agent.prompt(prompt, images).then(
+          async () => {
+            if (!sawRunEnd) this.emit({
+              type: "run-end",
+              result: output,
+              status: this.abortController.signal.aborted ? "aborted" : error ? "error" : "completed",
+            });
+            await this.delivery;
+            resolve(this.listenerError
+              ? { output, error: this.listenerError.message, errorCode: "runtime_listener_failed" }
+              : this.abortController.signal.aborted
+                ? { output, error: "Pi run was aborted", errorCode: "aborted" }
+                : { output, error });
+          },
+          async (cause) => {
+            const aborted = this.abortController.signal.aborted;
+            const detail = aborted ? "Pi run was aborted" : cause instanceof Error ? cause.message : String(cause);
+            if (!sawRunEnd) this.emit({ type: "run-end", result: output, status: aborted ? "aborted" : "error" });
+            await this.delivery;
+            resolve({ output, error: detail, errorCode: aborted ? "aborted" : "runtime_failure" });
+          },
+        );
+      });
+    });
+    this.abort = () => {
+      this.abortController.abort();
+      return agent.abort();
+    };
+  }
+
+  subscribe(listener: (event: RuntimeEvent, signal: AbortSignal) => void | Promise<void>): () => void {
+    this.listeners.add(listener);
+    if (!this.hasSubscribed) {
+      this.hasSubscribed = true;
+      const pending = this.pendingEvents.splice(0);
+      for (const event of pending) this.deliver(event, listener);
+    }
+    return () => this.listeners.delete(listener);
+  }
+
+  abort: () => void | Promise<void>;
+
+  private emit(event: RuntimeEvent): void {
+    if (!this.hasSubscribed) this.pendingEvents.push(event);
+    else for (const listener of this.listeners) this.deliver(event, listener);
+  }
+
+  private deliver(event: RuntimeEvent, listener: (event: RuntimeEvent, signal: AbortSignal) => void | Promise<void>): void {
+    this.delivery = this.delivery.then(() => listener(event, this.abortController.signal)).catch((cause) => {
+      this.listenerError ??= cause instanceof Error ? cause : new Error(String(cause));
+    });
+  }
 }
 
 export async function createPiAgentRuntime(input: {
@@ -119,7 +230,7 @@ export async function createPiAgentRuntime(input: {
           event.type === "agent_start" ||
           event.type === "agent_end"
         ) {
-          listener(event as AgentEvent);
+          return listener(event as AgentEvent);
         }
       });
     },
@@ -129,16 +240,6 @@ export async function createPiAgentRuntime(input: {
         expandPromptTemplates: false,
         source: "rpc",
       });
-    },
-    async steer(message) {
-      const content = message.role === "user" ? message.content : "";
-      const text = typeof content === "string"
-        ? content
-        : content.filter((item): item is TextContent => item.type === "text").map((item) => item.text).join("");
-      const images = typeof content === "string"
-        ? undefined
-        : content.filter((item): item is ImageContent => item.type === "image");
-      await session.steer(text, images);
     },
     abort() {
       void session.abort();

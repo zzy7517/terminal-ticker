@@ -1,11 +1,10 @@
 import type { AgentConfig } from "../../config/index.js";
 import { nowMs } from "../../db.js";
-import { createPiAgentRuntime } from "../../agent/runtime/pi/runtime.js";
+import { PiSdkRuntime } from "../../agent/runtime/pi/runtime.js";
 import {
   agentConfigForModelSelection,
   type ModelRuntimeSnapshot,
 } from "../../agent/runtime/pi/models/runtime.js";
-import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import { ToolRegistry, type ToolDefinition } from "../../agent/tools/registry.js";
 import { DEFAULT_RETRY_DELAY_MS, type MemoryStateStore, type Stage1Output } from "../state.js";
 import type { MemoryWorkspaceDiff } from "../workspace.js";
@@ -514,7 +513,14 @@ export class Phase2Runner {
     let turns = 0;
     let finalError: string | null = null;
     let finalText = "";
-    const agent = await createPiAgentRuntime({
+    const totalUsage = {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+    };
+    const agent = await new PiSdkRuntime().start({
       config: agentConfig,
       modelRuntime: this.modelRuntimeSnapshot,
       systemPrompt: PHASE2_SYSTEM_PROMPT,
@@ -526,23 +532,32 @@ export class Phase2Runner {
           throw new Error(`memory rate-limit guard skipped agent request: ${allowed.reason}`);
         }
       },
+      prompt: this._consolidationUserPrompt(outputs, diff, agentConfig),
     });
 
     agent.subscribe((event) => {
-      if (event.type !== "turn_end") return;
+      if (event.type !== "turn-end") return;
       turns += 1;
-      const message = event.message as AssistantMessage;
-      finalError = message.errorMessage ?? finalError;
-      if (message.errorMessage) this.rateLimitGuard.noteError(message.errorMessage);
+      const message = event.message;
+      finalError = message.error ?? finalError;
+      if (message.error) this.rateLimitGuard.noteError(message.error);
       const text = message.content
-        .filter((item): item is TextContent => item.type === "text")
+        .filter((item): item is Extract<typeof item, { type: "text" }> => item.type === "text")
         .map((item) => item.text)
         .join("");
       if (text) finalText = text;
+      if (message.usage) {
+        totalUsage.input += message.usage.input;
+        totalUsage.output += message.usage.output;
+        totalUsage.cacheRead += message.usage.cacheRead;
+        totalUsage.cacheWrite += message.usage.cacheWrite;
+        totalUsage.totalTokens += message.usage.total;
+      }
     });
 
     try {
-      await agent.prompt(this._consolidationUserPrompt(outputs, diff, agentConfig));
+      const result = await agent.result;
+      if (result.error) finalError = result.error;
     } catch (error) {
       this.rateLimitGuard.noteError(error);
       throw error;
@@ -551,28 +566,6 @@ export class Phase2Runner {
     if (turns >= MAX_PHASE2_AGENT_TURNS && !this._consolidatedOutputsLookReady()) {
       throw new Error(`memory Phase 2 agent reached ${MAX_PHASE2_AGENT_TURNS} turns before producing valid outputs: ${finalText.slice(0, 500)}`);
     }
-    const totalUsage = agent.messages
-      .filter((message) => message.role === "assistant")
-      .reduce((acc, message) => {
-        acc.input += message.usage.input;
-        acc.output += message.usage.output;
-        acc.cacheRead += message.usage.cacheRead;
-        acc.cacheWrite += message.usage.cacheWrite;
-        acc.totalTokens += message.usage.totalTokens;
-        acc.cost.input += message.usage.cost.input;
-        acc.cost.output += message.usage.cost.output;
-        acc.cost.cacheRead += message.usage.cost.cacheRead;
-        acc.cost.cacheWrite += message.usage.cost.cacheWrite;
-        acc.cost.total += message.usage.cost.total;
-        return acc;
-      }, {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      });
     memoryLog("info", "phase2_agent_finished", {
       turns,
       ...usageFields(totalUsage),

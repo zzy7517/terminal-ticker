@@ -19,6 +19,9 @@ describe("Claude Session repository", () => {
     const payload = store.payload(created.id);
     expect(payload?.session).toMatchObject({ id: created.id, runtime: "claude-code", nativeSessionId: "11111111-1111-4111-8111-111111111111" });
     expect(payload?.messages.map((message) => [message.role, message.content])).toEqual([["user", "Analyze BTC"], ["assistant", "Done"]]);
+    expect(payload?.messages[0]).not.toHaveProperty("entryId");
+    expect(payload?.messages[0]).not.toHaveProperty("parentId");
+    expect(payload?.messages[0]).not.toHaveProperty("entryType");
     expect(store.list()).toHaveLength(1);
   });
 });

@@ -164,7 +164,6 @@ export function piSessionPayload(manager: SessionManager): Record<string, unknow
       agentId: agentSnapshot.agentId,
       agentName: agentSnapshot.agentName,
       runtime: agentSnapshot.runtime,
-      leafId: manager.getLeafId(),
       memory: { externalContext },
     },
     messages,
@@ -186,37 +185,6 @@ export function piSessionSummary(info: SessionInfo, manager: SessionManager): Re
   };
 }
 
-export function clonePiSession(manager: SessionManager, leafId: string): SessionManager {
-  const sourceFile = manager.getSessionFile();
-  if (!sourceFile || !fs.existsSync(sourceFile)) {
-    throw new Error("cannot branch a Pi session before its first assistant response");
-  }
-  const worker = SessionManager.open(sourceFile, manager.getSessionDir(), process.cwd());
-  const filePath = worker.createBranchedSession(leafId);
-  if (!filePath) throw new Error("Pi did not create a persistent cloned session");
-  return worker;
-}
-
-export function forkPiSessionBeforeUser(
-  manager: SessionManager,
-  entryId: string,
-): { manager: SessionManager; prompt: string } {
-  const entry = manager.getEntry(entryId);
-  if (!entry || entry.type !== "message" || entry.message.role !== "user") {
-    throw new Error("Can only fork from a user message");
-  }
-  const prompt = textFromContent(entry.message.content);
-  const parentId = entry.parentId;
-  if (!parentId) {
-    const forked = createPiSession({
-      sessionDir: manager.getSessionDir(),
-      title: "New Agent Session",
-    });
-    return { manager: forked, prompt };
-  }
-  return { manager: clonePiSession(manager, parentId), prompt };
-}
-
 function projectMessage(sessionId: string, entry: SessionMessageEntry): Record<string, unknown> {
   const message = entry.message;
   const base = {
@@ -227,9 +195,6 @@ function projectMessage(sessionId: string, entry: SessionMessageEntry): Record<s
     createdAt: entry.timestamp,
     metadata: null as Record<string, unknown> | null,
     error: null as string | null,
-    entryId: entry.id,
-    parentId: entry.parentId,
-    entryType: "message",
   };
 
   if (message.role === "user") {
@@ -263,7 +228,6 @@ function projectMessage(sessionId: string, entry: SessionMessageEntry): Record<s
         completionTokens: assistant.usage.output,
         cacheRead: assistant.usage.cacheRead,
         cacheWrite: assistant.usage.cacheWrite,
-        cost: assistant.usage.cost.total,
         toolCalls,
       },
       error: assistant.errorMessage ?? null,
@@ -310,7 +274,6 @@ function computeSessionStats(sessionId: string, entries: SessionMessageEntry[]):
   let output = 0;
   let cacheRead = 0;
   let cacheWrite = 0;
-  let cost = 0;
   for (const entry of entries) {
     const message = entry.message;
     if (message.role === "user") userMessages += 1;
@@ -323,7 +286,6 @@ function computeSessionStats(sessionId: string, entries: SessionMessageEntry[]):
     output += assistant.usage.output;
     cacheRead += assistant.usage.cacheRead;
     cacheWrite += assistant.usage.cacheWrite;
-    cost += assistant.usage.cost.total;
   }
   return {
     sessionId,
@@ -339,7 +301,6 @@ function computeSessionStats(sessionId: string, entries: SessionMessageEntry[]):
       cacheWrite,
       total: input + output + cacheRead + cacheWrite,
     },
-    cost,
   };
 }
 

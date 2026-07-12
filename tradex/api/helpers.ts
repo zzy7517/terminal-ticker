@@ -9,8 +9,7 @@ import {
 } from "../agent/runtime/pi/sessions.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AppRuntime } from "./runtime.js";
-import { CLAUDE_CODE_CAPABILITIES, PI_SDK_CAPABILITIES } from "../agent/runtime/capabilities.js";
-import type { RuntimeCapabilities } from "../agent/runtime/types.js";
+import { PI_SDK_CAPABILITIES } from "../agent/runtime/capabilities.js";
 
 // Returns a stable idle run descriptor for sessions that have no active agent loop.
 export function idleRun(sessionId: string): Record<string, unknown> {
@@ -90,17 +89,6 @@ function withPiCapabilities<T extends Record<string, unknown>>(payload: T): T {
     return { ...payload, session: { ...(payload.session as Record<string, unknown>), capabilities: PI_SDK_CAPABILITIES } };
   }
   return { ...payload, capabilities: PI_SDK_CAPABILITIES };
-}
-
-/** 解析 Session 的 Runtime 能力矩阵；Session 不存在时返回 null。 */
-export async function sessionCapabilities(
-  runtime: AppRuntime,
-  sessionId: string,
-): Promise<RuntimeCapabilities | null> {
-  if (runtime.claudeSessions.getMetadata(sessionId)) return CLAUDE_CODE_CAPABILITIES;
-  const mgr = await openSessionManager(sessionId, runtime);
-  if (!mgr) return null;
-  return PI_SDK_CAPABILITIES;
 }
 
 // Shapes an instrument into the catalog item format consumed by the add-instrument UI.

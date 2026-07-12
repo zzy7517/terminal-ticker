@@ -29,7 +29,7 @@ export interface SlashCommand {
   name: string;
   /** Short description shown in autocomplete */
   description: string;
-  /** Aliases (e.g. /clone → /fork) */
+  /** Alternate command names. */
   aliases?: string[];
   /** Hint for the argument (shown after command name) */
   argumentHint?: string;
@@ -70,8 +70,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       }));
     },
   },
-  { name: 'fork', description: 'Create a new session from a previous user message' },
-  { name: 'clone', description: 'Duplicate current active branch into a new session' },
   { name: 'new', description: 'Start a new session' },
   { name: 'compact', description: 'Compact session context (coming soon)' },
 ];
