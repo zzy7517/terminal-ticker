@@ -4,9 +4,12 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
-import type { ToolRegistry } from "../tools/registry.js";
-import type { McpRunGrantStore } from "../../mcp/server/grants.js";
-import type { ActiveRuntimeRun, RuntimeEvent, RuntimeRunResult } from "./types.js";
+import type { ToolRegistry } from "../../tools/registry.js";
+import type { McpRunGrantStore } from "../../../mcp/server/grants.js";
+import type { ActiveRuntimeRun, RuntimeEvent, RuntimeRunResult } from "../types.js";
+import { claudeLineType, classifyClaudeError, parseClaudeLine } from "./protocol.js";
+
+export { classifyClaudeError, parseClaudeLine } from "./protocol.js";
 
 export const CLAUDE_CODE_CAPABILITIES = {
   streaming: true,
@@ -16,6 +19,7 @@ export const CLAUDE_CODE_CAPABILITIES = {
   forkFromMessage: false,
   cloneFromMessage: false,
   imageInput: true,
+  toolProgress: false,
 } as const;
 
 export interface ClaudeArgsInput {
@@ -30,6 +34,7 @@ export interface ClaudeArgsInput {
 }
 
 export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
+  // 所有参数都以 argv 传入，禁止拼接 shell 字符串，避免 prompt 或路径产生注入问题。
   const mcpTools = input.allowedMcpTools.map((name) => `mcp__tradex__${name}`);
   const tools = mcpTools;
   const args = [
@@ -92,6 +97,7 @@ export class ClaudeCodeRuntime {
   }
 
   async start(input: ClaudeRunInput): Promise<ActiveRuntimeRun> {
+    // 每次 run 使用独立 MCP 配置和 token；即使是 resume，也不复用上一轮授权。
     const runtimeDir = path.join(input.cwd, "runtime");
     await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
     const issued = this.grants.issue({
@@ -163,6 +169,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
     this.child = input.child;
     this.nativeSessionId = input.assignedNativeSessionId;
     this.result = new Promise((resolve) => {
+      // stdout 只解析协议事件，stderr 仅保留最后一段用于错误分类，避免泄露完整日志。
       let output = "";
       let nativeSessionId = input.assignedNativeSessionId;
       let resultError: string | null = null;
@@ -253,6 +260,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
   }
 
   private stopChild(): void {
+    // Claude 可能继续派生 MCP/工具子进程，因此 POSIX 需要杀整个 process group。
     if (this.settled || !this.child.pid) return;
     if (process.platform === "win32") {
       this.stopWindowsProcessTree(false);
@@ -289,15 +297,6 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
   }
 }
 
-export function classifyClaudeError(stderr: string): string {
-  if (/auth|login|oauth|credential|token expired/i.test(stderr)) return "auth_required";
-  if (/model|entitlement|not available|overloaded/i.test(stderr)) return "model_unavailable";
-  if (/mcp|connection refused|unauthorized|401/i.test(stderr)) return "mcp_connection_failed";
-  if (/permission|not allowed|denied/i.test(stderr)) return "permission_denied";
-  if (/resume|session.*not found|conversation.*not found/i.test(stderr)) return "native_session_resume_failed";
-  return "process_exit_failure";
-}
-
 export function windowsTaskkillArgs(pid: number, force: boolean): string[] {
   return ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])];
 }
@@ -308,146 +307,4 @@ function sanitizedClaudeEnv(parent: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     if (/^TRADEX_MCP_TOKEN$/i.test(key)) delete env[key];
   }
   return env;
-}
-
-interface ClaudeContentBlock {
-  type?: string;
-  text?: string;
-  id?: string;
-  name?: string;
-  input?: Record<string, unknown>;
-  tool_use_id?: string;
-  content?: unknown;
-  is_error?: boolean;
-}
-
-interface ClaudeLine {
-  type?: string;
-  session_id?: string;
-  result?: string;
-  is_error?: boolean;
-  message?: {
-    model?: string;
-    content?: ClaudeContentBlock[];
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-      cache_read_input_tokens?: number;
-      cache_creation_input_tokens?: number;
-    };
-  };
-  event?: {
-    type?: string;
-    delta?: { type?: string; text?: string };
-  };
-}
-
-export function parseClaudeLine(line: string): RuntimeEvent[] {
-  let value: ClaudeLine;
-  try {
-    value = JSON.parse(line) as ClaudeLine;
-  } catch {
-    return [{ type: "runtime-error", code: "malformed_stream_json", message: "Claude Code emitted malformed stream-json" }];
-  }
-  if (value.type === "system") {
-    return value.session_id
-      ? [{ type: "run-start", nativeSessionId: value.session_id }]
-      : [{ type: "runtime-error", code: "invalid_system_event", message: "Claude Code system event is missing session_id" }];
-  }
-  if (
-    value.type === "stream_event"
-    && value.event?.type === "content_block_delta"
-    && value.event.delta?.type === "text_delta"
-  ) {
-    return typeof value.event.delta.text === "string"
-      ? [{ type: "text-delta", delta: value.event.delta.text }]
-      : [{ type: "runtime-error", code: "invalid_stream_delta", message: "Claude Code text delta is missing text" }];
-  }
-  if (value.type === "result") {
-    if (typeof value.result !== "string") {
-      return [{ type: "runtime-error", code: "invalid_result_event", message: "Claude Code result event is missing result" }];
-    }
-    return [{
-      type: "run-end",
-      ...(value.session_id ? { nativeSessionId: value.session_id } : {}),
-      result: value.result,
-      isError: value.is_error === true,
-    }];
-  }
-  const content = value.message?.content ?? [];
-  if (value.type === "assistant") {
-    if (!value.message || !Array.isArray(value.message.content)) {
-      return [{ type: "runtime-error", code: "invalid_assistant_event", message: "Claude Code assistant event is missing content" }];
-    }
-    const events: RuntimeEvent[] = [];
-    for (const block of content) {
-      if (block.type === "text") {
-        if (typeof block.text !== "string") {
-          events.push({ type: "runtime-error", code: "invalid_text_block", message: "Claude Code text block is missing text" });
-        } else if (block.text) events.push({ type: "text-delta", delta: block.text });
-      }
-      if (block.type === "tool_use") {
-        if (!block.id || !block.name) {
-          events.push({ type: "runtime-error", code: "invalid_tool_use", message: "Claude Code tool_use block is missing id or name" });
-          continue;
-        }
-        events.push({
-          type: "tool-start",
-          callId: block.id,
-          name: stripTradexMcpPrefix(block.name),
-          args: block.input ?? {},
-        });
-      }
-    }
-    const usage = value.message?.usage;
-    if (usage && value.message?.model) {
-      events.push({
-        type: "usage",
-        model: value.message.model,
-        input: usage.input_tokens ?? 0,
-        output: usage.output_tokens ?? 0,
-        cacheRead: usage.cache_read_input_tokens ?? 0,
-        cacheWrite: usage.cache_creation_input_tokens ?? 0,
-      });
-    }
-    return events;
-  }
-  if (value.type === "user") {
-    if (!value.message || !Array.isArray(value.message.content)) {
-      return [{ type: "runtime-error", code: "invalid_user_event", message: "Claude Code user event is missing content" }];
-    }
-    return content.flatMap((block): RuntimeEvent[] => {
-      if (block.type !== "tool_result") return [];
-      if (!block.tool_use_id) return [{ type: "runtime-error", code: "invalid_tool_result", message: "Claude Code tool_result block is missing tool_use_id" }];
-      return [{
-        type: "tool-end",
-        callId: block.tool_use_id,
-        output: contentToText(block.content),
-        isError: block.is_error === true,
-      }];
-    });
-  }
-  return [];
-}
-
-function claudeLineType(line: string): string | null {
-  try {
-    const value = JSON.parse(line) as { type?: unknown };
-    return typeof value.type === "string" ? value.type : null;
-  } catch {
-    return null;
-  }
-}
-
-function stripTradexMcpPrefix(name: string): string {
-  return name.startsWith("mcp__tradex__") ? name.slice("mcp__tradex__".length) : name;
-}
-
-function contentToText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return content == null ? "" : JSON.stringify(content);
-  return content.map((item) => {
-    if (item && typeof item === "object" && "text" in item && typeof item.text === "string") return item.text;
-    return JSON.stringify(item);
-  }).join("\n");
 }

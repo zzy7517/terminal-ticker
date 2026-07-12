@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -6,9 +7,16 @@ import { normalizeToolReturn } from "../../agent/tools/registry.js";
 import type { McpRunGrant } from "./grants.js";
 import { McpRunGrantStore } from "./grants.js";
 
-export function tradexMcpRoutes(grants: McpRunGrantStore): Hono {
+export interface TradexMcpRouteOptions {
+  remoteAddress?: (context: Parameters<typeof getConnInfo>[0]) => string | undefined;
+}
+
+export function tradexMcpRoutes(grants: McpRunGrantStore, options: TradexMcpRouteOptions = {}): Hono {
   const app = new Hono();
   app.all("/mcp/tradex", async (c) => {
+    // loopback 限制负责缩小暴露面，token 鉴权仍然保留，不能把二者互相替代。
+    const remoteAddress = options.remoteAddress?.(c) ?? getConnInfo(c).remote.address;
+    if (!isLoopbackAddress(remoteAddress)) return c.json({ error: "Tradex MCP only accepts loopback connections" }, 403);
     const grant = grants.resolve(bearerToken(c.req.header("authorization")));
     if (!grant) return c.json({ error: "invalid or expired MCP run grant" }, 401);
 
@@ -18,6 +26,15 @@ export function tradexMcpRoutes(grants: McpRunGrantStore): Hono {
     return transport.handleRequest(c.req.raw);
   });
   return app;
+}
+
+export function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return false;
+  const normalized = address.toLowerCase().split("%")[0];
+  return normalized === "127.0.0.1"
+    || normalized.startsWith("127.")
+    || normalized === "::1"
+    || normalized === "::ffff:127.0.0.1";
 }
 
 function createServer(grant: McpRunGrant): Server {
@@ -34,6 +51,7 @@ function createServer(grant: McpRunGrant): Server {
     })),
   }));
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    // tools/list 只是展示；tools/call 必须再次按当前 grant 校验，不能信任客户端缓存。
     const tool = byName.get(request.params.name);
     if (!tool) return { content: [{ type: "text", text: "Tool is not authorized for this run" }], isError: true };
     try {

@@ -102,6 +102,7 @@ export interface AgentRuntimeStatus {
     forkFromMessage: boolean;
     cloneFromMessage: boolean;
     imageInput: boolean;
+    toolProgress: boolean;
   };
 }
 

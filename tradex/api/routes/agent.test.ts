@@ -6,7 +6,7 @@ import { AgentStore } from "../../agent/agent_store.js";
 import { agentRoutes } from "./agent.js";
 import type { AppRuntime } from "../runtime.js";
 import { piSessionFileExists } from "../../agent/pi_sessions.js";
-import { ClaudeSessionStore } from "../../agent/claude_sessions.js";
+import { ClaudeSessionStore } from "../../agent/runtime/claude/session-store.js";
 import { McpRunGrantStore } from "../../mcp/server/grants.js";
 
 const dirs: string[] = [];

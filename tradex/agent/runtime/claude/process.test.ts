@@ -2,9 +2,9 @@ import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ToolRegistry } from "../tools/registry.js";
-import { McpRunGrantStore } from "../../mcp/server/grants.js";
-import { ClaudeCodeRuntime } from "./claude-code.js";
+import { ToolRegistry } from "../../tools/registry.js";
+import { McpRunGrantStore } from "../../../mcp/server/grants.js";
+import { ClaudeCodeRuntime } from "./code.js";
 
 describe("Claude Code child process", () => {
   it("streams events and returns the native session id", async () => {

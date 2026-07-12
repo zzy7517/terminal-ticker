@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { CLAUDE_CODE_CAPABILITIES } from "./runtime/claude-code.js";
+import { CLAUDE_CODE_CAPABILITIES } from "./code.js";
 
 export interface ClaudeAgentSnapshot {
   agentId: string;
@@ -51,6 +51,7 @@ export class ClaudeSessionStore {
   }
 
   create(input: { title: string; snapshot: ClaudeAgentSnapshot }): ClaudeSessionMetadata {
+    // Tradex Session ID 只服务于 UI/API；Claude native session ID 单独记录，二者不能混用。
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const metadata: ClaudeSessionMetadata = {
@@ -125,6 +126,7 @@ export class ClaudeSessionStore {
   }
 
   messages(id: string): ClaudeProjectedMessage[] {
+    // projection 是 UI 历史来源，不用于重新拼接 prompt；下一轮上下文交给 Claude 原生 resume。
     const file = path.join(this.sessionDir(id), "session.jsonl");
     if (!fs.existsSync(file)) return [];
     return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).flatMap((line) => {
@@ -188,6 +190,7 @@ export class ClaudeSessionStore {
   }
 
   removeFiles(id: string): void {
+    // 调用方会先完成 Claude project purge，再删除本地 projection，避免出现部分删除。
     fs.rmSync(this.sessionDir(id), { recursive: true, force: true });
   }
 

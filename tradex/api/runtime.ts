@@ -31,7 +31,7 @@ import { applyProxyConfig } from "../runtime/proxy.js";
 import { AgentStore } from "../agent/agent_store.js";
 import type { SessionAgentSnapshot } from "../agent/pi_sessions.js";
 import { McpRunGrantStore } from "../mcp/server/grants.js";
-import { ClaudeSessionStore } from "../agent/claude_sessions.js";
+import { ClaudeSessionStore } from "../agent/runtime/claude/session-store.js";
 
 export class AppRuntime {
   config: AppConfig;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildClaudeArgs, classifyClaudeError, parseClaudeLine, windowsTaskkillArgs } from "./claude-code.js";
+import { buildClaudeArgs, classifyClaudeError, parseClaudeLine, windowsTaskkillArgs } from "./code.js";
 
 describe("Claude Code runtime protocol", () => {
   it("builds a controlled headless invocation without overriding local defaults", () => {

@@ -2,7 +2,7 @@ import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { purgeClaudeProject } from "./claude-purge.js";
+import { purgeClaudeProject } from "./purge.js";
 
 describe("Claude Code project purge", () => {
   it("uses the native project purge command with the exact Session directory", async () => {

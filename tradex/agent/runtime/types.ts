@@ -8,6 +8,7 @@ export interface RuntimeCapabilities {
   forkFromMessage: boolean;
   cloneFromMessage: boolean;
   imageInput: boolean;
+  toolProgress: boolean;
 }
 
 export type RuntimeEvent =
@@ -49,4 +50,5 @@ export const PI_SDK_CAPABILITIES: RuntimeCapabilities = {
   forkFromMessage: true,
   cloneFromMessage: true,
   imageInput: true,
+  toolProgress: true,
 };

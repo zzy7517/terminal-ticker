@@ -1,4 +1,4 @@
-import type { ToolRegistry } from "./registry.js";
+import type { ToolRegistry } from "../../tools/registry.js";
 
 const CLAUDE_READ_TOOLS = new Set([
   "browser_open_page", "browser_screenshot", "browser_status",
@@ -11,6 +11,7 @@ const CLAUDE_READ_TOOLS = new Set([
 ]);
 
 export function exposeClaudeReadTools(registry: ToolRegistry): ToolRegistry {
+  // Claude 首期只拿到显式 allowlist；不能根据工具名前缀推断读写权限。
   for (const tool of registry.listTools()) {
     if (!CLAUDE_READ_TOOLS.has(tool.name)) continue;
     registry.setPolicy(tool.name, {

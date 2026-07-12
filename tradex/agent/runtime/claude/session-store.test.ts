@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ClaudeSessionStore } from "./claude_sessions.js";
+import { ClaudeSessionStore } from "./session-store.js";
 
 describe("Claude Session repository", () => {
   it("persists a Tradex projection separately from the native session id", async () => {
