@@ -1,3 +1,4 @@
+/** 管理 Agent 选择、Session 历史、流式消息和操作状态的 Zustand store。 */
 import { create } from 'zustand';
 import type {
   AgentContextUsage,

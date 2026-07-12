@@ -1,3 +1,4 @@
+/** 探测本机 Claude Code CLI 及其必需命令是否可用。 */
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -11,6 +12,7 @@ export interface ClaudeCodeAvailability {
   error: string | null;
 }
 
+/** 检查 CLI 版本和 project purge 能力，生成前端可展示的可用性结果。 */
 export async function detectClaudeCode(configuredPath = process.env.TRADEX_CLAUDE_PATH?.trim() || "claude"): Promise<ClaudeCodeAvailability> {
   const executablePath = await resolveExecutable(configuredPath) ?? configuredPath;
   const version = await runProbe(executablePath, ["--version"]);
@@ -30,6 +32,7 @@ export async function detectClaudeCode(configuredPath = process.env.TRADEX_CLAUD
   return { id: "claude-code", available: true, executablePath, version: version.output || null, error: null };
 }
 
+/** 将显式路径或 PATH 中的命令名解析为可执行文件路径。 */
 async function resolveExecutable(value: string): Promise<string | null> {
   // 配置值包含路径分隔符时按显式路径处理，否则按 PATH 逐目录查找 Claude。
   // 这里只返回具有执行权限的文件，避免后续探测阶段才暴露“找不到命令”的错误。
@@ -46,6 +49,7 @@ async function resolveExecutable(value: string): Promise<string | null> {
   return null;
 }
 
+/** 在有限时间内运行一次 Claude 探测命令并收集受限输出。 */
 function runProbe(executablePath: string, args: string[]): Promise<{ output: string; error: string | null }> {
   // 用独立子进程执行 --version 或 project purge --help 等探测命令。
   // shell:false 防止路径或参数被 shell 重新解释；stdout/stderr 也只保留最后 8KB。

@@ -1,3 +1,4 @@
+/** 提供 Agent/Session REST API，并把运行请求分发给对应 Runtime。 */
 import { Hono } from "hono";
 import crypto from "node:crypto";
 import { AgentModelRegistry } from "../../agent/models/registry.js";

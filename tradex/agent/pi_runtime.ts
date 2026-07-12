@@ -1,3 +1,4 @@
+/** 将现有 Pi SDK Agent loop 适配到 Runtime-neutral 接口。 */
 import {
   createAgentSession,
   DefaultResourceLoader,

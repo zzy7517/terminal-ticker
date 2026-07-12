@@ -1,3 +1,4 @@
+/** 提供 Pi 与 Claude Code Agent 的创建和编辑界面。 */
 import { useEffect, useMemo, useState } from 'react';
 import { Bot, Plus, Save, Trash2 } from 'lucide-react';
 import { createAgent, deleteAgent, fetchAgentRuntimes, fetchAgents, updateAgent } from '../../api';

@@ -1,3 +1,4 @@
+/** 展示带 Runtime 信息的 Agent Session 历史列表。 */
 import { useEffect, useState } from 'react';
 import { History, Loader2, SquarePen, Trash2 } from 'lucide-react';
 import type { AgentContextUsage } from '../../types';

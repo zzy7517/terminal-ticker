@@ -1,3 +1,4 @@
+/** 浏览器端 Tradex HTTP、SSE 和 Agent API 客户端。 */
 import type {
   AgentConfigUpdate,
   AgentModelRegistry,

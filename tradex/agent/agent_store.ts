@@ -1,3 +1,4 @@
+/** 将可复用 Agent 定义保存为经过校验的 JSON 文件。 */
 import fs from "node:fs";
 import path from "node:path";
 

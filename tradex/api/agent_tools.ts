@@ -1,3 +1,4 @@
+/** 构建 Pi 和 Claude 共用的规范 Tradex Tool Registry。 */
 import type { AgentConfig } from "../config/index.js";
 import { buildBrowserTools } from "../agent/tools/browser.js";
 import { createFilesystemRegistry } from "../agent/tools/filesystem.js";

@@ -1,3 +1,4 @@
+/** 持有进程级服务、存储、Session 锁和活动 Runtime 句柄。 */
 import { AppConfig } from "../config/index.js";
 import { LocalMemoryBackend } from "../memory/backend.js";
 import { MemoryPipeline } from "../memory/pipeline.js";

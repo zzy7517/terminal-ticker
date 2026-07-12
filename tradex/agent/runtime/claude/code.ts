@@ -1,3 +1,4 @@
+/** 以 headless stream-json 模式运行 Claude，并输出统一 Runtime 事件。 */
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -33,6 +34,7 @@ export interface ClaudeArgsInput {
   effort?: string | null;
 }
 
+/** 生成不经过 shell 的 Claude headless argv，并按需添加 resume/model/effort。 */
 export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
   // 所有参数都以 argv 传入，禁止拼接 shell 字符串，避免 prompt 或路径产生注入问题。
   const mcpTools = input.allowedMcpTools.map((name) => `mcp__tradex__${name}`);
@@ -87,6 +89,7 @@ export class ClaudeCodeRuntime {
   private readonly runTimeoutMs: number;
   private readonly inactivityTimeoutMs: number;
 
+  /** 保存进程、MCP 授权和超时策略配置。 */
   constructor(options: ClaudeCodeRuntimeOptions) {
     this.executablePath = options.executablePath ?? "claude";
     this.mcpUrl = options.mcpUrl;
@@ -96,6 +99,7 @@ export class ClaudeCodeRuntime {
     this.inactivityTimeoutMs = options.inactivityTimeoutMs ?? 5 * 60_000;
   }
 
+  /** 创建本轮 MCP grant、启动 Claude 子进程并返回活动运行句柄。 */
   async start(input: ClaudeRunInput): Promise<ActiveRuntimeRun> {
     // 每次 run 使用独立 MCP 配置和 token；即使是 resume，也不复用上一轮授权。
     const runtimeDir = path.join(input.cwd, "runtime");
@@ -244,6 +248,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
     });
   }
 
+  /** 订阅规范化事件，并先回放订阅前已经收到的事件。 */
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);
     if (!this.hasSubscribed) {
@@ -253,6 +258,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
     return () => this.listeners.delete(listener);
   }
 
+  /** 终止 Claude 进程组，并让最终结果标记为 aborted。 */
   abort(): void {
     if (this.settled || !this.child.pid) return;
     this.terminationCode = "aborted";
@@ -297,6 +303,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
   }
 }
 
+/** 生成 Windows taskkill 的进程树终止参数。 */
 export function windowsTaskkillArgs(pid: number, force: boolean): string[] {
   return ["/PID", String(pid), "/T", ...(force ? ["/F"] : [])];
 }

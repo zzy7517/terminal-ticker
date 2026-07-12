@@ -1,3 +1,4 @@
+/** 提供 Claude 使用的、带 token 鉴权的 Tradex MCP endpoint。 */
 import { Hono } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -11,6 +12,7 @@ export interface TradexMcpRouteOptions {
   remoteAddress?: (context: Parameters<typeof getConnInfo>[0]) => string | undefined;
 }
 
+/** 创建 Claude 调用 Tradex Tool 的 loopback MCP 路由。 */
 export function tradexMcpRoutes(grants: McpRunGrantStore, options: TradexMcpRouteOptions = {}): Hono {
   const app = new Hono();
   app.all("/mcp/tradex", async (c) => {
@@ -28,6 +30,7 @@ export function tradexMcpRoutes(grants: McpRunGrantStore, options: TradexMcpRout
   return app;
 }
 
+/** 判断请求地址是否属于本机 loopback，限制 MCP endpoint 的网络暴露面。 */
 export function isLoopbackAddress(address: string | undefined): boolean {
   if (!address) return false;
   const normalized = address.toLowerCase().split("%")[0];

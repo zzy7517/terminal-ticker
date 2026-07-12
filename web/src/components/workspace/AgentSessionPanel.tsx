@@ -1,3 +1,4 @@
+/** 展示聊天 Session、Runtime 能力、附件和流式控制。 */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import './AgentSessionPanel.css';
 

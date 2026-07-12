@@ -1,3 +1,4 @@
+/** 编排 Claude Session 消息、Runtime 事件、持久化投影和 SSE 输出。 */
 import crypto from "node:crypto";
 import path from "node:path";
 import { writeFile } from "node:fs/promises";
@@ -34,6 +35,7 @@ interface UsageProjection {
   cacheWrite: number;
 }
 
+/** 校验 Session 后启动 Claude，并把运行事件映射为现有 SSE 协议。 */
 export async function streamClaudeSession(input: ClaudeSessionStreamInput): Promise<Response> {
   const { runtime, sessionId, requestImages } = input;
   const metadata = runtime.claudeSessions.getMetadata(sessionId);
@@ -217,6 +219,7 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
   return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
 }
 
+/** 校验 Claude 图片附件的数量、格式、base64 内容和大小。 */
 export function validateClaudeImages(images: ImageContent[]): string | null {
   if (images.length > 10) return "at most 10 images are allowed";
   for (const image of images) {
@@ -227,6 +230,7 @@ export function validateClaudeImages(images: ImageContent[]): string | null {
   return null;
 }
 
+/** 在真正启动 run 前重新探测 Claude CLI，避免使用过期可用性状态。 */
 async function requireClaudeCode() {
   const executablePath = process.env.TRADEX_CLAUDE_PATH?.trim() || "claude";
   const availability = await detectClaudeCode(executablePath);
@@ -246,6 +250,7 @@ class ClaudeSessionStreamError extends Error {
   }
 }
 
+/** 构建并过滤当前 Claude Session 可以调用的只读 Tool。 */
 async function buildClaudeTools(runtime: AppRuntime, sessionId: string) {
   const { tools } = await buildTradexToolRegistry(runtime, {
     sessionId,
@@ -258,6 +263,7 @@ async function buildClaudeTools(runtime: AppRuntime, sessionId: string) {
   return exposeClaudeReadTools(tools);
 }
 
+/** 组合 Tradex 主提示词、Agent instructions 和 Claude 能力边界。 */
 function claudeInstructions(agentInstructions: string): string {
   const now = new Date();
   const sessionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -270,6 +276,7 @@ function claudeInstructions(agentInstructions: string): string {
   ].join("\n\n");
 }
 
+/** 根据当前 API 请求地址生成 loopback MCP endpoint URL。 */
 function claudeMcpUrl(requestUrl: string): string {
   const url = new URL(requestUrl);
   const host = url.port ? `127.0.0.1:${url.port}` : "127.0.0.1";
@@ -283,6 +290,7 @@ const CLAUDE_IMAGE_TYPES: Record<string, string> = {
   "image/webp": "webp",
 };
 
+/** 将图片保存到当前 Session 的隔离 attachments 目录并返回后端文件路径。 */
 async function saveClaudeAttachments(runtime: AppRuntime, sessionId: string, images: ImageContent[]): Promise<string[]> {
   const directory = path.join(runtime.claudeSessions.sessionDir(sessionId), "attachments");
   return Promise.all(images.map(async (image) => {
@@ -292,6 +300,7 @@ async function saveClaudeAttachments(runtime: AppRuntime, sessionId: string, ima
   }));
 }
 
+/** 把后端生成的附件文件名加入 prompt，供 Claude 调用受控读取 Tool。 */
 function promptWithAttachments(prompt: string, attachmentPaths: string[]): string {
   if (attachmentPaths.length === 0) return prompt;
   return [
@@ -301,6 +310,7 @@ function promptWithAttachments(prompt: string, attachmentPaths: string[]): strin
   ].filter(Boolean).join("\n\n");
 }
 
+/** 生成不包含原始路径的图片 metadata，供 UI 历史展示。 */
 function attachmentMetadata(images: ImageContent[], attachmentPaths: string[]): Record<string, unknown> | null {
   if (attachmentPaths.length === 0) return null;
   return {
@@ -311,6 +321,7 @@ function attachmentMetadata(images: ImageContent[], attachmentPaths: string[]): 
   };
 }
 
+/** 创建与现有聊天 UI 兼容的 Claude assistant message DTO。 */
 function claudeMessageDto(sessionId: string, clientId: string): Record<string, unknown> {
   return {
     id: clientId,
@@ -327,6 +338,7 @@ function claudeMessageDto(sessionId: string, clientId: string): Record<string, u
   };
 }
 
+/** 汇总本轮 Claude 的输入、输出和缓存 token 数。 */
 function totalUsage(usage: UsageProjection): number {
   return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 }

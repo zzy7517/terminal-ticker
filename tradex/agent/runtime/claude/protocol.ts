@@ -1,5 +1,6 @@
 import type { RuntimeEvent } from "../types.js";
 
+/** 将 Claude Code 的 JSONL 输出转换为 Tradex Runtime 事件和错误码。 */
 interface ClaudeContentBlock {
   type?: string;
   text?: string;
@@ -32,6 +33,7 @@ interface ClaudeLine {
   };
 }
 
+/** 解析单行 Claude JSONL，并转换成一个或多个统一 Runtime 事件。 */
 export function parseClaudeLine(line: string): RuntimeEvent[] {
   // Claude 以完整 JSONL 行输出；单行解析失败时转成稳定的运行时错误，避免把异常直接抛到 SSE 层。
   let value: ClaudeLine;
@@ -123,6 +125,7 @@ export function parseClaudeLine(line: string): RuntimeEvent[] {
   return [];
 }
 
+/** 读取原始 JSONL 的事件类型，用于处理 partial 文本去重。 */
 export function claudeLineType(line: string): string | null {
   try {
     const value = JSON.parse(line) as { type?: unknown };
@@ -132,6 +135,7 @@ export function claudeLineType(line: string): string | null {
   }
 }
 
+/** 根据受限 stderr 文本映射稳定的用户可处理错误码。 */
 export function classifyClaudeError(stderr: string): string {
   if (/auth|login|oauth|credential|token expired/i.test(stderr)) return "auth_required";
   if (/model|entitlement|not available|overloaded/i.test(stderr)) return "model_unavailable";

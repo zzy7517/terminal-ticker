@@ -1,3 +1,4 @@
+/** 通过 MCP 向 Claude 暴露当前 Session 的受控图片读取能力。 */
 import path from "node:path";
 import { lstat, readFile } from "node:fs/promises";
 import { ToolRegistry } from "../../tools/registry.js";
@@ -21,6 +22,7 @@ const ATTACHMENT_MIME_TYPES: Record<string, string> = {
  * 这样做是为了让 Claude 能理解用户上传的图片，同时避免开放原生文件读取能力，
  * 防止它通过路径遍历、软链接或任意路径读取 Tradex 主机上的其他文件。
  */
+/** 为一个 Session 创建只允许读取其 attachments 目录的 ToolRegistry。 */
 export function buildSessionAttachmentTools(sessionDirectory: string): ToolRegistry {
   // 工具只绑定当前 Session 的 attachments/，不同 Session 之间不能互相读取附件。
   const attachmentsDirectory = path.join(sessionDirectory, "attachments");

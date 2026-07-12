@@ -1,3 +1,4 @@
+/** 前端使用的 Market、Agent、Session 和 Runtime DTO 定义。 */
 export interface LoopToolCall {
   id: string;
   name: string;

@@ -1,3 +1,4 @@
+/** 管理 Claude 每次运行所需的短期 MCP 授权。 */
 import { createHash, randomBytes } from "node:crypto";
 import type { ToolDefinition, ToolRegistry } from "../../agent/tools/registry.js";
 
@@ -15,6 +16,7 @@ export class McpRunGrantStore {
     this.now = input.now ?? Date.now;
   }
 
+  /** 为一次 Claude run 签发随机 token，并只在内存中保存其 hash 和工具集合。 */
   issue(input: { tradexSessionId: string; registry: ToolRegistry; ttlMs: number }): { token: string; expiresAt: number } {
     const token = randomBytes(32).toString("base64url");
     const expiresAt = this.now() + input.ttlMs;
@@ -26,6 +28,7 @@ export class McpRunGrantStore {
     return { token, expiresAt };
   }
 
+  /** 校验 token 是否存在且未过期，过期 grant 会被顺便清理。 */
   resolve(token: string): McpRunGrant | null {
     if (!token) return null;
     const key = hashToken(token);
@@ -38,6 +41,7 @@ export class McpRunGrantStore {
     return grant;
   }
 
+  /** 在 run 结束、取消或超时时立即撤销本次 MCP 授权。 */
   revoke(token: string): void {
     if (token) this.grants.delete(hashToken(token));
   }

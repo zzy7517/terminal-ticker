@@ -1,5 +1,7 @@
+/** 在删除 Tradex 投影前，清理 Claude 原生 project 状态。 */
 import { spawn } from "node:child_process";
 
+/** 调用 Claude 官方 purge 命令，项目不存在时按幂等成功处理。 */
 export async function purgeClaudeProject(executablePath: string, cwd: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(executablePath, ["project", "purge", cwd, "--yes"], {

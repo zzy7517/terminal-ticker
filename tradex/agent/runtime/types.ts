@@ -1,3 +1,4 @@
+/** Pi 与 Claude Code Runtime 共用的事件、能力和运行句柄类型。 */
 export type AgentRuntimeId = "pi" | "claude-code";
 
 export interface RuntimeCapabilities {

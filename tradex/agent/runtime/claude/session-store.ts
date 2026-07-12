@@ -1,3 +1,4 @@
+/** 保存 Claude Session 的 Tradex 投影、消息历史和 native session ID。 */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -46,10 +47,12 @@ interface ClaudeSessionMetadata {
 export class ClaudeSessionStore {
   readonly root: string;
 
+  /** 使用用户目录下的 Claude Session 根目录初始化存储。 */
   constructor(root = path.join(os.homedir(), ".tradex", "claude_sessions")) {
     this.root = path.resolve(root);
   }
 
+  /** 创建一个新的 Tradex projection、metadata 和附件目录。 */
   create(input: { title: string; snapshot: ClaudeAgentSnapshot }): ClaudeSessionMetadata {
     // Tradex Session ID 只服务于 UI/API；Claude native session ID 单独记录，二者不能混用。
     const id = crypto.randomUUID();
@@ -70,12 +73,14 @@ export class ClaudeSessionStore {
     return metadata;
   }
 
+  /** 读取并校验指定 Session 的 metadata。 */
   getMetadata(id: string): ClaudeSessionMetadata | null {
     const file = path.join(this.sessionDir(id), "metadata.json");
     if (!fs.existsSync(file)) return null;
     return validateMetadata(JSON.parse(fs.readFileSync(file, "utf8")) as unknown);
   }
 
+  /** 原子更新 Claude native session ID，供下一轮 resume 使用。 */
   setNativeSessionId(id: string, nativeSessionId: string): void {
     const metadata = this.requireMetadata(id);
     metadata.nativeSessionId = nativeSessionId;
@@ -83,6 +88,7 @@ export class ClaudeSessionStore {
     this.writeMetadata(metadata);
   }
 
+  /** 记录一次 Claude run 开始，并把 Session 标记为运行中。 */
   beginRun(id: string): void {
     const metadata = this.requireMetadata(id);
     const now = new Date().toISOString();
@@ -91,6 +97,7 @@ export class ClaudeSessionStore {
     this.writeMetadata(metadata);
   }
 
+  /** 记录一次 Claude run 的结束状态、时间和错误信息。 */
   endRun(id: string, input: { status: "completed" | "error" | "cancelled"; error?: string | null }): void {
     const metadata = this.requireMetadata(id);
     const endedAt = new Date().toISOString();
@@ -104,6 +111,7 @@ export class ClaudeSessionStore {
     this.writeMetadata(metadata);
   }
 
+  /** 向 Tradex projection 追加一条用户、助手或工具结果消息。 */
   appendMessage(id: string, input: { role: ClaudeProjectedMessage["role"]; content: string; metadata?: Record<string, unknown> | null; error?: string | null }): ClaudeProjectedMessage {
     const metadata = this.requireMetadata(id);
     const message: ClaudeProjectedMessage = {
@@ -125,6 +133,7 @@ export class ClaudeSessionStore {
     return message;
   }
 
+  /** 读取 Session 的 JSONL projection，忽略无法解析的损坏行。 */
   messages(id: string): ClaudeProjectedMessage[] {
     // projection 是 UI 历史来源，不用于重新拼接 prompt；下一轮上下文交给 Claude 原生 resume。
     const file = path.join(this.sessionDir(id), "session.jsonl");
@@ -134,6 +143,7 @@ export class ClaudeSessionStore {
     });
   }
 
+  /** 组装单 Session API 所需的统一 DTO。 */
   payload(id: string): { session: Record<string, unknown>; messages: ClaudeProjectedMessage[]; contextUsage: null; sessionStats: Record<string, number> } | null {
     const metadata = this.getMetadata(id);
     if (!metadata) return null;
@@ -164,6 +174,7 @@ export class ClaudeSessionStore {
     };
   }
 
+  /** 扫描并返回有消息的 Claude Session 摘要。 */
   list(): Array<Record<string, unknown>> {
     if (!fs.existsSync(this.root)) return [];
     return fs.readdirSync(this.root).flatMap((id) => {
@@ -182,6 +193,7 @@ export class ClaudeSessionStore {
     }).sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
   }
 
+  /** 判断某个 Agent 是否仍被 Claude projection 引用。 */
   hasPersistedSessionForAgent(agentId: string): boolean {
     if (!fs.existsSync(this.root)) return false;
     return fs.readdirSync(this.root).some((id) => {
@@ -189,6 +201,7 @@ export class ClaudeSessionStore {
     });
   }
 
+  /** 删除本地 projection、metadata、附件和运行目录。 */
   removeFiles(id: string): void {
     // 调用方会先完成 Claude project purge，再删除本地 projection，避免出现部分删除。
     fs.rmSync(this.sessionDir(id), { recursive: true, force: true });

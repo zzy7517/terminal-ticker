@@ -1,3 +1,4 @@
+/** 定义 Claude Code 首期可以使用的显式只读 Tradex Tool 集合。 */
 import type { ToolRegistry } from "../../tools/registry.js";
 
 const CLAUDE_READ_TOOLS = new Set([
@@ -10,6 +11,7 @@ const CLAUDE_READ_TOOLS = new Set([
   "refresh_news", "refresh_x_following_feed", "search_x_tweets", "web_fetch", "web_search",
 ]);
 
+/** 将显式 allowlist 中的只读工具标记为可暴露给 Claude 的工具。 */
 export function exposeClaudeReadTools(registry: ToolRegistry): ToolRegistry {
   // Claude 首期只拿到显式 allowlist；不能根据工具名前缀推断读写权限。
   for (const tool of registry.listTools()) {
@@ -23,6 +25,7 @@ export function exposeClaudeReadTools(registry: ToolRegistry): ToolRegistry {
   return registry;
 }
 
+/** 根据工具名映射展示和审计所需的业务域。 */
 function inferDomain(name: string): "market" | "news" | "social" | "browser" | "trading" | "other" {
   if (name.startsWith("browser_")) return "browser";
   if (name.includes("news") || name.includes("jin10") || name.includes("economic")) return "news";
