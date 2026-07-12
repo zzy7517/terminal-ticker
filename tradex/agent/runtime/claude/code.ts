@@ -38,7 +38,9 @@ export interface ClaudeArgsInput {
 export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
   // 所有参数都以 argv 传入，禁止拼接 shell 字符串，避免 prompt 或路径产生注入问题。
   const mcpTools = input.allowedMcpTools.map((name) => `mcp__tradex__${name}`);
-  const tools = mcpTools;
+  const nativeTools = ["Read"];
+  const tools = [...nativeTools, ...mcpTools];
+  const allowedTools = [...nativeTools, ...mcpTools];
   const args = [
     "-p",
     "--verbose",
@@ -49,7 +51,7 @@ export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
     "--mcp-config", input.mcpConfigPath,
     "--append-system-prompt", input.instructions,
     "--tools", tools.join(","),
-    "--allowedTools", mcpTools.join(","),
+    "--allowedTools", allowedTools.join(","),
   ];
   if (input.nativeSessionId) args.push("--resume", input.nativeSessionId);
   else if (input.assignedNativeSessionId) args.push("--session-id", input.assignedNativeSessionId);

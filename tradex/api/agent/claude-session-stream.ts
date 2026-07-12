@@ -4,7 +4,6 @@ import path from "node:path";
 import { writeFile } from "node:fs/promises";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
-import { buildSessionAttachmentTools } from "../../agent/runtime/claude/attachment-tools.js";
 import { detectClaudeCode } from "../../agent/runtime/claude/availability.js";
 import { ClaudeCodeRuntime } from "../../agent/runtime/claude/code.js";
 import { exposeClaudeReadTools } from "../../agent/runtime/claude/tool-policy.js";
@@ -250,7 +249,7 @@ class ClaudeSessionStreamError extends Error {
   }
 }
 
-/** 构建并过滤当前 Claude Session 可以调用的只读 Tool。 */
+/** 构建并过滤当前 Claude Session 可以调用的 Tradex MCP 只读 Tool。 */
 async function buildClaudeTools(runtime: AppRuntime, sessionId: string) {
   const { tools } = await buildTradexToolRegistry(runtime, {
     sessionId,
@@ -258,7 +257,6 @@ async function buildClaudeTools(runtime: AppRuntime, sessionId: string) {
     includeMemory: false,
     includeExternalMcp: false,
     includeFilesystem: false,
-    additionalRegistries: [buildSessionAttachmentTools(runtime.claudeSessions.sessionDir(sessionId))],
   });
   return exposeClaudeReadTools(tools);
 }
@@ -271,7 +269,7 @@ function claudeInstructions(agentInstructions: string): string {
     MAIN_AGENT_PROMPT,
     ...(agentInstructions.trim() && agentInstructions.trim() !== MAIN_AGENT_PROMPT.trim() ? [agentInstructions.trim()] : []),
     `Session date: ${sessionDate} (Asia/Shanghai).`,
-    "You are running inside Tradex via Claude Code. Use only the explicitly allowed Tradex MCP read tools. Read image attachments only with read_session_attachment.",
+    "You are running inside Tradex via Claude Code. Use the native Read tool for files in this Session and the explicitly allowed Tradex MCP read tools for market data.",
     "Do not place trades, modify files, use shell commands, access Memory, configure external MCP servers, or claim those capabilities are available.",
   ].join("\n\n");
 }
@@ -300,13 +298,13 @@ async function saveClaudeAttachments(runtime: AppRuntime, sessionId: string, ima
   }));
 }
 
-/** 把后端生成的附件文件名加入 prompt，供 Claude 调用受控读取 Tool。 */
-function promptWithAttachments(prompt: string, attachmentPaths: string[]): string {
+/** 把相对 Session cwd 的附件路径加入 prompt，供 Claude 使用原生 Read 读取。 */
+export function promptWithAttachments(prompt: string, attachmentPaths: string[]): string {
   if (attachmentPaths.length === 0) return prompt;
   return [
     prompt,
-    "Attached images are available through the read_session_attachment tool:",
-    ...attachmentPaths.map((file) => `- ${path.basename(file)}`),
+    "Attached images are available at these paths relative to the current working directory. Use the Read tool to inspect them:",
+    ...attachmentPaths.map((file) => `- attachments/${path.basename(file)}`),
   ].filter(Boolean).join("\n\n");
 }
 

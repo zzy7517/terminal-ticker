@@ -8,6 +8,7 @@ import type { AppRuntime } from "../runtime.js";
 import { piSessionFileExists } from "../../agent/pi_sessions.js";
 import { ClaudeSessionStore } from "../../agent/runtime/claude/session-store.js";
 import { McpRunGrantStore } from "../../mcp/server/grants.js";
+import { promptWithAttachments } from "../agent/claude-session-stream.js";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
@@ -56,6 +57,13 @@ function runtime(): AppRuntime {
 }
 
 describe("Agent HTTP API", () => {
+  it("projects Claude attachments as relative paths for native Read", () => {
+    const prompt = promptWithAttachments("Inspect this", ["/private/session/attachments/image-id.png"]);
+    expect(prompt).toContain("attachments/image-id.png");
+    expect(prompt).not.toContain("/private/session");
+    expect(prompt).not.toContain("read_session_attachment");
+  });
+
   it("returns Pi as the built-in runtime without probing it", async () => {
     const response = await agentRoutes(runtime()).request("/api/agent/runtimes");
     const payload = await response.json() as { runtimes: Array<Record<string, unknown>> };

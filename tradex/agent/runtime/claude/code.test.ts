@@ -17,10 +17,21 @@ describe("Claude Code runtime protocol", () => {
       "--strict-mcp-config",
       "--mcp-config", "/tmp/tradex-mcp.json",
       "--append-system-prompt", "Use Tradex tools.",
-      "--tools", "mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
-      "--allowedTools", "mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
+      "--tools", "Read,mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
+      "--allowedTools", "Read,mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
       "Analyze BTC",
     ]);
+  });
+
+  it("keeps native Read available when no MCP tools are exposed", () => {
+    const args = buildClaudeArgs({
+      prompt: "Inspect attachments/image.png",
+      instructions: "Read the attached image.",
+      mcpConfigPath: "/tmp/mcp.json",
+      allowedMcpTools: [],
+    });
+    expect(args.slice(args.indexOf("--tools"), args.indexOf("--tools") + 2)).toEqual(["--tools", "Read"]);
+    expect(args.slice(args.indexOf("--allowedTools"), args.indexOf("--allowedTools") + 2)).toEqual(["--allowedTools", "Read"]);
   });
 
   it("adds resume, model, and effort only when explicitly configured", () => {
