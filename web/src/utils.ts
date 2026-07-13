@@ -14,7 +14,6 @@ import {
   OPTIONS_HASH,
   PROVIDERS_HASH,
   PROXY_HASH,
-  SOCIAL_HASH,
   WATCHLIST_HASH,
   type AppRoute,
 } from './constants';
@@ -40,9 +39,6 @@ export function readRouteFromHash(): AppRoute {
   if (window.location.hash.startsWith(CRON_HASH)) {
     return { view: 'settings', section: 'cron' };
   }
-  if (window.location.hash.startsWith(SOCIAL_HASH)) {
-    return { view: 'settings', section: 'social' };
-  }
   if (window.location.hash.startsWith(MEMORY_HASH)) {
     return { view: 'settings', section: 'memory' };
   }
@@ -66,8 +62,6 @@ export function navigateToRoute(route: AppRoute) {
     const hash =
       route.section === 'cron'
         ? CRON_HASH
-        : route.section === 'social'
-        ? SOCIAL_HASH
         : route.section === 'memory'
         ? MEMORY_HASH
         : route.section === 'agents'

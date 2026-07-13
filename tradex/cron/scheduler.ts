@@ -34,7 +34,6 @@ export interface CronJobStatus {
   maxIterations: number | null;
   maxCandles: number | null;
   tradingEnabled: boolean;
-  socialEnabled: boolean;
   timezone: string | null;
 }
 
@@ -106,7 +105,6 @@ export class CronScheduler {
         maxIterations: config.maxIterations,
         maxCandles: config.maxCandles,
         tradingEnabled: config.tradingEnabled,
-        socialEnabled: config.socialEnabled,
         timezone: config.timezone,
       });
     }

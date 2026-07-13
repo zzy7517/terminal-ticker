@@ -72,7 +72,7 @@ export type ToolExecuteFn<TDetails = unknown> = (
 
 export interface ToolPolicy {
   access: "read" | "write";
-  domain: "market" | "news" | "social" | "browser" | "filesystem" | "trading" | "external" | "other";
+  domain: "market" | "news" | "browser" | "filesystem" | "trading" | "external" | "other";
   runtimeExposure: readonly AgentRuntimeId[];
 }
 

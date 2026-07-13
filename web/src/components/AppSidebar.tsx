@@ -7,7 +7,6 @@ import {
   Newspaper,
   Radio,
   Settings,
-  Users,
   WalletCards,
 } from 'lucide-react';
 import { useMarketStore } from '../stores/marketStore';
@@ -33,7 +32,6 @@ export function AppSidebar() {
     { id: 'agent', label: 'Agent', icon: Bot },
     { id: 'market', label: 'Market', icon: LineChart },
     { id: 'news', label: 'News', icon: Newspaper },
-    { id: 'social', label: 'Social', icon: Users },
     { id: 'calendar', label: 'Calendar', icon: CalendarDays, available: jin10Available },
     { id: 'positions', label: 'Positions', icon: WalletCards },
     { id: 'options', label: 'Options', icon: Activity, available: optionsAvailable },

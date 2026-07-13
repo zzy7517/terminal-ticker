@@ -1,13 +1,11 @@
 /**
- * llm_client.ts — Lightweight LLM chat client interface.
+ * llm_client.ts — 轻量级 LLM 聊天客户端接口。
  *
- * Used by code paths that only need a single, non-streaming-aware,
- * non-agentic call (e.g. the memory pipeline). Speaks the same typed
- * `AgentMessage[]` shape as the core Agent so there's only one message
- * representation in the codebase.
+ * 供只需要单次、非流式感知、非 agentic 调用的代码路径使用
+ * （例如 memory pipeline）。与核心 Agent 共用同一套类型化的
+ * `AgentMessage[]` 消息形状，保证代码库里只有一种消息表示。
  *
- * For multi-turn tool-calling work, use the stateful `Agent` class in
- * `core/` instead — it speaks the same types.
+ * 多轮工具调用请改用 `core/` 里有状态的 `Agent` 类——两边用的是同一套类型。
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -16,14 +14,13 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 export type StreamDeltaHandler = (delta: string) => Promise<void> | void;
 
 /**
- * Result of a simple chat call. Mirrors the AssistantMessage produced by
- * a full provider stream, projected to the few fields memory consumers
- * actually need.
+ * 简单 chat 调用的返回结果。对应完整 provider 流产生的 AssistantMessage，
+ * 只投影出 memory 等调用方实际需要的少量字段。
  */
 export interface ChatResponse {
-  /** Concatenated text content from the assistant's TextContent blocks. */
+  /** 助手 TextContent 块拼接后的文本内容。 */
   content: string;
-  /** The full assistant message — provided so callers can read usage etc. */
+  /** 完整的助手消息——便于调用方读取 usage 等信息。 */
   message: AssistantMessage;
 }
 
@@ -31,7 +28,7 @@ export interface LLMChatClient {
   name: string;
   model: string;
   chat(input: {
-    /** Optional system prompt; equivalent to AgentContext.systemPrompt. */
+    /** 可选系统提示；等价于 AgentContext.systemPrompt。 */
     system?: string;
     messages: AgentMessage[];
     onDelta?: StreamDeltaHandler | null;

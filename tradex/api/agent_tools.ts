@@ -7,7 +7,6 @@ import { buildMarketTools } from "../agent/tools/market.js";
 import { buildNewsTools } from "../agent/tools/news.js";
 import { buildOptionsTools } from "../agent/tools/options.js";
 import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
-import { buildSocialFeedTools } from "../agent/tools/social.js";
 import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildWebTools } from "../agent/tools/web.js";
 import { buildMcpToolRegistry } from "../mcp/index.js";
@@ -32,7 +31,6 @@ export async function buildTradexToolRegistry(runtime: AppRuntime, options: Trad
   const memoryRegistry = options.includeMemory ? await runtime.memoryPort.buildTools() : null;
   const externalContextToolNames = new Set([
     "web_search", "web_fetch", "get_recent_news", "refresh_news",
-    "refresh_x_following_feed", "get_recent_social_feed", "search_x_tweets",
     "browser_open_page", "browser_screenshot", "browser_status",
     ...(mcpRegistry?.listTools().map((tool) => tool.name) ?? []),
   ]);
@@ -47,17 +45,6 @@ export async function buildTradexToolRegistry(runtime: AppRuntime, options: Trad
         sinceMinutes == null || item.publishedAtMs >= Date.now() - sinceMinutes * 60_000
       )),
       refresh: () => runtime.newsService.refreshNow(),
-    }),
-    buildSocialFeedTools({
-      refreshFollowing: (count) => runtime.socialFeedService.refreshXFollowing({ count }),
-      recent: async (args) => runtime.socialFeedService.recentItems({
-        limit: Number(args.limit) || runtime.config.socialFeed.recentLimit,
-      }),
-      search: async (args) => (await runtime.socialFeedService.searchXTweets({
-        query: String(args.query || ""),
-        count: Number(args.count) || 20,
-        product: typeof args.product === "string" ? args.product : undefined,
-      })).items,
     }),
     ...(memoryRegistry ? [memoryRegistry] : []),
     buildTradingTools({

@@ -13,7 +13,6 @@ import {
   AgentsSettingsPanel,
   NewsSettingsPanel,
   MemorySettingsPanel,
-  SocialSettingsPanel,
   CronSettingsPanel,
   McpSettingsPanel,
   BrowserSettingsPanel,
@@ -88,8 +87,6 @@ export default function App() {
           <MemorySettingsPanel />
         ) : route.section === 'cron' ? (
           <CronSettingsPanel />
-        ) : route.section === 'social' ? (
-          <SocialSettingsPanel />
         ) : route.section === 'mcp' ? (
           <McpSettingsPanel />
         ) : route.section === 'browser' ? (

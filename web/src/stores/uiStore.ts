@@ -6,7 +6,6 @@ export type WorkspaceViewId =
   | 'agent'
   | 'market'
   | 'news'
-  | 'social'
   | 'calendar'
   | 'positions'
   | 'options'

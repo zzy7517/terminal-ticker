@@ -104,7 +104,6 @@ export function cronRoutes(runtime: AppRuntime): Hono {
       maxIterations: typeof body.maxIterations === "number" && body.maxIterations > 0 ? body.maxIterations : null,
       maxCandles: typeof body.maxCandles === "number" && body.maxCandles > 0 ? body.maxCandles : null,
       tradingEnabled: body.tradingEnabled === true,
-      socialEnabled: body.socialEnabled === true,
       timezone: typeof body.timezone === "string" && body.timezone.trim() ? body.timezone.trim() : null,
     };
 
@@ -138,7 +137,6 @@ export function cronRoutes(runtime: AppRuntime): Hono {
       maxIterations: body.maxIterations === null ? null : typeof body.maxIterations === "number" && body.maxIterations > 0 ? body.maxIterations : current.maxIterations,
       maxCandles: body.maxCandles === null ? null : typeof body.maxCandles === "number" && body.maxCandles > 0 ? body.maxCandles : current.maxCandles,
       tradingEnabled: typeof body.tradingEnabled === "boolean" ? body.tradingEnabled : current.tradingEnabled,
-      socialEnabled: typeof body.socialEnabled === "boolean" ? body.socialEnabled : current.socialEnabled,
       timezone: body.timezone === null ? null : typeof body.timezone === "string" ? (body.timezone.trim() || null) : current.timezone,
     };
 

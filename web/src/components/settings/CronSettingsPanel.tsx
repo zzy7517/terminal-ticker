@@ -32,7 +32,6 @@ interface JobDraft {
   maxIterations: number | null;
   maxCandles: number | null;
   tradingEnabled: boolean;
-  socialEnabled: boolean;
   timezone: string | null;
 }
 
@@ -47,7 +46,6 @@ const EMPTY_DRAFT: JobDraft = {
   maxIterations: null,
   maxCandles: null,
   tradingEnabled: false,
-  socialEnabled: false,
   timezone: null,
 };
 
@@ -181,7 +179,6 @@ export function CronSettingsPanel() {
       maxIterations: job.maxIterations,
       maxCandles: job.maxCandles,
       tradingEnabled: job.tradingEnabled,
-      socialEnabled: job.socialEnabled,
       timezone: job.timezone,
     });
     setScheduleInput(cronToHuman(job.cron, job.timezone));
@@ -235,7 +232,6 @@ export function CronSettingsPanel() {
         maxIterations: draft.maxIterations,
         maxCandles: draft.maxCandles,
         tradingEnabled: draft.tradingEnabled,
-        socialEnabled: draft.socialEnabled,
         timezone: draft.timezone,
       };
       let updated: CronJobStatus[];
@@ -564,18 +560,6 @@ export function CronSettingsPanel() {
                   </div>
                   <label className="switch-row">
                     <input type="checkbox" checked={draft.tradingEnabled} onChange={() => setDraft((d) => ({ ...d, tradingEnabled: !d.tradingEnabled }))} />
-                    <span className="switch-slider" />
-                  </label>
-                </div>
-
-                {/* Social tools toggle */}
-                <div className="settings-toggle-row">
-                  <div>
-                    <strong>社交数据</strong>
-                    <small>允许 Agent 获取 X/Twitter 动态</small>
-                  </div>
-                  <label className="switch-row">
-                    <input type="checkbox" checked={draft.socialEnabled} onChange={() => setDraft((d) => ({ ...d, socialEnabled: !d.socialEnabled }))} />
                     <span className="switch-slider" />
                   </label>
                 </div>

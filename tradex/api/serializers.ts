@@ -138,7 +138,6 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       minSessionIdleHours: config.memory.minSessionIdleHours,
       extensionRetentionDays: config.memory.extensionRetentionDays,
     },
-    socialFeed: config.socialFeed,
     trading: config.trading,
     mcp: {
       enabled: config.mcp.enabled,

@@ -33,10 +33,6 @@ import type {
   MemoryStatus,
   NewsConfigUpdate,
   NewsItem,
-  SocialAuthImportResult,
-  SocialAuthStatus,
-  SocialFeedItem,
-  SocialFeedConfigUpdate,
   McpAllResourcesResponse,
   McpAllResourceTemplatesResponse,
   McpReadResourceResponse,
@@ -474,89 +470,6 @@ export async function saveOptionsConfig(config: OptionsConfigUpdate): Promise<Ma
   }
   const payload = await response.json();
   return payload.state;
-}
-
-// Saves social feed settings and returns the updated runtime state.
-export async function saveSocialFeedConfig(config: SocialFeedConfigUpdate): Promise<MarketState> {
-  const response = await fetch('/api/social/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'social feed config save failed');
-  }
-  const payload = await response.json();
-  return payload.state;
-}
-
-// Reads whether X auth cookies are saved locally without exposing their values.
-export async function fetchSocialAuthStatus(): Promise<SocialAuthStatus> {
-  const response = await fetch('/api/social/auth');
-  if (!response.ok) {
-    throw await responseError(response, 'social auth status failed');
-  }
-  return response.json();
-}
-
-// Saves X auth cookies to the backend's local auth store.
-export async function saveSocialAuth(auth: { authToken: string; ct0: string }): Promise<SocialAuthStatus> {
-  const response = await fetch('/api/social/auth', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(auth),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'social auth save failed');
-  }
-  return response.json();
-}
-
-// Imports X auth cookies from the logged-in Chrome profile through Open Browser Use.
-export async function importSocialAuthFromBrowser(): Promise<SocialAuthImportResult> {
-  const response = await fetch('/api/social/auth/import-browser', { method: 'POST' });
-  if (!response.ok) {
-    throw await responseError(response, 'social auth browser import failed');
-  }
-  return response.json();
-}
-
-// Clears the locally saved X auth cookies.
-export async function clearSocialAuth(): Promise<SocialAuthStatus> {
-  const response = await fetch('/api/social/auth', { method: 'DELETE' });
-  if (!response.ok) {
-    throw await responseError(response, 'social auth clear failed');
-  }
-  return response.json();
-}
-
-// Triggers a small X Following refresh to validate saved auth and connectivity.
-export async function triggerXFollowingRefresh(count = 3): Promise<{
-  status: string;
-  inserted: number;
-  totalRecent: number;
-  error: string | null;
-}> {
-  const response = await fetch('/api/social/x/refresh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ count }),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'X refresh failed');
-  }
-  return response.json();
-}
-
-// Reads locally cached social feed items for settings-page smoke tests.
-export async function fetchRecentSocialFeed(limit = 3): Promise<SocialFeedItem[]> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  const response = await fetch(`/api/social/feed?${params}`);
-  if (!response.ok) {
-    throw await responseError(response, 'social feed fetch failed');
-  }
-  const payload = await response.json();
-  return payload.items ?? [];
 }
 
 // Fetches the current memory pipeline status and config.

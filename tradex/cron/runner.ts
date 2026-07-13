@@ -15,7 +15,6 @@ import { buildNewsTools } from "../agent/tools/news.js";
 import { buildWebTools } from "../agent/tools/web.js";
 import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildOptionsTools } from "../agent/tools/options.js";
-import { buildSocialFeedTools } from "../agent/tools/social.js";
 import { buildBrowserTools } from "../agent/tools/browser.js";
 import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../mcp/index.js";
@@ -84,22 +83,6 @@ export async function executeCronJob(input: {
         tradingConfig: runtime.config.trading,
         resolveSessionId: () => sessionId,
         captureSnapshot: null,
-      }),
-    );
-  }
-
-  if (job.socialEnabled) {
-    registries.push(
-      buildSocialFeedTools({
-        refreshFollowing: (count) => runtime.socialFeedService.refreshXFollowing({ count }),
-        recent: async (args) => runtime.socialFeedService.recentItems({
-          limit: Number(args.limit) || runtime.config.socialFeed.recentLimit,
-        }),
-        search: async (args) => (await runtime.socialFeedService.searchXTweets({
-          query: String(args.query || ""),
-          count: Number(args.count) || 20,
-          product: typeof args.product === "string" ? args.product : undefined,
-        })).items,
       }),
     );
   }

@@ -1,5 +1,5 @@
 /** 提供 Agent、Session 和配置路由共用的投影及校验辅助函数。 */
-import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type ProxyConfig, type ProxyType, type SocialFeedConfig } from "../config/index.js";
+import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type ProxyConfig, type ProxyType } from "../config/index.js";
 import { defaultProviderApi, normalizeApiMode, normalizeProvider } from "../agent/runtime/pi/models/constants.js";
 import {
   listPiSessions,
@@ -284,17 +284,6 @@ export function mergeNewsConfig(config: NewsConfig, body: Record<string, unknown
     requestTimeoutSeconds: minNumberField(body.requestTimeoutSeconds, config.requestTimeoutSeconds, 0.1),
     retentionDays: minNumberField(body.retentionDays, config.retentionDays, 1),
     recentLimit: minNumberField(body.recentLimit, config.recentLimit, 1),
-  };
-}
-
-// Applies a partial social feed config update, enforcing minimum values on numeric fields.
-export function mergeSocialFeedConfig(config: SocialFeedConfig, body: Record<string, unknown>): SocialFeedConfig {
-  return {
-    ...config,
-    enabled: typeof body.enabled === "boolean" ? body.enabled : config.enabled,
-    recentLimit: minNumberField(body.recentLimit, config.recentLimit, 1),
-    retentionDays: minNumberField(body.retentionDays, config.retentionDays, 1),
-    maxItems: minNumberField(body.maxItems, config.maxItems, 100),
   };
 }
 

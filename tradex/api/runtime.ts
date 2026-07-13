@@ -5,9 +5,6 @@ import { MemoryPipeline } from "../memory/pipeline.js";
 import { MemoryRuntimePolicy } from "../memory/policy.js";
 import { LocalMemoryPort, type MemoryPort } from "../memory/port.js";
 import { NewsService } from "../news/service.js";
-import { SocialFeedService } from "../social_feed/service.js";
-import { XAuthStore } from "../social_feed/auth.js";
-import { XInternalClient } from "../social_feed/providers/x_internal.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import { listPiSessionManagersSync, piSessionPayload } from "../agent/runtime/pi/sessions.js";
 import { ExchangeRouter } from "../trading/exchange_router.js";
@@ -41,8 +38,6 @@ export class AppRuntime {
   readonly tradeStore: TradeStore;
   readonly exchangeRouter: ExchangeRouter;
   newsService: NewsService;
-  socialFeedService: SocialFeedService;
-  readonly xAuthStore: XAuthStore;
   readonly memoryBackend: LocalMemoryBackend;
   memoryPipeline: MemoryPipeline | null;
   memoryPort: MemoryPort;
@@ -79,11 +74,6 @@ export class AppRuntime {
     this.tradeStore = new TradeStore();
     this.exchangeRouter = new ExchangeRouter({ tradingConfig: config.trading });
     this.newsService = new NewsService({ config: config.news });
-    this.xAuthStore = new XAuthStore();
-    this.socialFeedService = new SocialFeedService({
-      config: config.socialFeed,
-      clientFactory: () => new XInternalClient(this.xAuthStore.load()),
-    });
     this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
     this.memoryPipeline = this._buildMemoryPipeline(config, modelRuntimeSnapshot);
     this.memoryPort = new LocalMemoryPort(config.memory, () => this.memoryPipeline);
@@ -177,10 +167,6 @@ export class AppRuntime {
     this.controller = new TickerController({ config, instruments: this.instruments });
     this.exchangeRouter.tradingConfig = config.trading;
     this.newsService = new NewsService({ config: config.news });
-    this.socialFeedService = new SocialFeedService({
-      config: config.socialFeed,
-      clientFactory: () => new XInternalClient(this.xAuthStore.load()),
-    });
     this.jin10Service = new Jin10Service({
       config: config.jin10,
       mcpManager: this.mcpManager,

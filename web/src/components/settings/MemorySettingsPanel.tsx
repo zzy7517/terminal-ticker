@@ -384,7 +384,7 @@ export function MemorySettingsPanel() {
           <div className="settings-toggle-row">
             <div>
               <strong>Skip external-context sessions</strong>
-              <small>Do not generate memory from sessions that used web, social, browser, or MCP tools.</small>
+              <small>Do not generate memory from sessions that used web, browser, or MCP tools.</small>
             </div>
             <label className="switch-row">
               <input type="checkbox" checked={config.disableOnExternalContext} disabled={saving || !config.enabled} onChange={() => persistConfig({ disableOnExternalContext: !config.disableOnExternalContext })} />

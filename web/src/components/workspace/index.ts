@@ -4,7 +4,6 @@ export { WatchlistRow } from './WatchlistRow';
 export { WatchlistDrawer } from './WatchlistDrawer';
 export { WatchlistSidebar } from './WatchlistSidebar';
 export { NewsPanel } from './NewsPanel';
-export { SocialFeedPanel } from './SocialFeedPanel';
 export { PositionsPanel } from './PositionsPanel';
 export { CalendarPanel } from './CalendarPanel';
 

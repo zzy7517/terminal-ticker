@@ -154,13 +154,6 @@ export interface NewsConfig {
   recentLimit: number;
 }
 
-export interface SocialFeedConfig {
-  enabled: boolean;
-  recentLimit: number;
-  retentionDays: number;
-  maxItems: number;
-}
-
 /** Per-exchange trading mode: off = no orders, demo = paper/simulated, live = real money */
 export type ExchangeTradingMode = "off" | "demo" | "live";
 
@@ -191,7 +184,6 @@ export interface CronJobConfig {
   maxIterations: number | null;
   maxCandles: number | null;
   tradingEnabled: boolean;
-  socialEnabled: boolean;
   timezone: string | null;
 }
 
@@ -246,7 +238,6 @@ export interface AppConfig {
   agent: AgentConfig;
   memory: MemoryConfig;
   news: NewsConfig;
-  socialFeed: SocialFeedConfig;
   trading: TradingConfig;
   mcp: McpAppConfig;
   jin10: Jin10Config;
@@ -761,16 +752,6 @@ export function parseNewsConfig(rawNewsValue: unknown): NewsConfig {
   };
 }
 
-export function parseSocialFeedConfig(rawSocialValue: unknown): SocialFeedConfig {
-  const raw = asRecord(rawSocialValue, "social_feed");
-  return {
-    enabled: normalizeBool(raw.enabled, "social_feed.enabled", false),
-    recentLimit: coerceMinInt(raw.recent_limit, "social_feed.recent_limit", 100, 1),
-    retentionDays: coerceMinInt(raw.retention_days, "social_feed.retention_days", 30, 1),
-    maxItems: coerceMinInt(raw.max_items, "social_feed.max_items", 2000, 100),
-  };
-}
-
 const VALID_TRADING_MODES: ExchangeTradingMode[] = ["off", "demo", "live"];
 
 function parseExchangeMode(raw: Record<string, unknown>, key: string, defaultMode: ExchangeTradingMode): ExchangeTradingMode {
@@ -946,7 +927,6 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     agent: parseAgentConfig(data.agent),
     memory: parseMemoryConfig(data.memory),
     news: parseNewsConfig(data.news),
-    socialFeed: parseSocialFeedConfig(data.social_feed),
     trading: parseTradingConfig(data.trading),
     mcp: parseMcpConfig(data.mcp),
     jin10: parseJin10Config(data.jin10),
@@ -980,7 +960,6 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       agent: parseAgentConfig({}),
       memory: parseMemoryConfig({}),
       news: parseNewsConfig({}),
-      socialFeed: parseSocialFeedConfig({}),
       trading: parseTradingConfig({}),
       mcp: parseMcpConfig({}),
       jin10: parseJin10Config({}),

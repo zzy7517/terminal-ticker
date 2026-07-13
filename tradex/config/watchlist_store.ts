@@ -11,7 +11,6 @@ import {
   MemoryConfig,
   NewsConfig,
   ProxyConfig,
-  SocialFeedConfig,
   SUPPORTED_INST_TYPES,
   TradingConfig,
   expandUserPath,
@@ -448,16 +447,6 @@ export async function updateNewsConfigInWatchlist(watchlistPath: string, config:
     `request_timeout_seconds = ${config.requestTimeoutSeconds}`,
     `retention_days = ${config.retentionDays}`,
     `recent_limit = ${config.recentLimit}`,
-  ]);
-}
-
-export async function updateSocialFeedConfigInWatchlist(watchlistPath: string, config: SocialFeedConfig): Promise<boolean> {
-  return replaceTable(watchlistPath, "social_feed", [
-    "[social_feed]",
-    `enabled = ${config.enabled ? "true" : "false"}`,
-    `recent_limit = ${config.recentLimit}`,
-    `retention_days = ${config.retentionDays}`,
-    `max_items = ${config.maxItems}`,
   ]);
 }
 

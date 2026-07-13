@@ -8,7 +8,6 @@ import {
   Chrome,
   CircleDot,
   Clock,
-  KeyRound,
   Network,
   Newspaper,
   Search,
@@ -44,7 +43,6 @@ export function SettingsFrame({
       items: [
         { id: 'watchlist' as const, label: 'Watchlist', icon: CircleDot },
         { id: 'news' as const, label: 'News', icon: Newspaper },
-        { id: 'social' as const, label: 'Social', icon: KeyRound },
         { id: 'options' as const, label: 'Options', icon: Activity },
       ],
     },

@@ -14,7 +14,6 @@
     "max_iterations": null,
     "max_candles": null,
     "trading_enabled": false,
-    "social_enabled": false,
     "timezone": "Asia/Shanghai"
   }
 ]

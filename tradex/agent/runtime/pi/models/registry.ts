@@ -1,10 +1,9 @@
 /**
- * registry.ts — Convenience wrapper around AgentModel resolution +
- * remote model catalog fetch.
+ * registry.ts — AgentModel 解析 + 远程模型目录拉取的便捷封装。
  *
- * Used by:
- *  - api/routes/agent.ts for listAvailableModels()
- *  - memory pipeline (via LLMProviderFactory)
+ * 使用方：
+ *  - api/routes/agent.ts 的 listAvailableModels()
+ *  - memory pipeline（经 LLMProviderFactory）
  */
 
 import { AgentConfig } from "../../../../config/index.js";
@@ -24,21 +23,20 @@ import { fetchProviderModelCatalog } from "./model_fetch.js";
 export class LLMProviderUnavailable extends Error {}
 
 /**
- * AgentModelRegistry — resolves config into AgentModel and provides
- * a simple chat client for the memory pipeline.
+ * AgentModelRegistry — 把 config 解析成 AgentModel，
+ * 并为 memory pipeline 提供简单的 chat 客户端。
  */
 export class AgentModelRegistry {
   constructor(private readonly modelRuntime: ModelRuntimeSnapshot) {}
 
-  /** Resolve config into an AgentModel value object. */
+  /** 把 config 解析成 AgentModel 值对象。 */
   resolve(config: AgentConfig): AgentModel {
     return resolveAgentModelFromConfig(config);
   }
 
   /**
-   * Create an LLMChatClient from config. Wraps the provider stream into the
-   * lightweight chat interface used by non-agentic consumers like the memory
-   * pipeline.
+   * 根据 config 创建 LLMChatClient。
+   * 把 provider 流式接口包成轻量 chat 接口，供 memory pipeline 等非 agentic 调用方使用。
    */
   createProvider(config: AgentConfig): LLMChatClient {
     const { model, modelRegistry, requiresAuth } = this.modelRuntime.resolve(config);
@@ -61,7 +59,7 @@ export class AgentModelRegistry {
                 Authorization: null as unknown as string,
               },
         });
-        // Forward text deltas to legacy onDelta callback while awaiting final result
+        // 在等待最终结果的同时，把文本 delta 转发给旧的 onDelta 回调
         if (onDelta) {
           for await (const evt of stream) {
             if (evt.type === "text_delta" && evt.delta) {
@@ -79,7 +77,7 @@ export class AgentModelRegistry {
     };
   }
 
-  /** Fetch available models from the provider's remote catalog. */
+  /** 从 provider 的远程目录拉取可用模型列表。 */
   async listAvailableModels(
     config: AgentConfig,
     providerOverride?: string | null,
@@ -88,6 +86,5 @@ export class AgentModelRegistry {
   }
 }
 
-// Re-export the supported provider constants so callers don't have to import
-// from config to know what's registered.
+// 再导出已支持的 provider 常量，调用方不必从 config 导入也能知道注册了哪些。
 export { ANTHROPIC_PROVIDER, CODEX_PROVIDER };

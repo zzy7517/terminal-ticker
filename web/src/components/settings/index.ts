@@ -6,7 +6,6 @@ export { AgentContextSettingsPanel } from './AgentContextSettingsPanel';
 export { AgentsSettingsPanel } from './AgentsSettingsPanel';
 export { NewsSettingsPanel } from './NewsSettingsPanel';
 export { MemorySettingsPanel } from './MemorySettingsPanel';
-export { SocialSettingsPanel } from './SocialSettingsPanel';
 export { CronSettingsPanel } from './CronSettingsPanel';
 export { McpSettingsPanel } from './McpSettingsPanel';
 export { BrowserSettingsPanel } from './BrowserSettingsPanel';

@@ -72,11 +72,6 @@ reuters_url = "https://www.reuters.com/arc/outboundfeeds/news-sitemap/?outputTyp
 request_timeout_seconds = 10
 retention_days = 30
 recent_limit = 50
-[social_feed]
-enabled = true
-recent_limit = 100
-retention_days = 30
-max_items = 2000
 
 [trading]
 hyperliquid_mode = "off"   # "off" | "demo" | "live"

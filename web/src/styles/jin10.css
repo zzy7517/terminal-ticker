@@ -1,0 +1,52 @@
+/* Shared Jin10 instrument chips used by settings and watchlist surfaces. */
+.jin10-code-chip {
+  align-items: center;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  gap: 3px;
+  padding: 1px 6px;
+}
+
+.jin10-code-chip__label {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.jin10-code-chip__remove {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  height: 12px;
+  justify-content: center;
+  width: 12px;
+}
+
+.jin10-code-chip__remove:hover {
+  color: var(--down);
+}
+
+.jin10-suggestion-chip {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 12px;
+  gap: 2px;
+  padding: 1px 6px;
+}
+
+.jin10-suggestion-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

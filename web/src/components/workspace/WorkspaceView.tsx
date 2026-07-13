@@ -5,7 +5,6 @@ import {
   Clock,
   LineChart,
   Newspaper,
-  Users,
   WalletCards,
 } from 'lucide-react';
 import './WorkspaceView.css';
@@ -16,7 +15,6 @@ import { WatchlistSidebar } from './WatchlistSidebar';
 import { AgentSessionHistoryList } from './AgentSessionHistoryList';
 import { AgentSessionPanel } from './AgentSessionPanel';
 import { NewsPanel } from './NewsPanel';
-import { SocialFeedPanel } from './SocialFeedPanel';
 import { PositionsPanel } from './PositionsPanel';
 import { CronPanel } from './CronPanel';
 import { CalendarPanel } from './CalendarPanel';
@@ -39,7 +37,6 @@ export function WorkspaceView() {
             {activeTab === 'agent' ? <Bot size={17} />
               : activeTab === 'market' ? <LineChart size={17} />
               : activeTab === 'news' ? <Newspaper size={17} />
-              : activeTab === 'social' ? <Users size={17} />
               : activeTab === 'calendar' ? <CalendarDays size={17} />
               : activeTab === 'cron' ? <Clock size={17} />
               : <WalletCards size={17} />}
@@ -84,8 +81,6 @@ export function WorkspaceView() {
 
             </div>
           )}
-
-          {activeTab === 'social' && <SocialFeedPanel />}
 
           {activeTab === 'calendar' && (
             <div className="calendar-tab-panel">

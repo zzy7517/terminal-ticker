@@ -27,7 +27,6 @@ interface CronJobJson {
   max_iterations: number | null;
   max_candles: number | null;
   trading_enabled: boolean;
-  social_enabled: boolean;
   timezone: string | null;
 }
 
@@ -44,7 +43,6 @@ function toJson(job: CronJobConfig): CronJobJson {
     max_iterations: job.maxIterations,
     max_candles: job.maxCandles,
     trading_enabled: job.tradingEnabled,
-    social_enabled: job.socialEnabled,
     timezone: job.timezone,
   };
 }
@@ -62,7 +60,6 @@ function fromJson(raw: CronJobJson): CronJobConfig {
     maxIterations: raw.max_iterations ?? null,
     maxCandles: raw.max_candles ?? null,
     tradingEnabled: raw.trading_enabled === true,
-    socialEnabled: raw.social_enabled === true,
     timezone: raw.timezone ?? null,
   };
 }

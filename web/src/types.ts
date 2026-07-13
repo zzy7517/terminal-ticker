@@ -364,20 +364,6 @@ export interface MemoryBrowseSearchResult {
   truncated: boolean;
 }
 
-export interface SocialFeedConfig {
-  enabled: boolean;
-  recentLimit: number;
-  retentionDays: number;
-  maxItems: number;
-}
-
-export interface SocialFeedConfigUpdate {
-  enabled?: boolean;
-  recentLimit?: number;
-  retentionDays?: number;
-  maxItems?: number;
-}
-
 export type ProxyType = 'http' | 'https' | 'socks5';
 
 export interface ProxyConfigPayload {
@@ -405,37 +391,6 @@ export interface ProxyTestResult {
   status?: number;
   latencyMs?: number;
   error?: string;
-}
-
-export interface SocialAuthStatus {
-  hasSavedAuth: boolean;
-  savedAtMs: number | null;
-  envAvailable: boolean;
-  configured?: boolean;
-  path?: string;
-  error?: string | null;
-}
-
-export interface SocialAuthImportResult {
-  ok: boolean;
-  status: SocialAuthStatus;
-  error: string | null;
-}
-
-export interface SocialFeedItem {
-  source: string;
-  externalId: string;
-  url: string;
-  author: {
-    id: string;
-    name: string;
-    handle: string;
-    profileImageUrl: string;
-    verified: boolean;
-  };
-  text: string;
-  createdAt: string;
-  createdAtMs: number;
 }
 
 export interface AgentModelOption {
@@ -646,7 +601,6 @@ export interface MarketState {
       retentionDays: number;
     };
     memory: MemoryConfig;
-    socialFeed: SocialFeedConfig;
     trading: {
       hyperliquidMode: "off" | "demo" | "live";
       bitgetMode: "off" | "demo" | "live";
@@ -823,7 +777,6 @@ export interface CronJobStatus {
   maxIterations: number | null;
   maxCandles: number | null;
   tradingEnabled: boolean;
-  socialEnabled: boolean;
   timezone: string | null;
 }
 
@@ -863,7 +816,6 @@ export interface CronJobCreate {
   maxIterations?: number | null;
   maxCandles?: number | null;
   tradingEnabled?: boolean;
-  socialEnabled?: boolean;
   timezone?: string | null;
 }
 
@@ -879,7 +831,6 @@ export interface CronJobUpdate {
   maxIterations?: number | null;
   maxCandles?: number | null;
   tradingEnabled?: boolean;
-  socialEnabled?: boolean;
   timezone?: string | null;
 }
 
