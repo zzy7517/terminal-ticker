@@ -348,48 +348,50 @@ export function MemorySettingsPanel() {
             )}
           </div>
 
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Enable memory system</strong>
-              <small>Controls the [memory] block in watchlist.toml.</small>
+          <div className="memory-toggle-group">
+            <div className="settings-toggle-row">
+              <div>
+                <strong>Enable memory system</strong>
+                <small>Controls the [memory] block in watchlist.toml.</small>
+              </div>
+              <label className="switch-row">
+                <input type="checkbox" checked={config.enabled} disabled={saving} onChange={() => persistConfig({ enabled: !config.enabled })} />
+                <span className="switch-slider" />
+              </label>
             </div>
-            <label className="switch-row">
-              <input type="checkbox" checked={config.enabled} disabled={saving} onChange={() => persistConfig({ enabled: !config.enabled })} />
-              <span className="switch-slider" />
-            </label>
-          </div>
 
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Use memories (read)</strong>
-              <small>Inject memory_summary.md into agent prompts.</small>
+            <div className="settings-toggle-row">
+              <div>
+                <strong>Use memories (read)</strong>
+                <small>Inject memory_summary.md into agent prompts.</small>
+              </div>
+              <label className="switch-row">
+                <input type="checkbox" checked={config.useMemories} disabled={saving || !config.enabled} onChange={() => persistConfig({ useMemories: !config.useMemories })} />
+                <span className="switch-slider" />
+              </label>
             </div>
-            <label className="switch-row">
-              <input type="checkbox" checked={config.useMemories} disabled={saving || !config.enabled} onChange={() => persistConfig({ useMemories: !config.useMemories })} />
-              <span className="switch-slider" />
-            </label>
-          </div>
 
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Generate memories (write)</strong>
-              <small>Run Phase 1 extraction + Phase 2 consolidation.</small>
+            <div className="settings-toggle-row">
+              <div>
+                <strong>Generate memories (write)</strong>
+                <small>Run Phase 1 extraction + Phase 2 consolidation.</small>
+              </div>
+              <label className="switch-row">
+                <input type="checkbox" checked={config.generateMemories} disabled={saving || !config.enabled} onChange={() => persistConfig({ generateMemories: !config.generateMemories })} />
+                <span className="switch-slider" />
+              </label>
             </div>
-            <label className="switch-row">
-              <input type="checkbox" checked={config.generateMemories} disabled={saving || !config.enabled} onChange={() => persistConfig({ generateMemories: !config.generateMemories })} />
-              <span className="switch-slider" />
-            </label>
-          </div>
 
-          <div className="settings-toggle-row">
-            <div>
-              <strong>Skip external-context sessions</strong>
-              <small>Do not generate memory from sessions that used web, browser, or MCP tools.</small>
+            <div className="settings-toggle-row">
+              <div>
+                <strong>Skip external-context sessions</strong>
+                <small>Do not generate memory from sessions that used web, browser, or MCP tools.</small>
+              </div>
+              <label className="switch-row">
+                <input type="checkbox" checked={config.disableOnExternalContext} disabled={saving || !config.enabled} onChange={() => persistConfig({ disableOnExternalContext: !config.disableOnExternalContext })} />
+                <span className="switch-slider" />
+              </label>
             </div>
-            <label className="switch-row">
-              <input type="checkbox" checked={config.disableOnExternalContext} disabled={saving || !config.enabled} onChange={() => persistConfig({ disableOnExternalContext: !config.disableOnExternalContext })} />
-              <span className="switch-slider" />
-            </label>
           </div>
 
           <StoragePathInput

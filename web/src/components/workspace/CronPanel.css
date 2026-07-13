@@ -37,6 +37,7 @@
   font-family: var(--mono);
   font-size: 12px;
   padding: 0px 4px;
+  border-radius: var(--radius-chip);
 }
 
 .cron-error-banner {
@@ -49,6 +50,7 @@
   font-size: 12px;
   gap: 6px;
   padding: 4px 8px;
+  border-radius: var(--radius-control);
 }
 
 .cron-error-banner button {
@@ -107,6 +109,7 @@
   background: var(--canvas-2);
   border: 1px solid var(--line-strong);
   padding: 8px 10px;
+  border-radius: var(--radius-control);
 }
 
 .cron-job-card:hover {
@@ -144,6 +147,7 @@
   display: block;
   height: 5px;
   width: 5px;
+  border-radius: 50%;
 }
 
 .cron-dot.active {
@@ -190,6 +194,7 @@
   gap: 3px;
   padding: 3px 8px;
   text-transform: uppercase;
+  border-radius: var(--radius-control);
 }
 
 .cron-btn:hover {
@@ -254,6 +259,7 @@
   font-size: 12px;
   font-weight: 600;
   padding: 0px 4px;
+  border-radius: var(--radius-chip);
 }
 
 .cron-job-prompt {
@@ -266,6 +272,7 @@
   line-height: 1.4;
   margin-top: 4px;
   padding: 4px 6px;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
 }
 
 .cron-storage-paths {
@@ -280,6 +287,7 @@
   margin-top: 8px;
   padding: 4px 6px;
   word-break: break-all;
+  border-radius: var(--radius-control);
 }
 
 /* ── History list ── */
@@ -320,6 +328,7 @@
   gap: 8px;
   padding: 4px 6px;
   width: 100%;
+  border-radius: var(--radius-control);
 }
 
 .cron-run-row:hover {
@@ -404,6 +413,7 @@
 .cron-message {
   border: 1px solid var(--line-soft);
   padding: 6px 8px;
+  border-radius: var(--radius-control);
 }
 
 .cron-message.user {

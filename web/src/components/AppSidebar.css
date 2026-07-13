@@ -80,6 +80,21 @@
   padding: 0 12px;
 }
 
+.app-sidebar-utility-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-height: 34px;
+}
+
+.app-sidebar-utility-row .theme-toggle {
+  background: transparent;
+  border-color: transparent;
+  height: 30px;
+  min-height: 30px;
+  width: 30px;
+}
+
 @media (max-width: 1199px) {
   .app-sidebar {
     width: 184px;
@@ -102,7 +117,7 @@
   }
 
   .app-sidebar-item span,
-  .app-sidebar-status {
+  .app-sidebar-status span {
     display: none;
   }
 
@@ -110,5 +125,14 @@
     justify-content: center;
     padding: 0;
     width: 44px;
+  }
+
+  .app-sidebar-utility-row {
+    flex-direction: column;
+  }
+
+  .app-sidebar-status {
+    justify-content: center;
+    padding: 0;
   }
 }

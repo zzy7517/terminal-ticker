@@ -1,3 +1,11 @@
+/* ── Memory Pipeline Toggles ─────────────────────────────────────── */
+
+.memory-toggle-group {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 /* ── Memory Model Picker ─────────────────────────────────────────── */
 
 .memory-model-pickers {
@@ -465,4 +473,3 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
-

@@ -64,7 +64,7 @@ export function AgentsSettingsPanel() {
   }, [draft.runtime, claudeCatalog, fetchingClaudeModels]);
   return <section className="agents-settings">
     <header><div className="eyebrow">Agent Identities</div><h2>Agents</h2><p>Create reusable identities and default models for new Sessions.</p></header>
-    <div className="agents-settings-layout">
+    <div className="agents-settings-layout ui-surface">
       <aside><button className="agent-add" type="button" onClick={() => { setCreating(true); setSelectedId(''); setDraft(EMPTY); setMessage(''); }}><Plus size={14}/> New Agent</button>{agents.map((agent) => <button key={agent.id} type="button" className={selectedId === agent.id && !creating ? 'active' : ''} onClick={() => select(agent)}><Bot size={15}/><span><strong>{agent.name}</strong><small>{agent.description}</small></span></button>)}</aside>
       <div className="agent-editor">
         <label>Id<input disabled={!creating} value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="market-analyst" /></label>

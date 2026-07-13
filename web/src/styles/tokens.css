@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════
    TRADEX — Design Tokens
-   Professional workstation · daylight · neutral interface
+   Absolutely · warm neutral workstation
    Tuned for sustained viewing comfort during long sessions
    ═══════════════════════════════════════════════════════════════════ */
 
@@ -12,6 +12,7 @@
   --panel: #fcfcfb;
   --panel-raised: #ffffff;
   --sidebar: #f0f0ee;
+  --surface: var(--panel-raised);
 
   /* Borders — quiet neutral grays */
   --line-soft: #e7e7e4;
@@ -21,6 +22,7 @@
   --text-primary: #2d2d2b;
   --text-secondary: #696966;
   --text-muted: #969692;
+  --text-tertiary: var(--text-muted);
 
   /* Semantic — market (desaturated for sustained viewing) */
   --up: #24734d;
@@ -58,11 +60,17 @@
   --shadow-soft: none;
   --shadow-md: none;
 
+  --scrollbar: #b7b7b2;
+  --scrollbar-hover: #969692;
+
   /* Shape system — soft, consistent, never pill-heavy */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 18px;
+  --radius-chip: var(--radius-sm);
+  --radius-control: var(--radius-md);
+  --radius-surface: var(--radius-lg);
 
   /* Typography — monospace only */
   --mono: "JetBrains Mono", "SF Mono", "Cascadia Mono", "Consolas", "Courier New", monospace;
@@ -84,4 +92,52 @@
   --ctl-weight-strong: 700;
   --ctl-disabled-opacity: 0.35;
   --ctl-transition: none;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: #2d2d2b;
+  --canvas-2: #292927;
+  --panel: #343432;
+  --panel-raised: #3a3a37;
+  --sidebar: #323230;
+  --surface: var(--panel-raised);
+
+  --line-soft: #454542;
+  --line-strong: #555550;
+
+  --text-primary: #f0f0ec;
+  --text-secondary: #b9b9b3;
+  --text-muted: #8f8f89;
+  --text-tertiary: var(--text-muted);
+  --text-bright: #f9f9f7;
+
+  --up: #78b992;
+  --down: #df817b;
+  --success: #78b992;
+  --danger: #df817b;
+  --warning: #d0ab62;
+
+  --accent: #d6d6d0;
+  --accent-contrast: #2d2d2b;
+  --accent-tint: rgba(249, 249, 247, 0.055);
+  --accent-tint-strong: rgba(249, 249, 247, 0.10);
+  --accent-ring: rgba(249, 249, 247, 0.28);
+
+  --control-accent: #cc7d5e;
+  --control-accent-hover: #dc8a69;
+  --control-accent-contrast: #2d2d2b;
+  --control-accent-tint: rgba(204, 125, 94, 0.16);
+  --control-accent-ring: rgba(204, 125, 94, 0.46);
+
+  --danger-tint: rgba(223, 129, 123, 0.10);
+  --danger-tint-strong: rgba(223, 129, 123, 0.18);
+  --warning-tint: rgba(208, 171, 98, 0.11);
+  --warning-tint-strong: rgba(208, 171, 98, 0.18);
+  --success-tint: rgba(120, 185, 146, 0.10);
+  --success-tint-strong: rgba(120, 185, 146, 0.18);
+
+  --scrollbar: #5a5a55;
+  --scrollbar-hover: #72726c;
 }

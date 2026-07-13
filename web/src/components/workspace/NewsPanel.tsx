@@ -107,7 +107,7 @@ export function NewsPanel({
   const showSourceTabs = jin10Available || hasJin10Items;
 
   return (
-    <div className="news-panel">
+    <div className="news-panel ui-surface">
       <div className="news-panel__head">
         <span className="news-panel__title">News</span>
         <button
@@ -121,7 +121,7 @@ export function NewsPanel({
       </div>
 
       {showSourceTabs && (
-        <div className="news-panel__sources">
+        <div className="news-panel__sources ui-control">
           {(['all', 'reuters', 'jin10'] as const).map((s) => (
             <button
               key={s}
@@ -149,7 +149,7 @@ export function NewsPanel({
         )}
         {filteredItems.map((item) => (
           <a
-            className="news-item"
+            className="news-item ui-control"
             href={item.url.startsWith('jin10://') ? undefined : item.url}
             key={item.url}
             target="_blank"
@@ -158,10 +158,10 @@ export function NewsPanel({
           >
             <div className="news-item__title">
               {item.source === 'jin10' && item.keywords.includes('important') && (
-                <span className="news-item__badge important">重要</span>
+                <span className="news-item__badge ui-chip important">重要</span>
               )}
               {source === 'all' && (
-                <span className={`news-item__badge source ${item.source}`}>
+                <span className={`news-item__badge ui-chip source ${item.source}`}>
                   {item.source === 'jin10' ? '金十' : 'Reuters'}
                 </span>
               )}

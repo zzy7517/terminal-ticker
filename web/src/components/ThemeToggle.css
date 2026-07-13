@@ -1,0 +1,30 @@
+.theme-toggle {
+  align-items: center;
+  background: var(--panel-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  height: 34px;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0;
+  width: 34px;
+}
+
+.theme-toggle svg {
+  color: var(--control-accent);
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  background: var(--control-accent-tint);
+  border-color: var(--control-accent-ring);
+  color: var(--text-primary);
+}
+
+.theme-toggle:active {
+  transform: scale(0.98);
+}

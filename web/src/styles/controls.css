@@ -485,7 +485,9 @@
 /* ── Settings toggle row ──────────────────────────────────────────── */
 .settings-toggle-row {
   align-items: center;
+  background: var(--canvas);
   border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
   display: flex;
   gap: 10px;
   justify-content: space-between;

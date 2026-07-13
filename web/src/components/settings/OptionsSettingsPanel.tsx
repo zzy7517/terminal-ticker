@@ -160,7 +160,7 @@ export function OptionsSettingsPanel() {
 
       <div className="options-layout">
         {/* Master switch */}
-        <div className="options-master">
+        <div className="options-master ui-card">
           <div>
             <strong>Options &amp; GEX Analysis</strong>
             <small>Lazy-refreshed option chains, GEX calculation, and unusual-activity detection.</small>
@@ -183,7 +183,7 @@ export function OptionsSettingsPanel() {
               <button
                 key={p.id}
                 type="button"
-                className={`options-provider-item${equityProvider === p.id ? ' selected' : ''}`}
+                className={`options-provider-item ui-card${equityProvider === p.id ? ' selected' : ''}`}
                 onClick={() => handleEquityProviderChange(p.id)}
                 disabled={saving}
               >
@@ -198,7 +198,7 @@ export function OptionsSettingsPanel() {
 
           {/* MarketData config - only when selected */}
           {equityProvider === 'marketdata' && (
-            <div className="options-config">
+            <div className="options-config ui-card">
               <div className="options-config-head">
                 <strong>MarketData.app</strong>
                 {config.marketdata?.apiKeyConfigured && <span className="badge success">Key set</span>}
@@ -291,7 +291,7 @@ export function OptionsSettingsPanel() {
 
           {/* Tradier config - only when selected */}
           {equityProvider === 'tradier' && (
-            <div className="options-config">
+            <div className="options-config ui-card">
               <div className="options-config-head">
                 <strong>Tradier</strong>
                 {config.tradier?.apiKeyConfigured && <span className="badge success">Key set</span>}
@@ -330,7 +330,7 @@ export function OptionsSettingsPanel() {
           )}
 
           {/* Deribit - independent crypto toggle */}
-          <div className="options-master">
+          <div className="options-master ui-card">
             <div>
               <strong>Deribit (crypto)</strong>
               <small>Free, no key. BTC / ETH options. Runs alongside the equity provider.</small>
@@ -348,10 +348,10 @@ export function OptionsSettingsPanel() {
             <span>Symbols</span>
             <span className="options-group-hint">{symbols.length} tracked</span>
           </div>
-          <div className="options-symbols">
+          <div className="options-symbols ui-card">
             <div className="options-symbol-chips">
               {symbols.map((sym) => (
-                <span key={sym} className="options-symbol-chip">
+                <span key={sym} className="options-symbol-chip ui-chip">
                   {sym}
                   <button type="button" aria-label={`Remove ${sym}`} onClick={() => handleRemoveSymbol(sym)}>
                     <X size={12} />
@@ -380,7 +380,7 @@ export function OptionsSettingsPanel() {
           <div className="options-group-title">
             <span>Advanced</span>
           </div>
-          <div className="options-advanced-grid">
+          <div className="options-advanced-grid ui-card">
             <label className="provider-field">
               <span className="provider-field-label">Poll interval (seconds)</span>
               <input

@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════
-   TRADEX — Base: Terminal Aesthetic
-   Cool dark · monospace · zero decoration · grid discipline
+   TRADEX — Absolutely base
+   Warm neutral · flat surfaces · soft geometry
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Reset ────────────────────────────────────────────────────────── */
@@ -143,11 +143,12 @@ textarea:focus-visible {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #b7bcb3;
+  background: var(--scrollbar);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #969c92;
+  background: var(--scrollbar-hover);
 }
 
 /* ── NO atmospheric effects — flat dark, no decoration ───────────── */

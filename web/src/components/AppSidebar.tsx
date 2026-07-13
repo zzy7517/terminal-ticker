@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useMarketStore } from '../stores/marketStore';
 import { useUiStore, type WorkspaceViewId } from '../stores/uiStore';
+import { ThemeToggle } from './ThemeToggle';
 import './AppSidebar.css';
 
 type NavItem = {
@@ -68,9 +69,12 @@ export function AppSidebar() {
       </nav>
 
       <div className="app-sidebar-footer">
-        <div className="app-sidebar-status">
-          <Radio size={14} />
-          <span>{state ? 'Runtime connected' : 'Connecting'}</span>
+        <div className="app-sidebar-utility-row">
+          <div className="app-sidebar-status">
+            <Radio size={14} />
+            <span>{state ? 'Runtime connected' : 'Connecting'}</span>
+          </div>
+          <ThemeToggle />
         </div>
         <button
           className={'app-sidebar-item' + (route.view === 'settings' ? ' active' : '')}

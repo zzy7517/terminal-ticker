@@ -64,7 +64,7 @@ export function CalendarPanel({
 
   if (!jin10Available) {
     return (
-      <div className="calendar-panel">
+      <div className="calendar-panel ui-surface">
         <div className="empty-state lg">
           <p>财经日历需要配置 Jin10 数据源。</p>
           <p><small>在 MCP 设置中配置 Jin10 服务器并填入 Token 即可启用。</small></p>
@@ -89,7 +89,7 @@ export function CalendarPanel({
     });
 
   return (
-    <div className="calendar-panel">
+    <div className="calendar-panel ui-surface">
       <div className="calendar-panel__head">
         <span className="calendar-panel__title">财经日历</span>
         <button
@@ -116,7 +116,7 @@ export function CalendarPanel({
           {published.map((event, i) => {
             const comparison = actualVsConsensus(event.actual, event.consensus);
             return (
-              <div key={`${event.pubTime}-${event.title}-${i}`} className={`calendar-event published star-${Math.min(event.star, 3)}`}>
+              <div key={`${event.pubTime}-${event.title}-${i}`} className={`calendar-event ui-control published star-${Math.min(event.star, 3)}`}>
                 <div className="calendar-event__head">
                   <span className="calendar-event__stars">{starIcons(event.star)}</span>
                   <span className="calendar-event__time">{formatEventTime(event.pubTime)}</span>
@@ -144,7 +144,7 @@ export function CalendarPanel({
         <div className="calendar-section">
           <div className="calendar-section__title">待公布</div>
           {upcoming.map((event, i) => (
-            <div key={`${event.pubTime}-${event.title}-${i}`} className={`calendar-event star-${Math.min(event.star, 3)}`}>
+            <div key={`${event.pubTime}-${event.title}-${i}`} className={`calendar-event ui-control star-${Math.min(event.star, 3)}`}>
               <div className="calendar-event__head">
                 <span className="calendar-event__stars">{starIcons(event.star)}</span>
                 <span className="calendar-event__time">{formatEventTime(event.pubTime)}</span>

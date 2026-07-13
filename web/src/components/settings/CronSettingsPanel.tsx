@@ -540,18 +540,6 @@ export function CronSettingsPanel() {
                   </label>
                 </div>
 
-                {/* Use main system prompt toggle */}
-                <div className="settings-toggle-row">
-                  <div>
-                    <strong>系统提示词</strong>
-                    <small>使用主系统提示词（多方法论分析框架 + 交易执行权限）</small>
-                  </div>
-                  <label className="switch-row">
-                    <input type="checkbox" checked={draft.useMainPrompt} onChange={() => setDraft((d) => ({ ...d, useMainPrompt: !d.useMainPrompt }))} />
-                    <span className="switch-slider" />
-                  </label>
-                </div>
-
                 {/* Trading tools toggle */}
                 <div className="settings-toggle-row">
                   <div>

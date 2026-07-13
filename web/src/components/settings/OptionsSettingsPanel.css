@@ -1,8 +1,7 @@
 /* ── Options & GEX settings ───────────────────────────────────────── */
 /* Single-column grouped layout. Reuses provider-* primitives from
    ProviderSettingsPanel.css for cards/fields; this file owns the grouping
-   shell and a few Options-only refinements. Corner radius is 0 to match
-   the rest of the settings surface. */
+   shell and a few Options-only refinements. Shared visual roles own shape. */
 
 .options-layout {
   display: flex;
@@ -54,6 +53,7 @@
   gap: 16px;
   justify-content: space-between;
   padding: 14px 16px;
+  border-radius: var(--radius-control);
 }
 
 .options-master strong {
@@ -88,6 +88,7 @@
   padding: 12px 14px;
   text-align: left;
   width: 100%;
+  border-radius: var(--radius-control);
 }
 
 .options-provider-item:hover {
@@ -131,6 +132,7 @@
   flex-direction: column;
   gap: 14px;
   padding: 16px;
+  border-radius: var(--radius-control);
 }
 
 .options-config-head {
@@ -159,6 +161,7 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px;
+  border-radius: var(--radius-control);
 }
 
 .options-symbol-chips {
@@ -182,6 +185,7 @@
   font-weight: 600;
   gap: 6px;
   padding: 4px 8px;
+  border-radius: var(--radius-chip);
 }
 
 .options-symbol-chip button {
@@ -216,6 +220,7 @@
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   padding: 16px;
+  border-radius: var(--radius-control);
 }
 
 /* Inline save status, right-aligned and quiet. */

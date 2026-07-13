@@ -364,3 +364,8 @@
   padding-top: 12px;
 }
 
+@media (max-width: 719px) {
+  .provider-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

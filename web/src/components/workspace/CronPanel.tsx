@@ -128,7 +128,7 @@ export function CronPanel() {
   }
 
   return (
-    <div className="cron-panel">
+    <div className="cron-panel ui-surface">
       {error && (
         <div className="cron-error-banner">
           <AlertCircle size={14} />
@@ -175,7 +175,7 @@ function JobsList(props: {
         <span className="cron-count">{jobs.filter((j) => j.enabled).length} active</span>
       </div>
       {jobs.map((job) => (
-        <div key={job.name} className={`cron-job-card ${job.enabled ? '' : 'disabled'}`}>
+        <div key={job.name} className={`cron-job-card ui-card ${job.enabled ? '' : 'disabled'}`}>
           <div className="cron-job-top">
             <div className="cron-job-identity">
               <div className="cron-job-indicator">
@@ -242,7 +242,7 @@ function JobsList(props: {
         </div>
       ))}
       {storagePaths && (
-        <div className="cron-storage-paths">
+          <div className="cron-storage-paths ui-card">
           <span>Config: {storagePaths.config}</span>
           <span>Sessions: {storagePaths.sessions}</span>
         </div>
@@ -347,7 +347,7 @@ function SessionDetail(props: {
       </div>
       <div className="cron-messages">
         {messages.map((msg, i) => (
-          <div key={i} className={`cron-message ${msg.role}`}>
+          <div key={i} className={`cron-message ui-card ${msg.role}`}>
             <div className="cron-message-role">{msg.role}</div>
             <div className="cron-message-content">
               {msg.content || '(empty)'}

@@ -1,0 +1,20 @@
+/* Shared visual roles. Pages own layout; this module owns material and shape. */
+.ui-surface {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-surface);
+}
+
+.ui-card {
+  background: var(--canvas-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-control);
+}
+
+.ui-control {
+  border-radius: var(--radius-control);
+}
+
+.ui-chip {
+  border-radius: var(--radius-chip);
+}
