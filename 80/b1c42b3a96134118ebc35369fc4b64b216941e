@@ -1,0 +1,77 @@
+tradex/agent/agent_store.ts
+  s_2efa8edb7b4cf3::t_93f9c6fc874951 4
+tradex/agent/runtime/claude-code/runtime.test.ts
+  s_2efa8edb7b4cf3::t_da5eb7250225eb 17
+  s_2efa8edb7b4cf3::t_c8ddf30f30fc06 29,35,39-49,133-172
+  s_2efa8edb7b4cf3::t_b7ea75af1b374e 173
+tradex/agent/runtime/claude-code/model-manifest.ts
+  s_2efa8edb7b4cf3::t_93f9c6fc874951 1-52,54-64
+  s_2efa8edb7b4cf3::t_1b1757cb606d4e 53
+tradex/api/runtime.ts
+  s_6496f86a9a691f::t_ddaf9768cb9db7 134,152
+tradex/api/pi-session-stream.ts
+  s_6496f86a9a691f::t_6f16911ffdcb26 61
+tradex/agent/runtime/pi/models/runtime.ts
+  s_6496f86a9a691f::t_377d1c89be341a 5-6,14-15,39,42,126-127,132,139,145,155,163,172,184,202,222-223,227,232,300,303,306-311,324,346,358,374,380-381,383,391
+  s_6496f86a9a691f::t_b2066eb7f375ad 2
+  s_6496f86a9a691f::t_1fa029bfc246ab 373,375
+tradex/agent/runtime/pi/models/runtime.test.ts
+  s_6496f86a9a691f::t_f368d44b5ac731 115
+  s_6496f86a9a691f::t_963de28e9dc3a2 1,49-50,113-114,116-131
+  s_6496f86a9a691f::t_4f92c49d6df7c0 51-52,89,99,101-102,106-107
+  s_6496f86a9a691f::t_6960da75bf3d6f 132
+tradex/agent/runtime/claude-code/runtime.ts
+  s_2efa8edb7b4cf3::t_c48142dbf395d4 42,53
+  s_2efa8edb7b4cf3::t_da5eb7250225eb 35
+tradex/api/routes/agent.ts
+  s_2efa8edb7b4cf3::t_93f9c6fc874951 19-20
+tradex/api/routes/agent.test.ts
+  s_2efa8edb7b4cf3::t_38067774cd2b2b 75
+watchlist.toml
+  s_2efa8edb7b4cf3::t_d4edf413b488fa 28-29,35
+tradex/agent/runtime/claude-code/protocol.ts
+  s_2efa8edb7b4cf3::t_c48142dbf395d4 17,21-22,78,181-183
+  s_2efa8edb7b4cf3::t_da5eb7250225eb 65-72,185-186
+tradex/agent/runtime/pi/models/registry.ts
+  s_6496f86a9a691f::t_b8d9031fc45da3 44
+  s_6496f86a9a691f::t_ddaf9768cb9db7 39,49
+tradex/agent/runtime/pi/runtime.test.ts
+  s_6496f86a9a691f::t_f82e0d760b4a93 1-49
+tradex/agent/runtime/pi/runtime.ts
+  s_6496f86a9a691f::t_54d1d376f25cab 41,166-167,171,174,191,200-202,253-256
+  s_6496f86a9a691f::t_ddaf9768cb9db7 62,99-101,108,112-113,118-119,121-122
+  s_6496f86a9a691f::t_b2066eb7f375ad 120
+package.json
+  s_6496f86a9a691f::t_c93599f922da7d 18-20
+tradex/agent/runtime/claude-code/discovery.test.ts
+  s_2efa8edb7b4cf3::t_93f9c6fc874951 6
+  s_2efa8edb7b4cf3::t_ec2c6615330de5 7-30
+web/src/types.ts
+  s_2efa8edb7b4cf3::t_93f9c6fc874951 113
+package-lock.json
+  s_6496f86a9a691f::t_a5084150c5f7c6 9-11,54-73,149-151,154-155,157-159,168-170,173-176,184-186,189-194,202-204,207,216-218,221-232,240-242,245-249,257-259,262-271,279-281,284-287,295-297,300-305,313-315,318-322,330-332,335-339,347-349,352-354,362-364,367-369,377-379,382-387,395-397,400-406,414-416,419,428-430,433-435,460-462,465,485-487,490,741-743,798-800,803,813-815,838-840,844-846,1309-1310,1313,1323-1324,1340,1347-1348,3891-3893,3904-3906,3909,3918-3920,3923,3958-3960,3963,7398-7418
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "80b1c42b3a96134118ebc35369fc4b64b216941e",
+  "prompts": {},
+  "sessions": {
+    "s_2efa8edb7b4cf3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f72df-1c8f-7381-a5b1-d45d8fd407b5",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_6496f86a9a691f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f72de-8be4-7131-bbcf-57f6318290fb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
