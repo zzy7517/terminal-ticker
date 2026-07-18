@@ -1,11 +1,12 @@
 /** 展示聊天 Session、Runtime 能力、附件和流式控制。 */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import './AgentSessionPanel.css';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Bot,
+  Bookmark,
   Check,
   ChevronDown,
   ChevronRight,
@@ -14,6 +15,7 @@ import {
   ImageIcon,
   Loader2,
   Paperclip,
+  Pin,
   Search,
   Sparkles,
   Square,
@@ -21,10 +23,11 @@ import {
   Zap,
 } from 'lucide-react';
 import { ProviderIcon } from '../ProviderIcon';
-import type { AgentMessage, AgentToolCall } from '../../types';
+import type { AgentMessage, AgentToolCall, ChatTarget } from '../../types';
 import { parseSlashCommand, getAutocompleteSuggestions, applyCompletion, type SlashCommand, type AutocompleteSuggestion, type CommandContext } from '../../slash-commands';
 import { useAgentStore } from '../../stores/agentStore';
 import { useMarketStore } from '../../stores/marketStore';
+import { useChatStore } from '../../stores/chatStore';
 import { contextUsagePercent, formatContextPercent, resolveContextWindow } from '../../utils/contextUsage';
 import { processImageForUpload } from '../../utils/imageResize';
 
@@ -153,10 +156,12 @@ function AgentTranscriptMessage({
   message,
   pendingToolCalls,
   toolResultsById,
+  reference,
 }: {
   message: AgentMessage;
   pendingToolCalls: Set<string>;
   toolResultsById: Map<string, AgentMessage>;
+  reference: { target: ChatTarget; messageId: string } | null;
 }) {
   if (message.role === 'toolResult') return null;
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
@@ -164,12 +169,34 @@ function AgentTranscriptMessage({
   const toolCalls = message.role === 'assistant' ? message.metadata?.toolCalls ?? [] : [];
   // Extract images from user message metadata (sent via the images attachment)
   const messageImages = (message.metadata?.images ?? []) as Array<{ data: string; mimeType: string }>;
+  const toggleSaved = useChatStore((state) => state.toggleSaved);
+  const togglePinned = useChatStore((state) => state.togglePinned);
+  const saved = useChatStore((state) => reference ? state.saved.some((item) => (
+    item.messageId === reference.messageId
+    && item.target.kind === 'direct-chat'
+    && reference.target.kind === 'direct-chat'
+    && item.target.agentId === reference.target.agentId
+    && item.target.chatId === reference.target.chatId
+  )) : false);
+  const pinned = useChatStore((state) => reference ? state.pinned.some((item) => (
+    item.messageId === reference.messageId
+    && item.target.kind === 'direct-chat'
+    && reference.target.kind === 'direct-chat'
+    && item.target.agentId === reference.target.agentId
+    && item.target.chatId === reference.target.chatId
+  )) : false);
   return (
     <div className={`session-message ${message.role}`}>
       <div className="session-message-head">
         <span>{label}</span>
         {messageImages.length > 0 && <ImageIcon size={12} className="message-has-images-icon" />}
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
+        {reference ? (
+          <span className="session-message-reference-actions">
+            <button className={saved ? 'active' : ''} onClick={() => void toggleSaved(reference.target, reference.messageId)} title="Save message" type="button"><Bookmark size={11} /></button>
+            <button className={pinned ? 'active' : ''} onClick={() => void togglePinned(reference.target, reference.messageId)} title="Pin message" type="button"><Pin size={11} /></button>
+          </span>
+        ) : null}
       </div>
       {messageImages.length > 0 && <MessageImages images={messageImages} />}
       {toolCalls.length > 0 && (
@@ -210,6 +237,10 @@ export function AgentSessionPanel({
   const sessionStats = useAgentStore((s) => s.sessionStats);
   const streamingMessage = useAgentStore((s) => s.streamingMessage);
   const queuedFollowUps = useAgentStore((s) => s.queuedFollowUps);
+  const selectedAgentId = useAgentStore((s) => s.selectedAgentId);
+  const activeAgentChatId = useAgentStore((s) => s.activeAgentChatId);
+  const activeAgentChatGenerations = useAgentStore((s) => s.activeAgentChatGenerations);
+  const agentSessionById = useAgentStore((s) => s.agentSessionById);
 
   const pendingImages = useAgentStore((s) => s.pendingImages);
   const addPendingImage = useAgentStore((s) => s.addPendingImage);
@@ -237,8 +268,26 @@ export function AgentSessionPanel({
   const transcriptRef = useRef<HTMLDivElement>(null);
   const transcriptScrollBySessionRef = useRef<Map<string, number>>(new Map());
   const shouldFollowTranscriptRef = useRef(true);
-  const messages = agentSession?.messages ?? [];
   const sessionId = agentSession?.session?.id ?? null;
+  const transcriptGroups = useMemo(() => {
+    const groups = activeAgentChatGenerations.flatMap((generation) => {
+      const session = agentSessionById[generation.sessionId];
+      return session ? [{ generation, session }] : [];
+    });
+    if (groups.length > 0) return groups;
+    return agentSession && sessionId ? [{
+      generation: {
+        chatId: activeAgentChatId ?? '',
+        generation: 1,
+        sessionId,
+        runtime: agentSession.session?.runtime ?? 'pi',
+        createdAtMs: Date.parse(agentSession.session?.createdAt ?? '') || Date.now(),
+        rotationReason: 'initial',
+      },
+      session: agentSession,
+    }] : [];
+  }, [activeAgentChatGenerations, activeAgentChatId, agentSession, agentSessionById, sessionId]);
+  const messages = useMemo(() => transcriptGroups.flatMap((group) => group.session.messages), [transcriptGroups]);
   const isClaudeSession = agentSession?.session?.runtime === 'claude-code';
   const lastMessage = messages[messages.length - 1] ?? null;
   const lastMessageToolCallCount = (lastMessage?.metadata?.toolCalls as AgentToolCall[] | undefined)?.length ?? 0;
@@ -604,13 +653,25 @@ export function AgentSessionPanel({
             <span>Loading session</span>
           </div>
         )}
-        {!sessionLoading && messages.map((message) => (
-          <AgentTranscriptMessage
-            key={message.id}
-            message={message}
-            pendingToolCalls={pendingToolCalls}
-            toolResultsById={toolResultsById}
-          />
+        {!sessionLoading && transcriptGroups.map((group, index) => (
+          <Fragment key={group.generation.sessionId}>
+            <div className="session-generation-divider">
+              <span>{index === 0 ? `Generation ${group.generation.generation}` : 'Context restarted'}</span>
+              <small>{group.generation.rotationReason.replace(/-/g, ' ')}</small>
+            </div>
+            {group.session.messages.map((message) => (
+              <AgentTranscriptMessage
+                key={`${group.generation.sessionId}:${message.id}`}
+                message={message}
+                pendingToolCalls={pendingToolCalls}
+                reference={activeAgentChatId ? {
+                  target: { kind: 'direct-chat', agentId: selectedAgentId, chatId: activeAgentChatId },
+                  messageId: `${group.generation.sessionId}:${message.id}`,
+                } : null}
+                toolResultsById={toolResultsById}
+              />
+            ))}
+          </Fragment>
         ))}
         {!sessionLoading && streamingMessage && (
           <div className="session-message assistant streaming">

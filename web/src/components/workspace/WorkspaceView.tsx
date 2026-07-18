@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   Bot,
   CalendarDays,
@@ -22,19 +23,27 @@ import { OptionsPanel } from './OptionsPanel';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
 import { ChannelPanel } from '../chat/ChannelPanel';
+import { ChatReferencePanel } from '../chat/ChatReferencePanel';
 import './AgentChatLayout.css';
 
 export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);
   const activeTab = useUiStore((s) => s.activeWorkspace);
   const createNewChat = useAgentStore((s) => s.createNewChat);
-  const activeChannelId = useChatStore((s) => s.activeChannelId);
+  const activeTarget = useChatStore((s) => s.activeTarget);
+  const activeCollection = useChatStore((s) => s.activeCollection);
   const selectedAgentId = useAgentStore((s) => s.selectedAgentId);
+  const activeAgentChatId = useAgentStore((s) => s.activeAgentChatId);
+  const selectDirectChat = useChatStore((s) => s.selectDirectChat);
   const selectedChatStatus = useAgentStore((s) => (
     s.agentChatsByAgentId[s.selectedAgentId]?.find((chat) => chat.id === s.activeAgentChatId)?.status ?? 'active'
   ));
 
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
+  useEffect(() => {
+    if (!activeTarget && activeAgentChatId) selectDirectChat(selectedAgentId, activeAgentChatId);
+  }, [activeAgentChatId, activeTarget, selectDirectChat, selectedAgentId]);
+
   return (
     <main className="workspace-page">
       <header className="topbar">
@@ -68,7 +77,9 @@ export function WorkspaceView() {
           {activeTab === 'agent' && (
             <div className="agent-tab-layout">
               <AgentDirectMessageList />
-              {activeChannelId ? (
+              {activeCollection ? (
+                <ChatReferencePanel />
+              ) : activeTarget?.kind === 'channel' ? (
                 <ChannelPanel />
               ) : (
                 <div className="agent-chat-main">

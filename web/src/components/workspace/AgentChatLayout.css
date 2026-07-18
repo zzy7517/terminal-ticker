@@ -18,6 +18,31 @@
   padding: 6px 8px 10px;
 }
 
+.chat-reference-summary {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 12px;
+  gap: 7px;
+  padding: 6px 8px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.chat-reference-summary span {
+  font-family: var(--mono);
+  margin-left: auto;
+}
+
+.chat-reference-summary:hover,
+.chat-reference-summary.active {
+  background: var(--accent-tint);
+  border-color: var(--line-soft);
+  color: var(--text-primary);
+}
+
 .direct-message-list > header:not(:first-child) {
   margin-top: 16px;
 }

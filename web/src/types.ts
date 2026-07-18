@@ -92,6 +92,21 @@ export interface AgentChat {
   generationCount: number;
 }
 
+export interface AgentChatGeneration {
+  chatId: string;
+  generation: number;
+  sessionId: string;
+  runtime: 'pi' | 'claude-code';
+  createdAtMs: number;
+  rotationReason: string;
+}
+
+export interface AgentChatDetailResponse {
+  chat: AgentChat;
+  generations: AgentChatGeneration[];
+  sessions: AgentSessionResponse[];
+}
+
 export interface AgentDefinition {
   id: string;
   name: string;
@@ -228,21 +243,66 @@ export interface Channel {
   archivedAtMs: number | null;
 }
 
+export type ChatTarget =
+  | { kind: 'direct-chat'; agentId: string; chatId: string }
+  | { kind: 'channel'; channelId: string };
+
+export interface ChannelReactionSummary {
+  emoji: string;
+  count: number;
+  reacted: boolean;
+}
+
 export interface ChannelMessage {
   id: string;
   channelId: string;
   channelSeq: number;
   authorType: 'human' | 'agent' | 'system';
   authorId: string;
-  kind: 'message' | 'system';
+  kind: string;
   content: string;
   threadRootId: string | null;
   createdAtMs: number;
+  editedAtMs: number | null;
+  deletedAtMs: number | null;
+  replyCount: number;
+  reactions: ChannelReactionSummary[];
 }
 
 export interface ChannelMessagesResponse {
   messages: ChannelMessage[];
   nextBeforeSeq: number | null;
+}
+
+export interface ChannelThreadResponse {
+  root: ChannelMessage;
+  replies: ChannelMessage[];
+}
+
+export interface ChatEvent {
+  seq: number;
+  type: string;
+  actorType: 'human' | 'agent' | 'system';
+  actorId: string;
+  target: ChatTarget;
+  entityType: string;
+  entityId: string;
+  payload: Record<string, unknown>;
+  createdAtMs: number;
+}
+
+export interface ChatMessageReference {
+  actorId: string;
+  target: ChatTarget;
+  messageId: string;
+  createdAtMs: number;
+}
+
+export interface ChatBootstrapResponse {
+  channels: Channel[];
+  saved: ChatMessageReference[];
+  pinned: ChatMessageReference[];
+  lastEventSeq: number;
 }
 
 export type AgentStreamPayload =

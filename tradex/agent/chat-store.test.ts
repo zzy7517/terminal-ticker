@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { ChatEventStore } from "../chat-events.js";
 import { AgentChatStore } from "./chat-store.js";
 
 describe("AgentChatStore", () => {
@@ -73,5 +74,24 @@ describe("AgentChatStore", () => {
       generationCount: 0,
     }));
     expect(store.chatForSession("session-1")).toBeNull();
+  });
+
+  it("emits Direct Chat events through the same ChatTarget contract", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tradex-agent-chat-events-"));
+    roots.push(root);
+    const dbPath = path.join(root, "chat.sqlite3");
+    const store = new AgentChatStore(dbPath);
+    const events = new ChatEventStore(dbPath);
+
+    const chat = store.create("cindy");
+
+    expect(events.list({ afterSeq: 0 }).events).toEqual([
+      expect.objectContaining({
+        type: "direct-chat.created",
+        target: { kind: "direct-chat", agentId: "cindy", chatId: chat.id },
+        entityType: "direct-chat",
+        entityId: chat.id,
+      }),
+    ]);
   });
 });

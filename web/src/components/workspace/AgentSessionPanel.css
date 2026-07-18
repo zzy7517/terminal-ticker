@@ -281,6 +281,51 @@
   font-size: 12px;
 }
 
+.session-message-reference-actions {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.session-message-reference-actions button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  padding: 2px;
+}
+
+.session-message-reference-actions button:hover,
+.session-message-reference-actions button.active {
+  background: var(--accent-tint);
+  border-color: var(--line-soft);
+  color: var(--text-primary);
+}
+
+.session-generation-divider {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 10px;
+  gap: 7px;
+  margin: 12px 0 4px;
+}
+
+.session-generation-divider::before,
+.session-generation-divider::after {
+  background: var(--line-soft);
+  content: '';
+  flex: 1;
+  height: 1px;
+}
+
+.session-generation-divider small {
+  opacity: 0.7;
+}
+
 .session-message p {
   margin-top: 0;
   overflow-wrap: anywhere;

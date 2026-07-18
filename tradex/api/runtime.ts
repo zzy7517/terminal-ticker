@@ -21,9 +21,11 @@ import { BrowserManager } from "../browser/index.js";
 import { OptionsService } from "../options/service.js";
 import { applyProxyConfig } from "../runtime/proxy.js";
 import { AgentStore } from "../agent/agent_store.js";
-import { AgentChatStore } from "../agent/chat-store.js";
+import { AgentContextManager } from "../agent/context-manager.js";
 import { indexPersistedAgentSessions } from "../agent/chat-index.js";
 import { ChannelStore } from "../channel/store.js";
+import { ChatEventStore } from "../chat-events.js";
+import { ChatReferenceManager } from "../chat-references.js";
 import type { SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
 import { McpRunGrantStore } from "../mcp/server/grants.js";
 import { ClaudeSessionStore } from "../agent/runtime/claude-code/session-store.js";
@@ -44,8 +46,10 @@ export class AppRuntime {
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   readonly pendingAgentSnapshots = new Map<string, SessionAgentSnapshot>();
   readonly agentStore: AgentStore;
-  readonly chatStore: AgentChatStore;
+  readonly agentContextManager: AgentContextManager;
   readonly channelStore: ChannelStore;
+  readonly chatEventStore: ChatEventStore;
+  readonly chatReferences: ChatReferenceManager;
   /** Session-level mutation lock covering setup, streaming, and delete. */
   readonly lockedAgentSessions = new Set<string>();
   /** Active agent instances keyed by session ID for abort control. */
@@ -64,8 +68,10 @@ export class AppRuntime {
   ) {
     this.config = config;
     this.agentStore = new AgentStore();
-    this.chatStore = new AgentChatStore();
+    this.agentContextManager = new AgentContextManager();
     this.channelStore = new ChannelStore();
+    this.chatEventStore = new ChatEventStore();
+    this.chatReferences = new ChatReferenceManager(this.channelStore, this.agentContextManager);
     this._modelRuntimeSnapshot = modelRuntimeSnapshot;
     this.instruments = instruments;
     this.controller = new TickerController({ config, instruments });
@@ -168,8 +174,10 @@ export class AppRuntime {
     // Rebuild the optional subsystem so toggling it via the config API takes
     // effect without a process restart.
     await this.optionsService?.close();
-    this.chatStore.close();
+    this.agentContextManager.close();
     this.channelStore.close();
+    this.chatEventStore.close();
+    this.chatReferences.close();
     this.optionsService = config.options.enabled ? new OptionsService(config.options) : null;
     if (shouldRestart) {
       this.controller.start();

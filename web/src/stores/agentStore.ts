@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import type {
   AgentContextUsage,
   AgentChat,
+  AgentChatGeneration,
   AgentDefinition,
   AgentMessage,
   AgentModelRegistry,
@@ -20,6 +21,7 @@ import {
   deleteAgentSessionById,
   fetchAgentModelRegistry,
   fetchAgentChats,
+  fetchAgentChat,
   fetchAgents,
   fetchAgentSession,
   fetchAgentSessions,
@@ -106,6 +108,7 @@ interface AgentState {
   selectedAgentId: string;
   agentChatsByAgentId: Record<string, AgentChat[]>;
   activeAgentChatId: string | null;
+  activeAgentChatGenerations: AgentChatGeneration[];
   agentSession: AgentSessionResponse | null;
   agentSessionHistory: AgentSessionSummary[];
   agentSessionLoadingKey: string | null;
@@ -157,6 +160,7 @@ interface AgentState {
 
   initSessions: () => () => void;
   refreshModelRegistry: () => Promise<void>;
+  refreshAgentChats: (agentId: string) => Promise<void>;
   selectAgent: (agentId: string) => Promise<void>;
   selectAgentChat: (chatId: string) => Promise<void>;
   runAgentAnalysis: (sessionId?: string, options?: { includeDraft?: boolean }) => Promise<void>;
@@ -342,6 +346,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   selectedAgentId: 'default',
   agentChatsByAgentId: {},
   activeAgentChatId: null,
+  activeAgentChatGenerations: [],
   agentSession: null,
   agentSessionHistory: [],
   agentSessionLoadingKey: null,
@@ -486,6 +491,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
+  refreshAgentChats: async (agentId) => {
+    const payload = await fetchAgentChats(agentId);
+    set((s) => ({ agentChatsByAgentId: { ...s.agentChatsByAgentId, [agentId]: payload.chats } }));
+    const state = get();
+    if (state.selectedAgentId !== agentId) return;
+    const selected = payload.chats.find((chat) => chat.id === state.activeAgentChatId);
+    const active = payload.chats.find((chat) => chat.status === 'active');
+    if (!active) return;
+    if (selected?.status !== 'active' || active.activeSessionId !== state.activeAgentSessionId) {
+      await get().selectAgentChat(active.id);
+    }
+  },
+
   selectAgent: async (agentId) => {
     if (get().agentChatActionKey) return;
     let chats = get().agentChatsByAgentId[agentId];
@@ -512,13 +530,38 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       .flatMap(([agentId, chats]) => chats.map((chat) => ({ agentId, chat })))
       .find(({ chat }) => chat.id === chatId);
     if (!entry) return;
-    set((s) => selectionUpdate(s, {
-      selectedAgentId: entry.agentId,
-      activeAgentChatId: chatId,
-      activeAgentSessionId: null,
-    }));
-    if (entry.chat.activeSessionId) {
-      await get().resumeAgentConversation(entry.chat.activeSessionId);
+    let detail;
+    try {
+      detail = await fetchAgentChat(entry.agentId, chatId);
+    } catch (error) {
+      console.error('Agent Chat fetch failed:', error);
+      return;
+    }
+    set((s) => {
+      let agentSessionById = s.agentSessionById;
+      let runStateBySessionId = s.runStateBySessionId;
+      for (const session of detail.sessions) {
+        const sessionId = session.session?.id;
+        if (!sessionId) continue;
+        agentSessionById = cacheSession(agentSessionById, session);
+        runStateBySessionId = {
+          ...runStateBySessionId,
+          [sessionId]: mergeRunPayload(runStateBySessionId[sessionId], sessionId, session.run),
+        };
+      }
+      return {
+        agentSessionById,
+        runStateBySessionId,
+        activeAgentChatGenerations: detail.generations,
+        ...selectionUpdate({ ...s, agentSessionById, runStateBySessionId }, {
+          selectedAgentId: entry.agentId,
+          activeAgentChatId: chatId,
+          activeAgentSessionId: null,
+        }),
+      };
+    });
+    if (detail.chat.activeSessionId) {
+      await get().resumeAgentConversation(detail.chat.activeSessionId);
     }
   },
 
@@ -540,11 +583,27 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const activeChat = agentChatsByAgentId[selectedAgentId]?.find((chat) => chat.status === 'active') ?? null;
         const activeAgentChatId = activeChat?.id ?? null;
         const initialSessionId = activeChat?.activeSessionId ?? null;
+        const activeChatDetail = activeChat
+          ? await fetchAgentChat(selectedAgentId, activeChat.id).catch((error) => {
+              console.error('Initial Agent Chat fetch failed:', error);
+              return null;
+            })
+          : null;
+        if (disposed) return;
         const preloadedSessions = payload.preloadedSessions ?? [];
         set((s) => {
           let agentSessionById = s.agentSessionById;
           let runStateBySessionId = mergeHistoryRuns(payload.sessions, s.runStateBySessionId);
           for (const sessionPayload of preloadedSessions) {
+            const sessionId = sessionPayload.session?.id;
+            if (!sessionId) continue;
+            agentSessionById = cacheSession(agentSessionById, sessionPayload);
+            runStateBySessionId = {
+              ...runStateBySessionId,
+              [sessionId]: mergeRunPayload(runStateBySessionId[sessionId], sessionId, sessionPayload.run),
+            };
+          }
+          for (const sessionPayload of activeChatDetail?.sessions ?? []) {
             const sessionId = sessionPayload.session?.id;
             if (!sessionId) continue;
             agentSessionById = cacheSession(agentSessionById, sessionPayload);
@@ -561,6 +620,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             activeAgentSessionId: s.activeAgentSessionId ?? initialSessionId,
             selectedAgentId,
             activeAgentChatId,
+            activeAgentChatGenerations: activeChatDetail?.generations ?? [],
           };
           const activeSummary = payload.sessions.find((item) => item.id === next.activeAgentSessionId);
           const activeSession = next.activeAgentSessionId
@@ -1087,6 +1147,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             activeAgentChatId: payload.chat.id,
             activeAgentSessionId: null,
           }),
+          activeAgentChatGenerations: [],
         };
       });
     } catch (error) {

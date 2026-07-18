@@ -2,6 +2,8 @@ import Database from "better-sqlite3";
 import crypto from "node:crypto";
 import path from "node:path";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
+import { appendChatEvent, initChatEventSchema } from "../chat-events.js";
+import { directChatTarget } from "../channel/domain.js";
 
 export const DEFAULT_CHAT_FILENAME = "chat.sqlite3";
 
@@ -23,6 +25,7 @@ export interface AgentChatSession {
   sessionId: string;
   runtime: "pi" | "claude-code";
   createdAtMs: number;
+  rotationReason: string;
 }
 
 export interface ExistingAgentSession {
@@ -52,6 +55,7 @@ interface AgentChatSessionRow {
   session_id: string;
   runtime: "pi" | "claude-code";
   created_at_ms: number;
+  rotation_reason: string;
 }
 
 const CHAT_SELECT = `
@@ -68,6 +72,7 @@ export class AgentChatStore extends BaseStore {
   }
 
   protected override initSchema(conn: Database.Database): void {
+    initChatEventSchema(conn);
     conn.exec(`
       CREATE TABLE IF NOT EXISTS agent_chats (
         id TEXT PRIMARY KEY,
@@ -89,9 +94,11 @@ export class AgentChatStore extends BaseStore {
         session_id TEXT NOT NULL UNIQUE,
         runtime TEXT NOT NULL CHECK (runtime IN ('pi', 'claude-code')),
         created_at_ms INTEGER NOT NULL,
+        rotation_reason TEXT NOT NULL DEFAULT 'initial',
         PRIMARY KEY (chat_id, generation)
       );
     `);
+    ensureColumn(conn, "agent_chat_sessions", "rotation_reason", "TEXT NOT NULL DEFAULT 'initial'");
   }
 
   create(agentId: string, title = "New Chat"): AgentChat {
@@ -114,6 +121,15 @@ export class AgentChatStore extends BaseStore {
           id, agent_id, ordinal, title, status, created_at_ms, archived_at_ms
         ) VALUES (?, ?, ?, ?, 'active', ?, NULL)
       `).run(id, agentId, row.ordinal, title.trim() || "New Chat", createdAtMs);
+      appendChatEvent(conn, {
+        type: "direct-chat.created",
+        actorType: "human",
+        actorId: "owner",
+        target: directChatTarget(agentId, id),
+        entityType: "direct-chat",
+        entityId: id,
+        payload: { ordinal: row.ordinal },
+      });
       return this.require(id);
     })();
   }
@@ -186,9 +202,18 @@ export class AgentChatStore extends BaseStore {
             ) VALUES (?, ?, ?, ?, 'archived', ?, ?)
           `).run(chatId, agentId, ordinal, session.title.trim() || "Imported Chat", session.createdAtMs, session.updatedAtMs);
           conn.prepare(`
-            INSERT INTO agent_chat_sessions (chat_id, generation, session_id, runtime, created_at_ms)
-            VALUES (?, 1, ?, ?, ?)
+            INSERT INTO agent_chat_sessions (chat_id, generation, session_id, runtime, created_at_ms, rotation_reason)
+            VALUES (?, 1, ?, ?, ?, 'imported')
           `).run(chatId, session.sessionId, session.runtime, session.createdAtMs);
+          appendChatEvent(conn, {
+            type: "direct-chat.imported",
+            actorType: "system",
+            actorId: "tradex",
+            target: directChatTarget(agentId, chatId),
+            entityType: "direct-chat",
+            entityId: chatId,
+            payload: { sessionId: session.sessionId, generation: 1 },
+          });
           inserted.push({ chatId, updatedAtMs: session.updatedAtMs });
         }
         if (!hadActiveChat && inserted.length > 0) {
@@ -201,7 +226,12 @@ export class AgentChatStore extends BaseStore {
     })();
   }
 
-  attachSession(chatId: string, input: { sessionId: string; runtime: "pi" | "claude-code"; createdAtMs?: number }): AgentChatSession {
+  attachSession(chatId: string, input: {
+    sessionId: string;
+    runtime: "pi" | "claude-code";
+    createdAtMs?: number;
+    rotationReason?: string;
+  }): AgentChatSession {
     const conn = this.getConn();
     return conn.transaction(() => {
       const chat = this.require(chatId);
@@ -210,9 +240,18 @@ export class AgentChatStore extends BaseStore {
         "SELECT COALESCE(MAX(generation), 0) + 1 AS generation FROM agent_chat_sessions WHERE chat_id = ?",
       ).get(chatId) as { generation: number }).generation;
       conn.prepare(`
-        INSERT INTO agent_chat_sessions (chat_id, generation, session_id, runtime, created_at_ms)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(chatId, generation, input.sessionId, input.runtime, input.createdAtMs ?? nowMs());
+        INSERT INTO agent_chat_sessions (chat_id, generation, session_id, runtime, created_at_ms, rotation_reason)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(chatId, generation, input.sessionId, input.runtime, input.createdAtMs ?? nowMs(), input.rotationReason ?? "initial");
+      appendChatEvent(conn, {
+        type: "direct-chat.session-attached",
+        actorType: "system",
+        actorId: "tradex",
+        target: directChatTarget(chat.agentId, chat.id),
+        entityType: "session",
+        entityId: input.sessionId,
+      payload: { generation, runtime: input.runtime },
+      });
       return this.listSessions(chatId).at(-1)!;
     })();
   }
@@ -227,7 +266,20 @@ export class AgentChatStore extends BaseStore {
   }
 
   removeSession(sessionId: string): void {
-    this.getConn().prepare("DELETE FROM agent_chat_sessions WHERE session_id = ?").run(sessionId);
+    const conn = this.getConn();
+    conn.transaction(() => {
+      const chat = this.chatForSession(sessionId);
+      if (!chat) return;
+      conn.prepare("DELETE FROM agent_chat_sessions WHERE session_id = ?").run(sessionId);
+      appendChatEvent(conn, {
+        type: "direct-chat.session-removed",
+        actorType: "human",
+        actorId: "owner",
+        target: directChatTarget(chat.agentId, chat.id),
+        entityType: "session",
+        entityId: sessionId,
+      });
+    })();
   }
 
   listSessions(chatId: string): AgentChatSession[] {
@@ -265,5 +317,13 @@ function sessionFromRow(row: AgentChatSessionRow): AgentChatSession {
     sessionId: row.session_id,
     runtime: row.runtime,
     createdAtMs: row.created_at_ms,
+    rotationReason: row.rotation_reason,
   };
+}
+
+function ensureColumn(conn: Database.Database, table: string, column: string, definition: string): void {
+  const columns = conn.pragma(`table_info(${table})`) as Array<{ name: string }>;
+  if (!columns.some((entry) => entry.name === column)) {
+    conn.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }

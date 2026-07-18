@@ -76,7 +76,7 @@ export async function sessionHistory(runtime: AppRuntime): Promise<Record<string
   const allSummaries = [...piSummaries, ...claudeSummaries]
     .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
   const projected = allSummaries.slice(0, 200).map((item) => {
-    const chat = runtime.chatStore.chatForSession(String(item.id));
+    const chat = runtime.agentContextManager.chatForSession(String(item.id));
     return chat ? { ...item, chatId: chat.id, chatStatus: chat.status, chatOrdinal: chat.ordinal } : item;
   });
   return {
@@ -88,7 +88,7 @@ export async function sessionHistory(runtime: AppRuntime): Promise<Record<string
 }
 
 function withChatProjection(runtime: AppRuntime, sessionId: string, payload: Record<string, unknown>): Record<string, unknown> {
-  const chat = runtime.chatStore.chatForSession(sessionId);
+  const chat = runtime.agentContextManager.chatForSession(sessionId);
   if (!chat || !payload.session || typeof payload.session !== "object" || Array.isArray(payload.session)) return payload;
   return {
     ...payload,

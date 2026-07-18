@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentStore } from "../../agent/agent_store.js";
 import { AgentChatStore } from "../../agent/chat-store.js";
+import { AgentContextManager } from "../../agent/context-manager.js";
 import { agentRoutes } from "./agent.js";
 import type { AppRuntime } from "../runtime.js";
 import { piSessionFileExists } from "../../agent/runtime/pi/sessions.js";
@@ -18,6 +19,7 @@ function runtime(): AppRuntime {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tradex-agent-api-"));
   dirs.push(dir);
   const agentStore = new AgentStore(dir);
+  const chatStore = new AgentChatStore(path.join(dir, "chat.sqlite3"));
   agentStore.create({
     id: "ict",
     name: "ICT 理论分析",
@@ -30,7 +32,7 @@ function runtime(): AppRuntime {
   });
   return {
     agentStore,
-    chatStore: new AgentChatStore(path.join(dir, "chat.sqlite3")),
+    agentContextManager: new AgentContextManager(chatStore),
     config: {
       agent: {
         provider: "codex", model: "gpt-5.4", reasoningEffort: "high", systemPrompt: "",
@@ -134,12 +136,12 @@ describe("Agent HTTP API", () => {
     const session = await sessionResponse.json() as { session: { id: string }; chat: { id: string } };
 
     expect(session.chat.id).toBe(chat.id);
-    expect(appRuntime.chatStore.activeForAgent("ict")?.activeSessionId).toBe(session.session.id);
+    expect(appRuntime.agentContextManager.ensureActiveChat("ict").activeSessionId).toBe(session.session.id);
 
     appRuntime.lockedAgentSessions.add(session.session.id);
     const conflict = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
     expect(conflict.status).toBe(409);
-    expect(appRuntime.chatStore.listForAgent("ict")).toHaveLength(1);
+    expect(appRuntime.agentContextManager.listChats("ict")).toHaveLength(1);
   });
 
   it("rejects writes to an archived Chat and New Chat while any Chat for that Agent runs", async () => {
@@ -200,7 +202,7 @@ describe("Agent HTTP API", () => {
 
     expect(response.status).toBe(200);
     expect(appRuntime.agentStore.get("ict")).toBeNull();
-    expect(appRuntime.chatStore.listForAgent("ict")).toEqual([]);
+    expect(appRuntime.agentContextManager.listChats("ict")).toEqual([]);
   });
 
   it("removes the Chat generation when its Session is deleted", async () => {
@@ -216,7 +218,7 @@ describe("Agent HTTP API", () => {
     const response = await routes.request(`/api/agent/sessions/${payload.session.id}`, { method: "DELETE" });
 
     expect(response.status).toBe(200);
-    expect(appRuntime.chatStore.get(payload.chat.id)).toEqual(expect.objectContaining({
+    expect(appRuntime.agentContextManager.requireChat("ict", payload.chat.id)).toEqual(expect.objectContaining({
       activeSessionId: null,
       generationCount: 0,
     }));

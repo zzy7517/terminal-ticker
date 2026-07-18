@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bot, Hash, Loader2, Plus, X } from 'lucide-react';
+import { Bookmark, Bot, Hash, Loader2, Pin, Plus, X } from 'lucide-react';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
 
@@ -13,10 +13,14 @@ export function AgentDirectMessageList() {
   const loading = useAgentStore((state) => state.agentSessionHistoryLoadingKey) !== null;
   const selectAgent = useAgentStore((state) => state.selectAgent);
   const channels = useChatStore((state) => state.channels);
-  const activeChannelId = useChatStore((state) => state.activeChannelId);
+  const activeTarget = useChatStore((state) => state.activeTarget);
   const selectChannel = useChatStore((state) => state.selectChannel);
   const createChannel = useChatStore((state) => state.createChannel);
-  const openDirectMessages = useChatStore((state) => state.openDirectMessages);
+  const selectDirectChat = useChatStore((state) => state.selectDirectChat);
+  const savedCount = useChatStore((state) => state.saved.length);
+  const pinnedCount = useChatStore((state) => state.pinned.length);
+  const activeCollection = useChatStore((state) => state.activeCollection);
+  const openCollection = useChatStore((state) => state.openCollection);
 
   async function submitChannel() {
     if (!channelName.trim()) return;
@@ -27,6 +31,9 @@ export function AgentDirectMessageList() {
 
   return (
     <aside className="direct-message-list">
+      <button className={`chat-reference-summary ${activeCollection === 'saved' ? 'active' : ''}`} onClick={() => openCollection('saved')} type="button"><Bookmark size={13} /> Saved <span>{savedCount}</span></button>
+      <button className={`chat-reference-summary ${activeCollection === 'pinned' ? 'active' : ''}`} onClick={() => openCollection('pinned')} type="button"><Pin size={13} /> Pinned <span>{pinnedCount}</span></button>
+      <header>JOINT CHANNELS <span>0</span></header>
       <header>
         CHANNELS <span>{channels.length}</span>
         <button className="chat-sidebar-add" onClick={() => setCreating((value) => !value)} title="New Channel" type="button">
@@ -47,7 +54,7 @@ export function AgentDirectMessageList() {
       )}
       {channels.map((channel) => (
         <button
-          className={`channel-sidebar-row ${activeChannelId === channel.id ? 'active' : ''}`}
+          className={`channel-sidebar-row ${activeTarget?.kind === 'channel' && activeTarget.channelId === channel.id ? 'active' : ''}`}
           key={channel.id}
           onClick={() => void selectChannel(channel.id)}
           type="button"
@@ -65,9 +72,14 @@ export function AgentDirectMessageList() {
         const failed = sessions.some((session) => runStateBySessionId[session.id]?.status === 'error');
         return (
           <button
-            className={`direct-message-row ${selectedAgentId === agent.id ? 'active' : ''}`}
+            className={`direct-message-row ${activeTarget?.kind === 'direct-chat' && selectedAgentId === agent.id ? 'active' : ''}`}
             key={agent.id}
-            onClick={() => { openDirectMessages(); void selectAgent(agent.id); }}
+            onClick={() => {
+              void selectAgent(agent.id).then(() => {
+                const selected = useAgentStore.getState();
+                if (selected.activeAgentChatId) selectDirectChat(agent.id, selected.activeAgentChatId);
+              });
+            }}
             type="button"
           >
             <span className="direct-message-avatar"><Bot size={16} /></span>

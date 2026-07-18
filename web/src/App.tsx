@@ -44,7 +44,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    void useChatStore.getState().initChannels();
+    return useChatStore.getState().initChat();
   }, []);
 
   // Load the backend-owned model catalog once on startup.

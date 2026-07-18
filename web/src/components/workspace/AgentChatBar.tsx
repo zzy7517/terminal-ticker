@@ -1,5 +1,6 @@
 import { History, Loader2, Plus } from 'lucide-react';
 import { useAgentStore } from '../../stores/agentStore';
+import { useChatStore } from '../../stores/chatStore';
 
 export function AgentChatBar() {
   const selectedAgentId = useAgentStore((state) => state.selectedAgentId);
@@ -11,6 +12,7 @@ export function AgentChatBar() {
   const actionKey = useAgentStore((state) => state.agentChatActionKey);
   const selectAgentChat = useAgentStore((state) => state.selectAgentChat);
   const createNewChat = useAgentStore((state) => state.createNewChat);
+  const selectDirectChat = useChatStore((state) => state.selectDirectChat);
   const agent = agents.find((entry) => entry.id === selectedAgentId);
   const selectedChat = chats.find((chat) => chat.id === activeChatId) ?? null;
   const busy = run?.status === 'running';
@@ -25,7 +27,10 @@ export function AgentChatBar() {
         <History size={13} />
         <select
           aria-label="Chat history"
-          onChange={(event) => void selectAgentChat(event.target.value)}
+          onChange={(event) => {
+            const chatId = event.target.value;
+            void selectAgentChat(chatId).then(() => selectDirectChat(selectedAgentId, chatId));
+          }}
           value={selectedChat?.id ?? ''}
         >
           {!chats.length && <option value="">No Chats</option>}
@@ -39,7 +44,10 @@ export function AgentChatBar() {
       <button
         className="shell-button sm"
         disabled={busy || Boolean(actionKey)}
-        onClick={() => void createNewChat(selectedAgentId)}
+        onClick={() => void createNewChat(selectedAgentId).then(() => {
+          const chatId = useAgentStore.getState().activeAgentChatId;
+          if (chatId) selectDirectChat(selectedAgentId, chatId);
+        })}
         title={busy ? 'Wait for the current Agent run to finish' : 'Start a clean Chat'}
         type="button"
       >

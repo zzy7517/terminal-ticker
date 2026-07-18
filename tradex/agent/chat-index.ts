@@ -30,5 +30,5 @@ export async function indexPersistedAgentSessions(runtime: AppRuntime): Promise<
     createdAtMs: Date.parse(String(summary.createdAt)) || Date.now(),
     updatedAtMs: Date.parse(String(summary.updatedAt)) || Date.now(),
   }));
-  runtime.chatStore.indexSessions([...piSessions, ...claudeSessions]);
+  runtime.agentContextManager.indexSessions([...piSessions, ...claudeSessions]);
 }
