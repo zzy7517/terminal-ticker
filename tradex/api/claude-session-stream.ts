@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { writeFile } from "node:fs/promises";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import { MAIN_AGENT_PROMPT } from "../agent/prompts.js";
+import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
 import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claude-code/runtime.js";
 import type { RuntimeEvent } from "../agent/runtime/types.js";
@@ -260,14 +260,12 @@ async function buildClaudeTools(runtime: AppRuntime, sessionId: string) {
 
 /** 组合 Tradex 主提示词、Agent instructions 和 Claude 能力边界。 */
 function claudeInstructions(agentInstructions: string): string {
-  const now = new Date();
-  const sessionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   return [
     MAIN_AGENT_PROMPT,
     ...(agentInstructions.trim() && agentInstructions.trim() !== MAIN_AGENT_PROMPT.trim() ? [agentInstructions.trim()] : []),
-    `Session date: ${sessionDate} (Asia/Shanghai).`,
-    "You are running inside Tradex via Claude Code. Use the native Read tool for files in this Session and the explicitly allowed Tradex MCP read tools for market data.",
-    "Do not place trades, modify files, use shell commands, access Memory, configure external MCP servers, or claim those capabilities are available.",
+    "You are running inside Tradex via Claude Code. Use the native Read and Bash tools for this Session and the explicitly allowed Tradex read Tools exposed through MCP for market data.",
+    currentTimeInstruction("Bash"),
+    "Do not place trades, modify files, access Memory, configure external MCP servers, or claim those capabilities are available.",
   ].join("\n\n");
 }
 

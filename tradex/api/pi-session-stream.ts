@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../config/index.js";
-import { MAIN_AGENT_PROMPT } from "../agent/prompts.js";
+import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
 import { EXTERNAL_CONTEXT_ENTRY, piSessionFileExists, type SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
 import type { RuntimeEvent, RuntimeMessage } from "../agent/runtime/types.js";
@@ -47,11 +47,12 @@ export function streamPiSession(input: {
         includeFilesystem: true,
       });
       const memoryInstructions = await runtime.memoryPort.getPromptContext();
-      const now = new Date();
-      const sessionDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       const baseSystemPrompt = snapshot.systemPrompt.trim() || MAIN_AGENT_PROMPT;
-      const systemPrompt = [baseSystemPrompt, memoryInstructions ?? ""].filter(Boolean).join("\n")
-        + `\nSession date: ${sessionDate} (Asia/Shanghai)`;
+      const systemPrompt = [
+        baseSystemPrompt,
+        memoryInstructions ?? "",
+        currentTimeInstruction("run_command"),
+      ].filter(Boolean).join("\n\n");
       const run = await new PiSdkRuntime().start({
         config: requestConfig,
         modelRuntime: runtime.modelRuntimeSnapshot,

@@ -29,9 +29,9 @@ describe("Claude Code runtime protocol", () => {
       "--setting-sources", "",
       "--strict-mcp-config",
       "--mcp-config", "/tmp/tradex-mcp.json",
-      "--append-system-prompt", "Use Tradex tools.",
-      "--tools", "Read,mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
-      "--allowedTools", "Read,mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
+      "--system-prompt", "Use Tradex tools.",
+      "--tools", "Read,Bash,mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
+      "--allowedTools", "Read,Bash,mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
       "--", "Analyze BTC",
     ]);
   });
@@ -47,15 +47,15 @@ describe("Claude Code runtime protocol", () => {
     expect(args.slice(-2)).toEqual(["--", "--version"]);
   });
 
-  it("keeps native Read available when no MCP tools are exposed", () => {
+  it("keeps native Read and Bash available when no Tradex Tools are exposed through MCP", () => {
     const args = buildClaudeArgs({
       prompt: "Inspect attachments/image.png",
       instructions: "Read the attached image.",
       mcpConfigPath: "/tmp/mcp.json",
       allowedMcpTools: [],
     });
-    expect(args.slice(args.indexOf("--tools"), args.indexOf("--tools") + 2)).toEqual(["--tools", "Read"]);
-    expect(args.slice(args.indexOf("--allowedTools"), args.indexOf("--allowedTools") + 2)).toEqual(["--allowedTools", "Read"]);
+    expect(args.slice(args.indexOf("--tools"), args.indexOf("--tools") + 2)).toEqual(["--tools", "Read,Bash"]);
+    expect(args.slice(args.indexOf("--allowedTools"), args.indexOf("--allowedTools") + 2)).toEqual(["--allowedTools", "Read,Bash"]);
   });
 
   it("adds resume, model, and effort only when explicitly configured", () => {

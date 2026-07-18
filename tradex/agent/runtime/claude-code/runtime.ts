@@ -29,7 +29,7 @@ export interface ClaudeArgsInput {
 export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
   // 所有参数都以 argv 传入，禁止拼接 shell 字符串，避免 prompt 或路径产生注入问题。
   const mcpTools = input.allowedMcpTools.map((name) => `mcp__tradex__${name}`);
-  const nativeTools = ["Read"];
+  const nativeTools = ["Read", "Bash"];
   const tools = [...nativeTools, ...mcpTools];
   const allowedTools = [...nativeTools, ...mcpTools];
   // Tradex 显式提供本轮配置，不继承可能注册 hooks 的用户或项目 settings。
@@ -42,7 +42,7 @@ export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
     "--setting-sources", "",
     "--strict-mcp-config",
     "--mcp-config", input.mcpConfigPath,
-    "--append-system-prompt", input.instructions,
+    "--system-prompt", input.instructions,
     "--tools", tools.join(","),
     "--allowedTools", allowedTools.join(","),
   ];

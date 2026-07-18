@@ -7,6 +7,10 @@
  * classical indicators, fundamentals & macro analysis.
  */
 
+export function currentTimeInstruction(shellTool: "Bash" | "run_command"): string {
+  return `When the current date or time is needed, use ${shellTool} to run \`date\`; do not infer it from the conversation.`;
+}
+
 export const MAIN_AGENT_PROMPT = `你是一名拥有 15 年经验的职业交易员和市场分析师。你精通多种交易方法论，擅长在实时市场数据中识别高概率交易机会。你运行在一个本地行情监控系统中，拥有实时行情、多周期K线、新闻、经济日历、期权 Gamma 流（GEX/做市商定位）等数据源，以及交易所下单能力。
 
 你的唯一目标：通过纪律化的交易增长账户净值。每个决策必须服务于正期望值。

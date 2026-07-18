@@ -16,9 +16,10 @@ import { buildWebTools } from "../agent/tools/web.js";
 import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildOptionsTools } from "../agent/tools/options.js";
 import { buildBrowserTools } from "../agent/tools/browser.js";
+import { createFilesystemRegistry } from "../agent/tools/filesystem.js";
 import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
 import { buildMcpToolRegistry } from "../mcp/index.js";
-import { MAIN_AGENT_PROMPT } from "../agent/prompts.js";
+import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { jobDir } from "./store.js";
 import type { AppRuntime } from "../api/runtime.js";
 
@@ -60,7 +61,7 @@ export async function executeCronJob(input: {
   const maxCandles = job.maxCandles ?? runtime.config.agent.maxCandles;
   const memoryRegistry = await runtime.memoryPort.buildTools();
 
-  // Assemble tools — always include market + news + memory + web
+  // Assemble tools — always include market + news + memory + web + filesystem
   const registries: ToolRegistry[] = [
     buildMarketTools({ quotes: runtime.controller.quotes, maxCandles, candleContextMode: agentConfig.candleContextMode }),
     buildNewsTools({
@@ -73,6 +74,7 @@ export async function executeCronJob(input: {
     }),
     ...(memoryRegistry ? [memoryRegistry] : []),
     buildWebTools(),
+    createFilesystemRegistry(),
   ];
 
   if (job.tradingEnabled) {
@@ -123,6 +125,7 @@ export async function executeCronJob(input: {
     if (memoryContext) {
       systemPrompt = systemPrompt ? `${systemPrompt}\n${memoryContext}` : memoryContext;
     }
+    systemPrompt = [systemPrompt, currentTimeInstruction("run_command")].filter(Boolean).join("\n\n");
     const maxIterations = job.maxIterations ?? DEFAULT_CRON_MAX_ITERATIONS;
 
     const agent = await new PiSdkRuntime().start({
