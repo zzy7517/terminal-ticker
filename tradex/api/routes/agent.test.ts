@@ -72,7 +72,7 @@ describe("Agent HTTP API", () => {
     const response = await agentRoutes(runtime()).request("/api/agent/runtimes/claude-code/models");
     const payload = await response.json() as { models: Array<Record<string, unknown>>; supportsCustomModel: boolean };
     expect(payload.supportsCustomModel).toBe(true);
-    expect(payload.models).toContainEqual(expect.objectContaining({ id: "sonnet", default: true, thinking: expect.any(Object) }));
+    expect(payload.models).toContainEqual(expect.objectContaining({ id: "claude-opus-4-8", default: true, thinking: expect.any(Object) }));
   });
 
   it("creates an in-memory Session projected under the selected Agent", async () => {

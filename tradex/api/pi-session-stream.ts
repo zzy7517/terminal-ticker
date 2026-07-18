@@ -58,6 +58,7 @@ export function streamPiSession(input: {
         systemPrompt,
         tools,
         sessionManager: manager,
+        compaction: true,
         prompt: input.message,
         images: input.requestImages.length > 0 ? input.requestImages : undefined,
       });

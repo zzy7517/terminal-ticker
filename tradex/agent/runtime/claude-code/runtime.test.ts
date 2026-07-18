@@ -14,7 +14,7 @@ import {
 } from "./runtime.js";
 
 describe("Claude Code runtime protocol", () => {
-  it("builds a controlled headless invocation without overriding local defaults", () => {
+  it("builds a controlled headless invocation without loading filesystem settings", () => {
     expect(buildClaudeArgs({
       prompt: "Analyze BTC",
       instructions: "Use Tradex tools.",
@@ -26,13 +26,25 @@ describe("Claude Code runtime protocol", () => {
       "--output-format", "stream-json",
       "--include-partial-messages",
       "--permission-mode", "dontAsk",
+      "--setting-sources", "",
       "--strict-mcp-config",
       "--mcp-config", "/tmp/tradex-mcp.json",
       "--append-system-prompt", "Use Tradex tools.",
       "--tools", "Read,mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
       "--allowedTools", "Read,mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
-      "Analyze BTC",
+      "--", "Analyze BTC",
     ]);
+  });
+
+  it("keeps option-like prompts behind the argument separator", () => {
+    const args = buildClaudeArgs({
+      prompt: "--version",
+      instructions: "Rules",
+      mcpConfigPath: "/tmp/mcp.json",
+      allowedMcpTools: [],
+    });
+
+    expect(args.slice(-2)).toEqual(["--", "--version"]);
   });
 
   it("keeps native Read available when no MCP tools are exposed", () => {
@@ -116,6 +128,47 @@ describe("Claude Code runtime protocol", () => {
       message: { id: "claude:assistant", role: "assistant", content: [], timestamp: expect.any(Number) },
       delta: "live",
     }]);
+  });
+
+  it("projects failed result events that do not contain a result string", () => {
+    expect(parseClaudeLine(JSON.stringify({
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      errors: ["Authentication failed"],
+      terminal_reason: "aborted_streaming",
+      session_id: "11111111-1111-4111-8111-111111111111",
+    }))).toEqual([{
+      type: "run-end",
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+      result: "Authentication failed",
+      status: "error",
+    }]);
+  });
+
+  it("summarizes non-text tool results without retaining image data", () => {
+    const events = parseClaudeLine(JSON.stringify({
+      type: "user",
+      message: {
+        content: [{
+          type: "tool_result",
+          tool_use_id: "call-1",
+          content: [
+            { type: "text", text: "Chart captured" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "large-base64-payload" } },
+          ],
+        }],
+      },
+    }));
+
+    expect(events).toEqual([{
+      type: "tool-result",
+      callId: "call-1",
+      name: "unknown",
+      result: { content: [{ type: "text", text: "Chart captured\n[image]" }] },
+      isError: false,
+    }]);
+    expect(JSON.stringify(events)).not.toContain("large-base64-payload");
   });
 
   it("classifies malformed protocol lines instead of silently dropping them", () => {

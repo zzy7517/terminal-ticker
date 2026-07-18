@@ -3,6 +3,31 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { detectClaudeCode } from "./discovery.js";
+import { claudeModelCatalog } from "./model-manifest.js";
+
+describe("Claude Code model catalog", () => {
+  it("exposes the curated first-party Claude manifest", () => {
+    const models = claudeModelCatalog();
+
+    expect(models.map((model) => model.id)).toEqual([
+      "claude-fable-5",
+      "claude-opus-4-8[1m]",
+      "claude-opus-4-8",
+      "claude-sonnet-5",
+      "claude-opus-4-7[1m]",
+      "claude-opus-4-7",
+      "claude-opus-4-6[1m]",
+      "claude-opus-4-6",
+      "claude-sonnet-4-6[1m]",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5",
+    ]);
+    expect(models.find((model) => model.default)?.id).toBe("claude-opus-4-8");
+    expect(models.find((model) => model.id === "claude-sonnet-5")?.thinking.supportedLevels).toContain("xhigh");
+    expect(models.find((model) => model.id === "claude-sonnet-4-6")?.thinking.supportedLevels).not.toContain("xhigh");
+    expect(models.find((model) => model.id === "claude-haiku-4-5")?.thinking.supportedLevels).toEqual([]);
+  });
+});
 
 describe("Claude Code availability", () => {
   it("reports the local CLI version", async () => {

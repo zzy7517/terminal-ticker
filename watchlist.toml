@@ -25,14 +25,14 @@ stock_poll_interval_seconds = 5
 
 [agent]
 enabled = true
-default_provider = "codex"
-default_model = "gpt-5.4-mini"
+default_provider = "anthropic"
+default_model = "claude-haiku-4-5"
 system_prompt = ""
 max_candles = 40
 candle_context_mode = "raw"
 
 [agent.providers.codex]
-enabled = true
+enabled = false
 api = "openai-codex-responses"
 display_name = "codex"
 requires_auth = true

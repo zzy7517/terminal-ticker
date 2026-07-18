@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentConfig, ProviderProfile } from "../../../../config/index.js";
 import {
   agentConfigForModelSelection,
@@ -46,8 +46,10 @@ function config(): AgentConfig {
 }
 
 describe("ModelRuntimeSnapshot", () => {
-  it("registers explicit custom model metadata without template inference", () => {
-    const dto = buildModelRuntimeSnapshot(config(), 7).toDTO();
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("registers explicit custom model metadata without template inference", async () => {
+    const dto = (await buildModelRuntimeSnapshot(config(), 7)).toDTO();
     const model = dto.models.find((item) => item.providerId === "acme" && item.id === "acme-reasoner");
 
     expect(dto.generation).toBe(7);
@@ -84,7 +86,7 @@ describe("ModelRuntimeSnapshot", () => {
       apiKeyRaw: "",
       baseUrl: "http://127.0.0.1:11434/v1",
     });
-    const snapshot = buildModelRuntimeSnapshot(localConfig, 1);
+    const snapshot = await buildModelRuntimeSnapshot(localConfig, 1);
     const dto = snapshot.toDTO();
 
     expect(dto.providers.find((item) => item.providerId === "acme")).toMatchObject({
@@ -94,19 +96,38 @@ describe("ModelRuntimeSnapshot", () => {
     });
     expect(dto.models.find((item) => item.providerId === "acme" && item.id === "acme-reasoner")?.runnable)
       .toBe(true);
-    const model = snapshot.modelRegistry.find("acme", "acme-reasoner");
+    const model = snapshot.modelRuntime.getModel("acme", "acme-reasoner");
     expect(model).toBeDefined();
-    expect(await snapshot.modelRegistry.getApiKeyAndHeaders(model!)).toMatchObject({
-      ok: true,
-      apiKey: "no-auth",
+    expect(await snapshot.modelRuntime.getAuth(model!)).toMatchObject({
+      auth: { apiKey: "no-auth" },
     });
   });
 
-  it("exposes only providers declared in backend providerProfiles", () => {
-    const dto = buildModelRuntimeSnapshot(config(), 1).toDTO();
+  it("exposes only providers declared in backend providerProfiles", async () => {
+    const dto = (await buildModelRuntimeSnapshot(config(), 1)).toDTO();
 
     expect(dto.providers.map((item) => item.providerId)).toEqual(["acme"]);
     expect(dto.models.every((item) => item.providerId === "acme")).toBe(true);
     expect(dto.providers.some((item) => item.providerId === "openrouter")).toBe(false);
+  });
+
+  it("keeps ambient auth for a built-in provider without a provider profile or base URL", async () => {
+    vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "");
+    vi.stubEnv("ANTHROPIC_API_KEY", "ambient-test-key");
+    const minimalConfig: AgentConfig = {
+      ...config(),
+      provider: "anthropic",
+      apiMode: "anthropic_messages",
+      model: "claude-sonnet-4-6",
+      providerProfiles: {},
+    };
+
+    const snapshot = await buildModelRuntimeSnapshot(minimalConfig, 1);
+    const model = snapshot.modelRuntime.getModel("anthropic", "claude-sonnet-4-6");
+
+    expect(model).toBeDefined();
+    expect(await snapshot.modelRuntime.getAuth(model!)).toMatchObject({
+      auth: { apiKey: "ambient-test-key" },
+    });
   });
 });

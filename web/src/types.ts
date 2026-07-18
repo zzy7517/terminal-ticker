@@ -110,7 +110,7 @@ export interface ClaudeCodeModelsResponse {
     label: string;
     provider: string;
     default?: boolean;
-    thinking: { supportedLevels: string[]; defaultLevel: string };
+    thinking: { supportedLevels: string[]; defaultLevel: string | null };
   }>;
   supportsCustomModel: boolean;
 }

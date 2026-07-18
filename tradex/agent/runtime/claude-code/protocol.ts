@@ -14,9 +14,12 @@ interface ClaudeContentBlock {
 
 interface ClaudeLine {
   type?: string;
+  subtype?: string;
   session_id?: string;
   result?: string;
   is_error?: boolean;
+  errors?: string[];
+  terminal_reason?: string | null;
   message?: {
     model?: string;
     content?: ClaudeContentBlock[];
@@ -59,13 +62,20 @@ export function parseClaudeLine(line: string): RuntimeEvent[] {
       : [{ type: "runtime-error", code: "invalid_stream_delta", message: "Claude Code text delta is missing text" }];
   }
   if (value.type === "result") {
-    if (typeof value.result !== "string") {
+    let result = value.result;
+    if (typeof result !== "string" && value.is_error === true) {
+      result = value.errors?.filter(Boolean).join("\n")
+        || value.terminal_reason
+        || value.subtype
+        || "Claude Code run failed";
+    }
+    if (typeof result !== "string") {
       return [{ type: "runtime-error", code: "invalid_result_event", message: "Claude Code result event is missing result" }];
     }
     return [{
       type: "run-end",
       ...(value.session_id ? { nativeSessionId: value.session_id } : {}),
-      result: value.result,
+      result,
       status: value.is_error === true ? "error" : "completed",
     }];
   }
@@ -168,9 +178,11 @@ function stripTradexMcpPrefix(name: string): string {
 
 function contentToText(content: unknown): string {
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return content == null ? "" : JSON.stringify(content);
-  return content.map((item) => {
+  if (content == null) return "";
+  const items = Array.isArray(content) ? content : [content];
+  return items.map((item) => {
     if (item && typeof item === "object" && "text" in item && typeof item.text === "string") return item.text;
-    return JSON.stringify(item);
+    if (item && typeof item === "object" && "type" in item && item.type === "image") return "[image]";
+    return typeof item === "object" ? JSON.stringify(item) : String(item);
   }).join("\n");
 }

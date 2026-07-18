@@ -32,12 +32,14 @@ export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
   const nativeTools = ["Read"];
   const tools = [...nativeTools, ...mcpTools];
   const allowedTools = [...nativeTools, ...mcpTools];
+  // Tradex 显式提供本轮配置，不继承可能注册 hooks 的用户或项目 settings。
   const args = [
     "-p",
     "--verbose",
     "--output-format", "stream-json",
     "--include-partial-messages",
     "--permission-mode", "dontAsk",
+    "--setting-sources", "",
     "--strict-mcp-config",
     "--mcp-config", input.mcpConfigPath,
     "--append-system-prompt", input.instructions,
@@ -48,7 +50,7 @@ export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
   else if (input.assignedNativeSessionId) args.push("--session-id", input.assignedNativeSessionId);
   if (input.model) args.push("--model", input.model);
   if (input.effort) args.push("--effort", input.effort);
-  args.push(input.prompt);
+  args.push("--", input.prompt);
   return args;
 }
 

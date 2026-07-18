@@ -38,6 +38,7 @@ export interface PiAgentRuntime extends ActiveAgentRun {
   messages: AgentMessage[];
   subscribe(listener: (event: AgentEvent) => void | Promise<void>): () => void;
   prompt(text: string, images?: ImageContent[]): Promise<void>;
+  dispose(): void;
 }
 
 export type PiRuntimeRunInput = Parameters<typeof createPiAgentRuntime>[0] & {
@@ -58,7 +59,7 @@ export class PiSdkRuntime {
 }
 
 // 管理单次 Pi run 的事件订阅、取消和异步结算。
-class PiActiveRuntimeRun implements ActiveRuntimeRun {
+export class PiActiveRuntimeRun implements ActiveRuntimeRun {
   readonly runtime = "pi" as const;
   readonly capabilities = PI_SDK_CAPABILITIES;
   readonly result: Promise<RuntimeRunResult>;
@@ -95,28 +96,30 @@ class PiActiveRuntimeRun implements ActiveRuntimeRun {
     });
     this.result = new Promise((resolve) => {
       queueMicrotask(() => {
-        void agent.prompt(prompt, images).then(
-          async () => {
+        void (async (): Promise<RuntimeRunResult> => {
+          try {
+            await agent.prompt(prompt, images);
             if (!sawRunEnd) this.emit({
               type: "run-end",
               result: output,
               status: this.abortController.signal.aborted ? "aborted" : error ? "error" : "completed",
             });
             await this.delivery;
-            resolve(this.listenerError
+            return this.listenerError
               ? { output, error: this.listenerError.message, errorCode: "runtime_listener_failed" }
               : this.abortController.signal.aborted
                 ? { output, error: "Pi run was aborted", errorCode: "aborted" }
-                : { output, error });
-          },
-          async (cause) => {
+                : { output, error };
+          } catch (cause) {
             const aborted = this.abortController.signal.aborted;
             const detail = aborted ? "Pi run was aborted" : cause instanceof Error ? cause.message : String(cause);
             if (!sawRunEnd) this.emit({ type: "run-end", result: output, status: aborted ? "aborted" : "error" });
             await this.delivery;
-            resolve({ output, error: detail, errorCode: aborted ? "aborted" : "runtime_failure" });
-          },
-        );
+            return { output, error: detail, errorCode: aborted ? "aborted" : "runtime_failure" };
+          } finally {
+            try { agent.dispose(); } catch { /* cleanup must not block run settlement */ }
+          }
+        })().then(resolve);
       });
     });
     this.abort = () => {
@@ -160,17 +163,15 @@ export async function createPiAgentRuntime(input: {
   tools: ToolRegistry;
   sessionManager?: PiSessionManager;
   maxTurns?: number;
+  /** Enable Pi auto-compaction for persisted interactive conversations. */
+  compaction?: boolean;
   /** Called immediately before each provider stream request (e.g. rate-limit reserve). */
   beforeProviderRequest?: () => void;
 }): Promise<PiAgentRuntime> {
-  const {
-    authStorage,
-    modelRegistry,
-    model,
-  } = input.modelRuntime.resolve(input.config);
+  const { model, modelRuntime } = input.modelRuntime.resolve(input.config);
 
   const settingsManager = SettingsManager.inMemory({
-    compaction: { enabled: false },
+    compaction: { enabled: input.compaction ?? false },
   });
   const resourceLoader = new DefaultResourceLoader({
     cwd: process.cwd(),
@@ -187,9 +188,8 @@ export async function createPiAgentRuntime(input: {
   const { session } = await createAgentSession({
     cwd: process.cwd(),
     model,
+    modelRuntime,
     thinkingLevel: toThinkingLevel(input.config.reasoningEffort),
-    authStorage,
-    modelRegistry,
     resourceLoader,
     settingsManager,
     sessionManager: input.sessionManager ?? PiSessionManager.inMemory(),
@@ -197,9 +197,9 @@ export async function createPiAgentRuntime(input: {
     customTools,
   });
   session.agent.toolExecution = "sequential";
-  // Single wrapper for cross-cutting concerns on the provider stream. Auth for
-  // no-auth providers is handled at registration time (authHeader:false +
-  // apiKey:"no-auth" in buildModelRuntimeSnapshot), so it is not repeated here.
+  // Pi's before_provider_request extension event deliberately reports and
+  // swallows handler errors, so request admission must remain on a boundary
+  // where a rejection can stop the provider call.
   if (input.beforeProviderRequest) {
     const beforeProviderRequest = input.beforeProviderRequest;
     const baseStreamFn = session.agent.streamFn.bind(session.agent);
@@ -250,7 +250,10 @@ export async function createPiAgentRuntime(input: {
       });
     },
     abort() {
-      void session.abort();
+      return session.abort();
+    },
+    dispose() {
+      session.dispose();
     },
   };
 }

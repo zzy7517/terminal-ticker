@@ -15,12 +15,9 @@ import type { LLMChatClient, ChatResponse } from "../../../llm_client.js";
 import type { AgentModel } from "./resolve.js";
 import { resolveAgentModelFromConfig } from "./resolve.js";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
-import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { TextContent } from "@earendil-works/pi-ai";
 import type { ModelRuntimeSnapshot } from "./runtime.js";
 import { fetchProviderModelCatalog } from "./model_fetch.js";
-
-export class LLMProviderUnavailable extends Error {}
 
 /**
  * AgentModelRegistry — 把 config 解析成 AgentModel，
@@ -39,25 +36,17 @@ export class AgentModelRegistry {
    * 把 provider 流式接口包成轻量 chat 接口，供 memory pipeline 等非 agentic 调用方使用。
    */
   createProvider(config: AgentConfig): LLMChatClient {
-    const { model, modelRegistry, requiresAuth } = this.modelRuntime.resolve(config);
+    const { model, modelRuntime, requiresAuth } = this.modelRuntime.resolve(config);
     return {
       name: model.provider,
       model: model.id,
       async chat({ system, messages, onDelta }): Promise<ChatResponse> {
-        const auth = await modelRegistry.getApiKeyAndHeaders(model);
-        if (!auth.ok) throw new LLMProviderUnavailable(auth.error);
-        const stream = streamSimple(model, {
+        const stream = modelRuntime.streamSimple(model, {
           systemPrompt: system ?? "",
           messages: convertToLlm(messages),
           tools: [],
         }, {
-          apiKey: auth.apiKey,
-          headers: requiresAuth
-            ? auth.headers
-            : {
-                ...auth.headers,
-                Authorization: null as unknown as string,
-              },
+          headers: requiresAuth ? undefined : { Authorization: null },
         });
         // 在等待最终结果的同时，把文本 delta 转发给旧的 onDelta 回调
         if (onDelta) {

@@ -131,7 +131,7 @@ export class AppRuntime {
   // Resolves the instrument list asynchronously before constructing the runtime,
   // since instrument resolution may involve network calls to provider catalogs.
   static async create(config: AppConfig): Promise<AppRuntime> {
-    const modelRuntimeSnapshot = buildModelRuntimeSnapshot(config.agent, 1);
+    const modelRuntimeSnapshot = await buildModelRuntimeSnapshot(config.agent, 1);
     return new AppRuntime(
       config,
       await resolveInstruments(config.instruments),
@@ -149,7 +149,7 @@ export class AppRuntime {
   async reloadConfig(config: AppConfig): Promise<void> {
     // Build and validate replacement state off to the side. No live caller can
     // observe it until the single snapshot assignment below.
-    const nextModelRuntime = buildModelRuntimeSnapshot(
+    const nextModelRuntime = await buildModelRuntimeSnapshot(
       config.agent,
       this._modelRuntimeSnapshot.generation + 1,
     );

@@ -1,9 +1,9 @@
 /**
- * runtime.ts — 把 Tradex AgentConfig 桥接到 Pi 的 ModelRegistry。
+ * runtime.ts — 把 Tradex AgentConfig 桥接到 Pi 的 ModelRuntime。
  *
  * 构建不可变的 ModelRuntimeSnapshot：根据 provider 配置 / 自定义模型
- * 一次性注册 AuthStorage + ModelRegistry，供 agent 运行、memory 流水线
- * 和设置页 DTO 共享使用。
+ * 一次性配置 Pi ModelRuntime，供 agent 运行、memory 流水线和设置页 DTO
+ * 共享使用。
  *
  * 模型元数据来源：
  *  - "pi"     — Pi 内置目录
@@ -11,11 +11,8 @@
  *  - "legacy" — 只配了 model id、没有元数据（用占位默认值）
  */
 
-import {
-  AuthStorage,
-  ModelRegistry,
-} from "@earendil-works/pi-coding-agent";
-import type { Model } from "@earendil-works/pi-ai/compat";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { InMemoryCredentialStore, type Model } from "@earendil-works/pi-ai";
 import type { AgentConfig, CustomModelDefinition, ProviderProfile } from "../../../../config/index.js";
 import {
   ANTHROPIC_PROVIDER,
@@ -39,12 +36,10 @@ const RUNNABLE_APIS = new Set([
   "anthropic-messages",
 ]);
 
-/** 单次 LLM 调用拿到的句柄：Pi Model + 共享的鉴权 / registry。 */
+/** 单次 LLM 调用拿到的句柄：Pi Model + 共享的模型运行时。 */
 export interface ModelRuntimeAccess {
-  provider: string;
   model: Model<any>;
-  authStorage: AuthStorage;
-  modelRegistry: ModelRegistry;
+  modelRuntime: ModelRuntime;
   requiresAuth: boolean;
 }
 
@@ -128,29 +123,26 @@ export function agentConfigForModelSelection(
 }
 
 /**
- * 不可变的运行时句柄。AuthStorage 与 ModelRegistry 构建一次后，
- * 由所有持有该快照的消费者共享。
+ * 不可变的运行时句柄。Pi ModelRuntime 构建一次后由所有持有该快照的
+ * 消费者共享。
  * 配置热更新时 `generation` 递增，前端可据此判断 DTO 是否过期。
  */
 export class ModelRuntimeSnapshot {
   readonly generation: number;
-  readonly authStorage: AuthStorage;
-  readonly modelRegistry: ModelRegistry;
+  readonly modelRuntime: ModelRuntime;
   private readonly modelSources: ReadonlyMap<string, ModelRegistryModelDTO["source"]>;
   private readonly selectedModels: ReadonlySet<string>;
   private readonly providerProfiles: ReadonlyMap<string, ProviderProfile>;
 
   constructor(input: {
     generation: number;
-    authStorage: AuthStorage;
-    modelRegistry: ModelRegistry;
+    modelRuntime: ModelRuntime;
     modelSources: ReadonlyMap<string, ModelRegistryModelDTO["source"]>;
     selectedModels: ReadonlySet<string>;
     providerProfiles: ReadonlyMap<string, ProviderProfile>;
   }) {
     this.generation = input.generation;
-    this.authStorage = input.authStorage;
-    this.modelRegistry = input.modelRegistry;
+    this.modelRuntime = input.modelRuntime;
     this.modelSources = input.modelSources;
     this.selectedModels = input.selectedModels;
     this.providerProfiles = input.providerProfiles;
@@ -160,17 +152,15 @@ export class ModelRuntimeSnapshot {
   resolve(config: AgentConfig): ModelRuntimeAccess {
     const selection = resolveAgentModelFromConfig(config);
     const provider = toPiProviderId(selection.provider);
-    const model = this.modelRegistry.find(provider, selection.id);
+    const model = this.modelRuntime.getModel(provider, selection.id);
     if (!model) {
       throw new Error(
         `Pi does not know model ${provider}/${selection.id}; register model metadata before using it`,
       );
     }
     return {
-      provider,
       model,
-      authStorage: this.authStorage,
-      modelRegistry: this.modelRegistry,
+      modelRuntime: this.modelRuntime,
       requiresAuth: this.providerProfiles.get(selection.provider)?.requiresAuth ?? true,
     };
   }
@@ -179,7 +169,7 @@ export class ModelRuntimeSnapshot {
   resolveSelection(selection: ModelSelection): ModelRegistryModelDTO {
     const logicalProvider = normalizeProvider(fromPiProviderId(selection.provider.trim().toLowerCase()));
     const providerId = toPiProviderId(logicalProvider);
-    const model = this.modelRegistry.find(providerId, selection.id.trim());
+    const model = this.modelRuntime.getModel(providerId, selection.id.trim());
     if (!model) throw new Error(`Unknown model selection: ${providerId}/${selection.id}`);
     return this.toModelDTO(model);
   }
@@ -191,7 +181,7 @@ export class ModelRuntimeSnapshot {
     const allowedProviderIds = new Set(
       [...this.providerProfiles.keys()].map(toPiProviderId),
     );
-    const models = this.modelRegistry.getAll()
+    const models = this.modelRuntime.getModels()
       .filter((model) => allowedProviderIds.has(model.provider))
       .map((model) => this.toModelDTO(model))
       .sort((a, b) => a.providerId.localeCompare(b.providerId) || a.name.localeCompare(b.name));
@@ -209,7 +199,7 @@ export class ModelRuntimeSnapshot {
     const profile = this.providerProfiles.get(logicalProvider);
     const key = modelKey(logicalProvider, model.id);
     const authConfigured = profile?.requiresAuth === false
-      || this.modelRegistry.hasConfiguredAuth(model);
+      || this.modelRuntime.hasConfiguredAuth(model.provider);
     return {
       providerId: model.provider,
       id: model.id,
@@ -229,17 +219,17 @@ export class ModelRuntimeSnapshot {
   private providerDTO(providerId: string): Omit<ModelRegistryProviderDTO, "runnable"> {
     const logicalProvider = fromPiProviderId(providerId);
     const profile = this.providerProfiles.get(logicalProvider);
-    const catalogApi = this.modelRegistry.getAll().find((model) => model.provider === providerId)?.api;
+    const providerModels = this.modelRuntime.getModels(providerId);
+    const catalogApi = providerModels[0]?.api;
     return {
       providerId,
       configProviderId: logicalProvider,
-      name: profile?.displayName || this.modelRegistry.getProviderDisplayName(providerId),
+      name: profile?.displayName || this.modelRuntime.getProvider(providerId)?.name || providerId,
       enabled: profile?.enabled ?? false,
       api: profile?.api ?? (catalogApi ? String(catalogApi) : ""),
       requiresAuth: profile?.requiresAuth ?? true,
       baseUrlConfigured: Boolean(profile?.baseUrl),
-      authConfigured: profile?.requiresAuth === false || this.modelRegistry.getAll()
-        .some((model) => model.provider === providerId && this.modelRegistry.hasConfiguredAuth(model)),
+      authConfigured: profile?.requiresAuth === false || this.modelRuntime.hasConfiguredAuth(providerId),
       // 仅这三个 provider 支持拉远端 /models。
       discoverable: [CODEX_PROVIDER, ANTHROPIC_PROVIDER, OPENAI_PROVIDER].includes(logicalProvider),
     };
@@ -307,15 +297,18 @@ function registryModelConfig(model: Model<any>) {
 }
 
 /**
- * 把所有 provider profile 注册进一份全新的内存 Pi ModelRegistry。
+ * 把所有 provider profile 注册进一份全新的内存 Pi ModelRuntime。
  * 启动时以及 agent 配置热更新时调用（`generation` 递增）。
  */
-export function buildModelRuntimeSnapshot(
+export async function buildModelRuntimeSnapshot(
   config: AgentConfig,
   generation: number,
-): ModelRuntimeSnapshot {
-  const authStorage = AuthStorage.inMemory();
-  const modelRegistry = ModelRegistry.inMemory(authStorage);
+): Promise<ModelRuntimeSnapshot> {
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    allowModelNetwork: false,
+  });
   const modelSources = new Map<string, ModelRegistryModelDTO["source"]>();
   const selectedModels = new Set<string>();
   const providerProfiles = new Map<string, ProviderProfile>();
@@ -326,10 +319,9 @@ export function buildModelRuntimeSnapshot(
     const access = resolveProviderAccess(config, logicalProvider);
     providerProfiles.set(logicalProvider, profile);
     for (const id of profile.models) selectedModels.add(modelKey(logicalProvider, id));
-    if (access.apiKey) authStorage.setRuntimeApiKey(providerId, access.apiKey);
 
     // 先取 Pi 内置模型，再叠加 custom / legacy。
-    const existing = modelRegistry.getAll().filter((model) => model.provider === providerId);
+    const existing = modelRuntime.getModels(providerId);
     const providerBaseUrl = access.baseUrl || existing[0]?.baseUrl || "";
     const merged = new Map(existing.map((model) => [model.id, model]));
     for (const definition of profile.customModelDefinitions) {
@@ -351,7 +343,7 @@ export function buildModelRuntimeSnapshot(
       || [...configuredIds].some((id) => !existing.some((model) => model.id === id));
     if (requiresModelRegistration) {
       // 替换/扩展 provider 条目，让 custom + legacy 对 Pi 可见。
-      modelRegistry.registerProvider(providerId, {
+      modelRuntime.registerProvider(providerId, {
         name: profile.displayName,
         api: profile.api,
         baseUrl: providerBaseUrl,
@@ -363,7 +355,7 @@ export function buildModelRuntimeSnapshot(
       });
     } else if (access.baseUrl || access.apiKey || !profile.requiresAuth) {
       // 内置 provider 保留 Pi 完整目录；无需额外模型元数据时，只覆盖端点与鉴权。
-      modelRegistry.registerProvider(providerId, {
+      modelRuntime.registerProvider(providerId, {
         ...(access.baseUrl ? { baseUrl: access.baseUrl } : {}),
         ...(profile.requiresAuth
           ? access.apiKey ? { apiKey: access.apiKey } : {}
@@ -378,16 +370,17 @@ export function buildModelRuntimeSnapshot(
   // 兼容极简 AgentConfig：当前选型的 provider 不在 providerProfiles 里。
   const selected = resolveAgentModelFromConfig(config);
   const selectedProviderId = toPiProviderId(selected.provider);
-  if (selected.apiKey) authStorage.setRuntimeApiKey(selectedProviderId, selected.apiKey);
-  if (!config.providerProfiles[selected.provider] && selected.baseUrl) {
-    modelRegistry.registerProvider(selectedProviderId, {
-      baseUrl: selected.baseUrl,
+  if (!config.providerProfiles[selected.provider] && (selected.baseUrl || selected.apiKey)) {
+    modelRuntime.registerProvider(selectedProviderId, {
+      ...(selected.baseUrl ? { baseUrl: selected.baseUrl } : {}),
       ...(selected.apiKey ? { apiKey: selected.apiKey } : {}),
     });
   }
 
+  await modelRuntime.refresh({ allowNetwork: false });
+
   // 发布快照前校验默认模型已注册。
-  if (!modelRegistry.find(selectedProviderId, selected.id)) {
+  if (!modelRuntime.getModel(selectedProviderId, selected.id)) {
     throw new Error(
       `Pi does not know model ${selectedProviderId}/${selected.id}; register model metadata before using it`,
     );
@@ -395,8 +388,7 @@ export function buildModelRuntimeSnapshot(
 
   return new ModelRuntimeSnapshot({
     generation,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     modelSources,
     selectedModels,
     providerProfiles,
