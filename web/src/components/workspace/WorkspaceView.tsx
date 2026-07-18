@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   Bot,
   CalendarDays,
@@ -12,21 +11,28 @@ import { useMarketStore } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
 
 import { WatchlistSidebar } from './WatchlistSidebar';
-import { AgentSessionHistoryList } from './AgentSessionHistoryList';
+import { AgentDirectMessageList } from './AgentDirectMessageList';
+import { AgentChatBar } from './AgentChatBar';
 import { AgentSessionPanel } from './AgentSessionPanel';
 import { NewsPanel } from './NewsPanel';
 import { PositionsPanel } from './PositionsPanel';
 import { CronPanel } from './CronPanel';
 import { CalendarPanel } from './CalendarPanel';
 import { OptionsPanel } from './OptionsPanel';
-import { AgentPicker } from './AgentPicker';
 import { useAgentStore } from '../../stores/agentStore';
+import { useChatStore } from '../../stores/chatStore';
+import { ChannelPanel } from '../chat/ChannelPanel';
+import './AgentChatLayout.css';
 
 export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);
   const activeTab = useUiStore((s) => s.activeWorkspace);
-  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
-  const resetAgentConversation = useAgentStore((s) => s.resetAgentConversation);
+  const createNewChat = useAgentStore((s) => s.createNewChat);
+  const activeChannelId = useChatStore((s) => s.activeChannelId);
+  const selectedAgentId = useAgentStore((s) => s.selectedAgentId);
+  const selectedChatStatus = useAgentStore((s) => (
+    s.agentChatsByAgentId[s.selectedAgentId]?.find((chat) => chat.id === s.activeAgentChatId)?.status ?? 'active'
+  ));
 
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
   return (
@@ -42,7 +48,7 @@ export function WorkspaceView() {
               : <WalletCards size={17} />}
           </span>
           <div>
-            <h1>{activeTab === 'market' ? 'Market' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
+            <h1>{activeTab === 'agent' ? 'Chat' : activeTab === 'market' ? 'Market' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
             <p className="workspace-subtitle">
               {activeTab === 'agent' ? 'Research and analysis workspace'
                 : activeTab === 'market' ? 'Watchlist and live market overview'
@@ -61,12 +67,19 @@ export function WorkspaceView() {
           )}
           {activeTab === 'agent' && (
             <div className="agent-tab-layout">
-              <AgentSessionHistoryList onNewSession={() => setAgentPickerOpen(true)} />
-              <AgentSessionPanel
-                providerProfiles={state?.config.agent.providerProfiles ?? {}}
-                disabled={!state}
-                onNewSession={() => setAgentPickerOpen(true)}
-              />
+              <AgentDirectMessageList />
+              {activeChannelId ? (
+                <ChannelPanel />
+              ) : (
+                <div className="agent-chat-main">
+                  <AgentChatBar />
+                  <AgentSessionPanel
+                    providerProfiles={state?.config.agent.providerProfiles ?? {}}
+                    disabled={!state || selectedChatStatus === 'archived'}
+                    onNewChat={() => void createNewChat(selectedAgentId)}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -96,7 +109,6 @@ export function WorkspaceView() {
           {activeTab === 'cron' && <CronPanel />}
         </section>
       </section>
-      {agentPickerOpen && <AgentPicker onClose={() => setAgentPickerOpen(false)} onSelect={(agent) => { setAgentPickerOpen(false); void resetAgentConversation(agent.id); }} />}
     </main>
   );
 }

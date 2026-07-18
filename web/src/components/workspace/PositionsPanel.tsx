@@ -173,7 +173,7 @@ export function PositionsPanel() {
       <section>
         <h3 style={{ margin: '4px 0' }}>Recent Lessons</h3>
         {loading && <div style={{ opacity: 0.6 }}>加载中…</div>}
-        {!loading && lessons.length === 0 && <div style={{ opacity: 0.6 }}>尚未生成 lesson。交易关闭后由 memory 系统自动生成。</div>}
+        {!loading && lessons.length === 0 && <div style={{ opacity: 0.6 }}>尚未生成 lesson。</div>}
         <ul style={{ margin: 0, paddingLeft: 18 }}>
           {lessons.slice(0, 20).map((l) => (
             <li key={l.id}>

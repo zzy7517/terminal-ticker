@@ -15,7 +15,6 @@ tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bit
 - **MCP 集成**：通过 `.mcp.json` 配置外部 MCP server（如 jin10），Agent 可以调用 MCP 工具。前端 Settings 可视化管理 MCP 连接。
 - **会话持久化**：Agent session 会写成本地 JSONL，并用 SQLite 建索引；前端可以恢复、重置或删除历史会话。
 - **交易执行**：配置层允许时，Agent 可以向 Hyperliquid 主网或 Bitget 提交订单；关闭时 Agent 只会给出开单建议。
-- **交易复盘**：自动反思的 memory 模块，在每一笔交易中学习。
 - **定时看盘**：Cron 面板可以配置周期任务，按固定时间触发 Agent 分析，结果保存为本地 session。
 - **Browser Use**：Agent 可以通过 Open Browser Use 控制 Chrome 浏览器，比如去 TradingView 画趋势线、截图、读取页面内容。
 
@@ -60,13 +59,13 @@ http://127.0.0.1:5173
 - **Calendar**：经济日历（来自 Jin10），按时间排列重要经济事件和数据发布。
 - **Options**：期权 GEX 可视化——net GEX、gamma regime、Zero Gamma Level、Call/Put Wall 等关键位，以及逐行权价的 GEX 柱状图。
 - **Cron**：管理定时看盘任务、手动触发任务并查看运行记录。
-- **Settings**：管理 Providers、Watchlist、Agent Context、News、Memory、Cron、MCP、Options 和 Browser 配置。
+- **Settings**：管理 Providers、Watchlist、Agent Context、News、Cron、MCP、Options 和 Browser 配置。
 
 ## 本地数据
 
 默认本地状态主要在这些地方：
 
-- `watchlist.toml`：watchlist、display、agent、news、memory、cache、trading、jin10、options、browser 配置。
+- `watchlist.toml`：watchlist、display、agent、news、cache、trading、jin10、options、browser 配置。
 - `.mcp.json`：MCP server 配置（jin10 等外部工具 server）。
 - `~/.cache/tradex/agent_sessions/`：Agent session JSONL 消息历史。
 - `~/.cache/tradex/session_index.sqlite3`：Agent session 索引。

@@ -158,7 +158,6 @@ export class ClaudeSessionStore {
         apiMode: null,
         agentId: metadata.snapshot.agentId,
         agentName: metadata.snapshot.agentName,
-        memory: { externalContext: false },
         lastRun: metadata.lastRun,
       },
       messages,
@@ -167,13 +166,13 @@ export class ClaudeSessionStore {
     };
   }
 
-  /** 扫描并返回有消息的 Claude Session 摘要。 */
+  /** 扫描并返回全部 Claude Session 摘要，包括尚无消息的 Session。 */
   list(): Array<Record<string, unknown>> {
     if (!fs.existsSync(this.root)) return [];
     return fs.readdirSync(this.root).flatMap((id) => {
       try {
         const payload = this.payload(id);
-        if (!payload || payload.messages.length === 0) return [];
+        if (!payload) return [];
         const first = payload.messages.find((message) => message.role === "user");
         return [{
           ...payload.session,

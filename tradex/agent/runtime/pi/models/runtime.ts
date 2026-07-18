@@ -2,7 +2,7 @@
  * runtime.ts — 把 Tradex AgentConfig 桥接到 Pi 的 ModelRuntime。
  *
  * 构建不可变的 ModelRuntimeSnapshot：根据 provider 配置 / 自定义模型
- * 一次性配置 Pi ModelRuntime，供 agent 运行、memory 流水线和设置页 DTO
+ * 一次性配置 Pi ModelRuntime，供 Agent 运行和设置页 DTO
  * 共享使用。
  *
  * 模型元数据来源：
@@ -102,7 +102,7 @@ export function parseModelSelection(
   };
 }
 
-/** 把选型覆盖到 AgentConfig 上（cron / memory 阶段选模型用）。 */
+/** 把选型覆盖到 AgentConfig 上（例如 Cron 选择独立模型）。 */
 export function agentConfigForModelSelection(
   config: AgentConfig,
   value: string | null | undefined,

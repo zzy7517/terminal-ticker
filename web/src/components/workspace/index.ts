@@ -7,6 +7,5 @@ export { NewsPanel } from './NewsPanel';
 export { PositionsPanel } from './PositionsPanel';
 export { CalendarPanel } from './CalendarPanel';
 
-export { AgentSessionHistoryList } from './AgentSessionHistoryList';
 export { AgentSessionPanel } from './AgentSessionPanel';
 export { WorkspaceView } from './WorkspaceView';

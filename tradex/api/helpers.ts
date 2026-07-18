@@ -1,5 +1,5 @@
 /** 提供 Agent、Session 和配置路由共用的投影及校验辅助函数。 */
-import { loadConfig, type AgentConfig, type MemoryConfig, type NewsConfig, type ProviderProfile, type ProxyConfig, type ProxyType } from "../config/index.js";
+import { loadConfig, type AgentConfig, type NewsConfig, type ProviderProfile, type ProxyConfig, type ProxyType } from "../config/index.js";
 import { defaultProviderApi, normalizeApiMode, normalizeProvider } from "../agent/runtime/pi/models/constants.js";
 import {
   listPiSessions,
@@ -35,27 +35,27 @@ export async function openSessionManager(sessionId: string, runtime?: AppRuntime
 export async function sessionResponse(runtime: AppRuntime, sessionId: string): Promise<Record<string, unknown>> {
   const claude = runtime.claudeSessions.payload(sessionId);
   if (claude) {
-    return {
+    return withChatProjection(runtime, sessionId, {
       ...claude,
       run: runtime.lockedAgentSessions.has(sessionId)
         ? { ...idleRun(sessionId), status: "running" }
         : idleRun(sessionId),
-    };
+    });
   }
   const mgr = await openSessionManager(sessionId, runtime);
   if (!mgr) return { session: null, messages: [], run: idleRun(sessionId) };
-  return {
+  return withChatProjection(runtime, sessionId, {
     ...withPiCapabilities(piSessionPayload(mgr)),
     run: runtime.lockedAgentSessions.has(sessionId)
       ? { ...idleRun(sessionId), status: "running" }
       : idleRun(sessionId),
-  };
+  });
 }
 
 // Returns the sidebar session list (max 200) with the first 5 sessions
 // pre-loaded so the frontend can render them without extra round-trips.
 export async function sessionHistory(runtime: AppRuntime): Promise<Record<string, unknown>> {
-  const listed = (await listPiSessions()).filter((row) => row.messageCount > 0).slice(0, 200);
+  const listed = (await listPiSessions()).slice(0, 200);
   const managers = await Promise.all(listed.map((row) => openPiSession(row.id)));
   const piSummaries: Array<Record<string, unknown>> = listed.flatMap((row, index) => {
     const manager = managers[index];
@@ -67,20 +67,38 @@ export async function sessionHistory(runtime: AppRuntime): Promise<Record<string
         : idleRun(row.id),
     }];
   });
-  const claudeSummaries: Array<Record<string, unknown>> = runtime.claudeSessions.list().map((item) => ({
+  const claudeSummaries: Array<Record<string, unknown>> = runtime.claudeSessions.list().slice(0, 200).map((item) => ({
     ...item,
     run: runtime.lockedAgentSessions.has(String(item.id))
       ? { ...idleRun(String(item.id)), status: "running" }
       : idleRun(String(item.id)),
   }));
-  const summaries = [...piSummaries, ...claudeSummaries]
-    .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))
-    .slice(0, 200);
+  const allSummaries = [...piSummaries, ...claudeSummaries]
+    .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
+  const projected = allSummaries.slice(0, 200).map((item) => {
+    const chat = runtime.chatStore.chatForSession(String(item.id));
+    return chat ? { ...item, chatId: chat.id, chatStatus: chat.status, chatOrdinal: chat.ordinal } : item;
+  });
   return {
-    sessions: summaries,
+    sessions: projected,
     preloadedSessions: await Promise.all(
-      summaries.slice(0, 5).map((item) => sessionResponse(runtime, String(item.id))),
+      projected.slice(0, 5).map((item) => sessionResponse(runtime, String(item.id))),
     ),
+  };
+}
+
+function withChatProjection(runtime: AppRuntime, sessionId: string, payload: Record<string, unknown>): Record<string, unknown> {
+  const chat = runtime.chatStore.chatForSession(sessionId);
+  if (!chat || !payload.session || typeof payload.session !== "object" || Array.isArray(payload.session)) return payload;
+  return {
+    ...payload,
+    chat,
+    session: {
+      ...(payload.session as Record<string, unknown>),
+      chatId: chat.id,
+      chatStatus: chat.status,
+      chatOrdinal: chat.ordinal,
+    },
   };
 }
 
@@ -284,26 +302,6 @@ export function mergeNewsConfig(config: NewsConfig, body: Record<string, unknown
     requestTimeoutSeconds: minNumberField(body.requestTimeoutSeconds, config.requestTimeoutSeconds, 0.1),
     retentionDays: minNumberField(body.retentionDays, config.retentionDays, 1),
     recentLimit: minNumberField(body.recentLimit, config.recentLimit, 1),
-  };
-}
-
-// Applies a partial memory config update, enforcing minimum values on numeric fields.
-export function mergeMemoryConfig(config: MemoryConfig, body: Record<string, unknown>): MemoryConfig {
-  return {
-    ...config,
-    enabled: typeof body.enabled === "boolean" ? body.enabled : config.enabled,
-    useMemories: typeof body.useMemories === "boolean" ? body.useMemories : config.useMemories,
-    generateMemories: typeof body.generateMemories === "boolean" ? body.generateMemories : config.generateMemories,
-    disableOnExternalContext: typeof body.disableOnExternalContext === "boolean" ? body.disableOnExternalContext : config.disableOnExternalContext,
-    storagePath: typeof body.storagePath === "string" ? body.storagePath || null : config.storagePath,
-    extractModel: typeof body.extractModel === "string" ? body.extractModel || null : config.extractModel,
-    consolidationModel: typeof body.consolidationModel === "string" ? body.consolidationModel || null : config.consolidationModel,
-    maxRawMemoriesForConsolidation: minNumberField(body.maxRawMemories, config.maxRawMemoriesForConsolidation, 1),
-    maxUnusedDays: minNumberField(body.maxUnusedDays, config.maxUnusedDays, 1),
-    maxSourceAgeDays: minNumberField(body.maxSourceAgeDays, config.maxSourceAgeDays, 1),
-    maxRolloutsPerStartup: minNumberField(body.maxRolloutsPerStartup, config.maxRolloutsPerStartup, 1),
-    minSessionIdleHours: minNumberField(body.minSessionIdleHours, config.minSessionIdleHours, 0),
-    extensionRetentionDays: minNumberField(body.extensionRetentionDays, config.extensionRetentionDays, 1),
   };
 }
 

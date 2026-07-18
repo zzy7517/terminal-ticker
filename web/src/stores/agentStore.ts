@@ -2,6 +2,8 @@
 import { create } from 'zustand';
 import type {
   AgentContextUsage,
+  AgentChat,
+  AgentDefinition,
   AgentMessage,
   AgentModelRegistry,
   AgentSessionResponse,
@@ -14,8 +16,11 @@ import {
   abortAgentSession,
   AgentStreamDisconnectError,
   createAgentSession,
+  createAgentChat,
   deleteAgentSessionById,
   fetchAgentModelRegistry,
+  fetchAgentChats,
+  fetchAgents,
   fetchAgentSession,
   fetchAgentSessions,
   streamAgentMessage,
@@ -97,11 +102,15 @@ interface SessionRunProjection extends AgentSessionRun {
 }
 
 interface AgentState {
+  agents: AgentDefinition[];
+  selectedAgentId: string;
+  agentChatsByAgentId: Record<string, AgentChat[]>;
+  activeAgentChatId: string | null;
   agentSession: AgentSessionResponse | null;
   agentSessionHistory: AgentSessionSummary[];
   agentSessionLoadingKey: string | null;
   agentSessionHistoryLoadingKey: string | null;
-  agentSessionActionKey: string | null;
+  agentChatActionKey: string | null;
   agentBusyKey: string | null;
   agentPrompt: string;
   agentProvider: string;
@@ -148,11 +157,13 @@ interface AgentState {
 
   initSessions: () => () => void;
   refreshModelRegistry: () => Promise<void>;
+  selectAgent: (agentId: string) => Promise<void>;
+  selectAgentChat: (chatId: string) => Promise<void>;
   runAgentAnalysis: (sessionId?: string, options?: { includeDraft?: boolean }) => Promise<void>;
   removeFollowUp: (id: string) => void;
   clearFollowUps: () => void;
   abortAgent: () => Promise<void>;
-  resetAgentConversation: (agentId?: string) => Promise<void>;
+  createNewChat: (agentId?: string) => Promise<void>;
   resumeAgentConversation: (sessionId: string) => Promise<void>;
   deleteAgentConversation: (sessionId: string) => Promise<void>;
 }
@@ -248,6 +259,13 @@ function activeFields(state: ActiveMirrorSource): Pick<
   };
 }
 
+type AgentSelection = Pick<AgentState, 'selectedAgentId' | 'activeAgentChatId' | 'activeAgentSessionId'>;
+
+function selectionUpdate(state: AgentState, selection: AgentSelection) {
+  const next = { ...state, ...selection };
+  return { ...selection, ...activeFields(next) };
+}
+
 function appendSessionMessage(
   state: AgentState,
   sessionId: string,
@@ -320,11 +338,15 @@ function replaceRunState(
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
+  agents: [],
+  selectedAgentId: 'default',
+  agentChatsByAgentId: {},
+  activeAgentChatId: null,
   agentSession: null,
   agentSessionHistory: [],
   agentSessionLoadingKey: null,
   agentSessionHistoryLoadingKey: null,
-  agentSessionActionKey: null,
+  agentChatActionKey: null,
   agentBusyKey: null,
   agentPrompt: '',
   agentProvider: initialProvider,
@@ -464,14 +486,60 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
+  selectAgent: async (agentId) => {
+    if (get().agentChatActionKey) return;
+    let chats = get().agentChatsByAgentId[agentId];
+    if (!chats) {
+      const payload = await fetchAgentChats(agentId);
+      chats = payload.chats;
+      set((s) => ({ agentChatsByAgentId: { ...s.agentChatsByAgentId, [agentId]: payload.chats } }));
+    }
+    const active = chats.find((chat) => chat.status === 'active') ?? chats[0] ?? null;
+    if (active) {
+      await get().selectAgentChat(active.id);
+      return;
+    }
+    set((s) => selectionUpdate(s, {
+      selectedAgentId: agentId,
+      activeAgentChatId: null,
+      activeAgentSessionId: null,
+    }));
+  },
+
+  selectAgentChat: async (chatId) => {
+    if (get().agentChatActionKey) return;
+    const entry = Object.entries(get().agentChatsByAgentId)
+      .flatMap(([agentId, chats]) => chats.map((chat) => ({ agentId, chat })))
+      .find(({ chat }) => chat.id === chatId);
+    if (!entry) return;
+    set((s) => selectionUpdate(s, {
+      selectedAgentId: entry.agentId,
+      activeAgentChatId: chatId,
+      activeAgentSessionId: null,
+    }));
+    if (entry.chat.activeSessionId) {
+      await get().resumeAgentConversation(entry.chat.activeSessionId);
+    }
+  },
+
   initSessions: () => {
     let disposed = false;
     const key = 'global';
     set({ agentSessionHistoryLoadingKey: key });
     fetchAgentSessions()
-      .then((payload) => {
+      .then(async (payload) => {
         if (disposed) return;
-        const firstSessionId = payload.sessions[0]?.id ?? null;
+        const agentPayload = await fetchAgents();
+        const chatPairs = await Promise.all(agentPayload.agents.map(async (agent) => (
+          [agent.id, (await fetchAgentChats(agent.id)).chats] as const
+        )));
+        if (disposed) return;
+        const agentChatsByAgentId = Object.fromEntries(chatPairs);
+        const firstSummary = payload.sessions[0] ?? null;
+        const selectedAgentId = firstSummary?.agentId ?? agentPayload.agents[0]?.id ?? 'default';
+        const activeChat = agentChatsByAgentId[selectedAgentId]?.find((chat) => chat.status === 'active') ?? null;
+        const activeAgentChatId = activeChat?.id ?? null;
+        const initialSessionId = activeChat?.activeSessionId ?? null;
         const preloadedSessions = payload.preloadedSessions ?? [];
         set((s) => {
           let agentSessionById = s.agentSessionById;
@@ -490,7 +558,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             agentSessionById,
             agentSessionHistory: payload.sessions,
             runStateBySessionId,
-            activeAgentSessionId: s.activeAgentSessionId ?? firstSessionId,
+            activeAgentSessionId: s.activeAgentSessionId ?? initialSessionId,
+            selectedAgentId,
+            activeAgentChatId,
           };
           const activeSummary = payload.sessions.find((item) => item.id === next.activeAgentSessionId);
           const activeSession = next.activeAgentSessionId
@@ -502,11 +572,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             agentSessionHistory: payload.sessions,
             runStateBySessionId,
             activeAgentSessionId: next.activeAgentSessionId,
+            agents: agentPayload.agents,
+            selectedAgentId,
+            agentChatsByAgentId,
+            activeAgentChatId,
             ...sessionProviderModel(activeSession),
             ...activeFields(next),
           };
         });
-        const activeSessionId = get().activeAgentSessionId ?? firstSessionId;
+        const activeSessionId = get().activeAgentSessionId ?? initialSessionId;
         if (activeSessionId && !get().agentSessionById[activeSessionId]) {
           set({ agentSessionLoadingKey: key });
           fetchAgentSession(activeSessionId)
@@ -541,6 +615,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   // 发送普通消息，或在运行中将输入加入当前 Session 的 follow-up 队列。
   runAgentAnalysis: async (requestedSessionId, options) => {
     const state = get();
+    const selectedChat = state.agentChatsByAgentId[state.selectedAgentId]?.find((chat) => chat.id === state.activeAgentChatId);
+    if (selectedChat?.status === 'archived') return;
     const agentSession = requestedSessionId ? responseForSession(state, requestedSessionId) : state.agentSession;
     const includeDraft = options?.includeDraft !== false;
     const agentPrompt = includeDraft
@@ -586,7 +662,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     try {
       if (!targetSessionId) {
-        const created = await createAgentSession({ provider: agentProvider, model: agentModel });
+        const created = await createAgentSession({
+          provider: agentProvider,
+          model: agentModel,
+          agentId: state.selectedAgentId,
+          chatId: state.activeAgentChatId ?? undefined,
+        });
         targetSessionId = created.session?.id ?? null;
         if (!targetSessionId) throw new Error('agent session create failed');
         const createdSessionId = targetSessionId;
@@ -611,13 +692,25 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             agentSessionHistory: created.history.sessions,
             activeAgentSessionId: createdSessionId,
             pendingImagesBySessionId,
+            activeAgentChatId: created.chat?.id ?? s.activeAgentChatId,
           };
+          const agentChatsByAgentId = created.chat
+            ? {
+                ...s.agentChatsByAgentId,
+                [created.chat.agentId]: [
+                  created.chat,
+                  ...(s.agentChatsByAgentId[created.chat.agentId] ?? []).filter((chat) => chat.id !== created.chat!.id),
+                ],
+              }
+            : s.agentChatsByAgentId;
           return {
             agentSessionById,
             runStateBySessionId,
             agentSessionHistory: created.history.sessions,
             activeAgentSessionId: createdSessionId,
             pendingImagesBySessionId,
+            agentChatsByAgentId,
+            activeAgentChatId: created.chat?.id ?? s.activeAgentChatId,
             ...activeFields(next),
           };
         });
@@ -979,62 +1072,50 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
-  resetAgentConversation: async (agentId = 'default') => {
-    if (get().agentSessionActionKey) return;
-    const actionKey = 'new';
-    set({ agentSessionActionKey: actionKey });
+  createNewChat: async (agentId = 'default') => {
+    if (get().agentChatActionKey) return;
+    const actionKey = 'new-chat';
+    set({ agentChatActionKey: actionKey });
     try {
-      const payload = await createAgentSession({ agentId });
-      const sessionId = payload.session?.id ?? null;
+      const payload = await createAgentChat(agentId);
       set((s) => {
-        const agentSessionById = cacheSession(s.agentSessionById, payload);
-        const runStateBySessionId = sessionId
-          ? {
-              ...mergeHistoryRuns(payload.history.sessions, s.runStateBySessionId),
-              [sessionId]: mergeRunPayload(s.runStateBySessionId[sessionId], sessionId, payload.run),
-            }
-          : mergeHistoryRuns(payload.history.sessions, s.runStateBySessionId);
-        const draftBySessionId = sessionId ? { ...s.draftBySessionId, [sessionId]: '' } : s.draftBySessionId;
-        const next = {
-          ...s,
-          agentSessionById,
-          runStateBySessionId,
-          draftBySessionId,
-          agentSessionHistory: payload.history.sessions,
-          activeAgentSessionId: sessionId,
-        };
+        const agentChatsByAgentId = { ...s.agentChatsByAgentId, [agentId]: payload.chats };
         return {
-          agentSessionById,
-          runStateBySessionId,
-          draftBySessionId,
-          agentSessionHistory: payload.history.sessions,
-          activeAgentSessionId: sessionId,
-          ...activeFields(next),
+          agentChatsByAgentId,
+          ...selectionUpdate({ ...s, agentChatsByAgentId }, {
+            selectedAgentId: agentId,
+            activeAgentChatId: payload.chat.id,
+            activeAgentSessionId: null,
+          }),
         };
       });
     } catch (error) {
       console.error(error);
     } finally {
-      set((s) => ({ agentSessionActionKey: s.agentSessionActionKey === actionKey ? null : s.agentSessionActionKey }));
+      set((s) => ({ agentChatActionKey: s.agentChatActionKey === actionKey ? null : s.agentChatActionKey }));
     }
   },
 
   resumeAgentConversation: async (sessionId) => {
-    if (get().agentSessionActionKey) return;
+    if (get().agentChatActionKey) return;
     if (get().activeAgentSessionId === sessionId) return;
     if (get().agentSessionById[sessionId]) {
       set((s) => {
-        const next = { ...s, activeAgentSessionId: sessionId };
-        return {
+        const summary = s.agentSessionHistory.find((item) => item.id === sessionId);
+        const selection = {
+          selectedAgentId: summary?.agentId ?? s.selectedAgentId,
+          activeAgentChatId: summary?.chatId ?? s.activeAgentChatId,
           activeAgentSessionId: sessionId,
+        } satisfies AgentSelection;
+        return {
           ...sessionProviderModel(s.agentSessionById[sessionId]),
-          ...activeFields(next),
+          ...selectionUpdate(s, selection),
         };
       });
       return;
     }
     const actionKey = `resume:${sessionId}`;
-    set({ agentSessionActionKey: actionKey });
+    set({ agentChatActionKey: actionKey });
     try {
       const payload = await fetchAgentSession(sessionId);
       set((s) => {
@@ -1047,28 +1128,31 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           ...s,
           agentSessionById,
           runStateBySessionId,
-          activeAgentSessionId: sessionId,
         };
+        const selection = {
+          selectedAgentId: payload.session?.agentId ?? s.selectedAgentId,
+          activeAgentChatId: payload.session?.chatId ?? payload.chat?.id ?? s.activeAgentChatId,
+          activeAgentSessionId: sessionId,
+        } satisfies AgentSelection;
         return {
           agentSessionById,
           runStateBySessionId,
-          activeAgentSessionId: sessionId,
           ...sessionProviderModel(payload),
-          ...activeFields(next),
+          ...selectionUpdate(next, selection),
         };
       });
     } catch (error) {
       console.error(error);
     } finally {
-      set((s) => ({ agentSessionActionKey: s.agentSessionActionKey === actionKey ? null : s.agentSessionActionKey }));
+      set((s) => ({ agentChatActionKey: s.agentChatActionKey === actionKey ? null : s.agentChatActionKey }));
     }
   },
 
   deleteAgentConversation: async (sessionId) => {
-    if (get().agentSessionActionKey) return;
+    if (get().agentChatActionKey) return;
     if (get().runStateBySessionId[sessionId]?.status === 'running') return;
     const actionKey = `delete:${sessionId}`;
-    set({ agentSessionActionKey: actionKey });
+    set({ agentChatActionKey: actionKey });
     try {
       const payload = await deleteAgentSessionById(sessionId);
       useMarketStore.getState().setState(payload.state);
@@ -1110,7 +1194,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     } catch (error) {
       console.error(error);
     } finally {
-      set((s) => ({ agentSessionActionKey: s.agentSessionActionKey === actionKey ? null : s.agentSessionActionKey }));
+      set((s) => ({ agentChatActionKey: s.agentChatActionKey === actionKey ? null : s.agentChatActionKey }));
     }
   },
 }));

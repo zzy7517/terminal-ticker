@@ -3,7 +3,6 @@ import type { AppRuntime } from "./runtime.js";
 import { marketRoutes } from "./routes/market.js";
 import { agentRoutes } from "./routes/agent.js";
 import { newsRoutes } from "./routes/news.js";
-import { memoryRoutes } from "./routes/memory.js";
 import { tradingRoutes } from "./routes/trading.js";
 import { cronRoutes } from "./routes/cron.js";
 import { mcpRoutes } from "./routes/mcp.js";
@@ -11,6 +10,7 @@ import { jin10Routes } from "./routes/jin10.js";
 import { browserRoutes } from "./routes/browser.js";
 import { optionsRoutes } from "./routes/options.js";
 import { proxyRoutes } from "./routes/proxy.js";
+import { channelRoutes } from "./routes/channel.js";
 import { tradexMcpRoutes } from "../mcp/server/routes.js";
 
 export interface CreateAppOptions {
@@ -23,8 +23,8 @@ export function createApp(options: CreateAppOptions): Hono {
 
   app.route("", marketRoutes(runtime));
   app.route("", agentRoutes(runtime));
+  app.route("", channelRoutes(runtime));
   app.route("", newsRoutes(runtime));
-  app.route("", memoryRoutes(runtime));
   app.route("", tradingRoutes(runtime));
   app.route("", cronRoutes(runtime));
   app.route("", mcpRoutes(runtime));

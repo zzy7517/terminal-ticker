@@ -15,7 +15,6 @@ import type { AppRuntime } from "./runtime.js";
 export interface TradexToolRegistryOptions {
   sessionId: string;
   config: AgentConfig;
-  includeMemory: boolean;
   includeExternalMcp: boolean;
   includeFilesystem: boolean;
   additionalRegistries?: ToolRegistry[];
@@ -23,17 +22,10 @@ export interface TradexToolRegistryOptions {
 
 export async function buildTradexToolRegistry(runtime: AppRuntime, options: TradexToolRegistryOptions): Promise<{
   tools: ToolRegistry;
-  externalContextToolNames: Set<string>;
 }> {
   const mcpRegistry = options.includeExternalMcp && runtime.mcpManager
     ? await buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig())
     : null;
-  const memoryRegistry = options.includeMemory ? await runtime.memoryPort.buildTools() : null;
-  const externalContextToolNames = new Set([
-    "web_search", "web_fetch", "get_recent_news", "refresh_news",
-    "browser_open_page", "browser_screenshot", "browser_status",
-    ...(mcpRegistry?.listTools().map((tool) => tool.name) ?? []),
-  ]);
   const tools = mergeRegistries(
     buildMarketTools({
       quotes: runtime.controller.quotes,
@@ -46,7 +38,6 @@ export async function buildTradexToolRegistry(runtime: AppRuntime, options: Trad
       )),
       refresh: () => runtime.newsService.refreshNow(),
     }),
-    ...(memoryRegistry ? [memoryRegistry] : []),
     buildTradingTools({
       tradeStore: runtime.tradeStore,
       exchangeRouter: runtime.exchangeRouter,
@@ -61,5 +52,5 @@ export async function buildTradexToolRegistry(runtime: AppRuntime, options: Trad
     ...(mcpRegistry ? [mcpRegistry] : []),
     ...(options.additionalRegistries ?? []),
   );
-  return { tools, externalContextToolNames };
+  return { tools };
 }

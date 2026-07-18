@@ -3,7 +3,7 @@
  *
  * 使用方：
  *  - api/routes/agent.ts 的 listAvailableModels()
- *  - memory pipeline（经 LLMProviderFactory）
+ *  - 需要轻量 chat client 的非 agentic 调用方
  */
 
 import { AgentConfig } from "../../../../config/index.js";
@@ -21,7 +21,7 @@ import { fetchProviderModelCatalog } from "./model_fetch.js";
 
 /**
  * AgentModelRegistry — 把 config 解析成 AgentModel，
- * 并为 memory pipeline 提供简单的 chat 客户端。
+ * 并为非 agentic 调用方提供简单的 chat 客户端。
  */
 export class AgentModelRegistry {
   constructor(private readonly modelRuntime: ModelRuntimeSnapshot) {}
@@ -33,7 +33,7 @@ export class AgentModelRegistry {
 
   /**
    * 根据 config 创建 LLMChatClient。
-   * 把 provider 流式接口包成轻量 chat 接口，供 memory pipeline 等非 agentic 调用方使用。
+   * 把 provider 流式接口包成轻量 chat 接口，供非 agentic 调用方使用。
    */
   createProvider(config: AgentConfig): LLMChatClient {
     const { model, modelRuntime, requiresAuth } = this.modelRuntime.resolve(config);

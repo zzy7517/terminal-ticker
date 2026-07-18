@@ -128,22 +128,6 @@ export interface AgentConfig {
   providerProfiles: Record<string, ProviderProfile>;
 }
 
-export interface MemoryConfig {
-  enabled: boolean;
-  useMemories: boolean;
-  generateMemories: boolean;
-  disableOnExternalContext: boolean;
-  storagePath: string | null;
-  extractModel: string | null;
-  consolidationModel: string | null;
-  maxRawMemoriesForConsolidation: number;
-  maxUnusedDays: number;
-  maxSourceAgeDays: number;
-  maxRolloutsPerStartup: number;
-  minSessionIdleHours: number;
-  extensionRetentionDays: number;
-}
-
 export interface NewsConfig {
   enabled: boolean;
   pollIntervalSeconds: number;
@@ -236,7 +220,6 @@ export interface AppConfig {
   analysis: AnalysisConfig;
   cache: CacheConfig;
   agent: AgentConfig;
-  memory: MemoryConfig;
   news: NewsConfig;
   trading: TradingConfig;
   mcp: McpAppConfig;
@@ -714,26 +697,6 @@ export function parseAnalysisConfig(rawAnalysisValue: unknown): AnalysisConfig {
   };
 }
 
-export function parseMemoryConfig(rawMemoryValue: unknown): MemoryConfig {
-  const raw = asRecord(rawMemoryValue, "memory");
-  const optionalString = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
-  return {
-    enabled: normalizeBool(raw.enabled, "memory.enabled", false),
-    useMemories: normalizeBool(raw.use_memories, "memory.use_memories", true),
-    generateMemories: normalizeBool(raw.generate_memories, "memory.generate_memories", true),
-    disableOnExternalContext: normalizeBool(raw.disable_on_external_context, "memory.disable_on_external_context", false),
-    storagePath: optionalString(raw.storage_path),
-    extractModel: optionalString(raw.extract_model),
-    consolidationModel: optionalString(raw.consolidation_model),
-    maxRawMemoriesForConsolidation: coerceMinInt(raw.max_raw_memories_for_consolidation, "memory.max_raw_memories_for_consolidation", 256, 1),
-    maxUnusedDays: coerceMinInt(raw.max_unused_days, "memory.max_unused_days", 180, 1),
-    maxSourceAgeDays: coerceMinInt(raw.max_source_age_days, "memory.max_source_age_days", 180, 1),
-    maxRolloutsPerStartup: coerceMinInt(raw.max_rollouts_per_startup, "memory.max_rollouts_per_startup", 10, 1),
-    minSessionIdleHours: coerceMinInt(raw.min_session_idle_hours, "memory.min_session_idle_hours", 12, 0),
-    extensionRetentionDays: coerceMinInt(raw.extension_retention_days, "memory.extension_retention_days", 7, 1),
-  };
-}
-
 export function parseNewsConfig(rawNewsValue: unknown): NewsConfig {
   const raw = asRecord(rawNewsValue, "news");
   if (raw.reuters_url !== undefined && raw.reuters_url !== null && typeof raw.reuters_url !== "string") {
@@ -925,7 +888,6 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     analysis: parseAnalysisConfig(data.analysis),
     cache: parseCacheConfig(data.cache),
     agent: parseAgentConfig(data.agent),
-    memory: parseMemoryConfig(data.memory),
     news: parseNewsConfig(data.news),
     trading: parseTradingConfig(data.trading),
     mcp: parseMcpConfig(data.mcp),
@@ -958,7 +920,6 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       analysis: parseAnalysisConfig({}),
       cache: parseCacheConfig({}),
       agent: parseAgentConfig({}),
-      memory: parseMemoryConfig({}),
       news: parseNewsConfig({}),
       trading: parseTradingConfig({}),
       mcp: parseMcpConfig({}),

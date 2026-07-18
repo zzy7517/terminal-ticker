@@ -40,6 +40,38 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
   app.get("/api/agents", (c) => c.json({ agents: runtime.agentStore.list() }));
 
+  app.get("/api/chat/agents/:agentId/chats", (c) => {
+    const agentId = c.req.param("agentId");
+    if (!runtime.agentStore.get(agentId)) return c.json({ detail: "Agent not found" }, 404);
+    let chats = runtime.chatStore.listForAgent(agentId);
+    if (chats.length === 0) {
+      runtime.chatStore.create(agentId);
+      chats = runtime.chatStore.listForAgent(agentId);
+    }
+    return c.json({ chats });
+  });
+
+  app.get("/api/chat/agents/:agentId/chats/:chatId", async (c) => {
+    const chat = runtime.chatStore.get(c.req.param("chatId"));
+    if (!chat || chat.agentId !== c.req.param("agentId")) return c.json({ detail: "Chat not found for Agent" }, 404);
+    const generations = runtime.chatStore.listSessions(chat.id);
+    return c.json({
+      chat,
+      generations,
+      sessions: await Promise.all(generations.map((generation) => sessionResponse(runtime, generation.sessionId))),
+    });
+  });
+
+  app.post("/api/chat/agents/:agentId/chats", (c) => {
+    const agentId = c.req.param("agentId");
+    if (!runtime.agentStore.get(agentId)) return c.json({ detail: "Agent not found" }, 404);
+    if (agentHasLockedSession(runtime, agentId)) {
+      return c.json({ detail: "cannot create New Chat while Agent is running" }, 409);
+    }
+    const chat = runtime.chatStore.create(agentId);
+    return c.json({ chat, chats: runtime.chatStore.listForAgent(agentId) }, 201);
+  });
+
   app.get("/api/agent/runtimes", async (c) => c.json({
     runtimes: [
       {
@@ -61,7 +93,9 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   app.post("/api/agents", async (c) => {
     try {
       const body = await c.req.json() as AgentFileInput;
-      return c.json({ agent: runtime.agentStore.create(body), agents: runtime.agentStore.list() }, 201);
+      const agent = runtime.agentStore.create(body);
+      runtime.chatStore.create(agent.id);
+      return c.json({ agent, agents: runtime.agentStore.list() }, 201);
     } catch (error) {
       return c.json({ detail: error instanceof Error ? error.message : "Agent create failed" }, 400);
     }
@@ -84,12 +118,15 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const agentId = c.req.param("id");
     try {
       runtime.agentStore.remove(agentId, (candidateId) => (
+        runtime.chatStore.hasSessionsForAgent(candidateId)
+        ||
         runtime.claudeSessions.hasPersistedSessionForAgent(candidateId)
         || [...runtime.pendingAgentSnapshots.values()].some((snapshot) => snapshot.agentId === candidateId)
         || listPiSessionManagersSync().some((manager) => {
           return readAgentSnapshot(manager).agentId === candidateId;
         })
       ));
+      runtime.chatStore.deleteEmptyChatsForAgent(agentId);
       return c.json({ agents: runtime.agentStore.list() });
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Agent delete failed";
@@ -106,14 +143,20 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : "default";
     const selectedAgent = runtime.agentStore.get(agentId);
     if (!selectedAgent) return c.json({ detail: "Agent not found" }, 404);
+    const requestedChatId = typeof body.chatId === "string" && body.chatId ? body.chatId : null;
+    const chat = requestedChatId ? runtime.chatStore.get(requestedChatId) : runtime.chatStore.create(agentId);
+    if (!chat || chat.agentId !== agentId) return c.json({ detail: "Chat not found for Agent" }, 404);
+    if (chat.status !== "active") return c.json({ detail: "cannot create a Session in an archived Chat" }, 409);
     const snapshot = snapshotForAgent(selectedAgent, runtime);
     if (snapshot.runtime === "claude-code") {
       const metadata = runtime.claudeSessions.create({
         title: String(body.title || "New Agent Session"),
         snapshot,
       });
+      runtime.chatStore.attachSession(chat.id, { sessionId: metadata.id, runtime: "claude-code" });
       return c.json({
         ...await sessionResponse(runtime, metadata.id),
+        chat: runtime.chatStore.get(chat.id),
         history: await sessionHistory(runtime),
       });
     }
@@ -127,6 +170,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     mgr.appendThinkingLevelChange(snapshot.reasoningEffort);
     runtime.pendingSessionManagers.set(mgr.getSessionId(), mgr);
     runtime.pendingAgentSnapshots.set(mgr.getSessionId(), snapshot);
+    runtime.chatStore.attachSession(chat.id, { sessionId: mgr.getSessionId(), runtime: "pi" });
     const payload = piSessionPayload(mgr);
     payload.session = {
       ...(payload.session as Record<string, unknown>),
@@ -138,6 +182,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const sessionResp = { ...payload, run: idleRun(mgr.getSessionId()) };
     return c.json({
       ...sessionResp,
+      chat: runtime.chatStore.get(chat.id),
       history: await sessionHistory(runtime),
     });
   });
@@ -162,11 +207,12 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           runtime.claudeSessions.sessionDir(sessionId),
         );
         runtime.claudeSessions.removeFiles(sessionId);
-        return c.json({ session: { session: null, messages: [] }, history: await sessionHistory(runtime), state: await runtime.state() });
+      } else {
+        runtime.pendingSessionManagers.delete(sessionId);
+        runtime.pendingAgentSnapshots.delete(sessionId);
+        await deletePiSession(sessionId);
       }
-      runtime.pendingSessionManagers.delete(sessionId);
-      runtime.pendingAgentSnapshots.delete(sessionId);
-      await deletePiSession(sessionId);
+      runtime.chatStore.removeSession(sessionId);
       return c.json({ session: { session: null, messages: [] }, history: await sessionHistory(runtime), state: await runtime.state() });
     } catch (error) {
       return c.json({ detail: error instanceof Error ? error.message : String(error) }, 502);
@@ -178,6 +224,10 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   // Streams an agent run as SSE using the new stateful Agent from core/.
   app.post("/api/agent/sessions/:id/messages/stream", async (c) => {
     const sessionId = c.req.param("id");
+    const chat = runtime.chatStore.chatForSession(sessionId);
+    if (chat?.status === "archived") {
+      return c.json({ detail: "cannot write to an archived Chat" }, 409);
+    }
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const message = String(body.message || "").trim();
 
@@ -333,6 +383,14 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   });
 
   return app;
+}
+
+function agentHasLockedSession(runtime: AppRuntime, agentId: string): boolean {
+  return [...runtime.lockedAgentSessions].some((sessionId) => (
+    runtime.chatStore.chatForSession(sessionId)?.agentId === agentId
+    || runtime.pendingAgentSnapshots.get(sessionId)?.agentId === agentId
+    || runtime.claudeSessions.getMetadata(sessionId)?.snapshot.agentId === agentId
+  ));
 }
 
 function snapshotForAgent(agent: AgentDefinition, runtime: AppRuntime) {

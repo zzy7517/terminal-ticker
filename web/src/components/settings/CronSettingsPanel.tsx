@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Clock, Plus, Trash2, Save, ChevronDown, Search, Check, Cpu } from 'lucide-react';
 import { ProviderIcon } from '../ProviderIcon';
 import './CronSettingsPanel.css';
+import './ModelPicker.css';
 import type { CronJobStatus } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
 import {
@@ -72,31 +73,31 @@ function CronModelPicker({ value, onChange }: { value: string | null; onChange: 
   const modelSlugForValue = value?.includes(':') ? value.split(':').slice(1).join(':') : value;
 
   return (
-    <div className="memory-model-picker" ref={ref}>
-      <span className="memory-model-picker-label">Model</span>
-      <button className="memory-model-trigger" type="button" onClick={() => setOpen(!open)}>
+    <div className="settings-model-picker" ref={ref}>
+      <span className="settings-model-picker-label">Model</span>
+      <button className="settings-model-trigger" type="button" onClick={() => setOpen(!open)}>
         {providerForValue ? (
-          <span className="memory-model-provider-icon">
+          <span className="settings-model-provider-icon">
             <ProviderIcon provider={providerForValue} size={13} />
           </span>
         ) : (
-          <span className="memory-model-provider-icon"><Cpu size={11} /></span>
+          <span className="settings-model-provider-icon"><Cpu size={11} /></span>
         )}
-        <span className="memory-model-trigger-text">{modelSlugForValue || 'Agent default'}</span>
+        <span className="settings-model-trigger-text">{modelSlugForValue || 'Agent default'}</span>
         <ChevronDown size={13} />
       </button>
       {open && (
-        <div className="memory-model-dropdown">
-          <div className="memory-model-dropdown-search">
+        <div className="settings-model-dropdown">
+          <div className="settings-model-dropdown-search">
             <Search size={13} />
             <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search models..." />
           </div>
-          <div className="memory-model-dropdown-list">
-            <button className={`memory-model-option ${!value ? 'active' : ''}`} type="button"
+          <div className="settings-model-dropdown-list">
+            <button className={`settings-model-option ${!value ? 'active' : ''}`} type="button"
               onClick={() => { onChange(null); setOpen(false); setSearch(''); }}>
               {!value && <Check size={12} />}
               <span>Agent default</span>
-              <span className="memory-model-option-hint">inherit</span>
+              <span className="settings-model-option-hint">inherit</span>
             </button>
             {enabledProviders.map((opt) => {
               const models = (registry?.models ?? []).filter((model) =>
@@ -106,8 +107,8 @@ function CronModelPicker({ value, onChange }: { value: string | null; onChange: 
                 && (!kw || model.id.toLowerCase().includes(kw) || model.name.toLowerCase().includes(kw)));
               if (!models.length) return null;
               return (
-                <div key={opt.providerId} className="memory-model-group">
-                  <div className="memory-model-group-head">
+                <div key={opt.providerId} className="settings-model-group">
+                  <div className="settings-model-group-head">
                     <ProviderIcon provider={opt.providerId} size={13} />
                     <span>{opt.name}</span>
                   </div>
@@ -115,7 +116,7 @@ function CronModelPicker({ value, onChange }: { value: string | null; onChange: 
                     const fullSlug = `${opt.providerId}:${model.id}`;
                     const isActive = value === fullSlug;
                     return (
-                      <button key={model.id} className={`memory-model-option ${isActive ? 'active' : ''}`} type="button"
+                      <button key={model.id} className={`settings-model-option ${isActive ? 'active' : ''}`} type="button"
                         onClick={() => { onChange(fullSlug); setOpen(false); setSearch(''); }}>
                         {isActive && <Check size={12} />}
                         <span>{model.name || model.id}</span>

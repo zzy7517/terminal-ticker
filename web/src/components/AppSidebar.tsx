@@ -30,7 +30,7 @@ export function AppSidebar() {
   const optionsState = (state as any)?.options?.snapshots;
   const optionsAvailable = Boolean(optionsState && Object.keys(optionsState).length > 0);
   const items: NavItem[] = [
-    { id: 'agent', label: 'Agent', icon: Bot },
+    { id: 'agent', label: 'Chat', icon: Bot },
     { id: 'market', label: 'Market', icon: LineChart },
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'calendar', label: 'Calendar', icon: CalendarDays, available: jin10Available },

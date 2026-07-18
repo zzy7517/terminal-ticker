@@ -191,18 +191,18 @@ function AgentTranscriptMessage({
 export function AgentSessionPanel({
   providerProfiles: _providerProfiles,
   disabled,
-  onNewSession,
+  onNewChat,
 }: {
   providerProfiles: Record<string, { enabled: boolean; models: string[]; modelEfforts: Record<string, string> }>;
   disabled: boolean;
-  onNewSession: () => void;
+  onNewChat: () => void;
 }) {
   const agentSession = useAgentStore((s) => s.agentSession);
   const agentPrompt = useAgentStore((s) => s.agentPrompt);
   const agentProvider = useAgentStore((s) => s.agentProvider);
   const agentModel = useAgentStore((s) => s.agentModel);
   const agentBusyKey = useAgentStore((s) => s.agentBusyKey);
-  const agentSessionActionKey = useAgentStore((s) => s.agentSessionActionKey);
+  const agentChatActionKey = useAgentStore((s) => s.agentChatActionKey);
   const agentSessionLoadingKey = useAgentStore((s) => s.agentSessionLoadingKey);
   const pendingToolCalls = useAgentStore((s) => s.pendingToolCalls);
   const modelRegistry = useAgentStore((s) => s.modelRegistry);
@@ -226,7 +226,7 @@ export function AgentSessionPanel({
 
   const busy = agentBusyKey !== null;
   const sessionLoading = agentSessionLoadingKey !== null;
-  const sessionActionKey = agentSessionActionKey;
+  const chatActionKey = agentChatActionKey;
 
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerSearch, setModelPickerSearch] = useState('');
@@ -254,7 +254,7 @@ export function AgentSessionPanel({
     }
     return results;
   }, [messages]);
-  const canSend = !disabled && !sessionLoading && !sessionActionKey
+  const canSend = !disabled && !sessionLoading && !chatActionKey
     && (!!agentPrompt.trim() || pendingImages.length > 0);
   const sessionTime = agentSession?.session
     ? new Date(agentSession.session.updatedAt).toLocaleTimeString()
@@ -405,7 +405,7 @@ export function AgentSessionPanel({
     setAutocomplete(null);
     switch (command.name) {
       case 'new':
-        onNewSession();
+        onNewChat();
         break;
       case 'compact':
         // TODO: trigger context compaction
@@ -419,7 +419,7 @@ export function AgentSessionPanel({
         }
         break;
     }
-  }, [setAgentPrompt, onNewSession, agentPrompt]);
+  }, [setAgentPrompt, onNewChat, agentPrompt]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 

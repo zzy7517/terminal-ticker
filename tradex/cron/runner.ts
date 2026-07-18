@@ -37,7 +37,7 @@ export interface CronRunResult {
 /**
  * Executes a single cron job run end-to-end:
  * 1. Creates a session JSONL file in the job's cron_sessions subdirectory.
- * 2. Assembles the tool registry from the live runtime (market quotes, news, memory).
+ * 2. Assembles the tool registry from the live runtime (market quotes and news).
  * 3. Runs the agent loop with the job's system prompt and user message.
  * 4. Writes the completion marker so the store can distinguish ok/error/running.
  */
@@ -59,9 +59,7 @@ export async function executeCronJob(input: {
   if (!filePath) throw new Error("Pi did not create a persistent cron session");
 
   const maxCandles = job.maxCandles ?? runtime.config.agent.maxCandles;
-  const memoryRegistry = await runtime.memoryPort.buildTools();
-
-  // Assemble tools — always include market + news + memory + web + filesystem
+  // Assemble tools — always include market + news + web + filesystem
   const registries: ToolRegistry[] = [
     buildMarketTools({ quotes: runtime.controller.quotes, maxCandles, candleContextMode: agentConfig.candleContextMode }),
     buildNewsTools({
@@ -72,7 +70,6 @@ export async function executeCronJob(input: {
         }),
       refresh: () => runtime.newsService.refreshNow(),
     }),
-    ...(memoryRegistry ? [memoryRegistry] : []),
     buildWebTools(),
     createFilesystemRegistry(),
   ];
@@ -120,10 +117,6 @@ export async function executeCronJob(input: {
       }
     } else {
       systemPrompt = job.systemPrompt || "";
-    }
-    const memoryContext = await runtime.memoryPort.getPromptContext();
-    if (memoryContext) {
-      systemPrompt = systemPrompt ? `${systemPrompt}\n${memoryContext}` : memoryContext;
     }
     systemPrompt = [systemPrompt, currentTimeInstruction("run_command")].filter(Boolean).join("\n\n");
     const maxIterations = job.maxIterations ?? DEFAULT_CRON_MAX_ITERATIONS;

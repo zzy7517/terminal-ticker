@@ -8,7 +8,6 @@ import {
   GROUP_ALIASES,
   HYPERLIQUID_SOURCE,
   Jin10Config,
-  MemoryConfig,
   NewsConfig,
   ProxyConfig,
   SUPPORTED_INST_TYPES,
@@ -450,26 +449,6 @@ export async function updateNewsConfigInWatchlist(watchlistPath: string, config:
   ]);
 }
 
-export async function updateMemoryConfigInWatchlist(watchlistPath: string, config: MemoryConfig): Promise<boolean> {
-  const lines = [
-    "[memory]",
-    `enabled = ${config.enabled ? "true" : "false"}`,
-    `use_memories = ${config.useMemories ? "true" : "false"}`,
-    `generate_memories = ${config.generateMemories ? "true" : "false"}`,
-    `disable_on_external_context = ${config.disableOnExternalContext ? "true" : "false"}`,
-    `max_raw_memories_for_consolidation = ${config.maxRawMemoriesForConsolidation}`,
-    `max_unused_days = ${config.maxUnusedDays}`,
-    `max_source_age_days = ${config.maxSourceAgeDays}`,
-    `max_rollouts_per_startup = ${config.maxRolloutsPerStartup}`,
-    `min_session_idle_hours = ${config.minSessionIdleHours}`,
-    `extension_retention_days = ${config.extensionRetentionDays}`,
-  ];
-  if (config.storagePath) lines.push(`storage_path = ${tomlString(config.storagePath)}`);
-  if (config.extractModel) lines.push(`extract_model = ${tomlString(config.extractModel)}`);
-  if (config.consolidationModel) lines.push(`consolidation_model = ${tomlString(config.consolidationModel)}`);
-  return replaceTable(watchlistPath, "memory", lines);
-}
-
 export async function updateTradingConfigInWatchlist(watchlistPath: string, config: TradingConfig): Promise<boolean> {
   return replaceTable(watchlistPath, "trading", [
     "[trading]",
@@ -553,4 +532,3 @@ async function replaceTable(watchlistPath: string, tableName: string, lines: str
     return true;
   });
 }
-

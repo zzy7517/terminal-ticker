@@ -70,7 +70,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       }));
     },
   },
-  { name: 'new', description: 'Start a new session' },
+  { name: 'new', description: 'Start a clean Chat' },
   { name: 'compact', description: 'Compact session context (coming soon)' },
 ];
 

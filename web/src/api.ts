@@ -1,6 +1,8 @@
 /** 浏览器端 Tradex HTTP、SSE 和 Agent API 客户端。 */
 import type {
   AgentConfigUpdate,
+  AgentChatMutationResponse,
+  AgentChatsResponse,
   AgentModelRegistry,
   AgentModelRegistryResolveResponse,
   AgentModelsResponse,
@@ -26,11 +28,6 @@ import type {
   Jin10Status,
   Lesson,
   MarketState,
-  MemoryBrowseListResult,
-  MemoryBrowseReadResult,
-  MemoryBrowseSearchResult,
-  MemoryConfigUpdate,
-  MemoryStatus,
   NewsConfigUpdate,
   NewsItem,
   McpAllResourcesResponse,
@@ -46,6 +43,9 @@ import type {
   AgentDefinitionInput,
   AgentRuntimeStatus,
   ClaudeCodeModelsResponse,
+  Channel,
+  ChannelMessage,
+  ChannelMessagesResponse,
 } from './types';
 
 const DEFAULT_DEV_BACKEND_ORIGIN = 'http://127.0.0.1:8765';
@@ -168,6 +168,7 @@ export async function createAgentSession(options?: {
   provider?: string;
   model?: string;
   agentId?: string;
+  chatId?: string;
 }): Promise<AgentSessionResponse & { history: AgentSessionHistoryResponse }> {
   const response = await fetch('/api/agent/sessions', {
     method: 'POST',
@@ -177,6 +178,50 @@ export async function createAgentSession(options?: {
   if (!response.ok) {
     throw await responseError(response, 'agent session create failed');
   }
+  return response.json();
+}
+
+export async function fetchAgentChats(agentId: string): Promise<AgentChatsResponse> {
+  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/chats`);
+  if (!response.ok) throw await responseError(response, 'Agent Chats fetch failed');
+  return response.json();
+}
+
+export async function createAgentChat(agentId: string): Promise<AgentChatMutationResponse> {
+  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/chats`, { method: 'POST' });
+  if (!response.ok) throw await responseError(response, 'New Chat failed');
+  return response.json();
+}
+
+export async function fetchChannels(): Promise<{ channels: Channel[] }> {
+  const response = await fetch('/api/channels');
+  if (!response.ok) throw await responseError(response, 'Channels fetch failed');
+  return response.json();
+}
+
+export async function createChannel(input: { name: string; topic?: string }): Promise<{ channel: Channel; channels: Channel[] }> {
+  const response = await fetch('/api/channels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await responseError(response, 'Channel create failed');
+  return response.json();
+}
+
+export async function fetchChannelMessages(channelId: string): Promise<ChannelMessagesResponse> {
+  const response = await fetch(`/api/channels/${encodeURIComponent(channelId)}/messages`);
+  if (!response.ok) throw await responseError(response, 'Channel messages fetch failed');
+  return response.json();
+}
+
+export async function sendChannelMessage(channelId: string, content: string): Promise<{ message: ChannelMessage; channel: Channel }> {
+  const response = await fetch(`/api/channels/${encodeURIComponent(channelId)}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!response.ok) throw await responseError(response, 'Channel message send failed');
   return response.json();
 }
 
@@ -470,68 +515,6 @@ export async function saveOptionsConfig(config: OptionsConfigUpdate): Promise<Ma
   }
   const payload = await response.json();
   return payload.state;
-}
-
-// Fetches the current memory pipeline status and config.
-export async function fetchMemoryStatus(): Promise<MemoryStatus> {
-  const response = await fetch('/api/memory/status');
-  if (!response.ok) {
-    throw await responseError(response, 'memory status failed');
-  }
-  return response.json();
-}
-
-// Saves memory module settings (enabled, models, etc.) and returns the updated state.
-export async function saveMemoryConfig(config: MemoryConfigUpdate): Promise<MarketState> {
-  const response = await fetch('/api/memory/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'memory config save failed');
-  }
-  const payload = await response.json();
-  return payload.state;
-}
-
-// Lists files in the memory directory.
-export async function memoryList(path?: string): Promise<MemoryBrowseListResult> {
-  const response = await fetch('/api/memory/browse', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'list', params: { path: path || null } }),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'memory list failed');
-  }
-  return response.json();
-}
-
-// Reads a memory file by relative path.
-export async function memoryRead(path: string): Promise<MemoryBrowseReadResult> {
-  const response = await fetch('/api/memory/browse', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'read', params: { path } }),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'memory read failed');
-  }
-  return response.json();
-}
-
-// Searches memory files by keywords.
-export async function memorySearch(queries: string[], path?: string): Promise<MemoryBrowseSearchResult> {
-  const response = await fetch('/api/memory/browse', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'search', params: { queries, path: path || null } }),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'memory search failed');
-  }
-  return response.json();
 }
 
 // Opens the live state WebSocket and normalizes connection-status callbacks.

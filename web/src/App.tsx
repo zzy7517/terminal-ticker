@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useMarketStore } from './stores/marketStore';
 import { useAgentStore } from './stores/agentStore';
 import { useUiStore } from './stores/uiStore';
+import { useChatStore } from './stores/chatStore';
 import { AppSidebar } from './components/AppSidebar';
 
 import { orderedGroups, readRouteFromHash } from './utils';
@@ -12,7 +13,6 @@ import {
   AgentContextSettingsPanel,
   AgentsSettingsPanel,
   NewsSettingsPanel,
-  MemorySettingsPanel,
   CronSettingsPanel,
   McpSettingsPanel,
   BrowserSettingsPanel,
@@ -41,6 +41,10 @@ export default function App() {
   // Initialize agent sessions on mount.
   useEffect(() => {
     return useAgentStore.getState().initSessions();
+  }, []);
+
+  useEffect(() => {
+    void useChatStore.getState().initChannels();
   }, []);
 
   // Load the backend-owned model catalog once on startup.
@@ -83,8 +87,6 @@ export default function App() {
           <AgentContextSettingsPanel />
         ) : route.section === 'news' ? (
           <NewsSettingsPanel />
-        ) : route.section === 'memory' ? (
-          <MemorySettingsPanel />
         ) : route.section === 'cron' ? (
           <CronSettingsPanel />
         ) : route.section === 'mcp' ? (

@@ -3,7 +3,6 @@ import {
   Activity,
   ArrowLeft,
   Bot,
-  Brain,
   Cable,
   Chrome,
   CircleDot,
@@ -35,7 +34,6 @@ export function SettingsFrame({
         { id: 'agents' as const, label: 'Agents', icon: Bot },
         { id: 'providers' as const, label: 'Runtimes', icon: Settings },
         { id: 'agent-context' as const, label: 'Agent Context', icon: Bot },
-        { id: 'memory' as const, label: 'Memory', icon: Brain },
       ],
     },
     {

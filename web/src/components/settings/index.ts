@@ -5,7 +5,6 @@ export { LocalAgentsSettingsPanel } from './LocalAgentsSettingsPanel';
 export { AgentContextSettingsPanel } from './AgentContextSettingsPanel';
 export { AgentsSettingsPanel } from './AgentsSettingsPanel';
 export { NewsSettingsPanel } from './NewsSettingsPanel';
-export { MemorySettingsPanel } from './MemorySettingsPanel';
 export { CronSettingsPanel } from './CronSettingsPanel';
 export { McpSettingsPanel } from './McpSettingsPanel';
 export { BrowserSettingsPanel } from './BrowserSettingsPanel';

@@ -5,7 +5,6 @@ import {
   type SessionInfo,
   type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type {
   AssistantMessage,
   ImageContent,
@@ -18,7 +17,6 @@ import { toPiProviderId } from "./models/constants.js";
 import { DEFAULT_AGENT_ID } from "../../agent_store.js";
 
 const PI_SESSIONS_SUBDIR = "pi_sessions";
-export const EXTERNAL_CONTEXT_ENTRY = "tradex_external_context";
 export const AGENT_SNAPSHOT_ENTRY = "tradex_agent_snapshot";
 
 export interface SessionAgentSnapshot {
@@ -145,9 +143,6 @@ export function piSessionPayload(manager: SessionManager): Record<string, unknow
   const model = context.model;
   const firstUser = messages.find((message) => message.role === "user");
   const title = manager.getSessionName() || String(firstUser?.content || "").slice(0, 60) || "New Agent Session";
-  const externalContext = entries.some((entry) =>
-    entry.type === "custom" && entry.customType === EXTERNAL_CONTEXT_ENTRY
-  ) || messageEntries.some((entry) => messageUsesExternalContext(entry.message));
   const agentSnapshot = readAgentSnapshot(manager);
 
   return {
@@ -164,7 +159,6 @@ export function piSessionPayload(manager: SessionManager): Record<string, unknow
       agentId: agentSnapshot.agentId,
       agentName: agentSnapshot.agentName,
       runtime: agentSnapshot.runtime,
-      memory: { externalContext },
     },
     messages,
     contextUsage: computeContextUsage(messageEntries),
@@ -323,28 +317,6 @@ function imageMetadata(content: unknown): Record<string, unknown> | null {
     )
     .map((item) => ({ data: item.data, mimeType: item.mimeType }));
   return images.length > 0 ? { images } : null;
-}
-
-function messageUsesExternalContext(message: AgentMessage): boolean {
-  if (message.role === "toolResult") {
-    return externalToolName((message as ToolResultMessage).toolName);
-  }
-  if (message.role !== "assistant") return false;
-  return (message as AssistantMessage).content.some(
-    (item) => item.type === "toolCall" && externalToolName(item.name),
-  );
-}
-
-function externalToolName(name: string): boolean {
-  return new Set([
-    "web_search",
-    "web_fetch",
-    "get_recent_news",
-    "refresh_news",
-    "browser_open_page",
-    "browser_screenshot",
-    "browser_status",
-  ]).has(name);
 }
 
 function assertPathInside(filePath: string, root: string): void {

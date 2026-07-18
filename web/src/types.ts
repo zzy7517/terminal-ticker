@@ -73,6 +73,23 @@ export interface AgentSession {
   agentName: string;
   runtime: 'pi' | 'claude-code';
   capabilities: AgentRuntimeStatus['capabilities'];
+  chatId?: string;
+  chatStatus?: AgentChatStatus;
+  chatOrdinal?: number;
+}
+
+export type AgentChatStatus = 'active' | 'archived';
+
+export interface AgentChat {
+  id: string;
+  agentId: string;
+  ordinal: number;
+  title: string;
+  status: AgentChatStatus;
+  createdAtMs: number;
+  archivedAtMs: number | null;
+  activeSessionId: string | null;
+  generationCount: number;
 }
 
 export interface AgentDefinition {
@@ -175,6 +192,7 @@ export interface QueuedFollowUp {
 
 export interface AgentSessionResponse {
   session: AgentSession | null;
+  chat?: AgentChat;
   messages: AgentMessage[];
   contextUsage?: AgentContextUsage | null;
   sessionStats?: AgentSessionStats | null;
@@ -190,6 +208,41 @@ export interface AgentSessionMutationResponse {
   session: AgentSessionResponse;
   history: AgentSessionHistoryResponse;
   state: MarketState;
+}
+
+export interface AgentChatsResponse {
+  chats: AgentChat[];
+}
+
+export interface AgentChatMutationResponse extends AgentChatsResponse {
+  chat: AgentChat;
+}
+
+export interface Channel {
+  id: string;
+  name: string;
+  topic: string;
+  visibility: 'public' | 'private';
+  version: number;
+  createdAtMs: number;
+  archivedAtMs: number | null;
+}
+
+export interface ChannelMessage {
+  id: string;
+  channelId: string;
+  channelSeq: number;
+  authorType: 'human' | 'agent' | 'system';
+  authorId: string;
+  kind: 'message' | 'system';
+  content: string;
+  threadRootId: string | null;
+  createdAtMs: number;
+}
+
+export interface ChannelMessagesResponse {
+  messages: ChannelMessage[];
+  nextBeforeSeq: number | null;
 }
 
 export type AgentStreamPayload =
@@ -286,82 +339,6 @@ export interface NewsConfigUpdate {
   requestTimeoutSeconds?: number;
   retentionDays?: number;
   recentLimit?: number;
-}
-
-export interface MemoryConfig {
-  enabled: boolean;
-  useMemories: boolean;
-  generateMemories: boolean;
-  disableOnExternalContext: boolean;
-  storagePath: string | null;
-  extractModel: string | null;
-  consolidationModel: string | null;
-  maxRawMemories: number;
-  maxUnusedDays: number;
-  maxSourceAgeDays: number;
-  maxRolloutsPerStartup: number;
-  minSessionIdleHours: number;
-  extensionRetentionDays: number;
-}
-
-export interface MemoryConfigUpdate {
-  enabled?: boolean;
-  useMemories?: boolean;
-  generateMemories?: boolean;
-  disableOnExternalContext?: boolean;
-  storagePath?: string | null;
-  extractModel?: string | null;
-  consolidationModel?: string | null;
-  maxRawMemories?: number;
-  maxUnusedDays?: number;
-  maxSourceAgeDays?: number;
-  maxRolloutsPerStartup?: number;
-  minSessionIdleHours?: number;
-  extensionRetentionDays?: number;
-}
-
-export interface MemoryStatus {
-  enabled: boolean;
-  pipelineAvailable: boolean;
-  pipelineRunning: boolean;
-  sourceCount: number;
-  outputCount: number;
-  phase2Status: string;
-  config: MemoryConfig;
-}
-
-export interface MemoryEntry {
-  path: string;
-  entryType: 'file' | 'directory';
-}
-
-export interface MemoryBrowseListResult {
-  path: string | null;
-  entries: MemoryEntry[];
-  nextCursor: string | null;
-  truncated: boolean;
-}
-
-export interface MemoryBrowseReadResult {
-  path: string;
-  startLineNumber: number;
-  content: string;
-  truncated: boolean;
-}
-
-export interface MemorySearchMatch {
-  path: string;
-  matchLineNumber: number;
-  contentStartLineNumber: number;
-  content: string;
-  matchedQueries: string[];
-}
-
-export interface MemoryBrowseSearchResult {
-  queries: string[];
-  matches: MemorySearchMatch[];
-  nextCursor: string | null;
-  truncated: boolean;
 }
 
 export type ProxyType = 'http' | 'https' | 'socks5';
@@ -600,7 +577,6 @@ export interface MarketState {
       requestTimeoutSeconds: number;
       retentionDays: number;
     };
-    memory: MemoryConfig;
     trading: {
       hyperliquidMode: "off" | "demo" | "live";
       bitgetMode: "off" | "demo" | "live";

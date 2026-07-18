@@ -1,0 +1,73 @@
+.channel-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  min-height: 0;
+}
+
+.channel-panel > header {
+  align-items: center;
+  border-bottom: 1px solid var(--line-strong);
+  display: flex;
+  gap: 9px;
+  min-height: 52px;
+  padding: 8px 14px;
+}
+
+.channel-panel > header div {
+  display: flex;
+  flex-direction: column;
+}
+
+.channel-panel > header small {
+  color: var(--text-muted);
+}
+
+.channel-timeline {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px;
+}
+
+.channel-message {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 10px 0;
+}
+
+.channel-message > div {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+}
+
+.channel-message time {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.channel-message p {
+  margin: 5px 0 0;
+  white-space: pre-wrap;
+}
+
+.channel-error {
+  color: var(--danger);
+  padding: 6px 14px;
+}
+
+.channel-composer {
+  align-items: flex-end;
+  border-top: 1px solid var(--line-strong);
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.channel-composer textarea {
+  background: var(--canvas);
+  border: 1px solid var(--line-strong);
+  color: var(--text-primary);
+  flex: 1;
+  min-height: 58px;
+  padding: 9px 10px;
+  resize: vertical;
+}

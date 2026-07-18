@@ -9,7 +9,6 @@ import {
   BROWSER_HASH,
   CRON_HASH,
   MCP_HASH,
-  MEMORY_HASH,
   NEWS_HASH,
   OPTIONS_HASH,
   PROVIDERS_HASH,
@@ -39,9 +38,6 @@ export function readRouteFromHash(): AppRoute {
   if (window.location.hash.startsWith(CRON_HASH)) {
     return { view: 'settings', section: 'cron' };
   }
-  if (window.location.hash.startsWith(MEMORY_HASH)) {
-    return { view: 'settings', section: 'memory' };
-  }
   if (window.location.hash.startsWith(AGENT_CONTEXT_HASH)) {
     return { view: 'settings', section: 'agent-context' };
   }
@@ -62,8 +58,6 @@ export function navigateToRoute(route: AppRoute) {
     const hash =
       route.section === 'cron'
         ? CRON_HASH
-        : route.section === 'memory'
-        ? MEMORY_HASH
         : route.section === 'agents'
         ? AGENTS_HASH
         : route.section === 'agent-context'

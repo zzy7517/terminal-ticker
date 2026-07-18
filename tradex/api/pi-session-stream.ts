@@ -5,7 +5,7 @@ import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../config/index.js";
 import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
-import { EXTERNAL_CONTEXT_ENTRY, piSessionFileExists, type SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
+import { piSessionFileExists, type SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
 import type { RuntimeEvent, RuntimeMessage } from "../agent/runtime/types.js";
 import { buildTradexToolRegistry } from "./agent_tools.js";
 import { sessionHistory, sessionResponse } from "./helpers.js";
@@ -32,25 +32,20 @@ export function streamPiSession(input: {
   let totalCacheRead = 0;
   let totalCacheWrite = 0;
   let initialUserMessageSeen = false;
-  let externalContextRecorded = false;
-
   return streamSessionRun({
     runtime,
     sessionId,
     // 准备 Pi Tool、系统提示词和本轮 Runtime 句柄。
     async prepare() {
-      const { tools, externalContextToolNames } = await buildTradexToolRegistry(runtime, {
+      const { tools } = await buildTradexToolRegistry(runtime, {
         sessionId,
         config: requestConfig,
-        includeMemory: true,
         includeExternalMcp: true,
         includeFilesystem: true,
       });
-      const memoryInstructions = await runtime.memoryPort.getPromptContext();
       const baseSystemPrompt = snapshot.systemPrompt.trim() || MAIN_AGENT_PROMPT;
       const systemPrompt = [
         baseSystemPrompt,
-        memoryInstructions ?? "",
         currentTimeInstruction("run_command"),
       ].filter(Boolean).join("\n\n");
       const run = await new PiSdkRuntime().start({
@@ -80,10 +75,6 @@ export function streamPiSession(input: {
           } else if (event.type === "tool-start") {
             const toolCall = { id: event.callId, name: event.name, arguments: event.args };
             toolCalls.set(event.callId, toolCall);
-            if (!externalContextRecorded && externalContextToolNames.has(event.name)) {
-              externalContextRecorded = true;
-              manager.appendCustomEntry(EXTERNAL_CONTEXT_ENTRY, { toolName: event.name });
-            }
             send({ type: "tool_execution_start", toolCall });
           } else if (event.type === "tool-result") {
             const output = runtimeMessageText({
@@ -114,7 +105,6 @@ export function streamPiSession(input: {
             }
             if (message.role === "assistant") {
               const text = runtimeMessageText(message);
-              await runtime.memoryPort.recordAssistantResponse(text);
               finalError = message.error ?? null;
               totalTokens += message.usage?.total ?? 0;
               promptTokens += message.usage?.input ?? 0;

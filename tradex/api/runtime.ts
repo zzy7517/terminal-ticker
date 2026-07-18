@@ -1,12 +1,7 @@
 /** 持有进程级服务、存储、Session 锁和活动 Runtime 句柄。 */
 import { AppConfig } from "../config/index.js";
-import { LocalMemoryBackend } from "../memory/backend.js";
-import { MemoryPipeline } from "../memory/pipeline.js";
-import { MemoryRuntimePolicy } from "../memory/policy.js";
-import { LocalMemoryPort, type MemoryPort } from "../memory/port.js";
 import { NewsService } from "../news/service.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
-import { listPiSessionManagersSync, piSessionPayload } from "../agent/runtime/pi/sessions.js";
 import { ExchangeRouter } from "../trading/exchange_router.js";
 import { TradeStore } from "../trading/store.js";
 import { TradeStatus } from "../trading/models.js";
@@ -16,7 +11,6 @@ import { serializeState } from "./serializers.js";
 import { CronScheduler } from "../cron/scheduler.js";
 import { CronJobStore } from "../cron/job_store.js";
 import type { ActiveRuntimeRun } from "../agent/runtime/types.js";
-import { AgentModelRegistry } from "../agent/runtime/pi/models/registry.js";
 import {
   buildModelRuntimeSnapshot,
   type ModelRuntimeSnapshot,
@@ -27,6 +21,9 @@ import { BrowserManager } from "../browser/index.js";
 import { OptionsService } from "../options/service.js";
 import { applyProxyConfig } from "../runtime/proxy.js";
 import { AgentStore } from "../agent/agent_store.js";
+import { AgentChatStore } from "../agent/chat-store.js";
+import { indexPersistedAgentSessions } from "../agent/chat-index.js";
+import { ChannelStore } from "../channel/store.js";
 import type { SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
 import { McpRunGrantStore } from "../mcp/server/grants.js";
 import { ClaudeSessionStore } from "../agent/runtime/claude-code/session-store.js";
@@ -38,9 +35,6 @@ export class AppRuntime {
   readonly tradeStore: TradeStore;
   readonly exchangeRouter: ExchangeRouter;
   newsService: NewsService;
-  readonly memoryBackend: LocalMemoryBackend;
-  memoryPipeline: MemoryPipeline | null;
-  memoryPort: MemoryPort;
   readonly cronJobStore: CronJobStore;
   readonly cronScheduler: CronScheduler;
   readonly mcpManager: McpClientManager | null;
@@ -50,6 +44,8 @@ export class AppRuntime {
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   readonly pendingAgentSnapshots = new Map<string, SessionAgentSnapshot>();
   readonly agentStore: AgentStore;
+  readonly chatStore: AgentChatStore;
+  readonly channelStore: ChannelStore;
   /** Session-level mutation lock covering setup, streaming, and delete. */
   readonly lockedAgentSessions = new Set<string>();
   /** Active agent instances keyed by session ID for abort control. */
@@ -68,15 +64,14 @@ export class AppRuntime {
   ) {
     this.config = config;
     this.agentStore = new AgentStore();
+    this.chatStore = new AgentChatStore();
+    this.channelStore = new ChannelStore();
     this._modelRuntimeSnapshot = modelRuntimeSnapshot;
     this.instruments = instruments;
     this.controller = new TickerController({ config, instruments });
     this.tradeStore = new TradeStore();
     this.exchangeRouter = new ExchangeRouter({ tradingConfig: config.trading });
     this.newsService = new NewsService({ config: config.news });
-    this.memoryBackend = new LocalMemoryBackend(config.memory.storagePath);
-    this.memoryPipeline = this._buildMemoryPipeline(config, modelRuntimeSnapshot);
-    this.memoryPort = new LocalMemoryPort(config.memory, () => this.memoryPipeline);
 
     // Wire MCP client manager
     if (config.mcp.enabled) {
@@ -122,8 +117,6 @@ export class AppRuntime {
       ? new OptionsService(config.options)
       : null;
 
-    // Wire trade closure → memory pipeline enqueue
-    this.tradeStore.onTradeClosed((tradeId) => this.enqueueTradeForMemory(tradeId));
     this.cronJobStore = new CronJobStore();
     this.cronScheduler = new CronScheduler(this, this.cronJobStore);
   }
@@ -172,13 +165,12 @@ export class AppRuntime {
       mcpManager: this.mcpManager,
       newsStore: this.newsService.store,
     });
-    // Rebuild options/memory subsystems so toggling them via the config API
-    // takes effect without a process restart.
+    // Rebuild the optional subsystem so toggling it via the config API takes
+    // effect without a process restart.
     await this.optionsService?.close();
+    this.chatStore.close();
+    this.channelStore.close();
     this.optionsService = config.options.enabled ? new OptionsService(config.options) : null;
-    await this.memoryPipeline?.shutdown();
-    this.memoryPipeline = this._buildMemoryPipeline(config, nextModelRuntime);
-    this.memoryPort = new LocalMemoryPort(config.memory, () => this.memoryPipeline);
     if (shouldRestart) {
       this.controller.start();
       await this.newsService.start();
@@ -200,8 +192,9 @@ export class AppRuntime {
     this.controller.deregister(key);
   }
 
-  // Starts background market data streaming, news polling, cron scheduler, MCP, and memory pipeline.
+  // Starts background market data streaming, news polling, cron scheduler, and MCP.
   async start(): Promise<void> {
+    await indexPersistedAgentSessions(this);
     this.running = true;
     this.controller.start();
     await this.newsService.start();
@@ -209,7 +202,6 @@ export class AppRuntime {
     this.mcpManager?.start();
     await this.jin10Service.start();
     this.optionsService?.start();
-    this.memoryPipeline?.kickoffStartup();
   }
 
   // Gracefully stops all background tasks; called on process shutdown or before reload.
@@ -220,7 +212,6 @@ export class AppRuntime {
     await this.jin10Service.stop();
     await this.cronScheduler.stop();
     await this.mcpManager?.shutdown();
-    await this.memoryPipeline?.shutdown();
     await this.optionsService?.close();
   }
 
@@ -324,55 +315,4 @@ export class AppRuntime {
     });
   }
 
-  // Enqueue a closed trade into the memory pipeline for automatic extraction.
-  enqueueTradeForMemory(tradeId: number): void {
-    if (!this.memoryPipeline) return;
-    this.memoryPipeline.enqueueTradeEvent({ tradeId });
-  }
-
-  // Builds the memory pipeline from current config; returns null when disabled.
-  private _buildMemoryPipeline(
-    config: AppConfig,
-    modelRuntimeSnapshot: ModelRuntimeSnapshot,
-  ): MemoryPipeline | null {
-    if (!config.memory.enabled) return null;
-
-    const registry = new AgentModelRegistry(modelRuntimeSnapshot);
-    const tradeStore = this.tradeStore;
-    const sessionSource = {
-      listSessions(input: { limit?: number }) {
-        return listPiSessionManagersSync().slice(0, input.limit).map((manager) => {
-          const payload = piSessionPayload(manager);
-          const session = payload.session as Record<string, unknown>;
-          const stats = payload.sessionStats as Record<string, unknown>;
-          return {
-            id: manager.getSessionId(),
-            updatedAt: String(session.updatedAt),
-            messageCount: Number(stats.totalMessages ?? 0),
-          };
-        });
-      },
-      sessionPayload(sessionId: string) {
-        const manager = listPiSessionManagersSync().find(
-          (candidate) => candidate.getSessionId() === sessionId,
-        );
-        return manager ? piSessionPayload(manager) : null;
-      },
-    };
-
-    const agentConfigProvider = () => config.agent;
-    const llmProviderFactory = (agentConfig: typeof config.agent) => registry.createProvider(agentConfig);
-
-    return new MemoryPipeline({
-      config: config.memory,
-      sessionSource,
-      tradeStore,
-      agentConfigProvider,
-      llmProviderFactory,
-      modelRuntimeSnapshot,
-      policy: config.memory.generateMemories
-        ? MemoryRuntimePolicy.normal()
-        : MemoryRuntimePolicy.disabled(),
-    });
-  }
 }

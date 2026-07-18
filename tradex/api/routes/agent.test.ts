@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentStore } from "../../agent/agent_store.js";
+import { AgentChatStore } from "../../agent/chat-store.js";
 import { agentRoutes } from "./agent.js";
 import type { AppRuntime } from "../runtime.js";
 import { piSessionFileExists } from "../../agent/runtime/pi/sessions.js";
@@ -29,6 +30,7 @@ function runtime(): AppRuntime {
   });
   return {
     agentStore,
+    chatStore: new AgentChatStore(path.join(dir, "chat.sqlite3")),
     config: {
       agent: {
         provider: "codex", model: "gpt-5.4", reasoningEffort: "high", systemPrompt: "",
@@ -90,6 +92,81 @@ describe("Agent HTTP API", () => {
     expect(pending && piSessionFileExists(pending)).toBe(false);
   });
 
+  it("creates New Chat under one Agent and archives the previous Chat", async () => {
+    const appRuntime = runtime();
+    const routes = agentRoutes(appRuntime);
+
+    const firstResponse = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
+    const first = await firstResponse.json() as { chat: { id: string; status: string } };
+    const secondResponse = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
+    const second = await secondResponse.json() as { chat: { id: string; status: string }; chats: Array<{ id: string; status: string }> };
+
+    expect(firstResponse.status).toBe(201);
+    expect(secondResponse.status).toBe(201);
+    expect(second.chat.id).not.toBe(first.chat.id);
+    expect(second.chats).toEqual([
+      expect.objectContaining({ id: second.chat.id, status: "active" }),
+      expect.objectContaining({ id: first.chat.id, status: "archived" }),
+    ]);
+  });
+
+  it("gives an Agent with no Session one empty active Chat", async () => {
+    const response = await agentRoutes(runtime()).request("/api/chat/agents/ict/chats");
+    const payload = await response.json() as { chats: Array<{ status: string; activeSessionId: string | null }> };
+
+    expect(response.status).toBe(200);
+    expect(payload.chats).toEqual([
+      expect.objectContaining({ status: "active", activeSessionId: null }),
+    ]);
+  });
+
+  it("binds the first Session to its Chat and rejects New Chat while that Agent runs", async () => {
+    const appRuntime = runtime();
+    const routes = agentRoutes(appRuntime);
+    const chatResponse = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
+    const { chat } = await chatResponse.json() as { chat: { id: string } };
+
+    const sessionResponse = await routes.request("/api/agent/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "ict", chatId: chat.id }),
+    });
+    const session = await sessionResponse.json() as { session: { id: string }; chat: { id: string } };
+
+    expect(session.chat.id).toBe(chat.id);
+    expect(appRuntime.chatStore.activeForAgent("ict")?.activeSessionId).toBe(session.session.id);
+
+    appRuntime.lockedAgentSessions.add(session.session.id);
+    const conflict = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
+    expect(conflict.status).toBe(409);
+    expect(appRuntime.chatStore.listForAgent("ict")).toHaveLength(1);
+  });
+
+  it("rejects writes to an archived Chat and New Chat while any Chat for that Agent runs", async () => {
+    const appRuntime = runtime();
+    const routes = agentRoutes(appRuntime);
+    const firstChatResponse = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
+    const firstChat = await firstChatResponse.json() as { chat: { id: string } };
+    const firstSessionResponse = await routes.request("/api/agent/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "ict", chatId: firstChat.chat.id }),
+    });
+    const firstSession = await firstSessionResponse.json() as { session: { id: string } };
+    await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
+
+    const archivedWrite = await routes.request(`/api/agent/sessions/${firstSession.session.id}/messages/stream`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "Continue old Chat" }),
+    });
+    appRuntime.lockedAgentSessions.add(firstSession.session.id);
+    const newChat = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
+
+    expect(archivedWrite.status).toBe(409);
+    expect(newChat.status).toBe(409);
+  });
+
   it("rejects an update body that tries to change the Agent id", async () => {
     const response = await agentRoutes(runtime()).request("/api/agents/ict", {
       method: "PUT",
@@ -112,6 +189,37 @@ describe("Agent HTTP API", () => {
 
     expect(response.status).toBe(409);
     expect(appRuntime.agentStore.get("ict")).not.toBeNull();
+  });
+
+  it("deletes an Agent when only empty Chats belong to it", async () => {
+    const appRuntime = runtime();
+    const routes = agentRoutes(appRuntime);
+    await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
+
+    const response = await routes.request("/api/agents/ict", { method: "DELETE" });
+
+    expect(response.status).toBe(200);
+    expect(appRuntime.agentStore.get("ict")).toBeNull();
+    expect(appRuntime.chatStore.listForAgent("ict")).toEqual([]);
+  });
+
+  it("removes the Chat generation when its Session is deleted", async () => {
+    const appRuntime = runtime();
+    const routes = agentRoutes(appRuntime);
+    const created = await routes.request("/api/agent/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "ict" }),
+    });
+    const payload = await created.json() as { session: { id: string }; chat: { id: string } };
+
+    const response = await routes.request(`/api/agent/sessions/${payload.session.id}`, { method: "DELETE" });
+
+    expect(response.status).toBe(200);
+    expect(appRuntime.chatStore.get(payload.chat.id)).toEqual(expect.objectContaining({
+      activeSessionId: null,
+      generationCount: 0,
+    }));
   });
 
   it("creates a Claude Code Session without adding it to the Pi provider registry", async () => {

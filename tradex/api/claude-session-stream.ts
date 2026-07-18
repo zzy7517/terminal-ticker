@@ -251,7 +251,6 @@ async function buildClaudeTools(runtime: AppRuntime, sessionId: string) {
   const { tools } = await buildTradexToolRegistry(runtime, {
     sessionId,
     config: runtime.config.agent,
-    includeMemory: false,
     includeExternalMcp: false,
     includeFilesystem: false,
   });
