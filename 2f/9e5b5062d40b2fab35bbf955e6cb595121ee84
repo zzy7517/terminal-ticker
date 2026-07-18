@@ -1,0 +1,33 @@
+tradex/api/pi-session-stream.ts
+  s_ca58fff02f6400::t_a50fc4de5e18d8 6,54
+  s_ca58fff02f6400::t_c28cbb6e8b4b1c 51-53,55
+tradex/agent/prompts.ts
+  s_ca58fff02f6400::t_a50fc4de5e18d8 10-13
+tradex/agent/runtime/claude-code/runtime.ts
+  s_ca58fff02f6400::t_c28cbb6e8b4b1c 32
+  s_ca58fff02f6400::t_a50fc4de5e18d8 45
+tradex/cron/runner.ts
+  s_ca58fff02f6400::t_a50fc4de5e18d8 19,22,64,77,128
+tradex/agent/runtime/claude-code/runtime.test.ts
+  s_ca58fff02f6400::t_b6e84ca521d702 32,50
+  s_ca58fff02f6400::t_b7379d15158a36 33-34,57-58
+tradex/api/claude-session-stream.ts
+  s_ca58fff02f6400::t_a50fc4de5e18d8 6,266-267
+  s_ca58fff02f6400::t_c28cbb6e8b4b1c 268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "2f9e5b5062d40b2fab35bbf955e6cb595121ee84",
+  "prompts": {},
+  "sessions": {
+    "s_ca58fff02f6400": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f751c-5aa9-77d2-9ef0-e9859686a0ae",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
