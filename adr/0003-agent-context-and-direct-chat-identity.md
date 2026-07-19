@@ -1,10 +1,14 @@
 # ADR-0003: Agent Context and Direct Chat identity
 
-- Status: accepted
+- Status: superseded
 - Date: 2026-07-18
+- Superseded-by: `0004-agent-context-and-direct-message-identity.md`
 - Supersedes: the parts of ADR-0001 that treated a Session as the user-facing conversation identity
 
-## Decision
+> **Superseded.** The multi Direct Chat / New Chat / `direct-chat` ChatTarget model below is historical.
+> Follow ADR-0004 and `docs/raft-style-agent-team-design.md` instead.
+
+## Decision (historical)
 
 Tradex exposes one stable Direct Message Entry per Agent. A Human can create multiple Direct Chats under that entry, but only one Chat is active and writable. A Chat owns one or more Runtime Session generations; a Native Session remains a Runtime-private resume handle.
 
@@ -20,7 +24,7 @@ Channel-specific operations continue to use `channelId`. `ChatTarget` is not a r
 
 Shared Channel messages remain authoritative SQLite facts. They are never appended directly to another Agent's private Runtime Session.
 
-## Consequences
+## Consequences (historical)
 
 - New Chat creates a clean product conversation without duplicating the Agent in the sidebar.
 - Existing Session files are indexed, not migrated or rewritten.

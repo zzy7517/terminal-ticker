@@ -39,7 +39,7 @@ export function initChatEventSchema(conn: Database.Database): void {
       type TEXT NOT NULL,
       actor_type TEXT NOT NULL CHECK (actor_type IN ('human', 'agent', 'system')),
       actor_id TEXT NOT NULL,
-      target_kind TEXT NOT NULL CHECK (target_kind IN ('direct-chat', 'channel')),
+      target_kind TEXT NOT NULL CHECK (target_kind IN ('direct-chat', 'direct-message', 'channel')),
       target_ref TEXT NOT NULL,
       entity_type TEXT NOT NULL,
       entity_id TEXT NOT NULL,

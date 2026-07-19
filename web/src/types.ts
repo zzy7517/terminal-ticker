@@ -73,38 +73,6 @@ export interface AgentSession {
   agentName: string;
   runtime: 'pi' | 'claude-code';
   capabilities: AgentRuntimeStatus['capabilities'];
-  chatId?: string;
-  chatStatus?: AgentChatStatus;
-  chatOrdinal?: number;
-}
-
-export type AgentChatStatus = 'active' | 'archived';
-
-export interface AgentChat {
-  id: string;
-  agentId: string;
-  ordinal: number;
-  title: string;
-  status: AgentChatStatus;
-  createdAtMs: number;
-  archivedAtMs: number | null;
-  activeSessionId: string | null;
-  generationCount: number;
-}
-
-export interface AgentChatGeneration {
-  chatId: string;
-  generation: number;
-  sessionId: string;
-  runtime: 'pi' | 'claude-code';
-  createdAtMs: number;
-  rotationReason: string;
-}
-
-export interface AgentChatDetailResponse {
-  chat: AgentChat;
-  generations: AgentChatGeneration[];
-  sessions: AgentSessionResponse[];
 }
 
 export interface AgentDefinition {
@@ -187,7 +155,7 @@ export interface AgentSessionSummary extends AgentSession {
 }
 
 export interface AgentMessage {
-  id: number;
+  id: string | number;
   sessionId: string;
   role: 'user' | 'assistant' | 'system' | 'toolResult';
   content: string;
@@ -207,7 +175,6 @@ export interface QueuedFollowUp {
 
 export interface AgentSessionResponse {
   session: AgentSession | null;
-  chat?: AgentChat;
   messages: AgentMessage[];
   contextUsage?: AgentContextUsage | null;
   sessionStats?: AgentSessionStats | null;
@@ -225,12 +192,33 @@ export interface AgentSessionMutationResponse {
   state: MarketState;
 }
 
-export interface AgentChatsResponse {
-  chats: AgentChat[];
+export interface AgentDirectMessage {
+  id: string;
+  directMessageId: string;
+  dmSeq: number;
+  authorType: 'human' | 'agent' | 'system';
+  authorId: string;
+  kind: string;
+  content: string;
+  threadRootId: string | null;
+  createdAtMs: number;
+  editedAtMs: number | null;
+  deletedAtMs: number | null;
+  importKey: string | null;
 }
 
-export interface AgentChatMutationResponse extends AgentChatsResponse {
-  chat: AgentChat;
+export interface AgentDirectMessageResponse {
+  directMessage: { id: string };
+  target: { kind: 'direct-message'; directMessageId: string };
+  messages: AgentDirectMessage[];
+  nextBeforeSeq: number | null;
+  generations: Array<{
+    generation: number;
+    sessionId: string;
+    runtime: 'pi' | 'claude-code';
+    createdAtMs: number;
+    rotationReason: string;
+  }>;
 }
 
 export interface Channel {
@@ -244,7 +232,7 @@ export interface Channel {
 }
 
 export type ChatTarget =
-  | { kind: 'direct-chat'; agentId: string; chatId: string }
+  | { kind: 'direct-message'; directMessageId: string }
   | { kind: 'channel'; channelId: string };
 
 export interface ChannelReactionSummary {

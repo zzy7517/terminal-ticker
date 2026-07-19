@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { channelTarget, directChatTarget } from "./channel/domain.js";
+import { channelTarget, directMessageTarget } from "./channel/domain.js";
 import { ChatOverlayStore } from "./chat-overlay.js";
 
 describe("ChatOverlayStore", () => {
@@ -21,7 +21,7 @@ describe("ChatOverlayStore", () => {
   it("keeps Saved and Pinned references unambiguous across Chat target kinds", () => {
     const store = createStore();
     const channel = channelTarget("btc-research");
-    const direct = directChatTarget("cindy", "chat-1");
+    const direct = directMessageTarget("dm-1");
 
     store.save({ actorId: "owner", target: channel, messageId: "message-1" });
     store.save({ actorId: "owner", target: direct, messageId: "message-1" });

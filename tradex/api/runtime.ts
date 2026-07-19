@@ -22,10 +22,13 @@ import { OptionsService } from "../options/service.js";
 import { applyProxyConfig } from "../runtime/proxy.js";
 import { AgentStore } from "../agent/agent_store.js";
 import { AgentContextManager } from "../agent/context-manager.js";
-import { indexPersistedAgentSessions } from "../agent/chat-index.js";
+import { indexPersistedAgentSessions, importLegacySessionMessages } from "../agent/chat-index.js";
 import { ChannelStore } from "../channel/store.js";
+import { MessageStore } from "../chat/message-store.js";
+import { InboxStore } from "../chat/inbox-store.js";
 import { ChatEventStore } from "../chat-events.js";
 import { ChatReferenceManager } from "../chat-references.js";
+import type { AgentCoordinator } from "../chat/coordinator.js";
 import type { SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
 import { McpRunGrantStore } from "../mcp/server/grants.js";
 import { ClaudeSessionStore } from "../agent/runtime/claude-code/session-store.js";
@@ -48,8 +51,11 @@ export class AppRuntime {
   readonly agentStore: AgentStore;
   readonly agentContextManager: AgentContextManager;
   readonly channelStore: ChannelStore;
+  readonly messageStore: MessageStore;
+  readonly inboxStore: InboxStore;
   readonly chatEventStore: ChatEventStore;
   readonly chatReferences: ChatReferenceManager;
+  agentCoordinator: AgentCoordinator | null = null;
   /** Session-level mutation lock covering setup, streaming, and delete. */
   readonly lockedAgentSessions = new Set<string>();
   /** Active agent instances keyed by session ID for abort control. */
@@ -70,8 +76,14 @@ export class AppRuntime {
     this.agentStore = new AgentStore();
     this.agentContextManager = new AgentContextManager();
     this.channelStore = new ChannelStore();
+    this.messageStore = new MessageStore();
+    this.inboxStore = new InboxStore();
     this.chatEventStore = new ChatEventStore();
-    this.chatReferences = new ChatReferenceManager(this.channelStore, this.agentContextManager);
+    this.chatReferences = new ChatReferenceManager(
+      this.channelStore,
+      this.messageStore,
+      this.agentContextManager,
+    );
     this._modelRuntimeSnapshot = modelRuntimeSnapshot;
     this.instruments = instruments;
     this.controller = new TickerController({ config, instruments });
@@ -176,6 +188,8 @@ export class AppRuntime {
     await this.optionsService?.close();
     this.agentContextManager.close();
     this.channelStore.close();
+    this.messageStore.close();
+    this.inboxStore.close();
     this.chatEventStore.close();
     this.chatReferences.close();
     this.optionsService = config.options.enabled ? new OptionsService(config.options) : null;
@@ -203,6 +217,10 @@ export class AppRuntime {
   // Starts background market data streaming, news polling, cron scheduler, and MCP.
   async start(): Promise<void> {
     await indexPersistedAgentSessions(this);
+    await importLegacySessionMessages(this);
+    const { AgentCoordinator } = await import("../chat/coordinator.js");
+    this.agentCoordinator = new AgentCoordinator(this);
+    this.agentCoordinator.start();
     this.running = true;
     this.controller.start();
     await this.newsService.start();
@@ -215,6 +233,8 @@ export class AppRuntime {
   // Gracefully stops all background tasks; called on process shutdown or before reload.
   async stop(): Promise<void> {
     this.running = false;
+    this.agentCoordinator?.stop();
+    this.agentCoordinator = null;
     await this.controller.stop();
     await this.newsService.stop();
     await this.jin10Service.stop();

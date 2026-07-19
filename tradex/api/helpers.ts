@@ -76,8 +76,8 @@ export async function sessionHistory(runtime: AppRuntime): Promise<Record<string
   const allSummaries = [...piSummaries, ...claudeSummaries]
     .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
   const projected = allSummaries.slice(0, 200).map((item) => {
-    const chat = runtime.agentContextManager.chatForSession(String(item.id));
-    return chat ? { ...item, chatId: chat.id, chatStatus: chat.status, chatOrdinal: chat.ordinal } : item;
+    const context = runtime.agentContextManager.contextForSession(String(item.id));
+    return context ? { ...item, agentId: context.agentId } : item;
   });
   return {
     sessions: projected,
@@ -88,16 +88,15 @@ export async function sessionHistory(runtime: AppRuntime): Promise<Record<string
 }
 
 function withChatProjection(runtime: AppRuntime, sessionId: string, payload: Record<string, unknown>): Record<string, unknown> {
-  const chat = runtime.agentContextManager.chatForSession(sessionId);
-  if (!chat || !payload.session || typeof payload.session !== "object" || Array.isArray(payload.session)) return payload;
+  const context = runtime.agentContextManager.contextForSession(sessionId);
+  if (!context || !payload.session || typeof payload.session !== "object" || Array.isArray(payload.session)) return payload;
   return {
     ...payload,
-    chat,
     session: {
       ...(payload.session as Record<string, unknown>),
-      chatId: chat.id,
-      chatStatus: chat.status,
-      chatOrdinal: chat.ordinal,
+      agentId: context.agentId,
+      logicalSessionId: context.logicalSessionId,
+      generation: context.activeRuntimeGeneration,
     },
   };
 }

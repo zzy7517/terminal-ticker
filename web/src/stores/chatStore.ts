@@ -31,7 +31,7 @@ interface ChatState {
   sending: boolean;
   error: string | null;
   initChat: () => () => void;
-  selectDirectChat: (agentId: string, chatId: string) => void;
+  selectDirectChat: (directMessageId: string) => void;
   openCollection: (collection: 'saved' | 'pinned') => void;
   selectChannel: (channelId: string) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
@@ -84,11 +84,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
           (event) => {
             if (disposed || event.seq <= get().lastEventSeq) return;
             pendingEventSeq = Math.max(pendingEventSeq, event.seq);
-            if (event.target.kind === 'direct-chat') {
-              pendingDirectAgents.set(
-                event.target.agentId,
-                Math.max(pendingDirectAgents.get(event.target.agentId) ?? 0, event.seq),
-              );
+            if (event.target.kind === 'direct-message') {
+              const directMessageId = event.target.directMessageId;
+              const agentId = useAgentStore.getState().agents.find((agent) => (
+                useAgentStore.getState().directMessageIdByAgentId[agent.id] === directMessageId
+              ))?.id;
+              if (agentId) {
+                pendingDirectAgents.set(
+                  agentId,
+                  Math.max(pendingDirectAgents.get(agentId) ?? 0, event.seq),
+                );
+              }
             }
             const recover = async (): Promise<void> => {
               if (recoveryRunning) return;
@@ -111,7 +117,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     current.openThreadId
                       ? fetchChannelThread(current.openThreadId).catch(() => null)
                       : Promise.resolve(null),
-                    ...[...directAgents.keys()].map((agentId) => useAgentStore.getState().refreshAgentChats(agentId)),
+                    ...[...directAgents.keys()].map((agentId) => useAgentStore.getState().refreshAgentDirectMessages(agentId)),
                   ]);
                   if (disposed) break;
                   set((state) => ({
@@ -160,8 +166,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
   },
 
-  selectDirectChat: (agentId, chatId) => set({
-    activeTarget: { kind: 'direct-chat', agentId, chatId },
+  selectDirectChat: (directMessageId) => set({
+    activeTarget: { kind: 'direct-message', directMessageId },
     activeCollection: null,
     openThreadId: null,
   }),
@@ -368,9 +374,8 @@ function sameReference(reference: ChatMessageReference, target: ChatTarget, mess
   if (reference.messageId !== messageId || reference.target.kind !== target.kind) return false;
   return target.kind === 'channel'
     ? reference.target.kind === 'channel' && reference.target.channelId === target.channelId
-    : reference.target.kind === 'direct-chat'
-      && reference.target.agentId === target.agentId
-      && reference.target.chatId === target.chatId;
+    : reference.target.kind === 'direct-message'
+      && reference.target.directMessageId === target.directMessageId;
 }
 
 function delay(ms: number): Promise<void> {

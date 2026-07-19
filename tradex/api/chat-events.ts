@@ -30,8 +30,12 @@ export function chatEventRoutes(runtime: AppRuntime): Hono {
       const body = await c.req.json() as Record<string, unknown>;
       const target = parseChatTarget(body.target);
       const messageId = String(body.messageId ?? "");
-      if ((action === "save" || action === "pin") && target.kind === "direct-chat") {
-        await requireDirectMessage(runtime, messageId);
+      if ((action === "save" || action === "pin") && target.kind === "direct-message") {
+        const message = runtime.messageStore.getMessage(messageId);
+        if (!message || message.directMessageId !== target.directMessageId) {
+          // Allow legacy sessionId:messageId while Shared Message import catches up.
+          await requireLegacyDirectMessage(runtime, messageId);
+        }
       }
       const input = {
         actorId: "owner",
@@ -88,9 +92,9 @@ export function chatEventRoutes(runtime: AppRuntime): Hono {
   return app;
 }
 
-async function requireDirectMessage(runtime: AppRuntime, referenceId: string): Promise<void> {
+async function requireLegacyDirectMessage(runtime: AppRuntime, referenceId: string): Promise<void> {
   const separator = referenceId.lastIndexOf(":");
-  if (separator <= 0 || separator === referenceId.length - 1) throw new Error("Invalid Direct Chat message reference");
+  if (separator <= 0 || separator === referenceId.length - 1) throw new Error("Invalid Direct Message reference");
   const sessionId = referenceId.slice(0, separator);
   const messageId = referenceId.slice(separator + 1);
   const payload = await sessionResponse(runtime, sessionId);

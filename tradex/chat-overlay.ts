@@ -39,7 +39,7 @@ export class ChatOverlayStore extends BaseStore {
     conn.exec(`
       CREATE TABLE IF NOT EXISTS chat_saved (
         actor_id TEXT NOT NULL,
-        target_kind TEXT NOT NULL CHECK (target_kind IN ('direct-chat', 'channel')),
+        target_kind TEXT NOT NULL CHECK (target_kind IN ('direct-chat', 'direct-message', 'channel')),
         target_ref TEXT NOT NULL,
         message_id TEXT NOT NULL,
         created_at_ms INTEGER NOT NULL,
@@ -47,7 +47,7 @@ export class ChatOverlayStore extends BaseStore {
       );
       CREATE TABLE IF NOT EXISTS chat_pins (
         actor_id TEXT NOT NULL,
-        target_kind TEXT NOT NULL CHECK (target_kind IN ('direct-chat', 'channel')),
+        target_kind TEXT NOT NULL CHECK (target_kind IN ('direct-chat', 'direct-message', 'channel')),
         target_ref TEXT NOT NULL,
         message_id TEXT NOT NULL,
         created_at_ms INTEGER NOT NULL,

@@ -5,9 +5,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ChatEventStore } from "../../chat-events.js";
 import { ChatOverlayStore } from "../../chat-overlay.js";
 import { ChatReferenceManager } from "../../chat-references.js";
-import { channelTarget, directChatTarget } from "../../channel/domain.js";
+import { channelTarget, directMessageTarget } from "../../channel/domain.js";
 import { ChannelStore } from "../../channel/store.js";
-import { AgentChatStore } from "../../agent/chat-store.js";
+import { MessageStore } from "../../chat/message-store.js";
+import { InboxStore } from "../../chat/inbox-store.js";
+import { AgentContextStore } from "../../agent/context-store.js";
 import { AgentContextManager } from "../../agent/context-manager.js";
 import { chatEventRoutes } from "../chat-events.js";
 import { channelRoutes } from "./channel.js";
@@ -24,19 +26,25 @@ describe("Channel HTTP API", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tradex-channel-api-"));
     roots.push(root);
     const dbPath = path.join(root, "chat.sqlite3");
-    const chatStore = new AgentChatStore(dbPath);
-    const agentContextManager = new AgentContextManager(chatStore);
+    const agentContextManager = new AgentContextManager(new AgentContextStore(dbPath));
     const channelStore = new ChannelStore(dbPath);
+    const messageStore = new MessageStore(dbPath);
+    const inboxStore = new InboxStore(dbPath);
     return {
       agentContextManager,
       channelStore,
+      messageStore,
+      inboxStore,
+      agentCoordinator: null,
+      agentStore: { list: () => [], get: () => null },
       chatEventStore: new ChatEventStore(dbPath),
       chatReferences: new ChatReferenceManager(
         channelStore,
+        messageStore,
         agentContextManager,
         new ChatOverlayStore(dbPath),
       ),
-    } as AppRuntime;
+    } as unknown as AppRuntime;
   }
 
   it("lets Human create a Channel and append a message", async () => {
@@ -174,21 +182,22 @@ describe("Channel HTTP API", () => {
     expect(snapshot.pinned).toEqual([expect.objectContaining({ messageId: message.id, target: channelTarget(channel.id) })]);
   });
 
-  it("rejects a forged Direct Chat target for generic message references", async () => {
+  it("rejects a forged Direct Message target for generic message references", async () => {
     const appRuntime = runtime();
-    const chat = appRuntime.agentContextManager.ensureActiveChat("cindy");
-    appRuntime.agentContextManager.attachSession("cindy", chat.id, { sessionId: "session-1", runtime: "pi" });
+    const dm = appRuntime.messageStore.ensureHumanAgentDm("cindy");
+    appRuntime.agentContextManager.ensure("cindy");
+    appRuntime.agentContextManager.attachSession("cindy", { sessionId: "session-1", runtime: "pi" });
     const routes = chatEventRoutes(appRuntime);
 
     const missingMessage = await routes.request("/api/chat/saved", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ target: directChatTarget("cindy", chat.id), messageId: "session-1:1" }),
+      body: JSON.stringify({ target: directMessageTarget(dm.id), messageId: "missing-uuid" }),
     });
     const forged = await routes.request("/api/chat/saved", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ target: directChatTarget("other", chat.id), messageId: "session-1:1" }),
+      body: JSON.stringify({ target: directMessageTarget("00000000-0000-4000-8000-000000000000"), messageId: "session-1:1" }),
     });
 
     expect(missingMessage.status).toBe(400);

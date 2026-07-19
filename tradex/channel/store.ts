@@ -94,6 +94,33 @@ export class ChannelStore extends BaseStore {
         created_at_ms INTEGER NOT NULL,
         PRIMARY KEY (message_id, actor_type, actor_id, emoji)
       );
+      CREATE TABLE IF NOT EXISTS channel_memberships (
+        channel_id TEXT NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
+        subject_type TEXT NOT NULL CHECK (subject_type IN ('human', 'agent')),
+        subject_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('member', 'admin')),
+        joined_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (channel_id, subject_type, subject_id)
+      );
+      CREATE TABLE IF NOT EXISTS channel_drafts (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
+        observed_version INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('held', 'published', 'discarded')),
+        created_at_ms INTEGER NOT NULL,
+        resolved_at_ms INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS channel_reminders (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
+        due_at_ms INTEGER NOT NULL,
+        note TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('scheduled', 'triggered', 'cancelled')),
+        created_at_ms INTEGER NOT NULL
+      );
     `);
     ensureColumn(conn, "channel_messages", "edited_at_ms", "INTEGER");
     ensureColumn(conn, "channel_messages", "deleted_at_ms", "INTEGER");
@@ -113,6 +140,11 @@ export class ChannelStore extends BaseStore {
         INSERT INTO chat_channels (id, name, topic, visibility, version, created_at_ms, archived_at_ms)
         VALUES (?, ?, ?, ?, 0, ?, NULL)
       `).run(id, name, input.topic?.trim() ?? "", input.visibility ?? "public", nowMs());
+      // Membership is presence-only; Member/Admin role matrix is deferred.
+      conn.prepare(`
+        INSERT INTO channel_memberships (channel_id, subject_type, subject_id, role, joined_at_ms)
+        VALUES (?, 'human', 'owner', 'member', ?)
+      `).run(id, nowMs());
       appendChatEvent(conn, {
         type: "channel.created",
         actorType: "human",
@@ -184,7 +216,43 @@ export class ChannelStore extends BaseStore {
     })();
   }
 
-  appendMessage(input: { channelId: string; authorId: string; content: string; threadRootId?: string | null; kind?: string }): ChannelMessage {
+  appendMessage(input: {
+    channelId: string;
+    authorId: string;
+    content: string;
+    threadRootId?: string | null;
+    kind?: string;
+    onCommitted?: (conn: Database.Database, message: ChannelMessage) => void;
+  }): ChannelMessage {
+    return this.appendMessageInternal({
+      ...input,
+      authorType: "human",
+    });
+  }
+
+  appendAgentMessage(input: {
+    channelId: string;
+    authorId: string;
+    content: string;
+    threadRootId?: string | null;
+    kind?: string;
+    onCommitted?: (conn: Database.Database, message: ChannelMessage) => void;
+  }): ChannelMessage {
+    return this.appendMessageInternal({
+      ...input,
+      authorType: "agent",
+    });
+  }
+
+  private appendMessageInternal(input: {
+    channelId: string;
+    authorType: "human" | "agent" | "system";
+    authorId: string;
+    content: string;
+    threadRootId?: string | null;
+    kind?: string;
+    onCommitted?: (conn: Database.Database, message: ChannelMessage) => void;
+  }): ChannelMessage {
     const content = input.content.trim();
     if (!content) throw new Error("message content is required");
     const conn = this.getConn();
@@ -199,20 +267,265 @@ export class ChannelStore extends BaseStore {
       conn.prepare(`
         INSERT INTO channel_messages (
           id, channel_id, channel_seq, author_type, author_id, kind, content, thread_root_id, created_at_ms
-        ) VALUES (?, ?, ?, 'human', ?, ?, ?, ?, ?)
-      `).run(id, input.channelId, next.channel_seq, input.authorId, input.kind?.trim() || "message", content, this.validateThreadRoot(input.channelId, input.threadRootId), nowMs());
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        input.channelId,
+        next.channel_seq,
+        input.authorType,
+        input.authorId,
+        input.kind?.trim() || "message",
+        content,
+        this.validateThreadRoot(input.channelId, input.threadRootId),
+        nowMs(),
+      );
       conn.prepare("UPDATE chat_channels SET version = version + 1 WHERE id = ?").run(input.channelId);
       appendChatEvent(conn, {
         type: input.threadRootId ? "thread.reply-created" : "message.created",
-        actorType: "human",
+        actorType: input.authorType === "system" ? "system" : input.authorType,
         actorId: input.authorId,
         target: channelTarget(input.channelId),
         entityType: "message",
         entityId: id,
         payload: input.threadRootId ? { threadRootId: input.threadRootId } : {},
       });
-      return this.requireMessage(input.channelId, id);
+      const message = this.requireMessage(input.channelId, id);
+      input.onCommitted?.(conn, message);
+      return message;
     })();
+  }
+
+  addMember(input: {
+    channelId: string;
+    subjectType: "human" | "agent";
+    subjectId: string;
+  }): { channelId: string; subjectType: string; subjectId: string } {
+    const conn = this.getConn();
+    return conn.transaction(() => {
+      const channel = this.getChannel(input.channelId);
+      if (!channel || channel.archivedAtMs !== null) throw new Error("Channel not found");
+      // Membership is presence-only for now; Member/Admin role matrix is deferred.
+      conn.prepare(`
+        INSERT OR REPLACE INTO channel_memberships (channel_id, subject_type, subject_id, role, joined_at_ms)
+        VALUES (?, ?, ?, 'member', ?)
+      `).run(input.channelId, input.subjectType, input.subjectId, nowMs());
+      appendChatEvent(conn, {
+        type: "membership.added",
+        actorType: "human",
+        actorId: "owner",
+        target: channelTarget(input.channelId),
+        entityType: "membership",
+        entityId: `${input.subjectType}:${input.subjectId}`,
+      });
+      return {
+        channelId: input.channelId,
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+      };
+    })();
+  }
+
+  removeMember(input: { channelId: string; subjectType: "human" | "agent"; subjectId: string }): void {
+    const conn = this.getConn();
+    conn.transaction(() => {
+      conn.prepare(`
+        DELETE FROM channel_memberships
+        WHERE channel_id = ? AND subject_type = ? AND subject_id = ?
+      `).run(input.channelId, input.subjectType, input.subjectId);
+      appendChatEvent(conn, {
+        type: "membership.removed",
+        actorType: "human",
+        actorId: "owner",
+        target: channelTarget(input.channelId),
+        entityType: "membership",
+        entityId: `${input.subjectType}:${input.subjectId}`,
+      });
+    })();
+  }
+
+  listMembers(channelId: string): Array<{ subjectType: string; subjectId: string; joinedAtMs: number }> {
+    const rows = this.getConn().prepare(`
+      SELECT subject_type, subject_id, joined_at_ms
+      FROM channel_memberships WHERE channel_id = ?
+      ORDER BY joined_at_ms
+    `).all(channelId) as Array<{ subject_type: string; subject_id: string; joined_at_ms: number }>;
+    return rows.map((row) => ({
+      subjectType: row.subject_type,
+      subjectId: row.subject_id,
+      joinedAtMs: row.joined_at_ms,
+    }));
+  }
+
+  listAgentMemberIds(channelId: string): string[] {
+    return this.listMembers(channelId)
+      .filter((member) => member.subjectType === "agent")
+      .map((member) => member.subjectId);
+  }
+
+  createHeldDraft(input: {
+    agentId: string;
+    channelId: string;
+    observedVersion: number;
+    content: string;
+  }): { id: string; agentId: string; channelId: string; observedVersion: number; content: string; status: string; createdAtMs: number } {
+    const conn = this.getConn();
+    return conn.transaction(() => {
+      const id = crypto.randomUUID();
+      const createdAtMs = nowMs();
+      conn.prepare(`
+        INSERT INTO channel_drafts (
+          id, agent_id, channel_id, observed_version, content, status, created_at_ms, resolved_at_ms
+        ) VALUES (?, ?, ?, ?, ?, 'held', ?, NULL)
+      `).run(id, input.agentId, input.channelId, input.observedVersion, input.content, createdAtMs);
+      appendChatEvent(conn, {
+        type: "draft.held",
+        actorType: "agent",
+        actorId: input.agentId,
+        target: channelTarget(input.channelId),
+        entityType: "draft",
+        entityId: id,
+      });
+      return {
+        id,
+        agentId: input.agentId,
+        channelId: input.channelId,
+        observedVersion: input.observedVersion,
+        content: input.content,
+        status: "held",
+        createdAtMs,
+      };
+    })();
+  }
+
+  resolveHeldDraft(input: {
+    agentId: string;
+    draftId: string;
+    action: "retry" | "replace" | "discard";
+    content?: string;
+  }): {
+    draft: { id: string; agentId: string; channelId: string; observedVersion: number; content: string; status: string };
+    publishedMessage: ChannelMessage | null;
+  } {
+    const conn = this.getConn();
+    return conn.transaction(() => {
+      const row = conn.prepare("SELECT * FROM channel_drafts WHERE id = ?").get(input.draftId) as {
+        id: string;
+        agent_id: string;
+        channel_id: string;
+        observed_version: number;
+        content: string;
+        status: string;
+      } | undefined;
+      if (!row || row.agent_id !== input.agentId) throw new Error("Held draft not found");
+      if (row.status !== "held") throw new Error("draft already resolved");
+      if (input.action === "discard") {
+        conn.prepare(`
+          UPDATE channel_drafts SET status = 'discarded', resolved_at_ms = ? WHERE id = ?
+        `).run(nowMs(), input.draftId);
+        return {
+          draft: {
+            id: row.id,
+            agentId: row.agent_id,
+            channelId: row.channel_id,
+            observedVersion: row.observed_version,
+            content: row.content,
+            status: "discarded",
+          },
+          publishedMessage: null,
+        };
+      }
+      const content = input.action === "replace" ? String(input.content ?? "").trim() : row.content;
+      if (!content) throw new Error("content is required");
+      const channel = this.getChannel(row.channel_id);
+      if (!channel) throw new Error("Channel not found");
+      if (input.action === "retry" && row.observed_version < channel.version) {
+        throw new Error("channel changed again; read latest messages before retry");
+      }
+      const publishedMessage = this.appendAgentMessage({
+        channelId: row.channel_id,
+        authorId: input.agentId,
+        content,
+      });
+      conn.prepare(`
+        UPDATE channel_drafts SET status = 'published', content = ?, resolved_at_ms = ? WHERE id = ?
+      `).run(content, nowMs(), input.draftId);
+      return {
+        draft: {
+          id: row.id,
+          agentId: row.agent_id,
+          channelId: row.channel_id,
+          observedVersion: row.observed_version,
+          content,
+          status: "published",
+        },
+        publishedMessage,
+      };
+    })();
+  }
+
+  createReminder(input: {
+    agentId: string;
+    channelId: string;
+    dueAtMs: number;
+    note: string;
+  }): { id: string; agentId: string; channelId: string; dueAtMs: number; note: string; status: string } {
+    if (!Number.isFinite(input.dueAtMs)) throw new Error("dueAtMs is required");
+    const conn = this.getConn();
+    return conn.transaction(() => {
+      if (!this.getChannel(input.channelId)) throw new Error("Channel not found");
+      const id = crypto.randomUUID();
+      conn.prepare(`
+        INSERT INTO channel_reminders (id, agent_id, channel_id, due_at_ms, note, status, created_at_ms)
+        VALUES (?, ?, ?, ?, ?, 'scheduled', ?)
+      `).run(id, input.agentId, input.channelId, Math.floor(input.dueAtMs), input.note.trim(), nowMs());
+      return {
+        id,
+        agentId: input.agentId,
+        channelId: input.channelId,
+        dueAtMs: Math.floor(input.dueAtMs),
+        note: input.note.trim(),
+        status: "scheduled",
+      };
+    })();
+  }
+
+  cancelReminder(input: { agentId: string; reminderId: string }): { id: string; status: string } {
+    const conn = this.getConn();
+    return conn.transaction(() => {
+      const row = conn.prepare("SELECT * FROM channel_reminders WHERE id = ?").get(input.reminderId) as {
+        id: string;
+        agent_id: string;
+        status: string;
+      } | undefined;
+      if (!row || row.agent_id !== input.agentId) throw new Error("Reminder not found");
+      conn.prepare("UPDATE channel_reminders SET status = 'cancelled' WHERE id = ?").run(input.reminderId);
+      return { id: row.id, status: "cancelled" };
+    })();
+  }
+
+  listDueReminders(now = nowMs()): Array<{ id: string; agentId: string; channelId: string; note: string; dueAtMs: number }> {
+    const rows = this.getConn().prepare(`
+      SELECT id, agent_id, channel_id, note, due_at_ms
+      FROM channel_reminders
+      WHERE status = 'scheduled' AND due_at_ms <= ?
+      ORDER BY due_at_ms
+    `).all(now) as Array<{ id: string; agent_id: string; channel_id: string; note: string; due_at_ms: number }>;
+    return rows.map((row) => ({
+      id: row.id,
+      agentId: row.agent_id,
+      channelId: row.channel_id,
+      note: row.note,
+      dueAtMs: row.due_at_ms,
+    }));
+  }
+
+  markReminderTriggered(reminderId: string): boolean {
+    const conn = this.getConn();
+    const result = conn.prepare(`
+      UPDATE channel_reminders SET status = 'triggered'
+      WHERE id = ? AND status = 'scheduled'
+    `).run(reminderId);
+    return result.changes > 0;
   }
 
   listMessages(input: { channelId: string; beforeSeq?: number | null; limit?: number }): { messages: ChannelMessage[]; nextBeforeSeq: number | null } {

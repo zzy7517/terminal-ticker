@@ -68,16 +68,54 @@ export function channelRoutes(runtime: AppRuntime): Hono {
   app.post("/api/channels/:id/messages", async (c) => {
     try {
       const body = await c.req.json() as Record<string, unknown>;
-      const message = runtime.channelStore.appendMessage({
-        channelId: c.req.param("id"),
+      const channelId = c.req.param("id");
+      const { appendChannelMessageAndNotify } = await import("../../chat/dispatch.js");
+      const { message } = appendChannelMessageAndNotify(runtime, {
+        channelId,
+        authorType: "human",
         authorId: "owner",
         content: String(body.content ?? ""),
         threadRootId: typeof body.threadRootId === "string" ? body.threadRootId : null,
       });
-      return c.json({ message, channel: runtime.channelStore.getChannel(c.req.param("id")) }, 201);
+      return c.json({ message, channel: runtime.channelStore.getChannel(channelId) }, 201);
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Message send failed";
       return c.json({ detail }, detail === "Channel not found" ? 404 : 400);
+    }
+  });
+
+  app.get("/api/channels/:id/members", (c) => {
+    const channel = runtime.channelStore.getChannel(c.req.param("id"));
+    if (!channel) return c.json({ detail: "Channel not found" }, 404);
+    return c.json({ members: runtime.channelStore.listMembers(channel.id) });
+  });
+
+  app.post("/api/channels/:id/members", async (c) => {
+    try {
+      const body = await c.req.json() as Record<string, unknown>;
+      const member = runtime.channelStore.addMember({
+        channelId: c.req.param("id"),
+        subjectType: body.subjectType === "human" ? "human" : "agent",
+        subjectId: String(body.subjectId ?? ""),
+      });
+      return c.json({ member, members: runtime.channelStore.listMembers(c.req.param("id")) }, 201);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Membership update failed";
+      return c.json({ detail }, detail === "Channel not found" ? 404 : 400);
+    }
+  });
+
+  app.delete("/api/channels/:id/members", async (c) => {
+    try {
+      const body = await c.req.json() as Record<string, unknown>;
+      runtime.channelStore.removeMember({
+        channelId: c.req.param("id"),
+        subjectType: body.subjectType === "human" ? "human" : "agent",
+        subjectId: String(body.subjectId ?? ""),
+      });
+      return c.json({ members: runtime.channelStore.listMembers(c.req.param("id")) });
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : "Membership remove failed" }, 400);
     }
   });
 
@@ -132,11 +170,14 @@ export function channelRoutes(runtime: AppRuntime): Hono {
       const root = runtime.channelStore.getMessage(c.req.param("id"));
       if (!root) return c.json({ detail: "Message not found" }, 404);
       const body = await c.req.json() as Record<string, unknown>;
-      const message = runtime.channelStore.appendMessage({
+      const { appendChannelMessageAndNotify } = await import("../../chat/dispatch.js");
+      const { message } = appendChannelMessageAndNotify(runtime, {
         channelId: root.channelId,
+        authorType: "human",
         authorId: "owner",
         content: String(body.content ?? ""),
         threadRootId: root.id,
+        reason: "thread",
       });
       return c.json({ message, thread: runtime.channelStore.listThread({ channelId: root.channelId, rootMessageId: root.id }) }, 201);
     } catch (error) {

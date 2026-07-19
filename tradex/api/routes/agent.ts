@@ -40,37 +40,69 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
   app.get("/api/agents", (c) => c.json({ agents: runtime.agentStore.list() }));
 
-  app.get("/api/chat/agents/:agentId/chats", (c) => {
+  app.get("/api/chat/agents/:agentId/messages", (c) => {
     const agentId = c.req.param("agentId");
     if (!runtime.agentStore.get(agentId)) return c.json({ detail: "Agent not found" }, 404);
-    runtime.agentContextManager.ensureActiveChat(agentId);
-    return c.json({ chats: runtime.agentContextManager.listChats(agentId) });
-  });
-
-  app.get("/api/chat/agents/:agentId/chats/:chatId", async (c) => {
-    let chat;
-    try {
-      chat = runtime.agentContextManager.requireChat(c.req.param("agentId"), c.req.param("chatId"));
-    } catch {
-      return c.json({ detail: "Chat not found for Agent" }, 404);
-    }
-    const generations = runtime.agentContextManager.listSessions(chat.id);
+    runtime.agentContextManager.ensure(agentId);
+    const dm = runtime.messageStore.requireHumanAgentDm(agentId);
+    const beforeSeq = Number(c.req.query("before_seq"));
+    const limit = Number(c.req.query("limit"));
+    const page = runtime.messageStore.listMessages({
+      directMessageId: dm.id,
+      beforeSeq: Number.isFinite(beforeSeq) && beforeSeq > 0 ? beforeSeq : null,
+      limit: Number.isFinite(limit) && limit > 0 ? limit : 50,
+    });
     return c.json({
-      chat,
-      generations,
-      sessions: await Promise.all(generations.map((generation) => sessionResponse(runtime, generation.sessionId))),
+      directMessage: dm,
+      target: { kind: "direct-message", directMessageId: dm.id },
+      ...page,
+      generations: runtime.agentContextManager.listSessions(agentId),
     });
   });
 
-  app.post("/api/chat/agents/:agentId/chats", (c) => {
+  app.post("/api/chat/agents/:agentId/messages", async (c) => {
     const agentId = c.req.param("agentId");
     if (!runtime.agentStore.get(agentId)) return c.json({ detail: "Agent not found" }, 404);
     try {
-      const chat = runtime.agentContextManager.createNewChat(agentId, agentHasLockedSession(runtime, agentId));
-      return c.json({ chat, chats: runtime.agentContextManager.listChats(agentId) }, 201);
+      const body = await c.req.json() as Record<string, unknown>;
+      const content = String(body.content ?? body.message ?? "").trim();
+      if (!content) return c.json({ detail: "content is required" }, 400);
+      runtime.agentContextManager.ensure(agentId);
+      const { appendHumanDmAndNotify } = await import("../../chat/dispatch.js");
+      const { message, directMessageId } = appendHumanDmAndNotify(runtime, {
+        agentId,
+        content,
+        threadRootId: typeof body.threadRootId === "string" ? body.threadRootId : null,
+      });
+      return c.json({
+        message,
+        directMessage: runtime.messageStore.getConversation(directMessageId),
+        target: { kind: "direct-message", directMessageId },
+      }, 201);
     } catch (error) {
-      return c.json({ detail: error instanceof Error ? error.message : "New Chat failed" }, 409);
+      return c.json({ detail: error instanceof Error ? error.message : "Message send failed" }, 400);
     }
+  });
+
+  app.get("/api/chat/agents/status", (c) => {
+    const agents = runtime.agentStore.list().map((agent) => ({
+      agentId: agent.id,
+      ...runtime.agentCoordinator?.presence(agent.id) ?? { status: "offline", paused: false, running: false },
+    }));
+    return c.json({ agents });
+  });
+
+  app.post("/api/chat/agents/:id/pause", async (c) => {
+    await runtime.agentCoordinator?.pause(c.req.param("id"));
+    return c.json({ ok: true });
+  });
+  app.post("/api/chat/agents/:id/resume", async (c) => {
+    await runtime.agentCoordinator?.resume(c.req.param("id"));
+    return c.json({ ok: true });
+  });
+  app.post("/api/chat/agents/:id/abort", async (c) => {
+    await runtime.agentCoordinator?.abort(c.req.param("id"));
+    return c.json({ ok: true });
   });
 
   app.get("/api/agent/runtimes", async (c) => c.json({
@@ -95,7 +127,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     try {
       const body = await c.req.json() as AgentFileInput;
       const agent = runtime.agentStore.create(body);
-      runtime.agentContextManager.ensureActiveChat(agent.id);
+      runtime.agentContextManager.ensure(agent.id);
+      runtime.messageStore.ensureHumanAgentDm(agent.id);
       return c.json({ agent, agents: runtime.agentStore.list() }, 201);
     } catch (error) {
       return c.json({ detail: error instanceof Error ? error.message : "Agent create failed" }, 400);
@@ -127,7 +160,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           return readAgentSnapshot(manager).agentId === candidateId;
         })
       ));
-      runtime.agentContextManager.deleteEmptyChatsForAgent(agentId);
       return c.json({ agents: runtime.agentStore.list() });
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Agent delete failed";
@@ -144,24 +176,20 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : "default";
     const selectedAgent = runtime.agentStore.get(agentId);
     if (!selectedAgent) return c.json({ detail: "Agent not found" }, 404);
-    const requestedChatId = typeof body.chatId === "string" && body.chatId ? body.chatId : null;
-    let chat;
-    try {
-      chat = runtime.agentContextManager.requireWritableChat(agentId, requestedChatId);
-    } catch {
-      return c.json({ detail: "Chat not found for Agent" }, 404);
+    if (agentHasLockedSession(runtime, agentId)) {
+      return c.json({ detail: "cannot create a Session while Agent is running" }, 409);
     }
-    if (!chat) return c.json({ detail: "cannot create a Session in an archived Chat" }, 409);
+    runtime.agentContextManager.ensure(agentId);
+    runtime.messageStore.ensureHumanAgentDm(agentId);
     const snapshot = snapshotForAgent(selectedAgent, runtime);
     if (snapshot.runtime === "claude-code") {
       const metadata = runtime.claudeSessions.create({
         title: String(body.title || "New Agent Session"),
         snapshot,
       });
-      runtime.agentContextManager.attachSession(agentId, chat.id, { sessionId: metadata.id, runtime: "claude-code" });
+      runtime.agentContextManager.attachSession(agentId, { sessionId: metadata.id, runtime: "claude-code" });
       return c.json({
         ...await sessionResponse(runtime, metadata.id),
-        chat: runtime.agentContextManager.requireChat(agentId, chat.id),
         history: await sessionHistory(runtime),
       });
     }
@@ -175,7 +203,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     mgr.appendThinkingLevelChange(snapshot.reasoningEffort);
     runtime.pendingSessionManagers.set(mgr.getSessionId(), mgr);
     runtime.pendingAgentSnapshots.set(mgr.getSessionId(), snapshot);
-    runtime.agentContextManager.attachSession(agentId, chat.id, { sessionId: mgr.getSessionId(), runtime: "pi" });
+    runtime.agentContextManager.attachSession(agentId, { sessionId: mgr.getSessionId(), runtime: "pi" });
     const payload = piSessionPayload(mgr);
     payload.session = {
       ...(payload.session as Record<string, unknown>),
@@ -187,7 +215,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const sessionResp = { ...payload, run: idleRun(mgr.getSessionId()) };
     return c.json({
       ...sessionResp,
-      chat: runtime.agentContextManager.requireChat(agentId, chat.id),
       history: await sessionHistory(runtime),
     });
   });
@@ -229,10 +256,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   // Streams an agent run as SSE using the new stateful Agent from core/.
   app.post("/api/agent/sessions/:id/messages/stream", async (c) => {
     const sessionId = c.req.param("id");
-    const chat = runtime.agentContextManager.chatForSession(sessionId);
-    if (chat?.status === "archived") {
-      return c.json({ detail: "cannot write to an archived Chat" }, 409);
-    }
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const message = String(body.message || "").trim();
 
@@ -251,6 +274,23 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     if (!message && requestImages.length === 0) {
       return c.json({ detail: "message or images is required" }, 400);
     }
+
+    // Prefer Shared Message Fabric for Human-Agent DM text turns when agent context is known.
+    const context = runtime.agentContextManager.contextForSession(sessionId);
+    if (context && message && requestImages.length === 0) {
+      const { appendHumanDmAndNotify } = await import("../../chat/dispatch.js");
+      const { message: shared, directMessageId } = appendHumanDmAndNotify(runtime, {
+        agentId: context.agentId,
+        content: message,
+      });
+      return c.json({
+        ok: true,
+        mode: "shared-message",
+        message: shared,
+        directMessage: runtime.messageStore.getConversation(directMessageId),
+      });
+    }
+
     const claudeMetadata = runtime.claudeSessions.getMetadata(sessionId);
     if (claudeMetadata) {
       const imageError = validateClaudeImages(requestImages);
@@ -392,7 +432,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
 function agentHasLockedSession(runtime: AppRuntime, agentId: string): boolean {
   return [...runtime.lockedAgentSessions].some((sessionId) => (
-    runtime.agentContextManager.chatForSession(sessionId)?.agentId === agentId
+    runtime.agentContextManager.contextForSession(sessionId)?.agentId === agentId
     || runtime.pendingAgentSnapshots.get(sessionId)?.agentId === agentId
     || runtime.claudeSessions.getMetadata(sessionId)?.snapshot.agentId === agentId
   ));

@@ -18,11 +18,15 @@ export interface TradexToolRegistryOptions {
   includeExternalMcp: boolean;
   includeFilesystem: boolean;
   additionalRegistries?: ToolRegistry[];
+  agentId?: string;
 }
 
 export async function buildTradexToolRegistry(runtime: AppRuntime, options: TradexToolRegistryOptions): Promise<{
   tools: ToolRegistry;
 }> {
+  const messageRegistry = options.agentId
+    ? (await import("../chat/message-tools.js")).createMessageToolRegistry(runtime, options.agentId)
+    : null;
   const mcpRegistry = options.includeExternalMcp && runtime.mcpManager
     ? await buildMcpToolRegistry(runtime.mcpManager, runtime.mcpManager.getConfig())
     : null;
@@ -50,6 +54,7 @@ export async function buildTradexToolRegistry(runtime: AppRuntime, options: Trad
     ...(runtime.optionsService ? [buildOptionsTools(runtime)] : []),
     ...(options.includeFilesystem ? [createFilesystemRegistry()] : []),
     ...(mcpRegistry ? [mcpRegistry] : []),
+    ...(messageRegistry ? [messageRegistry] : []),
     ...(options.additionalRegistries ?? []),
   );
   return { tools };

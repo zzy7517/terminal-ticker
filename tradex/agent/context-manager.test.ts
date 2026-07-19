@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AgentChatStore } from "./chat-store.js";
+import { AgentContextStore } from "./context-store.js";
 import { AgentContextManager } from "./context-manager.js";
 
 describe("AgentContextManager", () => {
@@ -15,58 +15,50 @@ describe("AgentContextManager", () => {
   function createManager(): AgentContextManager {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tradex-agent-context-"));
     roots.push(root);
-    return new AgentContextManager(new AgentChatStore(path.join(root, "chat.sqlite3")));
+    return new AgentContextManager(new AgentContextStore(path.join(root, "chat.sqlite3")));
   }
 
-  it("owns active Chat creation and Agent/Chat identity validation", () => {
+  it("owns a single logical Agent Context without Chat identity", () => {
     const manager = createManager();
-
-    const chat = manager.ensureActiveChat("cindy");
-
-    expect(manager.listChats("cindy")).toEqual([expect.objectContaining({ id: chat.id, status: "active" })]);
-    expect(manager.requireChat("cindy", chat.id).id).toBe(chat.id);
-    expect(() => manager.requireChat("other", chat.id)).toThrow("Chat not found for Agent");
+    const context = manager.ensure("cindy");
+    expect(manager.get("cindy")?.logicalSessionId).toBe(context.logicalSessionId);
+    expect(manager.ensure("cindy").logicalSessionId).toBe(context.logicalSessionId);
   });
 
-  it("creates a clean New Chat only while the Agent is idle", () => {
+  it("binds Runtime Session generations through the trusted agentId", () => {
     const manager = createManager();
-    const first = manager.ensureActiveChat("cindy");
-
-    expect(() => manager.createNewChat("cindy", true)).toThrow("cannot create New Chat while Agent is running");
-    const second = manager.createNewChat("cindy", false);
-
-    expect(second.id).not.toBe(first.id);
-    expect(manager.requireChat("cindy", first.id).status).toBe("archived");
-    expect(manager.requireWritableChat("cindy", first.id)).toBeNull();
-    expect(manager.requireWritableChat("cindy", second.id)?.id).toBe(second.id);
+    manager.attachSession("cindy", { sessionId: "session-1", runtime: "pi" });
+    expect(manager.contextForSession("session-1")?.agentId).toBe("cindy");
+    expect(manager.listSessions("cindy")).toEqual([
+      expect.objectContaining({ generation: 1, sessionId: "session-1" }),
+    ]);
   });
 
-  it("binds Runtime Session generations through the trusted Agent/Chat pair", () => {
+  it("rotates a physical Session generation without changing logical identity", () => {
     const manager = createManager();
-    const chat = manager.ensureActiveChat("cindy");
-
-    manager.attachSession("cindy", chat.id, { sessionId: "session-1", runtime: "pi" });
-
-    expect(manager.chatForSession("session-1")?.id).toBe(chat.id);
-    expect(() => manager.attachSession("other", chat.id, { sessionId: "forged", runtime: "pi" }))
-      .toThrow("Chat not found for Agent");
-  });
-
-  it("rotates a physical Session generation without changing Chat identity", () => {
-    const manager = createManager();
-    const chat = manager.ensureActiveChat("cindy");
-    manager.attachSession("cindy", chat.id, { sessionId: "session-1", runtime: "pi" });
-
-    manager.rotateSession("cindy", chat.id, {
+    const context = manager.ensure("cindy");
+    manager.attachSession("cindy", { sessionId: "session-1", runtime: "pi" });
+    manager.rotateSession("cindy", {
       sessionId: "session-2",
       runtime: "pi",
       reason: "context-overflow",
     });
-
-    expect(manager.listSessions(chat.id)).toEqual([
-      expect.objectContaining({ generation: 1, sessionId: "session-1", rotationReason: "initial" }),
+    expect(manager.get("cindy")?.logicalSessionId).toBe(context.logicalSessionId);
+    expect(manager.listSessions("cindy")).toEqual([
+      expect.objectContaining({ generation: 1, sessionId: "session-1" }),
       expect.objectContaining({ generation: 2, sessionId: "session-2", rotationReason: "context-overflow" }),
     ]);
-    expect(manager.ensureActiveChat("cindy").id).toBe(chat.id);
+  });
+
+  it("indexes imported Sessions onto one Agent Context", () => {
+    const manager = createManager();
+    manager.indexSessions([
+      { sessionId: "old", agentId: "cindy", title: "Old", runtime: "pi", createdAtMs: 1, updatedAtMs: 2 },
+      { sessionId: "new", agentId: "cindy", title: "New", runtime: "claude-code", createdAtMs: 3, updatedAtMs: 4 },
+    ]);
+    manager.indexSessions([
+      { sessionId: "old", agentId: "cindy", title: "Old", runtime: "pi", createdAtMs: 1, updatedAtMs: 2 },
+    ]);
+    expect(manager.listSessions("cindy")).toHaveLength(2);
   });
 });

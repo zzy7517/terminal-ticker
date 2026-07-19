@@ -72,12 +72,13 @@ export function AgentDirectMessageList() {
         const failed = sessions.some((session) => runStateBySessionId[session.id]?.status === 'error');
         return (
           <button
-            className={`direct-message-row ${activeTarget?.kind === 'direct-chat' && selectedAgentId === agent.id ? 'active' : ''}`}
+            className={`direct-message-row ${activeTarget?.kind === 'direct-message' && selectedAgentId === agent.id ? 'active' : ''}`}
             key={agent.id}
             onClick={() => {
               void selectAgent(agent.id).then(() => {
                 const selected = useAgentStore.getState();
-                if (selected.activeAgentChatId) selectDirectChat(agent.id, selected.activeAgentChatId);
+                const directMessageId = selected.directMessageIdByAgentId[agent.id];
+                if (directMessageId) selectDirectChat(directMessageId);
               });
             }}
             type="button"

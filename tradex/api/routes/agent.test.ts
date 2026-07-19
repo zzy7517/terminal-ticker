@@ -3,8 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentStore } from "../../agent/agent_store.js";
-import { AgentChatStore } from "../../agent/chat-store.js";
+import { AgentContextStore } from "../../agent/context-store.js";
 import { AgentContextManager } from "../../agent/context-manager.js";
+import { MessageStore } from "../../chat/message-store.js";
+import { InboxStore } from "../../chat/inbox-store.js";
 import { agentRoutes } from "./agent.js";
 import type { AppRuntime } from "../runtime.js";
 import { piSessionFileExists } from "../../agent/runtime/pi/sessions.js";
@@ -19,7 +21,8 @@ function runtime(): AppRuntime {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tradex-agent-api-"));
   dirs.push(dir);
   const agentStore = new AgentStore(dir);
-  const chatStore = new AgentChatStore(path.join(dir, "chat.sqlite3"));
+  const dbPath = path.join(dir, "chat.sqlite3");
+  const contextStore = new AgentContextStore(dbPath);
   agentStore.create({
     id: "ict",
     name: "ICT 理论分析",
@@ -32,7 +35,10 @@ function runtime(): AppRuntime {
   });
   return {
     agentStore,
-    agentContextManager: new AgentContextManager(chatStore),
+    agentContextManager: new AgentContextManager(contextStore),
+    messageStore: new MessageStore(dbPath),
+    inboxStore: new InboxStore(dbPath),
+    agentCoordinator: null,
     config: {
       agent: {
         provider: "codex", model: "gpt-5.4", reasoningEffort: "high", systemPrompt: "",
@@ -94,79 +100,55 @@ describe("Agent HTTP API", () => {
     expect(pending && piSessionFileExists(pending)).toBe(false);
   });
 
-  it("creates New Chat under one Agent and archives the previous Chat", async () => {
+  it("exposes one Direct Message timeline per Agent without New Chat", async () => {
     const appRuntime = runtime();
     const routes = agentRoutes(appRuntime);
+    const first = await routes.request("/api/chat/agents/ict/messages");
+    const second = await routes.request("/api/chat/agents/ict/messages");
+    const firstPayload = await first.json() as { directMessage: { id: string }; messages: unknown[] };
+    const secondPayload = await second.json() as { directMessage: { id: string } };
 
-    const firstResponse = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
-    const first = await firstResponse.json() as { chat: { id: string; status: string } };
-    const secondResponse = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
-    const second = await secondResponse.json() as { chat: { id: string; status: string }; chats: Array<{ id: string; status: string }> };
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(secondPayload.directMessage.id).toBe(firstPayload.directMessage.id);
+    expect(firstPayload.messages).toEqual([]);
+  });
 
-    expect(firstResponse.status).toBe(201);
-    expect(secondResponse.status).toBe(201);
-    expect(second.chat.id).not.toBe(first.chat.id);
-    expect(second.chats).toEqual([
-      expect.objectContaining({ id: second.chat.id, status: "active" }),
-      expect.objectContaining({ id: first.chat.id, status: "archived" }),
+  it("appends Human DM messages into Shared Message Store", async () => {
+    const appRuntime = runtime();
+    const routes = agentRoutes(appRuntime);
+    const send = await routes.request("/api/chat/agents/ict/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: "hello cindy" }),
+    });
+    const timeline = await routes.request("/api/chat/agents/ict/messages");
+    const payload = await timeline.json() as { messages: Array<{ content: string; authorType: string }> };
+
+    expect(send.status).toBe(201);
+    expect(payload.messages).toEqual([
+      expect.objectContaining({ content: "hello cindy", authorType: "human" }),
     ]);
   });
 
-  it("gives an Agent with no Session one empty active Chat", async () => {
-    const response = await agentRoutes(runtime()).request("/api/chat/agents/ict/chats");
-    const payload = await response.json() as { chats: Array<{ status: string; activeSessionId: string | null }> };
-
-    expect(response.status).toBe(200);
-    expect(payload.chats).toEqual([
-      expect.objectContaining({ status: "active", activeSessionId: null }),
-    ]);
-  });
-
-  it("binds the first Session to its Chat and rejects New Chat while that Agent runs", async () => {
+  it("binds Sessions to Agent Context and rejects concurrent session create while running", async () => {
     const appRuntime = runtime();
     const routes = agentRoutes(appRuntime);
-    const chatResponse = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
-    const { chat } = await chatResponse.json() as { chat: { id: string } };
-
     const sessionResponse = await routes.request("/api/agent/sessions", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agentId: "ict", chatId: chat.id }),
+      body: JSON.stringify({ agentId: "ict" }),
     });
-    const session = await sessionResponse.json() as { session: { id: string }; chat: { id: string } };
+    const session = await sessionResponse.json() as { session: { id: string } };
 
-    expect(session.chat.id).toBe(chat.id);
-    expect(appRuntime.agentContextManager.ensureActiveChat("ict").activeSessionId).toBe(session.session.id);
-
+    expect(appRuntime.agentContextManager.get("ict")?.activeSessionId).toBe(session.session.id);
     appRuntime.lockedAgentSessions.add(session.session.id);
-    const conflict = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
+    const conflict = await routes.request("/api/agent/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "ict" }),
+    });
     expect(conflict.status).toBe(409);
-    expect(appRuntime.agentContextManager.listChats("ict")).toHaveLength(1);
-  });
-
-  it("rejects writes to an archived Chat and New Chat while any Chat for that Agent runs", async () => {
-    const appRuntime = runtime();
-    const routes = agentRoutes(appRuntime);
-    const firstChatResponse = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
-    const firstChat = await firstChatResponse.json() as { chat: { id: string } };
-    const firstSessionResponse = await routes.request("/api/agent/sessions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agentId: "ict", chatId: firstChat.chat.id }),
-    });
-    const firstSession = await firstSessionResponse.json() as { session: { id: string } };
-    await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
-
-    const archivedWrite = await routes.request(`/api/agent/sessions/${firstSession.session.id}/messages/stream`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: "Continue old Chat" }),
-    });
-    appRuntime.lockedAgentSessions.add(firstSession.session.id);
-    const newChat = await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
-
-    expect(archivedWrite.status).toBe(409);
-    expect(newChat.status).toBe(409);
   });
 
   it("rejects an update body that tries to change the Agent id", async () => {
@@ -193,19 +175,18 @@ describe("Agent HTTP API", () => {
     expect(appRuntime.agentStore.get("ict")).not.toBeNull();
   });
 
-  it("deletes an Agent when only empty Chats belong to it", async () => {
+  it("deletes an Agent with only context and no Sessions", async () => {
     const appRuntime = runtime();
     const routes = agentRoutes(appRuntime);
-    await routes.request("/api/chat/agents/ict/chats", { method: "POST" });
+    appRuntime.agentContextManager.ensure("ict");
 
     const response = await routes.request("/api/agents/ict", { method: "DELETE" });
 
     expect(response.status).toBe(200);
     expect(appRuntime.agentStore.get("ict")).toBeNull();
-    expect(appRuntime.agentContextManager.listChats("ict")).toEqual([]);
   });
 
-  it("removes the Chat generation when its Session is deleted", async () => {
+  it("removes the Session generation when its Session is deleted", async () => {
     const appRuntime = runtime();
     const routes = agentRoutes(appRuntime);
     const created = await routes.request("/api/agent/sessions", {
@@ -213,15 +194,13 @@ describe("Agent HTTP API", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ agentId: "ict" }),
     });
-    const payload = await created.json() as { session: { id: string }; chat: { id: string } };
+    const payload = await created.json() as { session: { id: string } };
 
     const response = await routes.request(`/api/agent/sessions/${payload.session.id}`, { method: "DELETE" });
 
     expect(response.status).toBe(200);
-    expect(appRuntime.agentContextManager.requireChat("ict", payload.chat.id)).toEqual(expect.objectContaining({
-      activeSessionId: null,
-      generationCount: 0,
-    }));
+    expect(appRuntime.agentContextManager.listSessions("ict")).toEqual([]);
+    expect(appRuntime.agentContextManager.get("ict")?.activeSessionId).toBeNull();
   });
 
   it("creates a Claude Code Session without adding it to the Pi provider registry", async () => {
@@ -293,6 +272,10 @@ describe("Agent HTTP API", () => {
         reasoningEffort: null,
       },
     });
+    appRuntime.agentContextManager.attachSession("claude-reader", {
+      sessionId: metadata.id,
+      runtime: "claude-code",
+    });
     const executable = path.join(path.dirname(appRuntime.claudeSessions.root), "fake-claude.mjs");
     fs.writeFileSync(executable, `#!/usr/bin/env node
 console.log(JSON.stringify({type:"system",session_id:"11111111-1111-4111-8111-111111111111"}));
@@ -308,14 +291,11 @@ console.log(JSON.stringify({type:"result",session_id:"11111111-1111-4111-8111-11
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: "Analyze" }),
       });
-      const body = await response.text();
-
+      // Shared-message path for known Agent Context text turns.
       expect(response.status).toBe(200);
-      expect(body).toContain('"type":"message_update"');
-      expect(body).toContain("Market is calm.");
-      expect(body).toContain('"type":"session_update"');
-      expect(appRuntime.claudeSessions.getMetadata(metadata.id)?.nativeSessionId).toBe("11111111-1111-4111-8111-111111111111");
-      expect(appRuntime.claudeSessions.messages(metadata.id).map((message) => message.role)).toEqual(["user", "assistant"]);
+      const payload = await response.json() as { mode?: string; message?: { content: string } };
+      expect(payload.mode).toBe("shared-message");
+      expect(payload.message?.content).toBe("Analyze");
     } finally {
       if (previous === undefined) delete process.env.TRADEX_CLAUDE_PATH;
       else process.env.TRADEX_CLAUDE_PATH = previous;

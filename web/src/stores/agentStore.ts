@@ -2,9 +2,8 @@
 import { create } from 'zustand';
 import type {
   AgentContextUsage,
-  AgentChat,
-  AgentChatGeneration,
   AgentDefinition,
+  AgentDirectMessage,
   AgentMessage,
   AgentModelRegistry,
   AgentSessionResponse,
@@ -17,14 +16,13 @@ import {
   abortAgentSession,
   AgentStreamDisconnectError,
   createAgentSession,
-  createAgentChat,
   deleteAgentSessionById,
+  fetchAgentDirectMessages,
   fetchAgentModelRegistry,
-  fetchAgentChats,
-  fetchAgentChat,
   fetchAgents,
   fetchAgentSession,
   fetchAgentSessions,
+  sendAgentDirectMessage,
   streamAgentMessage,
   type ImageAttachment,
 } from '../api';
@@ -106,9 +104,8 @@ interface SessionRunProjection extends AgentSessionRun {
 interface AgentState {
   agents: AgentDefinition[];
   selectedAgentId: string;
-  agentChatsByAgentId: Record<string, AgentChat[]>;
-  activeAgentChatId: string | null;
-  activeAgentChatGenerations: AgentChatGeneration[];
+  directMessageIdByAgentId: Record<string, string>;
+  directMessagesByAgentId: Record<string, AgentDirectMessage[]>;
   agentSession: AgentSessionResponse | null;
   agentSessionHistory: AgentSessionSummary[];
   agentSessionLoadingKey: string | null;
@@ -160,14 +157,12 @@ interface AgentState {
 
   initSessions: () => () => void;
   refreshModelRegistry: () => Promise<void>;
-  refreshAgentChats: (agentId: string) => Promise<void>;
+  refreshAgentDirectMessages: (agentId: string) => Promise<void>;
   selectAgent: (agentId: string) => Promise<void>;
-  selectAgentChat: (chatId: string) => Promise<void>;
   runAgentAnalysis: (sessionId?: string, options?: { includeDraft?: boolean }) => Promise<void>;
   removeFollowUp: (id: string) => void;
   clearFollowUps: () => void;
   abortAgent: () => Promise<void>;
-  createNewChat: (agentId?: string) => Promise<void>;
   resumeAgentConversation: (sessionId: string) => Promise<void>;
   deleteAgentConversation: (sessionId: string) => Promise<void>;
 }
@@ -263,7 +258,7 @@ function activeFields(state: ActiveMirrorSource): Pick<
   };
 }
 
-type AgentSelection = Pick<AgentState, 'selectedAgentId' | 'activeAgentChatId' | 'activeAgentSessionId'>;
+type AgentSelection = Pick<AgentState, 'selectedAgentId' | 'activeAgentSessionId'>;
 
 function selectionUpdate(state: AgentState, selection: AgentSelection) {
   const next = { ...state, ...selection };
@@ -344,9 +339,8 @@ function replaceRunState(
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: [],
   selectedAgentId: 'default',
-  agentChatsByAgentId: {},
-  activeAgentChatId: null,
-  activeAgentChatGenerations: [],
+  directMessageIdByAgentId: {},
+  directMessagesByAgentId: {},
   agentSession: null,
   agentSessionHistory: [],
   agentSessionLoadingKey: null,
@@ -491,77 +485,39 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
-  refreshAgentChats: async (agentId) => {
-    const payload = await fetchAgentChats(agentId);
-    set((s) => ({ agentChatsByAgentId: { ...s.agentChatsByAgentId, [agentId]: payload.chats } }));
-    const state = get();
-    if (state.selectedAgentId !== agentId) return;
-    const selected = payload.chats.find((chat) => chat.id === state.activeAgentChatId);
-    const active = payload.chats.find((chat) => chat.status === 'active');
-    if (!active) return;
-    if (selected?.status !== 'active' || active.activeSessionId !== state.activeAgentSessionId) {
-      await get().selectAgentChat(active.id);
-    }
+  refreshAgentDirectMessages: async (agentId) => {
+    const payload = await fetchAgentDirectMessages(agentId);
+    set((s) => ({
+      directMessageIdByAgentId: { ...s.directMessageIdByAgentId, [agentId]: payload.target.directMessageId },
+      directMessagesByAgentId: { ...s.directMessagesByAgentId, [agentId]: payload.messages },
+    }));
   },
 
   selectAgent: async (agentId) => {
     if (get().agentChatActionKey) return;
-    let chats = get().agentChatsByAgentId[agentId];
-    if (!chats) {
-      const payload = await fetchAgentChats(agentId);
-      chats = payload.chats;
-      set((s) => ({ agentChatsByAgentId: { ...s.agentChatsByAgentId, [agentId]: payload.chats } }));
-    }
-    const active = chats.find((chat) => chat.status === 'active') ?? chats[0] ?? null;
-    if (active) {
-      await get().selectAgentChat(active.id);
-      return;
-    }
-    set((s) => selectionUpdate(s, {
-      selectedAgentId: agentId,
-      activeAgentChatId: null,
-      activeAgentSessionId: null,
-    }));
-  },
-
-  selectAgentChat: async (chatId) => {
-    if (get().agentChatActionKey) return;
-    const entry = Object.entries(get().agentChatsByAgentId)
-      .flatMap(([agentId, chats]) => chats.map((chat) => ({ agentId, chat })))
-      .find(({ chat }) => chat.id === chatId);
-    if (!entry) return;
-    let detail;
     try {
-      detail = await fetchAgentChat(entry.agentId, chatId);
-    } catch (error) {
-      console.error('Agent Chat fetch failed:', error);
-      return;
-    }
-    set((s) => {
-      let agentSessionById = s.agentSessionById;
-      let runStateBySessionId = s.runStateBySessionId;
-      for (const session of detail.sessions) {
-        const sessionId = session.session?.id;
-        if (!sessionId) continue;
-        agentSessionById = cacheSession(agentSessionById, session);
-        runStateBySessionId = {
-          ...runStateBySessionId,
-          [sessionId]: mergeRunPayload(runStateBySessionId[sessionId], sessionId, session.run),
+      const payload = await fetchAgentDirectMessages(agentId);
+      set((s) => {
+        const directMessageIdByAgentId = {
+          ...s.directMessageIdByAgentId,
+          [agentId]: payload.target.directMessageId,
         };
-      }
-      return {
-        agentSessionById,
-        runStateBySessionId,
-        activeAgentChatGenerations: detail.generations,
-        ...selectionUpdate({ ...s, agentSessionById, runStateBySessionId }, {
-          selectedAgentId: entry.agentId,
-          activeAgentChatId: chatId,
-          activeAgentSessionId: null,
-        }),
-      };
-    });
-    if (detail.chat.activeSessionId) {
-      await get().resumeAgentConversation(detail.chat.activeSessionId);
+        const directMessagesByAgentId = {
+          ...s.directMessagesByAgentId,
+          [agentId]: payload.messages,
+        };
+        const activeAgentSessionId = s.agentSessionHistory.find((session) => session.agentId === agentId)?.id ?? null;
+        return {
+          directMessageIdByAgentId,
+          directMessagesByAgentId,
+          ...selectionUpdate({ ...s, directMessageIdByAgentId, directMessagesByAgentId }, {
+            selectedAgentId: agentId,
+            activeAgentSessionId,
+          }),
+        };
+      });
+    } catch (error) {
+      console.error('Agent Direct Messages fetch failed:', error);
     }
   },
 
@@ -573,22 +529,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       .then(async (payload) => {
         if (disposed) return;
         const agentPayload = await fetchAgents();
-        const chatPairs = await Promise.all(agentPayload.agents.map(async (agent) => (
-          [agent.id, (await fetchAgentChats(agent.id)).chats] as const
-        )));
-        if (disposed) return;
-        const agentChatsByAgentId = Object.fromEntries(chatPairs);
         const firstSummary = payload.sessions[0] ?? null;
         const selectedAgentId = firstSummary?.agentId ?? agentPayload.agents[0]?.id ?? 'default';
-        const activeChat = agentChatsByAgentId[selectedAgentId]?.find((chat) => chat.status === 'active') ?? null;
-        const activeAgentChatId = activeChat?.id ?? null;
-        const initialSessionId = activeChat?.activeSessionId ?? null;
-        const activeChatDetail = activeChat
-          ? await fetchAgentChat(selectedAgentId, activeChat.id).catch((error) => {
-              console.error('Initial Agent Chat fetch failed:', error);
-              return null;
-            })
-          : null;
+        const directMessages = await fetchAgentDirectMessages(selectedAgentId).catch((error) => {
+          console.error('Initial Agent Direct Messages fetch failed:', error);
+          return null;
+        });
         if (disposed) return;
         const preloadedSessions = payload.preloadedSessions ?? [];
         set((s) => {
@@ -603,15 +549,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               [sessionId]: mergeRunPayload(runStateBySessionId[sessionId], sessionId, sessionPayload.run),
             };
           }
-          for (const sessionPayload of activeChatDetail?.sessions ?? []) {
-            const sessionId = sessionPayload.session?.id;
-            if (!sessionId) continue;
-            agentSessionById = cacheSession(agentSessionById, sessionPayload);
-            runStateBySessionId = {
-              ...runStateBySessionId,
-              [sessionId]: mergeRunPayload(runStateBySessionId[sessionId], sessionId, sessionPayload.run),
-            };
-          }
+          const initialSessionId = firstSummary?.id ?? null;
+          const directMessageIdByAgentId = directMessages
+            ? { ...s.directMessageIdByAgentId, [selectedAgentId]: directMessages.target.directMessageId }
+            : s.directMessageIdByAgentId;
+          const directMessagesByAgentId = directMessages
+            ? { ...s.directMessagesByAgentId, [selectedAgentId]: directMessages.messages }
+            : s.directMessagesByAgentId;
           const next = {
             ...s,
             agentSessionById,
@@ -619,8 +563,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             runStateBySessionId,
             activeAgentSessionId: s.activeAgentSessionId ?? initialSessionId,
             selectedAgentId,
-            activeAgentChatId,
-            activeAgentChatGenerations: activeChatDetail?.generations ?? [],
+            directMessageIdByAgentId,
+            directMessagesByAgentId,
           };
           const activeSummary = payload.sessions.find((item) => item.id === next.activeAgentSessionId);
           const activeSession = next.activeAgentSessionId
@@ -634,13 +578,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             activeAgentSessionId: next.activeAgentSessionId,
             agents: agentPayload.agents,
             selectedAgentId,
-            agentChatsByAgentId,
-            activeAgentChatId,
+            directMessageIdByAgentId,
+            directMessagesByAgentId,
             ...sessionProviderModel(activeSession),
             ...activeFields(next),
           };
         });
-        const activeSessionId = get().activeAgentSessionId ?? initialSessionId;
+        const activeSessionId = get().activeAgentSessionId ?? firstSummary?.id ?? null;
         if (activeSessionId && !get().agentSessionById[activeSessionId]) {
           set({ agentSessionLoadingKey: key });
           fetchAgentSession(activeSessionId)
@@ -675,8 +619,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   // 发送普通消息，或在运行中将输入加入当前 Session 的 follow-up 队列。
   runAgentAnalysis: async (requestedSessionId, options) => {
     const state = get();
-    const selectedChat = state.agentChatsByAgentId[state.selectedAgentId]?.find((chat) => chat.id === state.activeAgentChatId);
-    if (selectedChat?.status === 'archived') return;
     const agentSession = requestedSessionId ? responseForSession(state, requestedSessionId) : state.agentSession;
     const includeDraft = options?.includeDraft !== false;
     const agentPrompt = includeDraft
@@ -692,6 +634,23 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     // bucket again after possibly creating a new session, so that pending images
     // queued under the "__new__" placeholder are migrated to the new session id.
     const initialBucketKey = pendingImagesKey(targetSessionId);
+    const initialImages = get().pendingImagesBySessionId[initialBucketKey] ?? [];
+    if (!requestedSessionId && includeDraft && agentPrompt.trim() && initialImages.length === 0) {
+      try {
+        await sendAgentDirectMessage(state.selectedAgentId, agentPrompt.trim());
+        set((s) => {
+          const draftBySessionId = s.activeAgentSessionId
+            ? { ...s.draftBySessionId, [s.activeAgentSessionId]: '' }
+            : s.draftBySessionId;
+          const next = { ...s, draftBySessionId };
+          return { draftBySessionId, ...activeFields(next) };
+        });
+        await get().refreshAgentDirectMessages(state.selectedAgentId);
+      } catch (error) {
+        console.error('Agent Direct Message send failed:', error);
+      }
+      return;
+    }
     let idCounter = 0;
     const nextId = () => { idCounter += 1; return -(Date.now() * 100 + idCounter); };
 
@@ -726,7 +685,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           provider: agentProvider,
           model: agentModel,
           agentId: state.selectedAgentId,
-          chatId: state.activeAgentChatId ?? undefined,
         });
         targetSessionId = created.session?.id ?? null;
         if (!targetSessionId) throw new Error('agent session create failed');
@@ -752,25 +710,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             agentSessionHistory: created.history.sessions,
             activeAgentSessionId: createdSessionId,
             pendingImagesBySessionId,
-            activeAgentChatId: created.chat?.id ?? s.activeAgentChatId,
           };
-          const agentChatsByAgentId = created.chat
-            ? {
-                ...s.agentChatsByAgentId,
-                [created.chat.agentId]: [
-                  created.chat,
-                  ...(s.agentChatsByAgentId[created.chat.agentId] ?? []).filter((chat) => chat.id !== created.chat!.id),
-                ],
-              }
-            : s.agentChatsByAgentId;
           return {
             agentSessionById,
             runStateBySessionId,
             agentSessionHistory: created.history.sessions,
             activeAgentSessionId: createdSessionId,
             pendingImagesBySessionId,
-            agentChatsByAgentId,
-            activeAgentChatId: created.chat?.id ?? s.activeAgentChatId,
             ...activeFields(next),
           };
         });
@@ -1132,31 +1078,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
-  createNewChat: async (agentId = 'default') => {
-    if (get().agentChatActionKey) return;
-    const actionKey = 'new-chat';
-    set({ agentChatActionKey: actionKey });
-    try {
-      const payload = await createAgentChat(agentId);
-      set((s) => {
-        const agentChatsByAgentId = { ...s.agentChatsByAgentId, [agentId]: payload.chats };
-        return {
-          agentChatsByAgentId,
-          ...selectionUpdate({ ...s, agentChatsByAgentId }, {
-            selectedAgentId: agentId,
-            activeAgentChatId: payload.chat.id,
-            activeAgentSessionId: null,
-          }),
-          activeAgentChatGenerations: [],
-        };
-      });
-    } catch (error) {
-      console.error(error);
-    } finally {
-      set((s) => ({ agentChatActionKey: s.agentChatActionKey === actionKey ? null : s.agentChatActionKey }));
-    }
-  },
-
   resumeAgentConversation: async (sessionId) => {
     if (get().agentChatActionKey) return;
     if (get().activeAgentSessionId === sessionId) return;
@@ -1165,7 +1086,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const summary = s.agentSessionHistory.find((item) => item.id === sessionId);
         const selection = {
           selectedAgentId: summary?.agentId ?? s.selectedAgentId,
-          activeAgentChatId: summary?.chatId ?? s.activeAgentChatId,
           activeAgentSessionId: sessionId,
         } satisfies AgentSelection;
         return {
@@ -1192,7 +1112,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         };
         const selection = {
           selectedAgentId: payload.session?.agentId ?? s.selectedAgentId,
-          activeAgentChatId: payload.session?.chatId ?? payload.chat?.id ?? s.activeAgentChatId,
           activeAgentSessionId: sessionId,
         } satisfies AgentSelection;
         return {

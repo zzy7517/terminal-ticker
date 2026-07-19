@@ -1,65 +1,60 @@
 import {
-  AgentChatStore,
-  type AgentChat,
-  type AgentChatSession,
+  AgentContextStore,
+  type AgentContextRecord,
+  type AgentContextSession,
   type ExistingAgentSession,
-} from "./chat-store.js";
+} from "./context-store.js";
 
 /**
- * Owns the logical Agent → Chat → Session-generation identity boundary.
- * Runtime adapters may create physical Sessions, but callers cannot bind one
- * to a Chat without first proving the trusted Agent/Chat pair here.
+ * Owns the logical Agent → Runtime-session-generation identity boundary.
+ * Callers cannot bind a physical Runtime Session without a trusted agentId.
+ * Direct Message identity is owned by MessageStore, not this Manager.
  */
 export class AgentContextManager {
-  constructor(private readonly store = new AgentChatStore()) {}
+  constructor(private readonly store = new AgentContextStore()) {}
 
-  ensureActiveChat(agentId: string): AgentChat {
-    return this.store.activeForAgent(agentId) ?? this.store.create(agentId);
+  ensure(agentId: string): AgentContextRecord {
+    return this.store.ensure(agentId);
   }
 
-  listChats(agentId: string): AgentChat[] {
-    return this.store.listForAgent(agentId);
-  }
-
-  requireChat(agentId: string, chatId: string): AgentChat {
-    const chat = this.store.get(chatId);
-    if (!chat || chat.agentId !== agentId) throw new Error("Chat not found for Agent");
-    return chat;
-  }
-
-  createNewChat(agentId: string, agentRunning: boolean): AgentChat {
-    if (agentRunning) throw new Error("cannot create New Chat while Agent is running");
-    return this.store.create(agentId);
-  }
-
-  requireWritableChat(agentId: string, chatId?: string | null): AgentChat | null {
-    const chat = chatId ? this.requireChat(agentId, chatId) : this.ensureActiveChat(agentId);
-    return chat.status === "active" ? chat : null;
+  get(agentId: string): AgentContextRecord | null {
+    return this.store.get(agentId);
   }
 
   attachSession(
     agentId: string,
-    chatId: string,
-    input: { sessionId: string; runtime: "pi" | "claude-code"; createdAtMs?: number; rotationReason?: string },
-  ): AgentChatSession {
-    const chat = this.requireChat(agentId, chatId);
-    if (chat.status !== "active") throw new Error("cannot attach a Session to an archived Chat");
-    return this.store.attachSession(chat.id, input);
+    input: {
+      sessionId: string;
+      runtime: "pi" | "claude-code";
+      nativeSessionId?: string | null;
+      createdAtMs?: number;
+      rotationReason?: string;
+    },
+  ): AgentContextSession {
+    this.ensure(agentId);
+    return this.store.attachSession(agentId, {
+      sessionId: input.sessionId,
+      runtime: input.runtime,
+      nativeSessionId: input.nativeSessionId,
+      startedAtMs: input.createdAtMs,
+      rotationReason: input.rotationReason,
+    });
   }
 
   rotateSession(
     agentId: string,
-    chatId: string,
     input: {
       sessionId: string;
       runtime: "pi" | "claude-code";
       reason: "context-overflow" | "config-change" | "resume-failure";
+      nativeSessionId?: string | null;
       createdAtMs?: number;
     },
-  ): AgentChatSession {
-    return this.attachSession(agentId, chatId, {
+  ): AgentContextSession {
+    return this.attachSession(agentId, {
       sessionId: input.sessionId,
       runtime: input.runtime,
+      nativeSessionId: input.nativeSessionId,
       createdAtMs: input.createdAtMs,
       rotationReason: input.reason,
     });
@@ -69,12 +64,12 @@ export class AgentContextManager {
     this.store.indexSessions(sessions);
   }
 
-  listSessions(chatId: string): AgentChatSession[] {
-    return this.store.listSessions(chatId);
+  listSessions(agentId: string): AgentContextSession[] {
+    return this.store.listSessions(agentId);
   }
 
-  chatForSession(sessionId: string): AgentChat | null {
-    return this.store.chatForSession(sessionId);
+  contextForSession(sessionId: string): AgentContextRecord | null {
+    return this.store.contextForSession(sessionId);
   }
 
   removeSession(sessionId: string): void {
@@ -85,8 +80,18 @@ export class AgentContextManager {
     return this.store.hasSessionsForAgent(agentId);
   }
 
-  deleteEmptyChatsForAgent(agentId: string): void {
-    this.store.deleteEmptyChatsForAgent(agentId);
+  updateStatus(
+    agentId: string,
+    input: {
+      status?: AgentContextRecord["status"];
+      paused?: boolean;
+      lastError?: string | null;
+      lastActivationAtMs?: number | null;
+      workspacePath?: string | null;
+      memoryScope?: string | null;
+    },
+  ): AgentContextRecord {
+    return this.store.updateStatus(agentId, input);
   }
 
   close(): void {

@@ -1,9 +1,8 @@
 /** 浏览器端 Tradex HTTP、SSE 和 Agent API 客户端。 */
 import type {
   AgentConfigUpdate,
-  AgentChatMutationResponse,
-  AgentChatDetailResponse,
-  AgentChatsResponse,
+  AgentDirectMessage,
+  AgentDirectMessageResponse,
   AgentModelRegistry,
   AgentModelRegistryResolveResponse,
   AgentModelsResponse,
@@ -187,21 +186,22 @@ export async function createAgentSession(options?: {
   return response.json();
 }
 
-export async function fetchAgentChats(agentId: string): Promise<AgentChatsResponse> {
-  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/chats`);
-  if (!response.ok) throw await responseError(response, 'Agent Chats fetch failed');
+export async function fetchAgentDirectMessages(agentId: string): Promise<AgentDirectMessageResponse> {
+  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/messages`);
+  if (!response.ok) throw await responseError(response, 'Agent Direct Messages fetch failed');
   return response.json();
 }
 
-export async function fetchAgentChat(agentId: string, chatId: string): Promise<AgentChatDetailResponse> {
-  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/chats/${encodeURIComponent(chatId)}`);
-  if (!response.ok) throw await responseError(response, 'Agent Chat fetch failed');
-  return response.json();
-}
-
-export async function createAgentChat(agentId: string): Promise<AgentChatMutationResponse> {
-  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/chats`, { method: 'POST' });
-  if (!response.ok) throw await responseError(response, 'New Chat failed');
+export async function sendAgentDirectMessage(
+  agentId: string,
+  content: string,
+): Promise<{ message: AgentDirectMessage; target: { kind: 'direct-message'; directMessageId: string } }> {
+  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!response.ok) throw await responseError(response, 'Agent Direct Message send failed');
   return response.json();
 }
 

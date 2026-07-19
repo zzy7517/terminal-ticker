@@ -1,5 +1,5 @@
 /** 展示聊天 Session、Runtime 能力、附件和流式控制。 */
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import './AgentSessionPanel.css';
 
 import ReactMarkdown from 'react-markdown';
@@ -173,17 +173,15 @@ function AgentTranscriptMessage({
   const togglePinned = useChatStore((state) => state.togglePinned);
   const saved = useChatStore((state) => reference ? state.saved.some((item) => (
     item.messageId === reference.messageId
-    && item.target.kind === 'direct-chat'
-    && reference.target.kind === 'direct-chat'
-    && item.target.agentId === reference.target.agentId
-    && item.target.chatId === reference.target.chatId
+    && item.target.kind === 'direct-message'
+    && reference.target.kind === 'direct-message'
+    && item.target.directMessageId === reference.target.directMessageId
   )) : false);
   const pinned = useChatStore((state) => reference ? state.pinned.some((item) => (
     item.messageId === reference.messageId
-    && item.target.kind === 'direct-chat'
-    && reference.target.kind === 'direct-chat'
-    && item.target.agentId === reference.target.agentId
-    && item.target.chatId === reference.target.chatId
+    && item.target.kind === 'direct-message'
+    && reference.target.kind === 'direct-message'
+    && item.target.directMessageId === reference.target.directMessageId
   )) : false);
   return (
     <div className={`session-message ${message.role}`}>
@@ -218,11 +216,9 @@ function AgentTranscriptMessage({
 export function AgentSessionPanel({
   providerProfiles: _providerProfiles,
   disabled,
-  onNewChat,
 }: {
   providerProfiles: Record<string, { enabled: boolean; models: string[]; modelEfforts: Record<string, string> }>;
   disabled: boolean;
-  onNewChat: () => void;
 }) {
   const agentSession = useAgentStore((s) => s.agentSession);
   const agentPrompt = useAgentStore((s) => s.agentPrompt);
@@ -237,10 +233,8 @@ export function AgentSessionPanel({
   const sessionStats = useAgentStore((s) => s.sessionStats);
   const streamingMessage = useAgentStore((s) => s.streamingMessage);
   const queuedFollowUps = useAgentStore((s) => s.queuedFollowUps);
-  const selectedAgentId = useAgentStore((s) => s.selectedAgentId);
-  const activeAgentChatId = useAgentStore((s) => s.activeAgentChatId);
-  const activeAgentChatGenerations = useAgentStore((s) => s.activeAgentChatGenerations);
-  const agentSessionById = useAgentStore((s) => s.agentSessionById);
+  const directMessageId = useAgentStore((s) => s.directMessageIdByAgentId[s.selectedAgentId] ?? null);
+  const directMessages = useAgentStore((s) => s.directMessagesByAgentId[s.selectedAgentId] ?? []);
 
   const pendingImages = useAgentStore((s) => s.pendingImages);
   const addPendingImage = useAgentStore((s) => s.addPendingImage);
@@ -268,41 +262,21 @@ export function AgentSessionPanel({
   const transcriptRef = useRef<HTMLDivElement>(null);
   const transcriptScrollBySessionRef = useRef<Map<string, number>>(new Map());
   const shouldFollowTranscriptRef = useRef(true);
-  const sessionId = agentSession?.session?.id ?? null;
-  const transcriptGroups = useMemo(() => {
-    const groups = activeAgentChatGenerations.flatMap((generation) => {
-      const session = agentSessionById[generation.sessionId];
-      return session ? [{ generation, session }] : [];
-    });
-    if (groups.length > 0) return groups;
-    return agentSession && sessionId ? [{
-      generation: {
-        chatId: activeAgentChatId ?? '',
-        generation: 1,
-        sessionId,
-        runtime: agentSession.session?.runtime ?? 'pi',
-        createdAtMs: Date.parse(agentSession.session?.createdAt ?? '') || Date.now(),
-        rotationReason: 'initial',
-      },
-      session: agentSession,
-    }] : [];
-  }, [activeAgentChatGenerations, activeAgentChatId, agentSession, agentSessionById, sessionId]);
-  const messages = useMemo(() => transcriptGroups.flatMap((group) => group.session.messages), [transcriptGroups]);
+  const sessionId = directMessageId ?? agentSession?.session?.id ?? null;
+  const messages = useMemo(() => directMessages.map((message) => ({
+    id: message.id,
+    sessionId: directMessageId ?? '',
+    role: message.authorType === 'human' ? 'user' as const : message.authorType === 'agent' ? 'assistant' as const : 'system' as const,
+    content: message.content,
+    createdAt: new Date(message.createdAtMs).toISOString(),
+    metadata: null,
+    error: null,
+  })), [directMessageId, directMessages]);
   const isClaudeSession = agentSession?.session?.runtime === 'claude-code';
   const lastMessage = messages[messages.length - 1] ?? null;
-  const lastMessageToolCallCount = (lastMessage?.metadata?.toolCalls as AgentToolCall[] | undefined)?.length ?? 0;
+  const lastMessageToolCallCount = 0;
 
-  const toolResultsById = useMemo(() => {
-    const results = new Map<string, AgentMessage>();
-    for (const message of messages) {
-      if (message.role !== 'toolResult') continue;
-      const callId = message.metadata?.toolCallId;
-      if (typeof callId === 'string' && callId) {
-        results.set(callId, message);
-      }
-    }
-    return results;
-  }, [messages]);
+  const toolResultsById = useMemo(() => new Map<string, AgentMessage>(), []);
   const canSend = !disabled && !sessionLoading && !chatActionKey
     && (!!agentPrompt.trim() || pendingImages.length > 0);
   const sessionTime = agentSession?.session
@@ -453,9 +427,6 @@ export function AgentSessionPanel({
     setAgentPrompt('');
     setAutocomplete(null);
     switch (command.name) {
-      case 'new':
-        onNewChat();
-        break;
       case 'compact':
         // TODO: trigger context compaction
         break;
@@ -468,7 +439,7 @@ export function AgentSessionPanel({
         }
         break;
     }
-  }, [setAgentPrompt, onNewChat, agentPrompt]);
+  }, [setAgentPrompt, agentPrompt]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -653,25 +624,17 @@ export function AgentSessionPanel({
             <span>Loading session</span>
           </div>
         )}
-        {!sessionLoading && transcriptGroups.map((group, index) => (
-          <Fragment key={group.generation.sessionId}>
-            <div className="session-generation-divider">
-              <span>{index === 0 ? `Generation ${group.generation.generation}` : 'Context restarted'}</span>
-              <small>{group.generation.rotationReason.replace(/-/g, ' ')}</small>
-            </div>
-            {group.session.messages.map((message) => (
-              <AgentTranscriptMessage
-                key={`${group.generation.sessionId}:${message.id}`}
-                message={message}
-                pendingToolCalls={pendingToolCalls}
-                reference={activeAgentChatId ? {
-                  target: { kind: 'direct-chat', agentId: selectedAgentId, chatId: activeAgentChatId },
-                  messageId: `${group.generation.sessionId}:${message.id}`,
-                } : null}
-                toolResultsById={toolResultsById}
-              />
-            ))}
-          </Fragment>
+        {!sessionLoading && messages.map((message) => (
+          <AgentTranscriptMessage
+            key={message.id}
+            message={message}
+            pendingToolCalls={pendingToolCalls}
+            reference={directMessageId ? {
+              target: { kind: 'direct-message', directMessageId },
+              messageId: String(message.id),
+            } : null}
+            toolResultsById={toolResultsById}
+          />
         ))}
         {!sessionLoading && streamingMessage && (
           <div className="session-message assistant streaming">

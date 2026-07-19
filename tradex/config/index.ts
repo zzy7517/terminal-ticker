@@ -198,6 +198,16 @@ export interface BrowserConfig {
   timeoutMs: number;
 }
 
+export interface ChannelsConfig {
+  maxActiveAgents: number;
+  maxAgents: number;
+  maxActivationHops: number;
+  activationDebounceMs: number;
+  retryMaxSeconds: number;
+  /** Reserved; Member/Admin create-agent policy is deferred. Currently unused. */
+  agentsCanCreateAgents: boolean;
+}
+
 export type ProxyType = "http" | "https" | "socks5";
 
 export interface ProxyConfig {
@@ -225,6 +235,7 @@ export interface AppConfig {
   mcp: McpAppConfig;
   jin10: Jin10Config;
   browser: BrowserConfig;
+  channels: ChannelsConfig;
   proxy: ProxyConfig;
   options: import("../options/domain.js").OptionsConfig;
 }
@@ -791,6 +802,18 @@ export function parseBrowserConfig(rawBrowserValue: unknown): BrowserConfig {
   };
 }
 
+export function parseChannelsConfig(rawChannelsValue: unknown): ChannelsConfig {
+  const raw = asRecord(rawChannelsValue ?? {}, "channels");
+  return {
+    maxActiveAgents: coerceInt(raw.max_active_agents, "channels.max_active_agents", 3),
+    maxAgents: coerceInt(raw.max_agents, "channels.max_agents", 20),
+    maxActivationHops: coerceInt(raw.max_activation_hops, "channels.max_activation_hops", 16),
+    activationDebounceMs: coerceInt(raw.activation_debounce_ms, "channels.activation_debounce_ms", 500),
+    retryMaxSeconds: coerceInt(raw.retry_max_seconds, "channels.retry_max_seconds", 300),
+    agentsCanCreateAgents: normalizeBool(raw.agents_can_create_agents, "channels.agents_can_create_agents", true),
+  };
+}
+
 const VALID_PROXY_TYPES: ProxyType[] = ["http", "https", "socks5"];
 
 function parseProxyType(rawValue: unknown): ProxyType {
@@ -893,6 +916,7 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     mcp: parseMcpConfig(data.mcp),
     jin10: parseJin10Config(data.jin10),
     browser: parseBrowserConfig(data.browser),
+    channels: parseChannelsConfig(data.channels),
     proxy: parseProxyConfig(data.proxy),
     options: parseOptionsConfig(data.options),
 
@@ -925,6 +949,7 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       mcp: parseMcpConfig({}),
       jin10: parseJin10Config({}),
       browser: parseBrowserConfig({}),
+      channels: parseChannelsConfig({}),
       proxy: parseProxyConfig({}),
       options: parseOptionsConfig(undefined),
 

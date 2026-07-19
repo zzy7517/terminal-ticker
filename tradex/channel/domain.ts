@@ -1,13 +1,13 @@
 export type ChatTarget =
-  | { kind: "direct-chat"; agentId: string; chatId: string }
+  | { kind: "direct-message"; directMessageId: string }
   | { kind: "channel"; channelId: string };
 
 export function channelTarget(channelId: string): ChatTarget {
   return { kind: "channel", channelId };
 }
 
-export function directChatTarget(agentId: string, chatId: string): ChatTarget {
-  return { kind: "direct-chat", agentId, chatId };
+export function directMessageTarget(directMessageId: string): ChatTarget {
+  return { kind: "direct-message", directMessageId };
 }
 
 export function parseChatTarget(value: unknown): ChatTarget {
@@ -16,12 +16,13 @@ export function parseChatTarget(value: unknown): ChatTarget {
   if (input.kind === "channel" && typeof input.channelId === "string" && input.channelId) {
     return channelTarget(input.channelId);
   }
-  if (
-    input.kind === "direct-chat"
-    && typeof input.agentId === "string" && input.agentId
-    && typeof input.chatId === "string" && input.chatId
-  ) {
-    return directChatTarget(input.agentId, input.chatId);
+  if (input.kind === "direct-message" && typeof input.directMessageId === "string" && input.directMessageId) {
+    return directMessageTarget(input.directMessageId);
+  }
+  // Legacy Phase 1 references used direct-chat + agentId/chatId. Reject forging;
+  // callers must migrate through MessageStore before writing new overlays.
+  if (input.kind === "direct-chat") {
+    throw new Error("direct-chat ChatTarget is retired; use direct-message");
   }
   throw new Error("Invalid ChatTarget");
 }
@@ -29,16 +30,20 @@ export function parseChatTarget(value: unknown): ChatTarget {
 export function chatTargetRef(target: ChatTarget): string {
   return target.kind === "channel"
     ? JSON.stringify([target.channelId])
-    : JSON.stringify([target.agentId, target.chatId]);
+    : JSON.stringify([target.directMessageId]);
 }
 
-export function chatTargetFromRow(kind: ChatTarget["kind"], ref: string): ChatTarget {
+export function chatTargetFromRow(kind: string, ref: string): ChatTarget {
   const values = JSON.parse(ref) as unknown;
   if (!Array.isArray(values) || values.some((value) => typeof value !== "string")) {
     throw new Error("Invalid ChatTarget reference");
   }
   if (kind === "channel" && values.length === 1) return channelTarget(values[0]);
-  if (kind === "direct-chat" && values.length === 2) return directChatTarget(values[0], values[1]);
+  if (kind === "direct-message" && values.length === 1) return directMessageTarget(values[0]);
+  // Legacy Phase 1 direct-chat rows: [agentId, chatId]. Readable until overlay migration rewrites them.
+  if (kind === "direct-chat" && values.length === 2) {
+    return directMessageTarget(`legacy:${values[0]}:${values[1]}`);
+  }
   throw new Error("Invalid ChatTarget reference");
 }
 
