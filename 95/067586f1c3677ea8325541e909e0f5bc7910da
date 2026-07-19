@@ -1,0 +1,178 @@
+web/src/components/chat/ChatReferencePanel.tsx
+  s_935b9d9d21e1b1::t_fb504fd497fb61 26-29,32-34
+  s_935b9d9d21e1b1::t_5c0982b8ef3f55 14-16,25,30-31,46,64-65,74,76-77,79
+  s_935b9d9d21e1b1::t_61d98b0c59df7a 73,75
+adr/0004-agent-context-and-direct-message-identity.md
+  s_a71caec934997b::t_09c41f0ea33063 3-5
+  s_a71caec934997b::t_1bc38cb5c7d4db 70
+  s_a71caec934997b::t_38df04d439ab96 1-2,6-69,71-78
+tradex/channel/store.ts
+  s_935b9d9d21e1b1::t_091b377a8ace17 219-226,233-240,254,292-294
+  s_935b9d9d21e1b1::t_b005c8206e0aa0 97-123
+  s_935b9d9d21e1b1::t_d94be9aaa69ae2 143,146
+  s_935b9d9d21e1b1::t_6020bb1b420d99 144-145,147
+  s_935b9d9d21e1b1::t_c8ebce90929ccf 227-232,241-253,255,270-281,285,298-301,303-306,308-309,312-345,347,349-350,352-529
+  s_935b9d9d21e1b1::t_00f708fd93992e 302,307,310-311,346,348,351
+  s_935b9d9d21e1b1::t_dac0c021fd9643 530
+tradex/chat/runtime.ts
+  s_935b9d9d21e1b1::t_5e1a30c180dc65 4-6,8-18,32-37,42-44,48-50,53,59-64,80,87-89,113-134,136-138,140-141
+  s_935b9d9d21e1b1::t_09260bc6666bfb 7,54-58,65-79,81-85
+  s_935b9d9d21e1b1::t_9c29806dba2f12 1-3,19-31,38-41,45-47,51-52,86,90-112,135,139,142-180
+tradex/chat/prompts.ts
+  s_935b9d9d21e1b1::t_008d8f0b590561 1-36
+tradex/api/helpers.ts
+  s_935b9d9d21e1b1::t_d324e53f84bdb9 79-80,91-92,97-99
+tradex/config/index.ts
+  s_935b9d9d21e1b1::t_9f9b5382cf7f3e 201-206,208-210
+  s_935b9d9d21e1b1::t_c71f080521b4b3 207
+  s_935b9d9d21e1b1::t_76525e839fe999 919
+  s_935b9d9d21e1b1::t_8c8b36388ba71a 805-816
+  s_935b9d9d21e1b1::t_9424e7e8b6a94b 238
+  s_935b9d9d21e1b1::t_32becc76c52359 952
+tradex/chat/dispatch.ts
+  s_935b9d9d21e1b1::t_32aebe7bf740b9 1-45,47-81,83-85,96-101,103-108,110-145
+  s_935b9d9d21e1b1::t_143f841bb1c03e 46,82,86-95,102,109
+tradex/chat-overlay.test.ts
+  s_935b9d9d21e1b1::t_d73988aefa2ff1 5,24
+tradex/api/routes/agent.ts
+  s_935b9d9d21e1b1::t_cb4af4cbcebca3 435
+  s_935b9d9d21e1b1::t_6d96ccfe19606f 281-283,290
+  s_935b9d9d21e1b1::t_1a123ebf03c6b3 71-73,79-80
+  s_935b9d9d21e1b1::t_43a6500ffe57e8 43,46-54,56-59,63,67-70,74-78,81,83,87-106
+  s_935b9d9d21e1b1::t_c675562deb4670 130-131
+  s_935b9d9d21e1b1::t_6397d04938e661 277-280,284-289,291-293
+  s_935b9d9d21e1b1::t_bdf76d9f18cd88 179-180,182-183,190,206
+  s_935b9d9d21e1b1::t_a50a08f9ef9a05 107
+tradex/chat/message-target.ts
+  s_935b9d9d21e1b1::t_4742bae6951881 1-61
+web/src/stores/chatStore.ts
+  s_935b9d9d21e1b1::t_a416c539ecceb2 92-97
+  s_935b9d9d21e1b1::t_59b9908416e89e 34,87,89,91,120,169-170,377-378
+  s_935b9d9d21e1b1::t_ac75547b4df9bc 88,90
+tradex/channel/domain.ts
+  s_935b9d9d21e1b1::t_be8049a0cbe1ff 43,45
+  s_935b9d9d21e1b1::t_38101397476b21 2,9-10,19-25,33,36,42,44,46
+tradex/api/agent_tools.ts
+  s_935b9d9d21e1b1::t_fcab6f55a68745 21,27-29,57
+tradex/chat-overlay.ts
+  s_935b9d9d21e1b1::t_a3d5cdef136832 42,50
+tradex/api/routes/agent.test.ts
+  s_935b9d9d21e1b1::t_bbc7aabe6689f0 6,8-9,24-25,38-41,103,106-114,117,120,123,128-131,134,137,140,142,144-146,149,151,178,181,189,197,202-203,275-278,294,296-298
+  s_935b9d9d21e1b1::t_008357231ac230 125-126
+tradex/chat/message-store.ts
+  s_935b9d9d21e1b1::t_62fee234803baa 141-151
+  s_935b9d9d21e1b1::t_24c60128cf1656 1-140,152-176,178-222,226-430
+  s_935b9d9d21e1b1::t_12c11515540cd7 177,223-225
+tradex/agent/context-store.ts
+  s_935b9d9d21e1b1::t_1ac70c01f9c797 7,9-17,21-22,26-28,41,43-51,54-55,59-61,65-66,73-84,86-87,91-93,95,97-98,100,103,107-109,111-116,120,122-125,128-172,175,177-179,182-189,192,194-219,227-229,235,237-241,248-255,258,260-277,281,283-287,290-293,296-302,304-357,361,364-366,368-373,377,379,383-385
+  s_935b9d9d21e1b1::t_bb62780cabed13 5
+tradex/chat-events.ts
+  s_935b9d9d21e1b1::t_937e954181583d 42
+tradex/chat/message-store.test.ts
+  s_935b9d9d21e1b1::t_22e877e44f3904 5-6,8,15-16,18,21,23-26,29,31-48,52,54-72,83,85-99
+  s_935b9d9d21e1b1::t_66a31c2516a645 75-82
+web/src/components/workspace/AgentDirectMessageList.tsx
+  s_935b9d9d21e1b1::t_14ff4a3d39d4ec 75,80-81
+tradex/chat-references.ts
+  s_935b9d9d21e1b1::t_06fbdf36e1f2ad 5,13,17,58-61,63-65,67-71
+web/src/stores/agentStore.ts
+  s_935b9d9d21e1b1::t_1fdbca02a5b071 637-653
+  s_935b9d9d21e1b1::t_05c4d64b410e2a 6,20,25,107-108,160,261,342-343
+  s_935b9d9d21e1b1::t_8b5323f4a28559 488-492,496,499-503,505-520
+  s_935b9d9d21e1b1::t_9d03527fd42d89 534-537,552-558,566-567,581-582,587
+tradex/agent/private-workspace.ts
+  s_935b9d9d21e1b1::t_2d2eb920870630 1-43
+tradex/chat/inbox-store.ts
+  s_935b9d9d21e1b1::t_a9c7043975da38 77-129,140-141,145,150-152
+  s_935b9d9d21e1b1::t_2b7e709601eb44 1-71,130-139,142-144,146-149,153-215
+  s_935b9d9d21e1b1::t_eeb41a2e6d1406 72-76
+tradex/agent/context-manager.test.ts
+  s_935b9d9d21e1b1::t_ceb7f389b7c4f8 5,18,21,23-25,28,30-34,37,39-41,46-48,51-62
+web/src/components/workspace/AgentSessionPanel.tsx
+  s_935b9d9d21e1b1::t_b87d6ba31ec9ad 627-637
+  s_935b9d9d21e1b1::t_e63fbf8ad79f04 2,442
+  s_935b9d9d21e1b1::t_689989f6901bfc 277-279
+  s_935b9d9d21e1b1::t_8e447a43e10463 176-178,182-184
+  s_935b9d9d21e1b1::t_735b34e426be96 236-237,265-274
+web/src/api.ts
+  s_935b9d9d21e1b1::t_fdbffd0a1a02b0 4-5,189-191,195-204
+tradex/api/routes/channel.ts
+  s_935b9d9d21e1b1::t_98dfbaa6d0130d 173-174,176,180
+  s_935b9d9d21e1b1::t_e0dd93a2c91bac 71,74,80,87-120
+  s_935b9d9d21e1b1::t_3c12282c390941 72-73,75
+  s_935b9d9d21e1b1::t_fa22beefec97e8 121
+tradex/chat/coordinator.ts
+  s_935b9d9d21e1b1::t_a6570d4b7febbd 152-158
+  s_935b9d9d21e1b1::t_62e9db655b1503 2
+  s_935b9d9d21e1b1::t_02ae0a68d0d955 17,32,40-43
+  s_935b9d9d21e1b1::t_be6aeac3c5221c 107-116
+  s_935b9d9d21e1b1::t_a3c97f50bf618d 1,3-16,18-31,33-39,44-106,117-134,150-151
+  s_935b9d9d21e1b1::t_62c7497077fe31 135-149
+tradex/agent/context-manager.ts
+  s_935b9d9d21e1b1::t_75ef0aa59e468c 2-4,6,9-11,14,16-17,20-21,26-41,50,53-54,57,67-68,71-72,83-94
+tradex/api/runtime.ts
+  s_935b9d9d21e1b1::t_424d73d45d9f63 79-80,82-86
+  s_935b9d9d21e1b1::t_4b6accfaf37052 54-55,58
+  s_935b9d9d21e1b1::t_2be505a718a572 27-28,31
+  s_935b9d9d21e1b1::t_6c2cbef16366f6 220
+  s_935b9d9d21e1b1::t_701d3459c3fb72 221-223,236-237
+  s_935b9d9d21e1b1::t_6e5059b8a201a7 191-192
+  s_935b9d9d21e1b1::t_5b53746ad870d2 25
+web/src/components/workspace/WorkspaceView.tsx
+  s_935b9d9d21e1b1::t_ab2fef87d481a2 75
+CONTEXT.md
+  s_a71caec934997b::t_54014611de35b1 12,16-17,23-26,28-29,31-33,40-41,44,48-49
+tradex/agent/chat-index.ts
+  s_935b9d9d21e1b1::t_afbe0043d3264f 2,6,37-127
+tradex/chat/message-tools.ts
+  s_935b9d9d21e1b1::t_f84eb29bcec174 397-403
+  s_935b9d9d21e1b1::t_6b341fe5c83fe7 180,182,189,197-206,208
+  s_935b9d9d21e1b1::t_2e848212231625 408-454,456-469,472-509
+  s_935b9d9d21e1b1::t_f0ebd0300d7e64 455,470-471
+  s_935b9d9d21e1b1::t_0268b3fb5fc656 4-5
+  s_935b9d9d21e1b1::t_965f7342024bad 274-293
+  s_935b9d9d21e1b1::t_53530122077af4 1-3,6-123,125-133,135-179,181,183-188,191-196,207,209-273,294-336,340-396,404-407,510-528
+  s_935b9d9d21e1b1::t_54fc6a90026d44 124,134
+  s_935b9d9d21e1b1::t_2a7be938d30f79 337-339
+  s_935b9d9d21e1b1::t_d48730ccbc3f10 190
+web/src/types.ts
+  s_935b9d9d21e1b1::t_3cfaf0be02572d 158,195-221,235
+tradex/api/chat-events.ts
+  s_935b9d9d21e1b1::t_2f680f4f223950 95,97
+  s_935b9d9d21e1b1::t_1cf3c08bcaa70f 33-38
+tradex/api/routes/channel.test.ts
+  s_935b9d9d21e1b1::t_8e16ce1f1d05d6 8,10,12,29,31,36,43,185,187-189,195,200
+  s_935b9d9d21e1b1::t_f6709a903cfa4b 11,32,37-39,47
+adr/0001-runtime-neutral-agents-and-session-snapshots.md
+  s_a71caec934997b::t_363bc9fc0ed82e 1-7
+adr/0002-runtime-neutral-tools-with-runtime-specific-transports.md
+  s_a71caec934997b::t_73065ed1c061fd 1-7
+adr/0003-agent-chat-and-channel-identity.md
+  s_a71caec934997b::t_78b5a3c90dfe78 1-25
+adr/0003-agent-context-and-direct-chat-identity.md
+  s_a71caec934997b::t_4b51331785a444 3,5,8-11,27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "95067586f1c3677ea8325541e909e0f5bc7910da",
+  "prompts": {},
+  "sessions": {
+    "s_935b9d9d21e1b1": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "22c5a96b-5d22-4195-95c4-f53a7b276d80",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_a71caec934997b": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a903280d-13a7-43dd-8479-6eea00315ab9",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
