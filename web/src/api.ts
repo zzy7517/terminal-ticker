@@ -4,7 +4,6 @@ import type {
   AgentDirectMessage,
   AgentDirectMessageResponse,
   AgentModelRegistry,
-  AgentModelRegistryResolveResponse,
   AgentModelsResponse,
   AgentStreamEvent,
   AgentStreamPayload,
@@ -23,15 +22,10 @@ import type {
   CronSessionEntry,
   InstrumentCatalogResponse,
   InstrumentSearchResult,
-  Jin10CalendarEvent,
-  Jin10Quote,
-  Jin10Status,
   Lesson,
   MarketState,
   NewsConfigUpdate,
   NewsItem,
-  McpAllResourcesResponse,
-  McpAllResourceTemplatesResponse,
   McpReadResourceResponse,
   McpServerResourcesResponse,
   McpServerResourceTemplatesResponse,
@@ -44,13 +38,17 @@ import type {
   AgentRuntimeStatus,
   ClaudeCodeModelsResponse,
   Channel,
+  ChannelHeldDraft,
+  ChannelMember,
   ChannelMessage,
   ChannelMessagesResponse,
   ChannelThreadResponse,
+  AgentPresence,
   ChatBootstrapResponse,
   ChatEvent,
   ChatMessageReference,
   ChatTarget,
+  ChatUnreadEntry,
 } from './types';
 
 const DEFAULT_DEV_BACKEND_ORIGIN = 'http://127.0.0.1:8765';
@@ -170,10 +168,7 @@ export async function fetchAgentSessions(): Promise<AgentSessionHistoryResponse>
 // Creates a new decoupled agent session.
 export async function createAgentSession(options?: {
   title?: string;
-  provider?: string;
-  model?: string;
   agentId?: string;
-  chatId?: string;
 }): Promise<AgentSessionResponse & { history: AgentSessionHistoryResponse }> {
   const response = await fetch('/api/agent/sessions', {
     method: 'POST',
@@ -195,19 +190,14 @@ export async function fetchAgentDirectMessages(agentId: string): Promise<AgentDi
 export async function sendAgentDirectMessage(
   agentId: string,
   content: string,
+  images?: Array<{ data: string; mimeType: string }>,
 ): Promise<{ message: AgentDirectMessage; target: { kind: 'direct-message'; directMessageId: string } }> {
   const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, images: images?.length ? images : undefined }),
   });
   if (!response.ok) throw await responseError(response, 'Agent Direct Message send failed');
-  return response.json();
-}
-
-export async function fetchChannels(): Promise<{ channels: Channel[] }> {
-  const response = await fetch('/api/channels');
-  if (!response.ok) throw await responseError(response, 'Channels fetch failed');
   return response.json();
 }
 
@@ -260,6 +250,104 @@ export async function createChannel(input: { name: string; topic?: string }): Pr
     body: JSON.stringify(input),
   });
   if (!response.ok) throw await responseError(response, 'Channel create failed');
+  return response.json();
+}
+
+export async function fetchChannelMembers(channelId: string): Promise<{ members: ChannelMember[] }> {
+  const response = await fetch(`/api/channels/${encodeURIComponent(channelId)}/members`);
+  if (!response.ok) throw await responseError(response, 'Channel members fetch failed');
+  return response.json();
+}
+
+export async function addChannelMember(
+  channelId: string,
+  input: { subjectType: 'human' | 'agent'; subjectId: string },
+): Promise<{ members: ChannelMember[] }> {
+  const response = await fetch(`/api/channels/${encodeURIComponent(channelId)}/members`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await responseError(response, 'Channel member add failed');
+  return response.json();
+}
+
+export async function removeChannelMember(
+  channelId: string,
+  input: { subjectType: 'human' | 'agent'; subjectId: string },
+): Promise<{ members: ChannelMember[] }> {
+  const response = await fetch(`/api/channels/${encodeURIComponent(channelId)}/members`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await responseError(response, 'Channel member remove failed');
+  return response.json();
+}
+
+export async function fetchChannelDrafts(channelId: string): Promise<{ drafts: ChannelHeldDraft[] }> {
+  const response = await fetch(`/api/channels/${encodeURIComponent(channelId)}/drafts`);
+  if (!response.ok) throw await responseError(response, 'Channel drafts fetch failed');
+  return response.json();
+}
+
+export async function discardChannelDraft(
+  channelId: string,
+  draftId: string,
+): Promise<{ draft: ChannelHeldDraft }> {
+  const response = await fetch(
+    `/api/channels/${encodeURIComponent(channelId)}/drafts/${encodeURIComponent(draftId)}/discard`,
+    { method: 'POST' },
+  );
+  if (!response.ok) throw await responseError(response, 'Channel draft discard failed');
+  return response.json();
+}
+
+export async function fetchAgentPresence(): Promise<{ agents: AgentPresence[] }> {
+  const response = await fetch('/api/chat/agents/status');
+  if (!response.ok) throw await responseError(response, 'Agent presence fetch failed');
+  return response.json();
+}
+
+export async function pauseChatAgent(agentId: string): Promise<void> {
+  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/pause`, { method: 'POST' });
+  if (!response.ok) throw await responseError(response, 'Agent pause failed');
+}
+
+export async function resumeChatAgent(agentId: string): Promise<void> {
+  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/resume`, { method: 'POST' });
+  if (!response.ok) throw await responseError(response, 'Agent resume failed');
+}
+
+export async function abortChatAgent(agentId: string): Promise<void> {
+  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/abort`, { method: 'POST' });
+  if (!response.ok) throw await responseError(response, 'Agent abort failed');
+}
+
+export async function resetChatAgent(
+  agentId: string,
+  mode: 'restart' | 'session-reset' | 'full-reset',
+): Promise<{ mode: string; sessionId: string | null }> {
+  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+  if (!response.ok) throw await responseError(response, 'Agent reset failed');
+  return response.json();
+}
+
+export async function markChatUnreadRead(input: {
+  target: ChatTarget;
+  seq: number;
+  messageId?: string | null;
+}): Promise<{ unread: ChatUnreadEntry[] }> {
+  const response = await fetch('/api/chat/unread/read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await responseError(response, 'Unread mark failed');
   return response.json();
 }
 
@@ -409,12 +497,10 @@ export class AgentStreamDisconnectError extends Error {
 export async function streamAgentMessage(
   key: string,
   message: string,
-  options: { provider?: string; model?: string; afterSeq?: number; images?: ImageAttachment[] } | undefined,
+  options: { afterSeq?: number; images?: ImageAttachment[] } | undefined,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<void> {
   const body: Record<string, unknown> = { message };
-  if (options?.provider) body.provider = options.provider;
-  if (options?.model) body.model = options.model;
   if (typeof options?.afterSeq === 'number') body.afterSeq = options.afterSeq;
   if (options?.images && options.images.length > 0) body.images = options.images;
   let response: Response;
@@ -525,21 +611,6 @@ export async function fetchAgentModelRegistry(): Promise<AgentModelRegistry> {
   const response = await fetch('/api/agent/model-registry');
   if (!response.ok) {
     throw await responseError(response, 'model registry fetch failed');
-  }
-  return response.json();
-}
-
-export async function resolveAgentModel(
-  provider: string,
-  id: string,
-): Promise<AgentModelRegistryResolveResponse> {
-  const response = await fetch('/api/agent/model-registry/resolve', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, id }),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'model resolve failed');
   }
   return response.json();
 }
@@ -693,14 +764,6 @@ export async function fetchCronJobRuns(jobName: string): Promise<CronRunRecord[]
   return payload.runs;
 }
 
-// Lists recent runs across all jobs.
-export async function fetchCronRecentRuns(limit = 50): Promise<CronRunRecord[]> {
-  const response = await fetch(`/api/cron/runs?limit=${limit}`);
-  if (!response.ok) throw await responseError(response, 'cron recent runs fetch failed');
-  const payload = await response.json();
-  return payload.runs;
-}
-
 // Returns the full session entries for a single cron run.
 export async function fetchCronSession(sessionId: string): Promise<{ jobName: string; entries: CronSessionEntry[] }> {
   const response = await fetch(`/api/cron/sessions/${encodeURIComponent(sessionId)}`);
@@ -798,22 +861,10 @@ export async function fetchMcpServerTools(name: string): Promise<McpServerToolsR
   return response.json();
 }
 
-export async function fetchMcpResources(): Promise<McpAllResourcesResponse> {
-  const response = await fetch('/api/mcp/resources');
-  if (!response.ok) throw await responseError(response, 'fetch MCP resources failed');
-  return response.json();
-}
-
 export async function fetchMcpServerResources(name: string, cursor?: string): Promise<McpServerResourcesResponse> {
   const params = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
   const response = await fetch(`/api/mcp/servers/${encodeURIComponent(name)}/resources${params}`);
   if (!response.ok) throw await responseError(response, 'fetch MCP server resources failed');
-  return response.json();
-}
-
-export async function fetchMcpResourceTemplates(): Promise<McpAllResourceTemplatesResponse> {
-  const response = await fetch('/api/mcp/resource-templates');
-  if (!response.ok) throw await responseError(response, 'fetch MCP resource templates failed');
   return response.json();
 }
 
@@ -937,24 +988,6 @@ export async function testProxy(config: ProxyConfigUpdate & { testUrl?: string }
 }
 
 // ─── Jin10 API ──────────────────────────────────────────────────────────────────
-
-export async function fetchJin10Status(): Promise<Jin10Status> {
-  const response = await fetch('/api/jin10/status');
-  if (!response.ok) throw await responseError(response, 'fetch jin10 status failed');
-  return response.json();
-}
-
-export async function fetchJin10Calendar(): Promise<{ events: Jin10CalendarEvent[] }> {
-  const response = await fetch('/api/jin10/calendar');
-  if (!response.ok) throw await responseError(response, 'fetch jin10 calendar failed');
-  return response.json();
-}
-
-export async function fetchJin10Quotes(): Promise<{ quotes: Jin10Quote[] }> {
-  const response = await fetch('/api/jin10/quotes');
-  if (!response.ok) throw await responseError(response, 'fetch jin10 quotes failed');
-  return response.json();
-}
 
 export async function fetchJin10AvailableCodes(): Promise<{ codes: Array<{ code: string; name: string }>; error?: string }> {
   const response = await fetch('/api/jin10/available-codes');

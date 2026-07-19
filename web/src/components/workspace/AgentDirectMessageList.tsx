@@ -1,22 +1,30 @@
+/**
+ * AgentDirectMessageList — Chat 左侧导航：Direct Messages + Channels + Saved/Pinned。
+ * 对应 Raft Chat 壳的侧栏入口。
+ */
 import { useState } from 'react';
 import { Bookmark, Bot, Hash, Loader2, Pin, Plus, X } from 'lucide-react';
+import { useChatPresence } from '../../chat/presenceStore';
+import { createLiveChatShellController } from '../../chat/shellController';
+import { channelTarget, directMessageTarget, unreadCountForTarget } from '../../chat/timeline';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
 
+const chatShell = createLiveChatShellController();
+
+/** 左侧 DM / Channel 列表与创建 Channel。 */
 export function AgentDirectMessageList() {
   const [creating, setCreating] = useState(false);
   const [channelName, setChannelName] = useState('');
+  const presenceByAgentId = useChatPresence();
   const agents = useAgentStore((state) => state.agents);
   const selectedAgentId = useAgentStore((state) => state.selectedAgentId);
-  const history = useAgentStore((state) => state.agentSessionHistory);
-  const runStateBySessionId = useAgentStore((state) => state.runStateBySessionId);
+  const directMessageIdByAgentId = useAgentStore((state) => state.directMessageIdByAgentId);
   const loading = useAgentStore((state) => state.agentSessionHistoryLoadingKey) !== null;
-  const selectAgent = useAgentStore((state) => state.selectAgent);
   const channels = useChatStore((state) => state.channels);
   const activeTarget = useChatStore((state) => state.activeTarget);
-  const selectChannel = useChatStore((state) => state.selectChannel);
   const createChannel = useChatStore((state) => state.createChannel);
-  const selectDirectChat = useChatStore((state) => state.selectDirectChat);
+  const unread = useChatStore((state) => state.unread);
   const savedCount = useChatStore((state) => state.saved.length);
   const pinnedCount = useChatStore((state) => state.pinned.length);
   const activeCollection = useChatStore((state) => state.activeCollection);
@@ -31,6 +39,7 @@ export function AgentDirectMessageList() {
 
   return (
     <aside className="direct-message-list">
+      <header className="chat-sidebar-title">Chat</header>
       <button className={`chat-reference-summary ${activeCollection === 'saved' ? 'active' : ''}`} onClick={() => openCollection('saved')} type="button"><Bookmark size={13} /> Saved <span>{savedCount}</span></button>
       <button className={`chat-reference-summary ${activeCollection === 'pinned' ? 'active' : ''}`} onClick={() => openCollection('pinned')} type="button"><Pin size={13} /> Pinned <span>{pinnedCount}</span></button>
       <header>JOINT CHANNELS <span>0</span></header>
@@ -52,43 +61,48 @@ export function AgentDirectMessageList() {
           <button className="shell-button sm" onClick={() => void submitChannel()} type="button">Create</button>
         </div>
       )}
-      {channels.map((channel) => (
-        <button
-          className={`channel-sidebar-row ${activeTarget?.kind === 'channel' && activeTarget.channelId === channel.id ? 'active' : ''}`}
-          key={channel.id}
-          onClick={() => void selectChannel(channel.id)}
-          type="button"
-        >
-          <Hash size={14} /> <span>{channel.name}</span>
-        </button>
-      ))}
+      {channels.map((channel) => {
+        const count = unreadCountForTarget(unread, channelTarget(channel.id));
+        return (
+          <button
+            className={`channel-sidebar-row ${activeTarget?.kind === 'channel' && activeTarget.channelId === channel.id ? 'active' : ''}`}
+            key={channel.id}
+            onClick={() => void chatShell.openChannel(channel.id)}
+            type="button"
+          >
+            <Hash size={14} /> <span>{channel.name}</span>
+            {count > 0 ? <em className="unread-badge">{count}</em> : null}
+          </button>
+        );
+      })}
       <header>DIRECT MESSAGES <span>{agents.length}</span></header>
       {loading && !agents.length && (
         <div className="empty-state sm row"><Loader2 className="spin" size={14} /> Loading Agents</div>
       )}
       {agents.map((agent) => {
-        const sessions = history.filter((session) => session.agentId === agent.id);
-        const running = sessions.some((session) => runStateBySessionId[session.id]?.status === 'running');
-        const failed = sessions.some((session) => runStateBySessionId[session.id]?.status === 'error');
+        const presence = presenceByAgentId[agent.id];
+        const running = Boolean(presence?.running);
+        const failed = presence?.status === 'error';
+        const paused = Boolean(presence?.paused);
+        const directMessageId = directMessageIdByAgentId[agent.id];
+        const count = directMessageId
+          ? unreadCountForTarget(unread, directMessageTarget(directMessageId))
+          : 0;
+        const statusLabel = paused ? 'Paused' : running ? 'Online' : failed ? 'Error' : null;
         return (
           <button
             className={`direct-message-row ${activeTarget?.kind === 'direct-message' && selectedAgentId === agent.id ? 'active' : ''}`}
             key={agent.id}
-            onClick={() => {
-              void selectAgent(agent.id).then(() => {
-                const selected = useAgentStore.getState();
-                const directMessageId = selected.directMessageIdByAgentId[agent.id];
-                if (directMessageId) selectDirectChat(directMessageId);
-              });
-            }}
+            onClick={() => void chatShell.openDirectMessage(agent.id)}
             type="button"
           >
             <span className="direct-message-avatar"><Bot size={16} /></span>
             <span className="direct-message-copy">
               <strong>{agent.name}</strong>
-              <small>{agent.description || agent.runtime}</small>
+              {statusLabel ? <small>{statusLabel}</small> : null}
             </span>
-            <span className={`direct-message-presence ${running ? 'running' : failed ? 'error' : ''}`} />
+            {count > 0 && directMessageId ? <em className="unread-badge">{count}</em> : null}
+            <span className={`direct-message-presence ${running ? 'running' : failed ? 'error' : paused ? 'paused' : ''}`} />
           </button>
         );
       })}

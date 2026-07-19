@@ -1,8 +1,14 @@
-import type { AgentContextManager } from "./agent/context-manager.js";
-import { ChatOverlayStore, type ChatMessageReference } from "./chat-overlay.js";
-import type { ChannelStore } from "./channel/store.js";
-import type { ChatTarget } from "./channel/domain.js";
-import type { MessageStore } from "./chat/message-store.js";
+/**
+ * chat-references — Saved / Pinned 的可信写入边界。
+ *
+ * 先校验 messageId 确实属于该 ChatTarget，再写入 Overlay。
+ * 避免伪造引用污染侧栏；遗留 Phase 1 sessionId:messageId 格式仍兼容校验。
+ */
+import type { AgentContextManager } from "../agent/context-manager.js";
+import { ChatOverlayStore, type ChatMessageReference } from "./overlay.js";
+import type { ChannelStore } from "../channel/store.js";
+import type { ChatTarget } from "../channel/domain.js";
+import type { MessageStore } from "./message-store.js";
 
 interface ChatReferenceInput {
   actorId: string;
@@ -10,7 +16,7 @@ interface ChatReferenceInput {
   messageId: string;
 }
 
-/** Trusted boundary for generic message references across Direct Messages and Channels. */
+/** Saved / Pinned 管理器：校验后委托 ChatOverlayStore。 */
 export class ChatReferenceManager {
   constructor(
     private readonly channelStore: ChannelStore,
@@ -19,28 +25,34 @@ export class ChatReferenceManager {
     private readonly store = new ChatOverlayStore(),
   ) {}
 
+  /** 收藏消息。 */
   save(input: ChatReferenceInput): void {
     this.validate(input.target, input.messageId);
     this.store.save(input);
   }
 
+  /** 取消收藏。 */
   unsave(input: ChatReferenceInput): void {
     this.store.unsave(input);
   }
 
+  /** 固定消息。 */
   pin(input: ChatReferenceInput): void {
     this.validate(input.target, input.messageId);
     this.store.pin(input);
   }
 
+  /** 取消固定。 */
   unpin(input: ChatReferenceInput): void {
     this.store.unpin(input);
   }
 
+  /** 列出 actor 的 Saved。 */
   listSaved(actorId: string): ChatMessageReference[] {
     return this.store.listSaved(actorId);
   }
 
+  /** 列出全部 Pinned。 */
   listPinned(): ChatMessageReference[] {
     return this.store.listAllPinned();
   }
@@ -49,6 +61,7 @@ export class ChatReferenceManager {
     this.store.close();
   }
 
+  /** 确认 messageId 属于 target；遗留 session:message 格式走 Context 校验。 */
   private validate(target: ChatTarget, messageId: string): void {
     if (target.kind === "channel") {
       const message = this.channelStore.getMessage(messageId);

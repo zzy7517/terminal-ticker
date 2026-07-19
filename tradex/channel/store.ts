@@ -1,8 +1,14 @@
+/**
+ * ChannelStore — Channel 元数据与消息时间线的权威存储门面。
+ *
+ * membership / held-drafts / reminders / reactions 委托到同级 Module；
+ * 每次消息变更递增 Channel version，并驱动 held-draft 冲突检测。
+ */
 import Database from "better-sqlite3";
 import crypto from "node:crypto";
 import path from "node:path";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
-import { appendChatEvent, initChatEventSchema } from "../chat-events.js";
+import { appendChatEvent, initChatEventSchema } from "../chat/events.js";
 import {
   channelTarget,
   type Channel,
@@ -10,6 +16,10 @@ import {
   type ChannelMessageRevision,
   type ChannelReactionSummary,
 } from "./domain.js";
+import * as heldDrafts from "./held-drafts.js";
+import * as membership from "./membership.js";
+import * as reactions from "./reactions.js";
+import * as reminders from "./reminders.js";
 
 interface ChannelRow {
   id: string;
@@ -44,10 +54,18 @@ interface ChannelMessageRevisionRow {
   created_at_ms: number;
 }
 
+/**
+ * ChannelStore — Channel 消息、成员、Held Draft、Reminder 的权威存储。
+ *
+ * 对应 Raft Server 下的 Channels：共享可见事实落库于此；
+ * Agent 私有上下文在 Agent Context / workspace，不在本 Store。
+ */
 export class ChannelStore extends BaseStore {
   constructor(dbPath = path.join(defaultCacheDir(), "chat.sqlite3")) {
     super(dbPath);
   }
+
+  // --- Channel / 消息 -------------------------------------------------
 
   protected override initSchema(conn: Database.Database): void {
     initChatEventSchema(conn);
@@ -98,7 +116,6 @@ export class ChannelStore extends BaseStore {
         channel_id TEXT NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
         subject_type TEXT NOT NULL CHECK (subject_type IN ('human', 'agent')),
         subject_id TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('member', 'admin')),
         joined_at_ms INTEGER NOT NULL,
         PRIMARY KEY (channel_id, subject_type, subject_id)
       );
@@ -125,6 +142,7 @@ export class ChannelStore extends BaseStore {
     ensureColumn(conn, "channel_messages", "edited_at_ms", "INTEGER");
     ensureColumn(conn, "channel_messages", "deleted_at_ms", "INTEGER");
     ensureMessageKindForwardCompatible(conn);
+    ensureMembershipSchema(conn);
     conn.exec(`
       CREATE INDEX IF NOT EXISTS idx_channel_messages_timeline
         ON channel_messages (channel_id, channel_seq DESC);
@@ -140,10 +158,9 @@ export class ChannelStore extends BaseStore {
         INSERT INTO chat_channels (id, name, topic, visibility, version, created_at_ms, archived_at_ms)
         VALUES (?, ?, ?, ?, 0, ?, NULL)
       `).run(id, name, input.topic?.trim() ?? "", input.visibility ?? "public", nowMs());
-      // Membership is presence-only; Member/Admin role matrix is deferred.
       conn.prepare(`
-        INSERT INTO channel_memberships (channel_id, subject_type, subject_id, role, joined_at_ms)
-        VALUES (?, 'human', 'owner', 'member', ?)
+        INSERT INTO channel_memberships (channel_id, subject_type, subject_id, joined_at_ms)
+        VALUES (?, 'human', 'owner', ?)
       `).run(id, nowMs());
       appendChatEvent(conn, {
         type: "channel.created",
@@ -222,7 +239,7 @@ export class ChannelStore extends BaseStore {
     content: string;
     threadRootId?: string | null;
     kind?: string;
-    onCommitted?: (conn: Database.Database, message: ChannelMessage) => void;
+    withinTransaction?: (conn: Database.Database, message: ChannelMessage) => void;
   }): ChannelMessage {
     return this.appendMessageInternal({
       ...input,
@@ -236,11 +253,26 @@ export class ChannelStore extends BaseStore {
     content: string;
     threadRootId?: string | null;
     kind?: string;
-    onCommitted?: (conn: Database.Database, message: ChannelMessage) => void;
+    withinTransaction?: (conn: Database.Database, message: ChannelMessage) => void;
   }): ChannelMessage {
     return this.appendMessageInternal({
       ...input,
       authorType: "agent",
+    });
+  }
+
+  /** 系统通知（如因果链暂停）；会递增 Channel version。 */
+  appendSystemMessage(input: {
+    channelId: string;
+    content: string;
+    kind?: string;
+  }): ChannelMessage {
+    return this.appendMessageInternal({
+      channelId: input.channelId,
+      authorType: "system",
+      authorId: "system",
+      content: input.content,
+      kind: input.kind ?? "system",
     });
   }
 
@@ -251,7 +283,7 @@ export class ChannelStore extends BaseStore {
     content: string;
     threadRootId?: string | null;
     kind?: string;
-    onCommitted?: (conn: Database.Database, message: ChannelMessage) => void;
+    withinTransaction?: (conn: Database.Database, message: ChannelMessage) => void;
   }): ChannelMessage {
     const content = input.content.trim();
     if (!content) throw new Error("message content is required");
@@ -290,246 +322,172 @@ export class ChannelStore extends BaseStore {
         payload: input.threadRootId ? { threadRootId: input.threadRootId } : {},
       });
       const message = this.requireMessage(input.channelId, id);
-      input.onCommitted?.(conn, message);
+      input.withinTransaction?.(conn, message);
       return message;
     })();
   }
 
+  /** 添加或替换成员。 */
   addMember(input: {
     channelId: string;
     subjectType: "human" | "agent";
     subjectId: string;
   }): { channelId: string; subjectType: string; subjectId: string } {
-    const conn = this.getConn();
-    return conn.transaction(() => {
-      const channel = this.getChannel(input.channelId);
-      if (!channel || channel.archivedAtMs !== null) throw new Error("Channel not found");
-      // Membership is presence-only for now; Member/Admin role matrix is deferred.
-      conn.prepare(`
-        INSERT OR REPLACE INTO channel_memberships (channel_id, subject_type, subject_id, role, joined_at_ms)
-        VALUES (?, ?, ?, 'member', ?)
-      `).run(input.channelId, input.subjectType, input.subjectId, nowMs());
-      appendChatEvent(conn, {
-        type: "membership.added",
-        actorType: "human",
-        actorId: "owner",
-        target: channelTarget(input.channelId),
-        entityType: "membership",
-        entityId: `${input.subjectType}:${input.subjectId}`,
-      });
-      return {
-        channelId: input.channelId,
-        subjectType: input.subjectType,
-        subjectId: input.subjectId,
-      };
-    })();
+    return membership.addMember(this.getConn(), input, (channelId) => this.getChannel(channelId));
   }
 
   removeMember(input: { channelId: string; subjectType: "human" | "agent"; subjectId: string }): void {
-    const conn = this.getConn();
-    conn.transaction(() => {
-      conn.prepare(`
-        DELETE FROM channel_memberships
-        WHERE channel_id = ? AND subject_type = ? AND subject_id = ?
-      `).run(input.channelId, input.subjectType, input.subjectId);
-      appendChatEvent(conn, {
-        type: "membership.removed",
-        actorType: "human",
-        actorId: "owner",
-        target: channelTarget(input.channelId),
-        entityType: "membership",
-        entityId: `${input.subjectType}:${input.subjectId}`,
-      });
-    })();
+    membership.removeMember(this.getConn(), input);
   }
 
   listMembers(channelId: string): Array<{ subjectType: string; subjectId: string; joinedAtMs: number }> {
-    const rows = this.getConn().prepare(`
-      SELECT subject_type, subject_id, joined_at_ms
-      FROM channel_memberships WHERE channel_id = ?
-      ORDER BY joined_at_ms
-    `).all(channelId) as Array<{ subject_type: string; subject_id: string; joined_at_ms: number }>;
-    return rows.map((row) => ({
-      subjectType: row.subject_type,
-      subjectId: row.subject_id,
-      joinedAtMs: row.joined_at_ms,
-    }));
+    return membership.listMembers(this.getConn(), channelId);
   }
 
   listAgentMemberIds(channelId: string): string[] {
-    return this.listMembers(channelId)
-      .filter((member) => member.subjectType === "agent")
-      .map((member) => member.subjectId);
+    return membership.listAgentMemberIds(this.getConn(), channelId);
   }
 
+  /**
+   * 当 Agent 的 observedVersion 落后于 channel.version 时暂存回复。
+   * 不会直接发布；Agent 需通过 retry/replace/discard 解决。
+   */
   createHeldDraft(input: {
     agentId: string;
     channelId: string;
     observedVersion: number;
     content: string;
-  }): { id: string; agentId: string; channelId: string; observedVersion: number; content: string; status: string; createdAtMs: number } {
-    const conn = this.getConn();
-    return conn.transaction(() => {
-      const id = crypto.randomUUID();
-      const createdAtMs = nowMs();
-      conn.prepare(`
-        INSERT INTO channel_drafts (
-          id, agent_id, channel_id, observed_version, content, status, created_at_ms, resolved_at_ms
-        ) VALUES (?, ?, ?, ?, ?, 'held', ?, NULL)
-      `).run(id, input.agentId, input.channelId, input.observedVersion, input.content, createdAtMs);
-      appendChatEvent(conn, {
-        type: "draft.held",
-        actorType: "agent",
-        actorId: input.agentId,
-        target: channelTarget(input.channelId),
-        entityType: "draft",
-        entityId: id,
-      });
-      return {
-        id,
-        agentId: input.agentId,
-        channelId: input.channelId,
-        observedVersion: input.observedVersion,
-        content: input.content,
-        status: "held",
-        createdAtMs,
-      };
-    })();
+  }): heldDrafts.HeldDraft {
+    return heldDrafts.createHeldDraft(this.getConn(), input);
   }
 
+  /**
+   * 解决 held draft。retry/replace 经 appendAgentMessage 发布；
+   * 调用方发布后还需 dispatchSharedMessage 做 inbox fan-out。
+   */
   resolveHeldDraft(input: {
     agentId: string;
     draftId: string;
     action: "retry" | "replace" | "discard";
     content?: string;
   }): {
-    draft: { id: string; agentId: string; channelId: string; observedVersion: number; content: string; status: string };
+    draft: Omit<heldDrafts.HeldDraft, "createdAtMs">;
     publishedMessage: ChannelMessage | null;
   } {
-    const conn = this.getConn();
-    return conn.transaction(() => {
-      const row = conn.prepare("SELECT * FROM channel_drafts WHERE id = ?").get(input.draftId) as {
-        id: string;
-        agent_id: string;
-        channel_id: string;
-        observed_version: number;
-        content: string;
-        status: string;
-      } | undefined;
-      if (!row || row.agent_id !== input.agentId) throw new Error("Held draft not found");
-      if (row.status !== "held") throw new Error("draft already resolved");
-      if (input.action === "discard") {
-        conn.prepare(`
-          UPDATE channel_drafts SET status = 'discarded', resolved_at_ms = ? WHERE id = ?
-        `).run(nowMs(), input.draftId);
-        return {
-          draft: {
-            id: row.id,
-            agentId: row.agent_id,
-            channelId: row.channel_id,
-            observedVersion: row.observed_version,
-            content: row.content,
-            status: "discarded",
-          },
-          publishedMessage: null,
-        };
-      }
-      const content = input.action === "replace" ? String(input.content ?? "").trim() : row.content;
-      if (!content) throw new Error("content is required");
-      const channel = this.getChannel(row.channel_id);
-      if (!channel) throw new Error("Channel not found");
-      if (input.action === "retry" && row.observed_version < channel.version) {
-        throw new Error("channel changed again; read latest messages before retry");
-      }
-      const publishedMessage = this.appendAgentMessage({
-        channelId: row.channel_id,
-        authorId: input.agentId,
-        content,
-      });
-      conn.prepare(`
-        UPDATE channel_drafts SET status = 'published', content = ?, resolved_at_ms = ? WHERE id = ?
-      `).run(content, nowMs(), input.draftId);
-      return {
-        draft: {
-          id: row.id,
-          agentId: row.agent_id,
-          channelId: row.channel_id,
-          observedVersion: row.observed_version,
-          content,
-          status: "published",
-        },
-        publishedMessage,
-      };
-    })();
+    return heldDrafts.resolveHeldDraft(this.getConn(), input, {
+      getChannel: (channelId) => this.getChannel(channelId),
+      appendAgentMessage: (payload) => this.appendAgentMessage(payload),
+    });
   }
 
+  /** 为 Agent 在 Channel 上安排一次性 reminder（不是 Cron Job）。 */
   createReminder(input: {
     agentId: string;
     channelId: string;
     dueAtMs: number;
     note: string;
-  }): { id: string; agentId: string; channelId: string; dueAtMs: number; note: string; status: string } {
-    if (!Number.isFinite(input.dueAtMs)) throw new Error("dueAtMs is required");
-    const conn = this.getConn();
-    return conn.transaction(() => {
-      if (!this.getChannel(input.channelId)) throw new Error("Channel not found");
-      const id = crypto.randomUUID();
-      conn.prepare(`
-        INSERT INTO channel_reminders (id, agent_id, channel_id, due_at_ms, note, status, created_at_ms)
-        VALUES (?, ?, ?, ?, ?, 'scheduled', ?)
-      `).run(id, input.agentId, input.channelId, Math.floor(input.dueAtMs), input.note.trim(), nowMs());
-      return {
-        id,
-        agentId: input.agentId,
-        channelId: input.channelId,
-        dueAtMs: Math.floor(input.dueAtMs),
-        note: input.note.trim(),
-        status: "scheduled",
-      };
-    })();
+  }): reminders.ChannelReminder {
+    return reminders.createReminder(this.getConn(), input, Boolean(this.getChannel(input.channelId)));
   }
 
   cancelReminder(input: { agentId: string; reminderId: string }): { id: string; status: string } {
-    const conn = this.getConn();
-    return conn.transaction(() => {
-      const row = conn.prepare("SELECT * FROM channel_reminders WHERE id = ?").get(input.reminderId) as {
-        id: string;
-        agent_id: string;
-        status: string;
-      } | undefined;
-      if (!row || row.agent_id !== input.agentId) throw new Error("Reminder not found");
-      conn.prepare("UPDATE channel_reminders SET status = 'cancelled' WHERE id = ?").run(input.reminderId);
-      return { id: row.id, status: "cancelled" };
-    })();
+    return reminders.cancelReminder(this.getConn(), input);
   }
 
   listDueReminders(now = nowMs()): Array<{ id: string; agentId: string; channelId: string; note: string; dueAtMs: number }> {
-    const rows = this.getConn().prepare(`
-      SELECT id, agent_id, channel_id, note, due_at_ms
-      FROM channel_reminders
-      WHERE status = 'scheduled' AND due_at_ms <= ?
-      ORDER BY due_at_ms
-    `).all(now) as Array<{ id: string; agent_id: string; channel_id: string; note: string; due_at_ms: number }>;
-    return rows.map((row) => ({
-      id: row.id,
-      agentId: row.agent_id,
-      channelId: row.channel_id,
-      note: row.note,
-      dueAtMs: row.due_at_ms,
-    }));
+    return reminders.listDueReminders(this.getConn(), now);
   }
 
+  /**
+   * scheduled → triggered 的恰好一次迁移。
+   * 若已被其他轮询认领则返回 false。
+   */
   markReminderTriggered(reminderId: string): boolean {
-    const conn = this.getConn();
-    const result = conn.prepare(`
-      UPDATE channel_reminders SET status = 'triggered'
-      WHERE id = ? AND status = 'scheduled'
-    `).run(reminderId);
-    return result.changes > 0;
+    return reminders.markReminderTriggered(this.getConn(), reminderId);
   }
 
-  listMessages(input: { channelId: string; beforeSeq?: number | null; limit?: number }): { messages: ChannelMessage[]; nextBeforeSeq: number | null } {
+  /** inbox reason 为 reminder 时，供 message_check 读取 note。 */
+  getReminder(reminderId: string): reminders.ChannelReminder | null {
+    return reminders.getReminder(this.getConn(), reminderId);
+  }
+
+  listHeldDrafts(channelId: string): heldDrafts.HeldDraft[] {
+    return heldDrafts.listHeldDrafts(this.getConn(), channelId);
+  }
+
+  /**
+   * Agent 读取 Channel 后，把其 held draft 的 observed_version 推进到 reviewedVersion。
+   * 这样后续 retry/replace 在房间未再变化时可发布。
+   */
+  markHeldDraftsReviewed(input: {
+    agentId: string;
+    channelId: string;
+    reviewedVersion: number;
+  }): number {
+    return heldDrafts.markHeldDraftsReviewed(this.getConn(), input);
+  }
+
+  /**
+   * Human Owner 在 draft 持有超过 graceMs 后可 discard；不能代 Agent 发布。
+   */
+  humanDiscardHeldDraft(input: {
+    draftId: string;
+    graceMs?: number;
+    now?: number;
+  }): { id: string; agentId: string; channelId: string; status: string; createdAtMs: number } {
+    return heldDrafts.humanDiscardHeldDraft(this.getConn(), input);
+  }
+
+  /** 统计 Human 已读游标之后的顶层消息数。 */
+  countMessagesAfterSeq(channelId: string, afterSeq: number): number {
+    const row = this.getConn().prepare(`
+      SELECT COUNT(*) AS count FROM channel_messages
+      WHERE channel_id = ? AND thread_root_id IS NULL AND channel_seq > ?
+        AND deleted_at_ms IS NULL
+    `).get(channelId, afterSeq) as { count: number };
+    return Number(row.count) || 0;
+  }
+
+  listMessages(input: {
+    channelId: string;
+    beforeSeq?: number | null;
+    afterSeq?: number | null;
+    aroundMessageId?: string | null;
+    limit?: number;
+  }): { messages: ChannelMessage[]; nextBeforeSeq: number | null } {
     const limit = Math.max(1, Math.min(100, Math.floor(input.limit ?? 50)));
+    if (input.aroundMessageId) {
+      const pivot = this.getMessage(input.aroundMessageId);
+      if (!pivot || pivot.channelId !== input.channelId) throw new Error("around message not found");
+      const beforeLimit = Math.floor(limit / 2);
+      const afterLimit = Math.max(1, limit - beforeLimit - 1);
+      const before = this.listMessages({
+        channelId: input.channelId,
+        beforeSeq: pivot.channelSeq,
+        limit: beforeLimit,
+      }).messages.reverse();
+      const after = this.listMessages({
+        channelId: input.channelId,
+        afterSeq: pivot.channelSeq,
+        limit: afterLimit,
+      }).messages;
+      return {
+        messages: [...before, pivot, ...after],
+        nextBeforeSeq: before[0]?.channelSeq ?? null,
+      };
+    }
+    if (input.afterSeq != null) {
+      const rows = this.getConn().prepare(`
+        SELECT * FROM channel_messages
+        WHERE channel_id = ? AND thread_root_id IS NULL AND channel_seq > ?
+        ORDER BY channel_seq
+        LIMIT ?
+      `).all(input.channelId, input.afterSeq, limit) as ChannelMessageRow[];
+      return {
+        messages: rows.map((row) => this.projectMessage(row)),
+        nextBeforeSeq: null,
+      };
+    }
     const beforeSeq = input.beforeSeq ?? Number.MAX_SAFE_INTEGER;
     const rows = this.getConn().prepare(`
       SELECT * FROM channel_messages
@@ -620,54 +578,30 @@ export class ChannelStore extends BaseStore {
     }));
   }
 
-  addReaction(input: { channelId: string; messageId: string; actorId: string; emoji: string }): ChannelMessage {
-    const emoji = normalizeEmoji(input.emoji);
-    const conn = this.getConn();
-    return conn.transaction(() => {
-      this.requireMessage(input.channelId, input.messageId);
-      const result = conn.prepare(`
-        INSERT OR IGNORE INTO channel_reactions (message_id, actor_type, actor_id, emoji, created_at_ms)
-        VALUES (?, 'human', ?, ?, ?)
-      `).run(input.messageId, input.actorId, emoji, nowMs());
-      if (result.changes > 0) {
-        this.bumpChannelVersion(input.channelId);
-        appendChatEvent(conn, {
-          type: "reaction.added",
-          actorType: "human",
-          actorId: input.actorId,
-          target: channelTarget(input.channelId),
-          entityType: "message",
-          entityId: input.messageId,
-          payload: { emoji },
-        });
-      }
-      return this.requireMessage(input.channelId, input.messageId);
-    })();
+  addReaction(input: {
+    channelId: string;
+    messageId: string;
+    actorId: string;
+    emoji: string;
+    actorType?: "human" | "agent";
+  }): ChannelMessage {
+    return reactions.addReaction(this.getConn(), input, {
+      requireMessage: (channelId, messageId) => this.requireMessage(channelId, messageId),
+      bumpChannelVersion: (channelId) => this.bumpChannelVersion(channelId),
+    });
   }
 
-  removeReaction(input: { channelId: string; messageId: string; actorId: string; emoji: string }): ChannelMessage {
-    const emoji = normalizeEmoji(input.emoji);
-    const conn = this.getConn();
-    return conn.transaction(() => {
-      this.requireMessage(input.channelId, input.messageId);
-      const result = conn.prepare(`
-        DELETE FROM channel_reactions
-        WHERE message_id = ? AND actor_type = 'human' AND actor_id = ? AND emoji = ?
-      `).run(input.messageId, input.actorId, emoji);
-      if (result.changes > 0) {
-        this.bumpChannelVersion(input.channelId);
-        appendChatEvent(conn, {
-          type: "reaction.removed",
-          actorType: "human",
-          actorId: input.actorId,
-          target: channelTarget(input.channelId),
-          entityType: "message",
-          entityId: input.messageId,
-          payload: { emoji },
-        });
-      }
-      return this.requireMessage(input.channelId, input.messageId);
-    })();
+  removeReaction(input: {
+    channelId: string;
+    messageId: string;
+    actorId: string;
+    emoji: string;
+    actorType?: "human" | "agent";
+  }): ChannelMessage {
+    return reactions.removeReaction(this.getConn(), input, {
+      requireMessage: (channelId, messageId) => this.requireMessage(channelId, messageId),
+      bumpChannelVersion: (channelId) => this.bumpChannelVersion(channelId),
+    });
   }
 
   private validateThreadRoot(channelId: string, threadRootId: string | null | undefined): string | null {
@@ -754,16 +688,42 @@ function messageFromRow(row: ChannelMessageRow, replyCount: number, reactions: C
   };
 }
 
-function normalizeEmoji(value: string): string {
-  const emoji = value.trim();
-  if (!emoji || emoji.length > 32) throw new Error("emoji is required");
-  return emoji;
-}
-
 function ensureColumn(conn: Database.Database, table: string, column: string, definition: string): void {
   const columns = conn.pragma(`table_info(${table})`) as Array<{ name: string }>;
   if (!columns.some((entry) => entry.name === column)) {
     conn.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+/** Rebuild channel_memberships when its columns diverge from (channel_id, subject_type, subject_id, joined_at_ms). */
+function ensureMembershipSchema(conn: Database.Database): void {
+  const columns = conn.pragma("table_info(channel_memberships)") as Array<{ name: string }>;
+  if (columns.length === 0) return;
+  const expected = new Set(["channel_id", "subject_type", "subject_id", "joined_at_ms"]);
+  const names = new Set(columns.map((entry) => entry.name));
+  if (names.size === expected.size && [...expected].every((name) => names.has(name))) return;
+  conn.pragma("foreign_keys = OFF");
+  try {
+    conn.exec(`
+      BEGIN;
+      CREATE TABLE channel_memberships_next (
+        channel_id TEXT NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
+        subject_type TEXT NOT NULL CHECK (subject_type IN ('human', 'agent')),
+        subject_id TEXT NOT NULL,
+        joined_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (channel_id, subject_type, subject_id)
+      );
+      INSERT INTO channel_memberships_next (channel_id, subject_type, subject_id, joined_at_ms)
+      SELECT channel_id, subject_type, subject_id, joined_at_ms FROM channel_memberships;
+      DROP TABLE channel_memberships;
+      ALTER TABLE channel_memberships_next RENAME TO channel_memberships;
+      COMMIT;
+    `);
+  } catch (error) {
+    if (conn.inTransaction) conn.exec("ROLLBACK");
+    throw error;
+  } finally {
+    conn.pragma("foreign_keys = ON");
   }
 }
 

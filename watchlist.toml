@@ -25,8 +25,8 @@ stock_poll_interval_seconds = 5
 
 [agent]
 enabled = true
-default_provider = "anthropic"
-default_model = "claude-haiku-4-5"
+default_provider = "openai"
+default_model = "openrouter/anthropic/claude-opus-4.7"
 system_prompt = ""
 max_candles = 40
 candle_context_mode = "raw"
@@ -40,7 +40,7 @@ models = ["gpt-5.4-mini", "gpt-5.4"]
 model_efforts = {"gpt-5.5" = "high", "gpt-5.4-mini" = "medium", "gpt-5.4" = "high"}
 
 [agent.providers.anthropic]
-enabled = true
+enabled = false
 api = "anthropic-messages"
 display_name = "anthropic"
 requires_auth = true
@@ -77,18 +77,12 @@ recent_limit = 50
 hyperliquid_mode = "off"   # "off" | "demo" | "live"
 bitget_mode = "demo"          # "off" | "demo" | "live"
 
-[memory]
-enabled = false
-use_memories = true
-generate_memories = true
-max_raw_memories_for_consolidation = 256
-max_unused_days = 180
-max_source_age_days = 180
-max_rollouts_per_startup = 5000
-min_session_idle_hours = 12
-extension_retention_days = 7
-extract_model = "codex:gpt-5.5"
-consolidation_model = "codex:gpt-5.5"
+[channels]
+max_active_agents = 3
+max_agents = 20
+max_activation_hops = 16
+activation_debounce_ms = 500
+retry_max_seconds = 300
 
 [jin10]
 enabled = true

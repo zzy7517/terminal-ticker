@@ -1,5 +1,4 @@
 import {
-  Bot,
   CalendarDays,
   Clock,
   LineChart,
@@ -21,6 +20,8 @@ import { OptionsPanel } from './OptionsPanel';
 import { useChatStore } from '../../stores/chatStore';
 import { ChannelPanel } from '../chat/ChannelPanel';
 import { ChatReferencePanel } from '../chat/ChatReferencePanel';
+import { AgentTracePanel } from '../chat/AgentTracePanel';
+import { useAgentStore } from '../../stores/agentStore';
 import './AgentChatLayout.css';
 
 export function WorkspaceView() {
@@ -28,34 +29,37 @@ export function WorkspaceView() {
   const activeTab = useUiStore((s) => s.activeWorkspace);
   const activeTarget = useChatStore((s) => s.activeTarget);
   const activeCollection = useChatStore((s) => s.activeCollection);
+  const agentProfileOpen = useChatStore((s) => s.agentProfileOpen);
+  const selectedAgentId = useAgentStore((s) => s.selectedAgentId);
 
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
 
+  const showTopbar = activeTab !== 'agent';
+
   return (
-    <main className="workspace-page">
-      <header className="topbar">
-        <div className="topbar-left">
-          <span className="workspace-title-icon" aria-hidden="true">
-            {activeTab === 'agent' ? <Bot size={17} />
-              : activeTab === 'market' ? <LineChart size={17} />
-              : activeTab === 'news' ? <Newspaper size={17} />
-              : activeTab === 'calendar' ? <CalendarDays size={17} />
-              : activeTab === 'cron' ? <Clock size={17} />
-              : <WalletCards size={17} />}
-          </span>
-          <div>
-            <h1>{activeTab === 'agent' ? 'Chat' : activeTab === 'market' ? 'Market' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
-            <p className="workspace-subtitle">
-              {activeTab === 'agent' ? 'Research and analysis workspace'
-                : activeTab === 'market' ? 'Watchlist and live market overview'
-                : 'Tradex workspace'}
-            </p>
+    <main className={`workspace-page${activeTab === 'agent' ? ' workspace-page--chat' : ''}`}>
+      {showTopbar ? (
+        <header className="topbar">
+          <div className="topbar-left">
+            <span className="workspace-title-icon" aria-hidden="true">
+              {activeTab === 'market' ? <LineChart size={17} />
+                : activeTab === 'news' ? <Newspaper size={17} />
+                : activeTab === 'calendar' ? <CalendarDays size={17} />
+                : activeTab === 'cron' ? <Clock size={17} />
+                : <WalletCards size={17} />}
+            </span>
+            <div>
+              <h1>{activeTab === 'market' ? 'Market' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
+              <p className="workspace-subtitle">
+                {activeTab === 'market' ? 'Watchlist and live market overview' : 'Tradex workspace'}
+              </p>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      ) : null}
 
       <section className="workspace">
-        <section className="main-content">
+        <section className={`main-content${activeTab === 'agent' ? ' main-content--chat' : ''}`}>
           {activeTab === 'market' && (
             <div className="market-workspace">
               <WatchlistSidebar mode="workspace" />
@@ -69,11 +73,12 @@ export function WorkspaceView() {
               ) : activeTarget?.kind === 'channel' ? (
                 <ChannelPanel />
               ) : (
-                <div className="agent-chat-main">
+                <div className={`agent-chat-main${agentProfileOpen ? ' with-trace' : ''}`}>
                   <AgentSessionPanel
                     providerProfiles={state?.config.agent.providerProfiles ?? {}}
                     disabled={!state}
                   />
+                  {agentProfileOpen && selectedAgentId ? <AgentTracePanel agentId={selectedAgentId} /> : null}
                 </div>
               )}
             </div>

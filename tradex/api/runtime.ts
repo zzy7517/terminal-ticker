@@ -26,8 +26,9 @@ import { indexPersistedAgentSessions, importLegacySessionMessages } from "../age
 import { ChannelStore } from "../channel/store.js";
 import { MessageStore } from "../chat/message-store.js";
 import { InboxStore } from "../chat/inbox-store.js";
-import { ChatEventStore } from "../chat-events.js";
-import { ChatReferenceManager } from "../chat-references.js";
+import { UnreadStore } from "../chat/unread-store.js";
+import { ChatEventStore } from "../chat/events.js";
+import { ChatReferenceManager } from "../chat/references.js";
 import type { AgentCoordinator } from "../chat/coordinator.js";
 import type { SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
 import { McpRunGrantStore } from "../mcp/server/grants.js";
@@ -53,6 +54,7 @@ export class AppRuntime {
   readonly channelStore: ChannelStore;
   readonly messageStore: MessageStore;
   readonly inboxStore: InboxStore;
+  readonly unreadStore: UnreadStore;
   readonly chatEventStore: ChatEventStore;
   readonly chatReferences: ChatReferenceManager;
   agentCoordinator: AgentCoordinator | null = null;
@@ -62,6 +64,8 @@ export class AppRuntime {
   readonly activeAgents = new Map<string, ActiveRuntimeRun>();
   readonly mcpRunGrants = new McpRunGrantStore();
   readonly claudeSessions = new ClaudeSessionStore();
+  /** Loopback HTTP origin for this process (MCP URL, etc.). Set at serve time. */
+  listenOrigin = "http://127.0.0.1:8765";
   private _modelRuntimeSnapshot: ModelRuntimeSnapshot;
   private running = false;
 
@@ -78,6 +82,7 @@ export class AppRuntime {
     this.channelStore = new ChannelStore();
     this.messageStore = new MessageStore();
     this.inboxStore = new InboxStore();
+    this.unreadStore = new UnreadStore();
     this.chatEventStore = new ChatEventStore();
     this.chatReferences = new ChatReferenceManager(
       this.channelStore,
@@ -190,6 +195,7 @@ export class AppRuntime {
     this.channelStore.close();
     this.messageStore.close();
     this.inboxStore.close();
+    this.unreadStore.close();
     this.chatEventStore.close();
     this.chatReferences.close();
     this.optionsService = config.options.enabled ? new OptionsService(config.options) : null;
@@ -218,8 +224,9 @@ export class AppRuntime {
   async start(): Promise<void> {
     await indexPersistedAgentSessions(this);
     await importLegacySessionMessages(this);
+    this.messageStore.migrateLegacyDirectChatTargets();
     const { AgentCoordinator } = await import("../chat/coordinator.js");
-    this.agentCoordinator = new AgentCoordinator(this);
+    this.agentCoordinator = new AgentCoordinator(this, this.config.channels.activationDebounceMs);
     this.agentCoordinator.start();
     this.running = true;
     this.controller.start();

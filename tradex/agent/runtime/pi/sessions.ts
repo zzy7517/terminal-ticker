@@ -62,7 +62,7 @@ export function readAgentSnapshot(manager: SessionManager): SessionAgentSnapshot
   };
 }
 
-export function piSessionsDir(): string {
+function piSessionsDir(): string {
   return path.join(defaultCacheDir(), PI_SESSIONS_SUBDIR);
 }
 

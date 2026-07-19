@@ -1,10 +1,15 @@
+/**
+ * ChannelMessageItem — 单条 Channel 消息行（编辑/删除/reaction/Saved/Pinned/开 thread）。
+ */
 import { useState } from 'react';
 import { Bookmark, MessageCircle, Pencil, Pin, Save, Trash2, X } from 'lucide-react';
 import type { ChannelMessage } from '../../types';
+import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
 
 const QUICK_REACTIONS = ['👍', '👀', '✅'];
 
+/** 渲染一条 Channel 共享消息及其操作。 */
 export function ChannelMessageItem({
   message,
   onReply,
@@ -14,6 +19,7 @@ export function ChannelMessageItem({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
+  const agents = useAgentStore((state) => state.agents);
   const editMessage = useChatStore((state) => state.editMessage);
   const deleteMessage = useChatStore((state) => state.deleteMessage);
   const toggleReaction = useChatStore((state) => state.toggleReaction);
@@ -30,6 +36,10 @@ export function ChannelMessageItem({
     && reference.target.channelId === message.channelId
   )));
   const deleted = message.deletedAtMs !== null;
+  const isHuman = message.authorType === 'human';
+  const authorLabel = isHuman && message.authorId === 'owner'
+    ? 'You'
+    : (agents.find((agent) => agent.id === message.authorId)?.name ?? message.authorId);
 
   async function saveEdit() {
     if (!draft.trim() || draft.trim() === message.content) {
@@ -42,11 +52,31 @@ export function ChannelMessageItem({
   }
 
   return (
-    <article className={`channel-message${deleted ? ' deleted' : ''}`}>
-      <div className="channel-message-meta">
-        <strong>{message.authorId === 'owner' ? 'You' : message.authorId}</strong>
+    <article className={`session-message channel-message${isHuman ? ' user' : ''}${deleted ? ' deleted' : ''}`}>
+      <div className="session-message-head">
+        <span>{authorLabel}</span>
         <time>{new Date(message.createdAtMs).toLocaleTimeString()}</time>
         {message.editedAtMs && !deleted ? <small>edited</small> : null}
+        {!deleted && (
+          <div className="session-message-reference-actions">
+            <button
+              className={saved ? 'active' : ''}
+              onClick={() => void toggleSaved({ kind: 'channel', channelId: message.channelId }, message.id)}
+              title={saved ? 'Unsave' : 'Save'}
+              type="button"
+            >
+              <Bookmark size={12} />
+            </button>
+            <button
+              className={pinned ? 'active' : ''}
+              onClick={() => void togglePinned({ kind: 'channel', channelId: message.channelId }, message.id)}
+              title={pinned ? 'Unpin' : 'Pin'}
+              type="button"
+            >
+              <Pin size={12} />
+            </button>
+          </div>
+        )}
       </div>
       {editing ? (
         <div className="channel-message-edit">
@@ -55,7 +85,9 @@ export function ChannelMessageItem({
           <button className="shell-button sm" onClick={() => { setEditing(false); setDraft(message.content); }} type="button"><X size={12} /> Cancel</button>
         </div>
       ) : (
-        <p>{deleted ? 'Message deleted' : message.content}</p>
+        <div className="session-message-text">
+          <p>{deleted ? 'Message deleted' : message.content}</p>
+        </div>
       )}
       {!deleted && (
         <div className="channel-message-actions">
@@ -64,22 +96,12 @@ export function ChannelMessageItem({
               <MessageCircle size={12} /> {message.replyCount ? `${message.replyCount} replies` : 'Reply'}
             </button>
           )}
-          {message.authorType === 'human' && message.authorId === 'owner' && (
+          {isHuman && message.authorId === 'owner' && (
             <>
               <button onClick={() => setEditing(true)} type="button"><Pencil size={12} /> Edit</button>
               <button onClick={() => void deleteMessage(message.id)} type="button"><Trash2 size={12} /> Delete</button>
             </>
           )}
-          <button
-            className={saved ? 'active' : ''}
-            onClick={() => void toggleSaved({ kind: 'channel', channelId: message.channelId }, message.id)}
-            type="button"
-          ><Bookmark size={12} /> {saved ? 'Saved' : 'Save'}</button>
-          <button
-            className={pinned ? 'active' : ''}
-            onClick={() => void togglePinned({ kind: 'channel', channelId: message.channelId }, message.id)}
-            type="button"
-          ><Pin size={12} /> {pinned ? 'Pinned' : 'Pin'}</button>
         </div>
       )}
       {!deleted && (

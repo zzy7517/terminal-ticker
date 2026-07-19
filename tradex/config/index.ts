@@ -204,8 +204,6 @@ export interface ChannelsConfig {
   maxActivationHops: number;
   activationDebounceMs: number;
   retryMaxSeconds: number;
-  /** Reserved; Member/Admin create-agent policy is deferred. Currently unused. */
-  agentsCanCreateAgents: boolean;
 }
 
 export type ProxyType = "http" | "https" | "socks5";
@@ -810,7 +808,6 @@ export function parseChannelsConfig(rawChannelsValue: unknown): ChannelsConfig {
     maxActivationHops: coerceInt(raw.max_activation_hops, "channels.max_activation_hops", 16),
     activationDebounceMs: coerceInt(raw.activation_debounce_ms, "channels.activation_debounce_ms", 500),
     retryMaxSeconds: coerceInt(raw.retry_max_seconds, "channels.retry_max_seconds", 300),
-    agentsCanCreateAgents: normalizeBool(raw.agents_can_create_agents, "channels.agents_can_create_agents", true),
   };
 }
 

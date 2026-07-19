@@ -1,11 +1,20 @@
+/**
+ * message-target — 把 Agent 侧 target 字符串解析为可信 ChatTarget。
+ *
+ * 示例：`#btc-research`、`#btc-research:<messageId>`、`dm:@owner`、`dm:@alpha`。
+ * 只在工具边界用 resolver 查真实 Channel/DM id；Agent 不能单靠伪造 UUID 造 ChatTarget。
+ */
 import { channelTarget, directMessageTarget, type ChatTarget } from "../channel/domain.js";
 
+/** 解析时的调用方身份（Human 或 Agent）。 */
 export type MessageActor =
   | { type: "human"; id: string }
   | { type: "agent"; id: string };
 
+/** 解析结果：内部 ChatTarget + 可选 messageId（around/thread）。 */
 export interface ParsedMessageTarget {
   chatTarget: ChatTarget;
+  /** `:` 后可选的 message id，用于 around/thread 定位。 */
   messageId: string | null;
   raw: string;
 }
@@ -13,12 +22,13 @@ export interface ParsedMessageTarget {
 const CHANNEL_RE = /^#([a-z0-9]+(?:-[a-z0-9]+)*)(?::([0-9a-f-]{8,}))?$/i;
 const DM_RE = /^dm:@([a-z0-9][a-z0-9_-]*)(?::([0-9a-f-]{8,}))?$/i;
 
+/** 名称/句柄 → 真实 id 的解析依赖（由 tools 注入）。 */
 export interface MessageTargetResolver {
   resolveChannelName(name: string): string | null;
   resolveDirectMessage(actor: MessageActor, recipientHandle: string): string | null;
 }
 
-/** Parse Agent-facing Message Target strings into trusted ChatTargets at the tool boundary. */
+/** 在工具边界把 Agent 侧 Message Target 解析为可信 ChatTarget。 */
 export function parseMessageTarget(
   raw: string,
   actor: MessageActor,
@@ -50,12 +60,4 @@ export function parseMessageTarget(
   }
 
   throw new Error(`invalid message target: ${value}`);
-}
-
-export function formatChannelTarget(name: string, messageId?: string | null): string {
-  return messageId ? `#${name}:${messageId}` : `#${name}`;
-}
-
-export function formatDmTarget(handle: string, messageId?: string | null): string {
-  return messageId ? `dm:@${handle}:${messageId}` : `dm:@${handle}`;
 }

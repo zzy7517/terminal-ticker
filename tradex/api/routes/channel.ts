@@ -1,11 +1,21 @@
+/**
+ * Channel REST 路由（Human Owner）。
+ *
+ * 消息发送走 dispatch.appendChannelMessageAndNotify：
+ * 权威 Channel 消息 + inbox fan-out + Coordinator 唤醒。
+ */
 import { Hono } from "hono";
 import type { AppRuntime } from "../runtime.js";
 
+/** 注册 /api/channels* Human Owner 路由。 */
 export function channelRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
 
+  // --- Channel CRUD ---------------------------------------------------------
+
   app.get("/api/channels", (c) => c.json({ channels: runtime.channelStore.listChannels() }));
 
+  /** 创建公开/私有 Channel；不自动启动任何 Agent。 */
   app.post("/api/channels", async (c) => {
     try {
       const body = await c.req.json() as Record<string, unknown>;
@@ -43,6 +53,7 @@ export function channelRoutes(runtime: AppRuntime): Hono {
     }
   });
 
+  /** 归档 Channel（软删除）。 */
   app.delete("/api/channels/:id", (c) => {
     try {
       const channel = runtime.channelStore.archiveChannel(c.req.param("id"));
@@ -52,6 +63,8 @@ export function channelRoutes(runtime: AppRuntime): Hono {
       return c.json({ detail }, detail === "Channel not found" ? 404 : 400);
     }
   });
+
+  // --- 消息 / thread --------------------------------------------------------
 
   app.get("/api/channels/:id/messages", (c) => {
     const channel = runtime.channelStore.getChannel(c.req.param("id"));
@@ -65,6 +78,7 @@ export function channelRoutes(runtime: AppRuntime): Hono {
     }));
   });
 
+  /** Human 发 Channel 消息：重置因果链，并为成员写入 inbox 后唤醒。 */
   app.post("/api/channels/:id/messages", async (c) => {
     try {
       const body = await c.req.json() as Record<string, unknown>;
@@ -84,12 +98,15 @@ export function channelRoutes(runtime: AppRuntime): Hono {
     }
   });
 
+  // --- 成员 / held draft ----------------------------------------------------
+
   app.get("/api/channels/:id/members", (c) => {
     const channel = runtime.channelStore.getChannel(c.req.param("id"));
     if (!channel) return c.json({ detail: "Channel not found" }, 404);
     return c.json({ members: runtime.channelStore.listMembers(channel.id) });
   });
 
+  /** Human 添加成员。 */
   app.post("/api/channels/:id/members", async (c) => {
     try {
       const body = await c.req.json() as Record<string, unknown>;
@@ -107,17 +124,64 @@ export function channelRoutes(runtime: AppRuntime): Hono {
 
   app.delete("/api/channels/:id/members", async (c) => {
     try {
+      const channelId = c.req.param("id");
       const body = await c.req.json() as Record<string, unknown>;
+      const subjectType = body.subjectType === "human" ? "human" as const : "agent" as const;
+      const subjectId = String(body.subjectId ?? "");
       runtime.channelStore.removeMember({
-        channelId: c.req.param("id"),
-        subjectType: body.subjectType === "human" ? "human" : "agent",
-        subjectId: String(body.subjectId ?? ""),
+        channelId,
+        subjectType,
+        subjectId,
       });
-      return c.json({ members: runtime.channelStore.listMembers(c.req.param("id")) });
+      if (subjectType === "agent" && subjectId) {
+        runtime.inboxStore.cancelForTarget(subjectId, { kind: "channel", channelId });
+        await runtime.agentCoordinator?.abort(subjectId);
+      }
+      return c.json({ members: runtime.channelStore.listMembers(channelId) });
     } catch (error) {
       return c.json({ detail: error instanceof Error ? error.message : "Membership remove failed" }, 400);
     }
   });
+
+  /** 列出 held draft。未满 5 分钟不向 Human 返回正文（仅 Agent trace 可见）。 */
+  app.get("/api/channels/:id/drafts", (c) => {
+    const channel = runtime.channelStore.getChannel(c.req.param("id"));
+    if (!channel) return c.json({ detail: "Channel not found" }, 404);
+    const graceMs = 5 * 60_000;
+    const now = Date.now();
+    const drafts = runtime.channelStore.listHeldDrafts(channel.id).map((draft) => {
+      const visible = now - draft.createdAtMs >= graceMs;
+      return {
+        ...draft,
+        content: visible ? draft.content : null,
+        contentVisible: visible,
+      };
+    });
+    return c.json({ drafts });
+  });
+
+  /**
+   * Human Owner 在 draft 持有超过 5 分钟后可 discard；不能代 Agent 发布。
+   */
+  app.post("/api/channels/:id/drafts/:draftId/discard", (c) => {
+    const channel = runtime.channelStore.getChannel(c.req.param("id"));
+    if (!channel) return c.json({ detail: "Channel not found" }, 404);
+    try {
+      const draft = runtime.channelStore.humanDiscardHeldDraft({
+        draftId: c.req.param("draftId"),
+      });
+      if (draft.channelId !== channel.id) {
+        return c.json({ detail: "Held draft not found" }, 404);
+      }
+      return c.json({ draft });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Discard failed";
+      const status = detail.includes("5-minute") ? 409 : detail.includes("not found") ? 404 : 400;
+      return c.json({ detail }, status);
+    }
+  });
+
+  // --- 消息编辑 / 删除 / thread / reaction ----------------------------------
 
   app.patch("/api/channels/messages/:id", async (c) => {
     try {
@@ -165,6 +229,7 @@ export function channelRoutes(runtime: AppRuntime): Hono {
     }
   });
 
+  /** Human 回复 thread；inbox reason 为 thread。 */
   app.post("/api/channels/messages/:id/thread", async (c) => {
     try {
       const root = runtime.channelStore.getMessage(c.req.param("id"));

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useMarketStore } from './stores/marketStore';
 import { useAgentStore } from './stores/agentStore';
 import { useUiStore } from './stores/uiStore';
-import { useChatStore } from './stores/chatStore';
+import { createLiveChatShellController } from './chat/shellController';
 import { AppSidebar } from './components/AppSidebar';
 
 import { orderedGroups, readRouteFromHash } from './utils';
@@ -44,7 +44,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    return useChatStore.getState().initChat();
+    return createLiveChatShellController().start();
   }, []);
 
   // Load the backend-owned model catalog once on startup.

@@ -1,9 +1,13 @@
+/**
+ * ThreadPanel — Channel thread 侧栏（根消息 + 回复 + composer）。
+ */
 import { useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';
 import { ChannelMessageItem } from './ChannelMessageItem';
 import { ChannelComposer } from './ChannelComposer';
 
+/** 打开中的 Channel thread 面板。 */
 export function ThreadPanel() {
   const [draft, setDraft] = useState('');
   const rootId = useChatStore((state) => state.openThreadId);

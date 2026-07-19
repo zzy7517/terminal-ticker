@@ -66,6 +66,7 @@ async function main(): Promise<void> {
   if (proxyResult.applied) console.log(`outbound proxy enabled → ${redactProxyUrl(proxyResult.url)}`);
   else if (proxyResult.error) console.warn(`⚠️  proxy not applied: ${proxyResult.error}`);
   const runtime = await AppRuntime.create(config);
+  runtime.listenOrigin = `http://${options.host === "0.0.0.0" ? "127.0.0.1" : options.host}:${options.port}`;
   await runtime.start();
   const app = createApp({ runtime });
   const server = serve({ fetch: app.fetch, hostname: options.host, port: options.port });

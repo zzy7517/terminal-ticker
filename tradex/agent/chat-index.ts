@@ -1,4 +1,11 @@
+/**
+ * chat-index — 启动时索引，以及遗留 Session → Shared DM 导入。
+ *
+ * 将 Runtime Session 索引进 AgentContext generations，并用 import_key
+ * 幂等复制遗留 Session 消息到唯一 Human–Agent DM。原始 Session 文件保留为执行归档。
+ */
 import type { AppRuntime } from "../api/runtime.js";
+import { isActivationWakeContent } from "../chat/prompts.js";
 import { HUMAN_OWNER_ID } from "../chat/message-store.js";
 import {
   listPiSessions,
@@ -7,7 +14,7 @@ import {
   piSessionSummary,
 } from "./runtime/pi/sessions.js";
 
-/** Indexes every persisted Runtime Session as one imported Chat during startup. */
+/** 启动时把每个持久化 Runtime Session 索引进 AgentContext generations。 */
 export async function indexPersistedAgentSessions(runtime: AppRuntime): Promise<void> {
   const listed = await listPiSessions();
   const managers = await Promise.all(listed.map((row) => openPiSession(row.id)));
@@ -18,7 +25,7 @@ export async function indexPersistedAgentSessions(runtime: AppRuntime): Promise<
     return [{
       sessionId: String(summary.id),
       agentId: String(summary.agentId || "default"),
-      title: String(summary.title || "Imported Chat"),
+      title: String(summary.title || "Imported Session"),
       runtime: "pi" as const,
       createdAtMs: Date.parse(String(summary.createdAt)) || Date.now(),
       updatedAtMs: Date.parse(String(summary.updatedAt)) || Date.now(),
@@ -27,7 +34,7 @@ export async function indexPersistedAgentSessions(runtime: AppRuntime): Promise<
   const claudeSessions = runtime.claudeSessions.list().map((summary) => ({
     sessionId: String(summary.id),
     agentId: String(summary.agentId || "default"),
-    title: String(summary.title || "Imported Chat"),
+    title: String(summary.title || "Imported Session"),
     runtime: "claude-code" as const,
     createdAtMs: Date.parse(String(summary.createdAt)) || Date.now(),
     updatedAtMs: Date.parse(String(summary.updatedAt)) || Date.now(),
@@ -45,12 +52,13 @@ interface ImportableSessionMessage {
 }
 
 /**
- * Idempotently imports user/assistant text from legacy Runtime Sessions into the
- * unique Human-Agent DM. importKey = `${sessionId}:${messageId}`; original
- * Session files remain the execution archive.
+ * 幂等导入遗留 Runtime Session 的 user/assistant 文本到唯一 Human-Agent DM。
+ * importKey = `${sessionId}:${messageId}`；原始 Session 文件保留为执行归档。
  */
 export async function importLegacySessionMessages(runtime: AppRuntime): Promise<{ imported: number; skipped: number }> {
   const candidates: ImportableSessionMessage[] = [];
+  let imported = 0;
+  let skipped = 0;
 
   const listed = await listPiSessions();
   for (const row of listed) {
@@ -67,6 +75,11 @@ export async function importLegacySessionMessages(runtime: AppRuntime): Promise<
       if (role !== "user" && role !== "assistant") continue;
       const content = String(message.content ?? "").trim();
       if (!content) continue;
+      // Coordinator wake / 历史误写入的 ops prompt 不是 Human–Agent 对话。
+      if (role === "user" && isActivationWakeContent(content)) {
+        skipped += 1;
+        continue;
+      }
       candidates.push({
         sessionId,
         messageId: String(message.id ?? ""),
@@ -85,6 +98,10 @@ export async function importLegacySessionMessages(runtime: AppRuntime): Promise<
       if (message.role !== "user" && message.role !== "assistant") continue;
       const content = message.content.trim();
       if (!content) continue;
+      if (message.role === "user" && isActivationWakeContent(content)) {
+        skipped += 1;
+        continue;
+      }
       candidates.push({
         sessionId,
         messageId: message.id,
@@ -100,8 +117,6 @@ export async function importLegacySessionMessages(runtime: AppRuntime): Promise<
     || left.sessionId.localeCompare(right.sessionId)
     || left.messageId.localeCompare(right.messageId));
 
-  let imported = 0;
-  let skipped = 0;
   for (const item of candidates) {
     if (!item.messageId) {
       skipped += 1;

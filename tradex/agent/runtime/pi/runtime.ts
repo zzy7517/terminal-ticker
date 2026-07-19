@@ -156,7 +156,7 @@ export class PiActiveRuntimeRun implements ActiveRuntimeRun {
   }
 }
 
-export async function createPiAgentRuntime(input: {
+async function createPiAgentRuntime(input: {
   config: AgentConfig;
   modelRuntime: ModelRuntimeSnapshot;
   systemPrompt: string;

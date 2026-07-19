@@ -37,8 +37,8 @@ describe("AgentStore", () => {
       description: "分析裸 K 与市场结构",
       systemPrompt: "只使用价格行为分析。",
       runtime: "pi",
-      provider: null,
-      model: null,
+      provider: "openai",
+      model: "gpt-5.4",
       reasoningEffort: null,
     });
 
@@ -46,6 +46,38 @@ describe("AgentStore", () => {
     expect(store.update(created.id, { name: "价格行为分析师" }).name).toBe("价格行为分析师");
     store.remove(created.id, () => false);
     expect(store.get(created.id)).toBeNull();
+  });
+
+  it("requires provider and model when creating a Pi Agent", () => {
+    const store = new AgentStore(tempAgentsDir());
+    expect(() => store.create({
+      id: "missing-routing",
+      name: "Missing",
+      description: "",
+      systemPrompt: null,
+      runtime: "pi",
+      provider: null,
+      model: null,
+      reasoningEffort: null,
+    })).toThrow("Pi Agent provider is required at create time");
+  });
+
+  it("binds provider/model once and then rejects changes", () => {
+    const store = new AgentStore(tempAgentsDir());
+    expect(store.update(DEFAULT_AGENT_ID, { provider: "openai", model: "gpt-5.4" })).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    expect(store.update(DEFAULT_AGENT_ID, { provider: "openai", model: "gpt-5.4" })).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    expect(() => store.update(DEFAULT_AGENT_ID, { provider: "anthropic" })).toThrow(
+      "Agent provider cannot be changed after it has been set",
+    );
+    expect(() => store.update(DEFAULT_AGENT_ID, { model: "other" })).toThrow(
+      "Agent model cannot be changed after it has been set",
+    );
   });
 
   it("protects the Default Agent and Agents with persisted Sessions", () => {
@@ -56,8 +88,8 @@ describe("AgentStore", () => {
       description: "ICT",
       systemPrompt: "ICT",
       runtime: "pi",
-      provider: null,
-      model: null,
+      provider: "openai",
+      model: "gpt-5.4",
       reasoningEffort: null,
     });
 
@@ -89,5 +121,23 @@ describe("AgentStore", () => {
       model: "sonnet",
       reasoningEffort: "ultra",
     })).toThrow("reasoningEffort is not supported");
+  });
+
+  it("locks Claude model after the first bind", () => {
+    const store = new AgentStore(tempAgentsDir());
+    const created = store.create({
+      id: "claude-locked",
+      name: "Claude Locked",
+      description: "",
+      systemPrompt: null,
+      runtime: "claude-code",
+      provider: null,
+      model: null,
+      reasoningEffort: "high",
+    });
+    expect(store.update(created.id, { model: "opus" }).model).toBe("opus");
+    expect(() => store.update(created.id, { model: "sonnet" })).toThrow(
+      "Agent model cannot be changed after it has been set",
+    );
   });
 });

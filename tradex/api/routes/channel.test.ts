@@ -2,16 +2,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatEventStore } from "../../chat-events.js";
-import { ChatOverlayStore } from "../../chat-overlay.js";
-import { ChatReferenceManager } from "../../chat-references.js";
+import { ChatEventStore } from "../../chat/events.js";
+import { ChatOverlayStore } from "../../chat/overlay.js";
+import { ChatReferenceManager } from "../../chat/references.js";
 import { channelTarget, directMessageTarget } from "../../channel/domain.js";
 import { ChannelStore } from "../../channel/store.js";
 import { MessageStore } from "../../chat/message-store.js";
 import { InboxStore } from "../../chat/inbox-store.js";
+import { UnreadStore } from "../../chat/unread-store.js";
 import { AgentContextStore } from "../../agent/context-store.js";
 import { AgentContextManager } from "../../agent/context-manager.js";
-import { chatEventRoutes } from "../chat-events.js";
+import { chatEventRoutes } from "./chat.js";
 import { channelRoutes } from "./channel.js";
 import type { AppRuntime } from "../runtime.js";
 
@@ -30,11 +31,13 @@ describe("Channel HTTP API", () => {
     const channelStore = new ChannelStore(dbPath);
     const messageStore = new MessageStore(dbPath);
     const inboxStore = new InboxStore(dbPath);
+    const unreadStore = new UnreadStore(dbPath);
     return {
       agentContextManager,
       channelStore,
       messageStore,
       inboxStore,
+      unreadStore,
       agentCoordinator: null,
       agentStore: { list: () => [], get: () => null },
       chatEventStore: new ChatEventStore(dbPath),

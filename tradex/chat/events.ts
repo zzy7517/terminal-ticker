@@ -1,12 +1,19 @@
+/**
+ * chat-events — Chat 变更事件日志（跨 Channel / DM）。
+ *
+ * 存于 chat.sqlite3，供 Human UI SSE / 轮询增量同步。
+ * 只记录「发生了什么」（消息、draft、pin 等），不存消息正文权威副本。
+ */
 import Database from "better-sqlite3";
 import path from "node:path";
-import { BaseStore, defaultCacheDir, jsonLoads, nowMs } from "./db.js";
+import { BaseStore, defaultCacheDir, jsonLoads, nowMs } from "../db.js";
 import {
   chatTargetFromRow,
   chatTargetRef,
   type ChatTarget,
-} from "./channel/domain.js";
+} from "../channel/domain.js";
 
+/** 一条可订阅的 Chat 变更事件。 */
 export interface ChatEvent {
   seq: number;
   type: string;
@@ -32,6 +39,7 @@ interface ChatEventRow {
   created_at_ms: number;
 }
 
+/** 初始化 chat_events 表（可与 Overlay / Channel 共用同一连接）。 */
 export function initChatEventSchema(conn: Database.Database): void {
   conn.exec(`
     CREATE TABLE IF NOT EXISTS chat_events (
@@ -49,6 +57,7 @@ export function initChatEventSchema(conn: Database.Database): void {
   `);
 }
 
+/** 追加一条事件并返回单调递增 seq。 */
 export function appendChatEvent(conn: Database.Database, input: {
   type: string;
   actorType: ChatEvent["actorType"];
@@ -77,6 +86,7 @@ export function appendChatEvent(conn: Database.Database, input: {
   return Number(result.lastInsertRowid);
 }
 
+/** Chat 事件只读 Store，供 API 增量拉取。 */
 export class ChatEventStore extends BaseStore {
   constructor(dbPath = path.join(defaultCacheDir(), "chat.sqlite3")) {
     super(dbPath);
@@ -86,11 +96,13 @@ export class ChatEventStore extends BaseStore {
     initChatEventSchema(conn);
   }
 
+  /** 当前最大事件序号。 */
   latestSeq(): number {
     const row = this.getConn().prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM chat_events").get() as { seq: number };
     return row.seq;
   }
 
+  /** 拉取 afterSeq 之后的事件（含最新 seq，便于客户端游标）。 */
   list(input: { afterSeq?: number; limit?: number }): { events: ChatEvent[]; latestSeq: number } {
     const afterSeq = Math.max(0, Math.floor(input.afterSeq ?? 0));
     const limit = Math.max(1, Math.min(500, Math.floor(input.limit ?? 100)));

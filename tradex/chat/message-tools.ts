@@ -1,10 +1,28 @@
+/**
+ * message-tools — Agent 面向的 Message Fabric 工具（Pi 进程内 + Claude MCP）。
+ *
+ * 工具只定义一次，runtimeExposure 同时覆盖两个 Runtime。write 工具使用 domain "other"，
+ * 以便 Claude MCP 暴露协作写能力时不打开交易写权限（见 listToolsForClaudeMcp）。
+ *
+ * Target 使用 Agent 侧字符串（#channel / dm:@handle），在此边界解析为可信 ChatTarget；
+ * Channel/DM 读写经 message-fabric，避免本文件重复 kind 分支。
+ */
 import type { AppRuntime } from "../api/runtime.js";
 import { ToolRegistry, type ToolDefinition } from "../agent/tools/registry.js";
-import { channelTarget, directMessageTarget, type ChatTarget } from "../channel/domain.js";
 import { parseMessageTarget, type MessageActor } from "./message-target.js";
-import { appendChannelMessageAndNotify, wakeRecipients, resolveRecipients } from "./dispatch.js";
 import { HUMAN_OWNER_ID } from "./message-store.js";
-import { readPrivateMemory, writePrivateMemory } from "../agent/private-workspace.js";
+import {
+  addReaction,
+  assertCanRead,
+  listReadableTargets,
+  readTimeline,
+  readThread,
+  removeReaction,
+  resolveHeldDraftAndFanOut,
+  searchReadable,
+  sendAgentMessage,
+} from "./message-fabric.js";
+import { registerMemoryTools } from "./memory-tools.js";
 
 const BOTH = ["pi", "claude-code"] as const;
 
@@ -12,6 +30,7 @@ function text(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+/** 构造带 Message Fabric 策略的工具（domain other，双 Runtime）。 */
 function tool(
   name: string,
   description: string,
@@ -28,6 +47,10 @@ function tool(
   };
 }
 
+/**
+ * 创建绑定到某个 Agent 身份的 Message Tool registry。
+ * 所有写操作都以该 agentId 执行；grant 不得允许冒充。
+ */
 export function createMessageToolRegistry(runtime: AppRuntime, agentId: string): ToolRegistry {
   const registry = new ToolRegistry();
   const actor: MessageActor = { type: "agent", id: agentId };
@@ -46,7 +69,8 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     },
   };
 
-  const resolveTarget = (raw: string): ChatTarget => parseMessageTarget(raw, actor, resolver).chatTarget;
+  const resolveParsed = (raw: string) => parseMessageTarget(raw, actor, resolver);
+  const resolveTarget = (raw: string) => resolveParsed(raw).chatTarget;
 
   registry.register(tool(
     "message_check",
@@ -56,20 +80,26 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
       const items = runtime.inboxStore.listPending(agentId);
       return text({
         unreadTargets: items.length,
-        items: items.map((item) => ({
-          id: item.id,
-          target: item.target,
-          reason: item.reason,
-          firstMessageId: item.firstMessageId,
-          latestMessageId: item.latestMessageId,
-        })),
+        items: items.map((item) => {
+          const reminder = item.reason === "reminder"
+            ? runtime.channelStore.getReminder(item.latestMessageId)
+            : null;
+          return {
+            id: item.id,
+            target: item.target,
+            reason: item.reason,
+            firstMessageId: item.firstMessageId,
+            latestMessageId: item.latestMessageId,
+            ...(reminder ? { reminderNote: reminder.note, reminderDueAtMs: reminder.dueAtMs } : {}),
+          };
+        }),
       });
     },
   ));
 
   registry.register(tool(
     "message_read",
-    "Read messages for a Channel or DM target.",
+    "Read messages for a Channel or DM target. Supports before/after/around cursors.",
     {
       type: "object",
       properties: {
@@ -77,34 +107,22 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
         limit: { type: "number" },
         before: { type: "number" },
         after: { type: "number" },
+        around: { type: "string" },
       },
       required: ["target"],
       additionalProperties: false,
     },
     async (args) => {
-      const target = resolveTarget(String(args.target ?? ""));
-      assertCanRead(runtime, agentId, target);
-      if (target.kind === "channel") {
-        const page = runtime.channelStore.listMessages({
-          channelId: target.channelId,
-          beforeSeq: typeof args.before === "number" ? args.before : null,
-          limit: typeof args.limit === "number" ? args.limit : 50,
-        });
-        const channel = runtime.channelStore.getChannel(target.channelId);
-        return text({
-          target,
-          channelVersion: channel?.version ?? null,
-          messages: page.messages,
-          nextBeforeSeq: page.nextBeforeSeq,
-        });
-      }
-      const page = runtime.messageStore.listMessages({
-        directMessageId: target.directMessageId,
+      const parsed = resolveParsed(String(args.target ?? ""));
+      const aroundMessageId = typeof args.around === "string" && args.around
+        ? args.around
+        : parsed.messageId;
+      return text(readTimeline(runtime, agentId, parsed.chatTarget, {
+        limit: typeof args.limit === "number" ? args.limit : 50,
         beforeSeq: typeof args.before === "number" ? args.before : null,
         afterSeq: typeof args.after === "number" ? args.after : null,
-        limit: typeof args.limit === "number" ? args.limit : 50,
-      });
-      return text({ target, messages: page.messages, nextBeforeSeq: page.nextBeforeSeq });
+        aroundMessageId,
+      }));
     },
   ));
 
@@ -120,23 +138,12 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
       required: ["query"],
       additionalProperties: false,
     },
-    async (args) => {
-      const readableDmIds = runtime.messageStore.listConversationsForAgent(agentId).map((dm) => dm.id);
-      const channelHits = runtime.channelStore.listChannels()
-        .filter((channel) => runtime.channelStore.listAgentMemberIds(channel.id).includes(agentId))
-        .flatMap((channel) => {
-          const page = runtime.channelStore.listMessages({ channelId: channel.id, limit: 100 });
-          return page.messages
-            .filter((message) => message.content.toLowerCase().includes(String(args.query ?? "").toLowerCase()))
-            .map((message) => ({ target: channelTarget(channel.id), message }));
-        });
-      const dmHits = runtime.messageStore.search({
-        directMessageIds: readableDmIds,
-        query: String(args.query ?? ""),
-        limit: typeof args.limit === "number" ? args.limit : 20,
-      }).map((message) => ({ target: directMessageTarget(message.directMessageId), message }));
-      return text({ results: [...dmHits, ...channelHits].slice(0, typeof args.limit === "number" ? args.limit : 20) });
-    },
+    async (args) => text(searchReadable(
+      runtime,
+      agentId,
+      String(args.query ?? ""),
+      typeof args.limit === "number" ? args.limit : 20,
+    )),
   ));
 
   registry.register(tool(
@@ -153,60 +160,56 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
       required: ["target", "content"],
       additionalProperties: false,
     },
+    async (args) => text(sendAgentMessage(runtime, agentId, resolveTarget(String(args.target ?? "")), {
+      content: String(args.content ?? ""),
+      threadRootId: typeof args.threadRootId === "string" ? args.threadRootId : null,
+      observedVersion: typeof args.observedVersion === "number" ? args.observedVersion : null,
+    })),
+    "write",
+  ));
+
+  registry.register(tool(
+    "message_add_reaction",
+    "Add a reaction to a Channel or DM message.",
+    {
+      type: "object",
+      properties: {
+        target: { type: "string" },
+        messageId: { type: "string" },
+        emoji: { type: "string" },
+      },
+      required: ["target", "messageId", "emoji"],
+      additionalProperties: false,
+    },
     async (args) => {
-      const target = resolveTarget(String(args.target ?? ""));
-      const content = String(args.content ?? "").trim();
-      if (!content) throw new Error("content is required");
-      assertCanWrite(runtime, agentId, target);
-      if (target.kind === "channel") {
-        const channel = runtime.channelStore.getChannel(target.channelId);
-        if (!channel) throw new Error("Channel not found");
-        const observed = typeof args.observedVersion === "number" ? args.observedVersion : null;
-        if (observed != null && observed < channel.version) {
-          const draft = runtime.channelStore.createHeldDraft({
-            agentId,
-            channelId: target.channelId,
-            observedVersion: observed,
-            content,
-          });
-          runtime.inboxStore.notify({
-            agentId,
-            target,
-            messageId: draft.id,
-            reason: "held-draft",
-          });
-          return text({ heldDraft: draft, published: false });
-        }
-        const { message } = appendChannelMessageAndNotify(runtime, {
-          channelId: target.channelId,
-          authorType: "agent",
-          authorId: agentId,
-          content,
-          threadRootId: typeof args.threadRootId === "string" ? args.threadRootId : null,
-        });
-        return text({ published: true, message, channelVersion: runtime.channelStore.getChannel(target.channelId)?.version });
-      }
-      const recipients = resolveRecipients(runtime, target, "agent", agentId);
-      runtime.inboxStore.ensureReady();
-      const message = runtime.messageStore.appendMessage({
-        directMessageId: target.directMessageId,
-        authorType: "agent",
-        authorId: agentId,
-        content,
-        threadRootId: typeof args.threadRootId === "string" ? args.threadRootId : null,
-        onCommitted: (conn, created) => {
-          for (const recipientId of recipients) {
-            runtime.inboxStore.notifyWithConn(conn, {
-              agentId: recipientId,
-              target,
-              messageId: created.id,
-              reason: "dm",
-            });
-          }
-        },
-      });
-      wakeRecipients(runtime, recipients);
-      return text({ published: true, message });
+      const parsed = resolveParsed(String(args.target ?? ""));
+      return text(addReaction(runtime, agentId, parsed.chatTarget, {
+        messageId: String(args.messageId ?? parsed.messageId ?? ""),
+        emoji: String(args.emoji ?? ""),
+      }));
+    },
+    "write",
+  ));
+
+  registry.register(tool(
+    "message_remove_reaction",
+    "Remove this Agent's reaction from a Channel or DM message.",
+    {
+      type: "object",
+      properties: {
+        target: { type: "string" },
+        messageId: { type: "string" },
+        emoji: { type: "string" },
+      },
+      required: ["target", "messageId", "emoji"],
+      additionalProperties: false,
+    },
+    async (args) => {
+      const parsed = resolveParsed(String(args.target ?? ""));
+      return text(removeReaction(runtime, agentId, parsed.chatTarget, {
+        messageId: String(args.messageId ?? parsed.messageId ?? ""),
+        emoji: String(args.emoji ?? ""),
+      }));
     },
     "write",
   ));
@@ -223,18 +226,12 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
       required: ["target", "rootMessageId"],
       additionalProperties: false,
     },
-    async (args) => {
-      const target = resolveTarget(String(args.target ?? ""));
-      assertCanRead(runtime, agentId, target);
-      const rootMessageId = String(args.rootMessageId ?? "");
-      if (target.kind === "channel") {
-        return text(runtime.channelStore.listThread({ channelId: target.channelId, rootMessageId }));
-      }
-      return text(runtime.messageStore.listThread({
-        directMessageId: target.directMessageId,
-        rootMessageId,
-      }));
-    },
+    async (args) => text(readThread(
+      runtime,
+      agentId,
+      resolveTarget(String(args.target ?? "")),
+      String(args.rootMessageId ?? ""),
+    )),
   ));
 
   registry.register(tool(
@@ -267,31 +264,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     "message_list_targets",
     "List Channel and DM targets this Agent can access.",
     { type: "object", properties: {}, additionalProperties: false },
-    async () => {
-      const channels = runtime.channelStore.listChannels()
-        .filter((channel) => runtime.channelStore.listAgentMemberIds(channel.id).includes(agentId))
-        .map((channel) => ({ target: `#${channel.name}`, channelId: channel.id, topic: channel.topic }));
-      const directMessages = runtime.messageStore.listConversationsForAgent(agentId).map((conversation) => {
-        const other = runtime.messageStore.otherParticipant(conversation, "agent", agentId);
-        if (!other) return null;
-        const handle = other.type === "human" ? "owner" : other.id;
-        return {
-          target: `dm:@${handle}`,
-          directMessageId: conversation.id,
-          other: { type: other.type, id: other.id },
-        };
-      }).filter((item): item is NonNullable<typeof item> => item != null);
-      // Ensure Human-Agent DM always appears even before any message.
-      if (!directMessages.some((item) => item.other.type === "human")) {
-        const humanDm = runtime.messageStore.ensureHumanAgentDm(agentId);
-        directMessages.unshift({
-          target: "dm:@owner",
-          directMessageId: humanDm.id,
-          other: { type: "human", id: HUMAN_OWNER_ID },
-        });
-      }
-      return text({ channels, directMessages });
-    },
+    async () => text(listReadableTargets(runtime, agentId)),
   ));
 
   registry.register(tool(
@@ -326,20 +299,11 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
       required: ["draftId", "action"],
       additionalProperties: false,
     },
-    async (args) => {
-      const result = runtime.channelStore.resolveHeldDraft({
-        agentId,
-        draftId: String(args.draftId ?? ""),
-        action: String(args.action ?? "") as "retry" | "replace" | "discard",
-        content: typeof args.content === "string" ? args.content : undefined,
-      });
-      if (result.publishedMessage) {
-        const { wakeRecipients, resolveRecipients } = await import("./dispatch.js");
-        const target = channelTarget(result.draft.channelId);
-        wakeRecipients(runtime, resolveRecipients(runtime, target, "agent", agentId));
-      }
-      return text(result);
-    },
+    async (args) => text(resolveHeldDraftAndFanOut(runtime, agentId, {
+      draftId: String(args.draftId ?? ""),
+      action: String(args.action ?? "") as "retry" | "replace" | "discard",
+      content: typeof args.content === "string" ? args.content : undefined,
+    })),
     "write",
   ));
 
@@ -377,33 +341,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     "write",
   ));
 
-  registry.register(tool(
-    "memory_read",
-    "Read this Agent's private MEMORY.md.",
-    { type: "object", properties: {}, additionalProperties: false },
-    async () => text({ content: readPrivateMemory(agentId) }),
-  ));
-
-  registry.register(tool(
-    "memory_write",
-    "Replace this Agent's private MEMORY.md.",
-    {
-      type: "object",
-      properties: { content: { type: "string" } },
-      required: ["content"],
-      additionalProperties: false,
-    },
-    async (args) => {
-      try {
-        writePrivateMemory(agentId, String(args.content ?? ""));
-        return text({ ok: true });
-      } catch (error) {
-        // Memory write failure must not roll back shared message / inbox state.
-        throw new Error(`memory write failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    },
-    "write",
-  ));
+  registerMemoryTools(registry, agentId);
 
   registry.register(tool(
     "channel_join",
@@ -450,79 +388,5 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     "write",
   ));
 
-  registry.register(tool(
-    "channel_create_agent",
-    "Create a new Agent and optionally join Channels. Limited by Workbench max_agents budget.",
-    {
-      type: "object",
-      properties: {
-        id: { type: "string" },
-        name: { type: "string" },
-        description: { type: "string" },
-        systemPrompt: { type: "string" },
-        runtime: { type: "string", enum: ["pi", "claude-code"] },
-        channelTargets: { type: "array", items: { type: "string" } },
-      },
-      required: ["id", "name"],
-      additionalProperties: false,
-    },
-    async (args) => {
-      // Member/Admin permission matrix is deferred; only enforce Workbench size budget.
-      const maxAgents = runtime.config.channels.maxAgents;
-      if (runtime.agentStore.list().length >= maxAgents) {
-        throw new Error(`policy denial: max_agents=${maxAgents}`);
-      }
-      const creator = runtime.agentStore.get(agentId);
-      if (!creator) throw new Error("creator Agent not found");
-      const runtimeId = args.runtime === "claude-code" ? "claude-code" as const : "pi" as const;
-      const created = runtime.agentStore.create({
-        id: String(args.id ?? ""),
-        name: String(args.name ?? ""),
-        description: String(args.description ?? ""),
-        systemPrompt: String(args.systemPrompt ?? creator.systemPrompt ?? ""),
-        runtime: runtimeId,
-        provider: runtimeId === "pi" ? creator.provider : null,
-        model: creator.model,
-        reasoningEffort: creator.reasoningEffort,
-      });
-      runtime.agentContextManager.ensure(created.id);
-      runtime.messageStore.ensureHumanAgentDm(created.id);
-      const joined: string[] = [];
-      for (const raw of Array.isArray(args.channelTargets) ? args.channelTargets : []) {
-        try {
-          const target = resolveTarget(String(raw));
-          if (target.kind !== "channel") continue;
-          runtime.channelStore.addMember({
-            channelId: target.channelId,
-            subjectType: "agent",
-            subjectId: created.id,
-          });
-          joined.push(target.channelId);
-        } catch {
-          // skip invalid targets
-        }
-      }
-      return text({ agent: created, joinedChannels: joined });
-    },
-    "write",
-  ));
-
   return registry;
-}
-
-function assertCanRead(runtime: AppRuntime, agentId: string, target: ChatTarget): void {
-  if (target.kind === "channel") {
-    if (!runtime.channelStore.listAgentMemberIds(target.channelId).includes(agentId)) {
-      throw new Error("not a member of this Channel");
-    }
-    return;
-  }
-  const conversation = runtime.messageStore.getConversation(target.directMessageId);
-  if (!conversation || !runtime.messageStore.otherParticipant(conversation, "agent", agentId)) {
-    throw new Error("not a participant of this Direct Message");
-  }
-}
-
-function assertCanWrite(runtime: AppRuntime, agentId: string, target: ChatTarget): void {
-  assertCanRead(runtime, agentId, target);
 }

@@ -269,10 +269,15 @@ function claudeInstructions(agentInstructions: string): string {
 }
 
 /** 根据当前 API 请求地址生成 loopback MCP endpoint URL。 */
-function claudeMcpUrl(requestUrl: string): string {
+export function claudeMcpUrl(requestUrl: string): string {
   const url = new URL(requestUrl);
   const host = url.port ? `127.0.0.1:${url.port}` : "127.0.0.1";
   return `${url.protocol}//${host}/mcp/tradex`;
+}
+
+/** From process listen origin (e.g. http://127.0.0.1:8765). */
+export function claudeMcpUrlFromOrigin(listenOrigin: string): string {
+  return claudeMcpUrl(listenOrigin);
 }
 
 const CLAUDE_IMAGE_TYPES: Record<string, string> = {

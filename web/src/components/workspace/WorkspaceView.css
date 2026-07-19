@@ -9,6 +9,15 @@
   padding: 0 22px 18px;
 }
 
+.workspace-page--chat {
+  padding: 0;
+}
+
+.main-content--chat {
+  max-height: none;
+  overflow: hidden;
+}
+
 .app-shell--with-sidebar {
   display: flex;
   gap: 0;
@@ -157,13 +166,25 @@
 .agent-tab-layout {
   display: grid;
   background: var(--panel);
-  border: 1px solid var(--line-strong);
+  border: 0;
   gap: 0;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-  height: calc(100dvh - 98px);
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  height: calc(100dvh - 20px);
   min-height: 0;
-  border-radius: var(--radius-lg);
+  border-radius: 0;
   overflow: hidden;
+}
+
+.workspace-page--chat .workspace,
+.workspace-page--chat .main-content--chat {
+  max-width: none;
+  margin: 0;
+  height: 100%;
+}
+
+.workspace-page--chat .agent-tab-layout {
+  height: 100dvh;
+  border-left: 1px solid var(--line-soft);
 }
 
 .market-workspace {

@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { channelTarget, directMessageTarget } from "./channel/domain.js";
-import { ChatOverlayStore } from "./chat-overlay.js";
+import { channelTarget, directMessageTarget } from "../channel/domain.js";
+import { ChatOverlayStore } from "./overlay.js";
 
 describe("ChatOverlayStore", () => {
   const roots: string[] = [];

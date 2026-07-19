@@ -124,13 +124,16 @@ export function catalogItem(instrument: { key: string; source: string; symbol: s
   };
 }
 
-// Merges per-request provider/model overrides from the SSE body into the
-// persisted agent config without mutating it.
-export function agentConfigForRequest(config: AgentConfig, body: Record<string, unknown>): AgentConfig {
-  const provider = normalizeProvider(
-    typeof body.provider === "string" && body.provider.trim() ? body.provider : config.provider,
-  );
-  const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : config.model;
+/**
+ * Build a per-run AgentConfig from a frozen Session/Agent routing snapshot.
+ * Session runs must not accept request-body provider/model overrides.
+ */
+export function agentConfigFromSnapshot(
+  config: AgentConfig,
+  snapshot: { provider: string; model: string },
+): AgentConfig {
+  const provider = normalizeProvider(snapshot.provider.trim() || config.provider);
+  const model = snapshot.model.trim() || config.model;
   const existingProfile = config.providerProfiles[provider];
   return {
     ...config,

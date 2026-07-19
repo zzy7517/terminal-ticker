@@ -286,10 +286,44 @@ export interface ChatMessageReference {
   createdAtMs: number;
 }
 
+export interface ChannelMember {
+  subjectType: string;
+  subjectId: string;
+  joinedAtMs: number;
+}
+
+export interface ChannelHeldDraft {
+  id: string;
+  agentId: string;
+  channelId: string;
+  observedVersion: number;
+  /** Null while still inside the 5-minute Agent-only window. */
+  content: string | null;
+  contentVisible?: boolean;
+  status: string;
+  createdAtMs: number;
+}
+
+export interface AgentPresence {
+  agentId: string;
+  status: string;
+  paused: boolean;
+  running: boolean;
+  lastActivationAtMs?: number | null;
+  lastError?: string | null;
+}
+
+export interface ChatUnreadEntry {
+  target: ChatTarget;
+  unreadCount: number;
+  lastReadSeq: number;
+}
+
 export interface ChatBootstrapResponse {
   channels: Channel[];
   saved: ChatMessageReference[];
   pinned: ChatMessageReference[];
+  unread?: ChatUnreadEntry[];
   lastEventSeq: number;
 }
 
@@ -469,11 +503,6 @@ export interface AgentModelRegistry {
   generation: number;
   providers: AgentModelRegistryProvider[];
   models: AgentModelRegistryModel[];
-}
-
-export interface AgentModelRegistryResolveResponse {
-  generation: number;
-  model: AgentModelRegistryModel;
 }
 
 export interface Quote {
@@ -948,21 +977,11 @@ export interface McpServerResourcesResponse {
   nextCursor: string | null;
 }
 
-export interface McpAllResourcesResponse {
-  resources: McpResourceInfo[];
-  errors: { serverName: string; error: string }[];
-}
-
 export interface McpServerResourceTemplatesResponse {
   server: string;
   status: McpServerStatus;
   resourceTemplates: McpResourceTemplateInfo[];
   nextCursor: string | null;
-}
-
-export interface McpAllResourceTemplatesResponse {
-  resourceTemplates: McpResourceTemplateInfo[];
-  errors: { serverName: string; error: string }[];
 }
 
 export interface McpReadResourceResponse {

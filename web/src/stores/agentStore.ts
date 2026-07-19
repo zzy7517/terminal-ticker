@@ -1,9 +1,11 @@
 /** 管理 Agent 选择、Session 历史、流式消息和操作状态的 Zustand store。 */
+import { chronologicalMessages } from '../chat/timeline';
 import { create } from 'zustand';
 import type {
   AgentContextUsage,
   AgentDefinition,
   AgentDirectMessage,
+  AgentDirectMessageResponse,
   AgentMessage,
   AgentModelRegistry,
   AgentSessionResponse,
@@ -106,6 +108,7 @@ interface AgentState {
   selectedAgentId: string;
   directMessageIdByAgentId: Record<string, string>;
   directMessagesByAgentId: Record<string, AgentDirectMessage[]>;
+  generationsByAgentId: Record<string, AgentDirectMessageResponse['generations']>;
   agentSession: AgentSessionResponse | null;
   agentSessionHistory: AgentSessionSummary[];
   agentSessionLoadingKey: string | null;
@@ -148,12 +151,9 @@ interface AgentState {
   setAgentSession: (session: AgentSessionResponse | null) => void;
   setAgentSessionHistory: (history: AgentSessionSummary[]) => void;
   setAgentPrompt: (prompt: string) => void;
-  setAgentProvider: (provider: string) => void;
-  setAgentModel: (model: string) => void;
   addPendingImage: (image: ImageAttachment) => void;
   removePendingImage: (index: number) => void;
   clearPendingImages: () => void;
-  changeProviderModel: (provider: string, defaultModel: string) => void;
 
   initSessions: () => () => void;
   refreshModelRegistry: () => Promise<void>;
@@ -247,7 +247,7 @@ function activeFields(state: ActiveMirrorSource): Pick<
   const key = pendingImagesKey(activeId);
   return {
     agentSession: session,
-    agentPrompt: activeId ? state.draftBySessionId[activeId] ?? '' : '',
+    agentPrompt: state.draftBySessionId[key] ?? '',
     pendingToolCalls: new Set(run?.pendingToolCalls ?? []),
     contextUsage: run?.contextUsage ?? session?.contextUsage ?? null,
     sessionStats: run?.sessionStats ?? session?.sessionStats ?? null,
@@ -341,6 +341,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   selectedAgentId: 'default',
   directMessageIdByAgentId: {},
   directMessagesByAgentId: {},
+  generationsByAgentId: {},
   agentSession: null,
   agentSessionHistory: [],
   agentSessionLoadingKey: null,
@@ -393,24 +394,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const next = { ...s, agentSessionHistory: history, runStateBySessionId };
     return { agentSessionHistory: history, runStateBySessionId, ...activeFields(next) };
   }),
-  setAgentPrompt: (prompt) => set((s) => ({
-    agentPrompt: prompt,
-    draftBySessionId: s.activeAgentSessionId
-      ? { ...s.draftBySessionId, [s.activeAgentSessionId]: prompt }
-      : s.draftBySessionId,
-  })),
-  setAgentProvider: (provider) => {
-    const current = get();
-    const selection = current.modelRegistry
-      ? registrySelection(current.modelRegistry, provider, '')
-      : { provider, model: loadPersistedModels()[provider] ?? '' };
-    set({ agentProvider: selection.provider, agentModel: selection.model });
-    persistProviderModel(selection.provider, selection.model);
-  },
-  setAgentModel: (model) => {
-    set({ agentModel: model });
-    persistProviderModel(get().agentProvider, model);
-  },
+  setAgentPrompt: (prompt) => set((s) => {
+    const key = pendingImagesKey(s.activeAgentSessionId);
+    const next = {
+      ...s,
+      draftBySessionId: { ...s.draftBySessionId, [key]: prompt },
+    };
+    return { draftBySessionId: next.draftBySessionId, ...activeFields(next) };
+  }),
   addPendingImage: (image) => set((s) => {
     const key = pendingImagesKey(s.activeAgentSessionId);
     const current = s.pendingImagesBySessionId[key] ?? [];
@@ -457,10 +448,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const next = { ...s, queuedFollowUpsBySessionId };
     return { queuedFollowUpsBySessionId, ...activeFields(next) };
   }),
-  changeProviderModel: (provider, defaultModel) => {
-    set({ agentProvider: provider, agentModel: defaultModel });
-    persistProviderModel(provider, defaultModel);
-  },
 
   refreshModelRegistry: async () => {
     set({ modelRegistryLoading: true });
@@ -487,16 +474,25 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   refreshAgentDirectMessages: async (agentId) => {
     const payload = await fetchAgentDirectMessages(agentId);
+    // API returns newest-first (dm_seq DESC) for before_seq pagination; UI is oldest→newest.
+    const messages = chronologicalMessages(payload.messages);
     set((s) => ({
       directMessageIdByAgentId: { ...s.directMessageIdByAgentId, [agentId]: payload.target.directMessageId },
-      directMessagesByAgentId: { ...s.directMessagesByAgentId, [agentId]: payload.messages },
+      directMessagesByAgentId: { ...s.directMessagesByAgentId, [agentId]: messages },
+      generationsByAgentId: { ...s.generationsByAgentId, [agentId]: payload.generations ?? [] },
     }));
   },
 
   selectAgent: async (agentId) => {
     if (get().agentChatActionKey) return;
     try {
-      const payload = await fetchAgentDirectMessages(agentId);
+      const [payload, agentPayload] = await Promise.all([
+        fetchAgentDirectMessages(agentId),
+        fetchAgents().catch((error) => {
+          console.error('Agents refresh failed:', error);
+          return null;
+        }),
+      ]);
       set((s) => {
         const directMessageIdByAgentId = {
           ...s.directMessageIdByAgentId,
@@ -504,12 +500,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         };
         const directMessagesByAgentId = {
           ...s.directMessagesByAgentId,
-          [agentId]: payload.messages,
+          [agentId]: chronologicalMessages(payload.messages),
+        };
+        const generationsByAgentId = {
+          ...s.generationsByAgentId,
+          [agentId]: payload.generations ?? [],
         };
         const activeAgentSessionId = s.agentSessionHistory.find((session) => session.agentId === agentId)?.id ?? null;
         return {
+          ...(agentPayload ? { agents: agentPayload.agents } : {}),
           directMessageIdByAgentId,
           directMessagesByAgentId,
+          generationsByAgentId,
           ...selectionUpdate({ ...s, directMessageIdByAgentId, directMessagesByAgentId }, {
             selectedAgentId: agentId,
             activeAgentSessionId,
@@ -554,7 +556,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             ? { ...s.directMessageIdByAgentId, [selectedAgentId]: directMessages.target.directMessageId }
             : s.directMessageIdByAgentId;
           const directMessagesByAgentId = directMessages
-            ? { ...s.directMessagesByAgentId, [selectedAgentId]: directMessages.messages }
+            ? { ...s.directMessagesByAgentId, [selectedAgentId]: chronologicalMessages(directMessages.messages) }
             : s.directMessagesByAgentId;
           const next = {
             ...s,
@@ -616,34 +618,30 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return () => { disposed = true; };
   },
 
-  // 发送普通消息，或在运行中将输入加入当前 Session 的 follow-up 队列。
+  // Human → Agent composer: always Shared Message Fabric (text and/or images).
+  // Session stream remains only for explicit requestedSessionId follow-up drains.
   runAgentAnalysis: async (requestedSessionId, options) => {
     const state = get();
-    const agentSession = requestedSessionId ? responseForSession(state, requestedSessionId) : state.agentSession;
     const includeDraft = options?.includeDraft !== false;
-    const agentPrompt = includeDraft
-      ? requestedSessionId ? state.draftBySessionId[requestedSessionId] ?? '' : state.agentPrompt
-      : '';
-    const agentProvider = agentSession?.session?.provider ?? state.agentProvider;
-    const agentModel = agentSession?.session?.model ?? state.agentModel;
-    let targetSessionId = requestedSessionId ?? agentSession?.session?.id ?? null;
-    let drainedFollowUps: QueuedFollowUp[] = [];
-    let restoredFollowUps = false;
-    let runFailed = false;
-    // Capture pending images from the *current* session bucket. We resolve the
-    // bucket again after possibly creating a new session, so that pending images
-    // queued under the "__new__" placeholder are migrated to the new session id.
-    const initialBucketKey = pendingImagesKey(targetSessionId);
-    const initialImages = get().pendingImagesBySessionId[initialBucketKey] ?? [];
-    if (!requestedSessionId && includeDraft && agentPrompt.trim() && initialImages.length === 0) {
+    if (!requestedSessionId) {
+      const draftKey = pendingImagesKey(state.activeAgentSessionId);
+      const agentPrompt = includeDraft ? state.draftBySessionId[draftKey] ?? state.agentPrompt : '';
+      const images = includeDraft ? [...(state.pendingImagesBySessionId[draftKey] ?? [])] : [];
+      const content = agentPrompt.trim() || (images.length > 0 ? '分析这张图片' : '');
+      if (!content && images.length === 0) return;
+      const imageError = validateFollowUpImages(images);
+      if (imageError) {
+        console.error(imageError);
+        return;
+      }
       try {
-        await sendAgentDirectMessage(state.selectedAgentId, agentPrompt.trim());
+        await sendAgentDirectMessage(state.selectedAgentId, content, images.length ? images : undefined);
         set((s) => {
-          const draftBySessionId = s.activeAgentSessionId
-            ? { ...s.draftBySessionId, [s.activeAgentSessionId]: '' }
-            : s.draftBySessionId;
-          const next = { ...s, draftBySessionId };
-          return { draftBySessionId, ...activeFields(next) };
+          const pendingImagesBySessionId = { ...s.pendingImagesBySessionId };
+          delete pendingImagesBySessionId[draftKey];
+          const draftBySessionId = { ...s.draftBySessionId, [draftKey]: '' };
+          const next = { ...s, pendingImagesBySessionId, draftBySessionId };
+          return { pendingImagesBySessionId, draftBySessionId, ...activeFields(next) };
         });
         await get().refreshAgentDirectMessages(state.selectedAgentId);
       } catch (error) {
@@ -651,6 +649,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
       return;
     }
+
+    const agentPrompt = includeDraft
+      ? state.draftBySessionId[requestedSessionId] ?? ''
+      : '';
+    let targetSessionId: string | null = requestedSessionId;
+    let drainedFollowUps: QueuedFollowUp[] = [];
+    let restoredFollowUps = false;
+    let runFailed = false;
+    const initialBucketKey = pendingImagesKey(targetSessionId);
+    const initialImages = get().pendingImagesBySessionId[initialBucketKey] ?? [];
     let idCounter = 0;
     const nextId = () => { idCounter += 1; return -(Date.now() * 100 + idCounter); };
 
@@ -682,8 +690,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       if (!targetSessionId) {
         const created = await createAgentSession({
-          provider: agentProvider,
-          model: agentModel,
           agentId: state.selectedAgentId,
         });
         targetSessionId = created.session?.id ?? null;
@@ -695,8 +701,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             ...s.runStateBySessionId,
             [createdSessionId]: mergeRunPayload(s.runStateBySessionId[createdSessionId], createdSessionId, created.run),
           });
-          // Migrate pending images from the placeholder bucket ("__new__") to
-          // the freshly-created session id.
           const pendingImagesBySessionId = { ...s.pendingImagesBySessionId };
           const placeholderBucket = pendingImagesBySessionId[NEW_SESSION_PENDING_KEY];
           if (placeholderBucket && placeholderBucket.length > 0) {
@@ -757,14 +761,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         });
       }
       if (get().runStateBySessionId[runSessionId]?.status === 'running') return;
-      // Allow image-only sends: when the user pastes/drops a screenshot and
-      // hits Enter without any text, fill in a default prompt so the model
-      // gets an instruction to act on. Mirrors what users would type by hand.
       const combinedText = mergedFollowUps.prompt;
       const prompt = combinedText.length > 0
         ? combinedText
         : (imagesToSend && imagesToSend.length > 0 ? '分析这张图片' : agentPrompt);
-      // Bail out if there's nothing to send at all.
       if (prompt.trim().length === 0 && !imagesToSend) return;
       set((s) => {
         const createdAt = new Date().toISOString();
@@ -801,9 +801,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       await streamAgentMessage(
         runSessionId,
         prompt,
-        agentSession?.session?.runtime === 'claude-code'
-          ? { images: imagesToSend }
-          : { provider: agentProvider, model: agentModel, images: imagesToSend },
+        { images: imagesToSend },
         (envelope) => {
           const sessionId = envelope.sessionId || runSessionId;
           const event = envelope.event;

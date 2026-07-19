@@ -1,4 +1,16 @@
+/**
+ * prompts — activation 用的无正文 wake 文本与操作说明。
+ *
+ * wake prompt 故意不含消息正文。Agent 必须调用 message_check / message_read。
+ * stale notice 后空 check 视为成功。
+ *
+ * MESSAGE_OPERATING_INSTRUCTIONS 应放在 Runtime systemPrompt，不要每轮当 user 消息重复投递。
+ * buildWakePrompt 带 ACTIVATION_WAKE_MARKER，遗留 Session→DM 导入会跳过。
+ */
 import type { InboxItem } from "./inbox-store.js";
+
+/** 标记 activation user prompt，禁止导入 Shared DM。 */
+export const ACTIVATION_WAKE_MARKER = "[tradex-activation-wake]";
 
 export const MESSAGE_OPERATING_INSTRUCTIONS = `You are participating in Tradex Chat (Direct Messages and Channels).
 
@@ -11,6 +23,19 @@ Rules:
 - If message_check returns empty, treat that as success and stop.
 - Prefer silence over noise.`;
 
+/** 是否为 Coordinator activation 产生的内部 wake（含历史未打标版本）。 */
+export function isActivationWakeContent(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith(ACTIVATION_WAKE_MARKER)) return true;
+  // 历史：ops instructions 曾整段塞进 user prompt 并被导入 DM。
+  if (trimmed.startsWith("You are participating in Tradex Chat (Direct Messages and Channels).")) {
+    return true;
+  }
+  return false;
+}
+
+/** 构造只含变化目标与游标的短 wake（不含正文、不含 ops 全文）。 */
 export function buildWakePrompt(pending: InboxItem[]): string {
   const byTarget = new Map<string, InboxItem[]>();
   for (const item of pending) {
@@ -22,6 +47,7 @@ export function buildWakePrompt(pending: InboxItem[]): string {
     byTarget.set(key, list);
   }
   const lines = [
+    ACTIVATION_WAKE_MARKER,
     `You have unread messages across ${byTarget.size} target${byTarget.size === 1 ? "" : "s"}. Inspect them at a natural breakpoint if useful.`,
     "Changed targets:",
   ];

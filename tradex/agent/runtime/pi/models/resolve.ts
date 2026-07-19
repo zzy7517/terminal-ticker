@@ -3,7 +3,8 @@
  *
  * An AgentModel is a pure data structure that carries everything needed to
  * route and authenticate a single LLM request. No I/O, no state.
- * Switching models mid-conversation is just replacing this object.
+ * Provider/model are bound on the Agent (and copied into the Session snapshot);
+ * runs resolve routing from that frozen snapshot.
  */
 
 import { AgentConfig, ProviderProfile } from "../../../../config/index.js";
@@ -121,20 +122,6 @@ export function resolveAgentModelFromConfig(config: AgentConfig): AgentModel {
     apiKey: access.apiKey,
     accountId: access.accountId,
   };
-}
-
-/**
- * Build an AgentModel from explicit provider/model strings + the config's profiles.
- * Used by the SSE endpoint when the request body overrides provider/model.
- */
-export function buildAgentModel(provider: string, modelId: string, config: AgentConfig): AgentModel {
-  const overriddenConfig: AgentConfig = {
-    ...config,
-    provider,
-    model: modelId,
-    apiMode: normalizeApiMode(provider),
-  };
-  return resolveAgentModelFromConfig(overriddenConfig);
 }
 
 // ---- Codex credential resolution (moved from providers/codex.ts) ----

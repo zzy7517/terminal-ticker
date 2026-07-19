@@ -1,11 +1,19 @@
+/**
+ * AgentContextStore — 逻辑 Agent Context 与 Runtime generation 的持久化。
+ *
+ * 以 agentId 为主键。物理 Runtime Session 轮换会递增 generation，
+ * 但不会创建用户可见的新 DM 或 chatId。存在遗留 agent_chats 行时会迁移。
+ */
 import Database from "better-sqlite3";
 import crypto from "node:crypto";
 import path from "node:path";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
-import { initChatEventSchema } from "../chat-events.js";
+import { initChatEventSchema } from "../chat/events.js";
 
+/** 逻辑 Agent Context 一行（以 agentId 为主键）。 */
 export interface AgentContextRecord {
   agentId: string;
+  /** Agent 的稳定逻辑 session id；不是用户可见 chatId。 */
   logicalSessionId: string;
   activeRuntimeGeneration: number;
   snapshotGeneration: number;
@@ -18,6 +26,7 @@ export interface AgentContextRecord {
   activeSessionId: string | null;
 }
 
+/** 一次物理 Runtime Session generation 记录。 */
 export interface AgentContextSession {
   agentId: string;
   generation: number;
@@ -29,6 +38,7 @@ export interface AgentContextSession {
   rotationReason: string;
 }
 
+/** 遗留 Session 行，用于导入/绑定到 Agent Context。 */
 export interface ExistingAgentSession {
   sessionId: string;
   agentId: string;
@@ -62,6 +72,7 @@ interface SessionRow {
   rotation_reason: string;
 }
 
+/** Agent Context / generation 的 SQLite 持久化。 */
 export class AgentContextStore extends BaseStore {
   constructor(dbPath = path.join(defaultCacheDir(), "chat.sqlite3")) {
     super(dbPath);

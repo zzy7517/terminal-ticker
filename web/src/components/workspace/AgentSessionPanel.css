@@ -576,70 +576,6 @@
   opacity: 0.5;
 }
 
-/* Slash command autocomplete picker */
-.slash-command-picker {
-  background: var(--panel-raised);
-  border: 1px solid var(--line-strong);
-  overflow: hidden;
-  border-radius: var(--radius-lg);
-}
-
-.slash-command-head {
-  border-bottom: 1px solid var(--line-strong);
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  padding: 3px 8px;
-  text-transform: uppercase;
-}
-
-.slash-command-list {
-  max-height: 150px;
-  overflow-y: auto;
-  padding: 2px 0;
-}
-
-.slash-command-option {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  color: inherit;
-  cursor: pointer;
-  display: flex;
-  font-size: 12px;
-  gap: 8px;
-  padding: 4px 8px;
-  text-align: left;
-  width: 100%;
-}
-
-.slash-command-option:hover,
-.slash-command-option.active {
-  background: var(--accent-tint);
-  color: var(--accent);
-}
-
-.slash-command-name {
-  font-family: var(--mono);
-  font-weight: 700;
-  min-width: 60px;
-}
-
-.slash-command-desc {
-  color: var(--text-muted, #888);
-  font-size: 12px;
-}
-
-.slash-command-option.active .slash-command-desc,
-.slash-command-option:hover .slash-command-desc {
-  color: var(--accent);
-  opacity: 0.8;
-}
-
-
-
 /* ── Image attachments ────────────────────────────────────────────── */
 .session-pending-images {
   display: flex;
@@ -1062,16 +998,145 @@
 
 .agent-tab-layout .agent-session-card {
   border: 0;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  display: grid;
+  gap: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  padding: 12px 18px 12px;
+  padding: 0;
+}
+
+.dm-conversation-header {
+  align-items: center;
+  border-bottom: 1px solid var(--line-strong);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 8px 16px;
+}
+
+.dm-conversation-identity {
+  align-items: center;
+  align-self: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 10px;
+  max-width: min(320px, 70%);
+  min-width: 0;
+  padding: 4px 6px;
+  text-align: left;
+  width: max-content;
+}
+
+.dm-conversation-identity:hover,
+.dm-conversation-identity.open {
+  background: var(--accent-tint);
+  border-color: var(--line-soft);
+}
+
+.dm-conversation-avatar {
+  align-items: center;
+  border: 1px solid currentColor;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.dm-conversation-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dm-conversation-identity strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.dm-presence-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.dm-presence-label.online {
+  color: var(--success);
+}
+
+.dm-presence-label.paused {
+  color: var(--warning, #c9a227);
+}
+
+.dm-conversation-meta {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.session-model-trigger.subtle {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  max-width: 220px;
+  min-height: 28px;
+  opacity: 0.85;
+  padding: 0 6px;
+}
+
+.dm-beginning {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  min-height: 0;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.dm-beginning strong {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dm-beginning span {
+  font-size: 13px;
 }
 
 .agent-tab-layout .session-transcript {
+  display: flex;
+  flex-direction: column;
   max-height: none;
   min-height: 0;
+  overflow-y: auto;
+  padding: 8px 18px 12px;
+}
+
+.agent-tab-layout .session-compose {
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-top: 1px solid var(--line-strong);
+  flex-shrink: 0;
+  margin: 0;
+  max-width: none;
+  padding: 12px 14px;
+  width: 100%;
 }
 
 @media (max-width: 960px) {

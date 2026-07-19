@@ -51,6 +51,7 @@ export class AgentStore {
   create(input: AgentFileInput): AgentDefinition {
     const agent = validateAgent(input);
     if (agent.id === DEFAULT_AGENT_ID || this.get(agent.id)) throw new Error(`Agent already exists: ${agent.id}`);
+    assertProviderModelBoundAtCreate(agent);
     this.write(agent);
     return { ...agent, builtIn: false };
   }
@@ -61,6 +62,7 @@ export class AgentStore {
     if (id === DEFAULT_AGENT_ID && patch.runtime && patch.runtime !== "pi") {
       throw new Error("Default Agent must use the Pi runtime");
     }
+    assertProviderModelImmutable(current, patch);
     const next = validateAgent({ ...current, ...patch, id });
     this.write(next);
     return { ...next, builtIn: id === DEFAULT_AGENT_ID };
@@ -126,5 +128,36 @@ function validateAgent(value: AgentFileInput, source = "Agent"): AgentFileInput 
 function assertAgentId(id: string): void {
   if (typeof id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
     throw new Error("Agent id must contain lowercase letters, numbers, and single hyphens");
+  }
+}
+
+/** Pi Agents must bind a concrete provider+model at create time. */
+function assertProviderModelBoundAtCreate(agent: AgentFileInput): void {
+  if (agent.runtime !== "pi") return;
+  if (!agent.provider) throw new Error("Pi Agent provider is required at create time");
+  if (!agent.model) throw new Error("Pi Agent model is required at create time");
+}
+
+/**
+ * provider/model are bind-once: null may be set exactly once (legacy agents),
+ * then become immutable for the life of the Agent.
+ */
+function assertProviderModelImmutable(
+  current: Pick<AgentFileInput, "provider" | "model">,
+  patch: Partial<Pick<AgentFileInput, "provider" | "model">>,
+): void {
+  for (const key of ["provider", "model"] as const) {
+    if (!Object.prototype.hasOwnProperty.call(patch, key)) continue;
+    const nextRaw = patch[key];
+    const next = nextRaw === null || nextRaw === undefined
+      ? null
+      : typeof nextRaw === "string" ? (nextRaw.trim() || null) : nextRaw;
+    if (typeof next !== "string" && next !== null) {
+      throw new Error(`Agent ${key} must be a string or null`);
+    }
+    const previous = current[key];
+    if (previous !== null && next !== previous) {
+      throw new Error(`Agent ${key} cannot be changed after it has been set`);
+    }
   }
 }

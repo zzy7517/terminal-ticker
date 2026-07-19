@@ -7,6 +7,7 @@ import { AgentContextStore } from "../../agent/context-store.js";
 import { AgentContextManager } from "../../agent/context-manager.js";
 import { MessageStore } from "../../chat/message-store.js";
 import { InboxStore } from "../../chat/inbox-store.js";
+import { UnreadStore } from "../../chat/unread-store.js";
 import { agentRoutes } from "./agent.js";
 import type { AppRuntime } from "../runtime.js";
 import { piSessionFileExists } from "../../agent/runtime/pi/sessions.js";
@@ -29,8 +30,8 @@ function runtime(): AppRuntime {
     description: "ICT",
     systemPrompt: "ICT prompt",
     runtime: "pi",
-    provider: null,
-    model: null,
+    provider: "codex",
+    model: "gpt-5.4",
     reasoningEffort: null,
   });
   return {
@@ -38,6 +39,7 @@ function runtime(): AppRuntime {
     agentContextManager: new AgentContextManager(contextStore),
     messageStore: new MessageStore(dbPath),
     inboxStore: new InboxStore(dbPath),
+    unreadStore: new UnreadStore(dbPath),
     agentCoordinator: null,
     config: {
       agent: {
@@ -98,6 +100,34 @@ describe("Agent HTTP API", () => {
     expect(payload.session).toMatchObject({ agentId: "ict", agentName: "ICT 理论分析" });
     const pending = appRuntime.pendingSessionManagers.values().next().value;
     expect(pending && piSessionFileExists(pending)).toBe(false);
+  });
+
+  it("freezes Session routing from the Agent snapshot and ignores body provider/model", async () => {
+    const appRuntime = runtime();
+    const response = await agentRoutes(appRuntime).request("/api/agent/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        agentId: "ict",
+        provider: "anthropic",
+        model: "claude-opus-4-6",
+      }),
+    });
+    const payload = await response.json() as { session: { provider: string; model: string } };
+    expect(response.status).toBe(200);
+    expect(payload.session).toMatchObject({ provider: "openai-codex", model: "gpt-5.4" });
+  });
+
+  it("rejects changing a bound Agent provider or model", async () => {
+    const appRuntime = runtime();
+    const response = await agentRoutes(appRuntime).request("/api/agents/ict", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "anthropic", model: "claude-opus-4-6" }),
+    });
+    const payload = await response.json() as { detail: string };
+    expect(response.status).toBe(400);
+    expect(payload.detail).toContain("cannot be changed after it has been set");
   });
 
   it("exposes one Direct Message timeline per Agent without New Chat", async () => {

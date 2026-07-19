@@ -1,14 +1,25 @@
+/**
+ * MessageStore — Direct Message 会话与消息的权威存储。
+ *
+ * 规范化后的参与者组合对应唯一一条 DM。Runtime Session 不是 DM timeline 的权威来源，
+ * 只保存 Agent 私有执行历史。遗留 Session 导入用 import_key 保证幂等，
+ * 原始 Session 文件保留为执行归档。
+ */
 import Database from "better-sqlite3";
 import crypto from "node:crypto";
 import path from "node:path";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
-import { appendChatEvent, initChatEventSchema } from "../chat-events.js";
+import { appendChatEvent, initChatEventSchema } from "./events.js";
 import { directMessageTarget } from "../channel/domain.js";
+import { migrateLegacyDirectChatTargets as rewriteLegacyDirectChatTargets } from "./migrate-legacy-targets.js";
 
+/** Human–Agent DM 中稳定的 Human Owner 参与者 ID。 */
 export const HUMAN_OWNER_ID = "owner";
 
+/** Human / Agent 参与者类型。 */
 export type ParticipantType = "human" | "agent";
 
+/** 唯一一对参与者之间的 Direct Message 会话。 */
 export interface DirectMessageConversation {
   id: string;
   participantAType: ParticipantType;
@@ -18,6 +29,7 @@ export interface DirectMessageConversation {
   createdAtMs: number;
 }
 
+/** Direct Message 共享消息正文（权威在 MessageStore）。 */
 export interface DirectMessage {
   id: string;
   directMessageId: string;
@@ -31,6 +43,7 @@ export interface DirectMessage {
   editedAtMs: number | null;
   deletedAtMs: number | null;
   importKey: string | null;
+  reactions: Array<{ emoji: string; count: number; reacted: boolean }>;
 }
 
 interface ConversationRow {
@@ -64,6 +77,7 @@ interface NormalizedPair {
   bId: string;
 }
 
+/** Direct Message 权威库：会话唯一性、消息、reaction、遗留导入。 */
 export class MessageStore extends BaseStore {
   constructor(dbPath = path.join(defaultCacheDir(), "chat.sqlite3")) {
     super(dbPath);
@@ -100,9 +114,18 @@ export class MessageStore extends BaseStore {
       );
       CREATE INDEX IF NOT EXISTS idx_direct_messages_timeline
         ON direct_messages (direct_message_id, dm_seq DESC);
+      CREATE TABLE IF NOT EXISTS direct_message_reactions (
+        message_id TEXT NOT NULL REFERENCES direct_messages(id) ON DELETE CASCADE,
+        actor_type TEXT NOT NULL CHECK (actor_type IN ('human', 'agent')),
+        actor_id TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (message_id, actor_type, actor_id, emoji)
+      );
     `);
   }
 
+  /** 侧栏按 agentId 导航的唯一 Human–Agent DM。 */
   ensureHumanAgentDm(agentId: string): DirectMessageConversation {
     return this.ensureConversation({
       left: { type: "human", id: HUMAN_OWNER_ID },
@@ -110,6 +133,7 @@ export class MessageStore extends BaseStore {
     });
   }
 
+  /** 唯一 Agent–Agent DM；参与者顺序会规范化以保证唯一。 */
   ensureAgentAgentDm(agentAId: string, agentBId: string): DirectMessageConversation {
     if (agentAId === agentBId) throw new Error("cannot create DM with the same Agent");
     return this.ensureConversation({
@@ -138,7 +162,7 @@ export class MessageStore extends BaseStore {
     return row ? conversationFromRow(row) : null;
   }
 
-  /** All DM conversations that include this Agent (Human-Agent and Agent-Agent). */
+  /** 包含该 Agent 的全部 DM（Human-Agent 与 Agent-Agent）。 */
   listConversationsForAgent(agentId: string): DirectMessageConversation[] {
     const rows = this.getConn().prepare(`
       SELECT * FROM direct_message_conversations
@@ -149,9 +173,17 @@ export class MessageStore extends BaseStore {
     return rows.map(conversationFromRow);
   }
 
-  /** Resolve Human UI agentId navigation to the unique Human-Agent DM. */
+  /** 将 Human UI 的 agentId 导航解析为唯一 Human-Agent DM。 */
   requireHumanAgentDm(agentId: string): DirectMessageConversation {
     return this.ensureHumanAgentDm(agentId);
+  }
+
+  /** 启动时把遗留 direct-chat 行改写为真实 direct-message id。 */
+  migrateLegacyDirectChatTargets(): number {
+    return rewriteLegacyDirectChatTargets(
+      this.getConn(),
+      (agentId) => this.ensureHumanAgentDm(agentId).id,
+    );
   }
 
   otherParticipant(conversation: DirectMessageConversation, actorType: ParticipantType, actorId: string): {
@@ -165,6 +197,12 @@ export class MessageStore extends BaseStore {
     return null;
   }
 
+  /**
+   * 追加一条 DM 消息。可选 withinTransaction 在同一事务内执行（如 inbox fan-out），
+   * 保证消息与注意力队列原子提交。
+   * 使 inbox fan-out 与消息写入保持原子。
+   * importKey 用于遗留 Session 导入幂等。
+   */
   appendMessage(input: {
     directMessageId: string;
     authorType: DirectMessage["authorType"];
@@ -174,7 +212,7 @@ export class MessageStore extends BaseStore {
     kind?: string;
     createdAtMs?: number;
     importKey?: string | null;
-    onCommitted?: (conn: Database.Database, message: DirectMessage) => void;
+    withinTransaction?: (conn: Database.Database, message: DirectMessage) => void;
   }): DirectMessage {
     const content = input.content.trim();
     if (!content && input.kind !== "system") throw new Error("message content is required");
@@ -186,7 +224,7 @@ export class MessageStore extends BaseStore {
         const existing = conn.prepare(
           "SELECT * FROM direct_messages WHERE import_key = ?",
         ).get(input.importKey) as MessageRow | undefined;
-        if (existing) return messageFromRow(existing);
+        if (existing) return this.projectMessage(existing.id, null);
       }
       const next = conn.prepare(`
         SELECT COALESCE(MAX(dm_seq), 0) + 1 AS dm_seq
@@ -221,18 +259,55 @@ export class MessageStore extends BaseStore {
         payload: input.threadRootId ? { threadRootId: input.threadRootId } : {},
       });
       const message = this.requireMessage(input.directMessageId, id);
-      input.onCommitted?.(conn, message);
+      input.withinTransaction?.(conn, message);
       return message;
     })();
+  }
+
+  /** 统计读游标之后的顶层消息数（Human 未读投影）。 */
+  countMessagesAfterSeq(directMessageId: string, afterSeq: number): number {
+    const row = this.getConn().prepare(`
+      SELECT COUNT(*) AS count FROM direct_messages
+      WHERE direct_message_id = ? AND thread_root_id IS NULL AND dm_seq > ?
+        AND deleted_at_ms IS NULL
+    `).get(directMessageId, afterSeq) as { count: number };
+    return Number(row.count) || 0;
   }
 
   listMessages(input: {
     directMessageId: string;
     beforeSeq?: number | null;
     afterSeq?: number | null;
+    aroundMessageId?: string | null;
     limit?: number;
+    viewer?: { type: ParticipantType; id: string } | null;
   }): { messages: DirectMessage[]; nextBeforeSeq: number | null } {
     const limit = Math.max(1, Math.min(100, Math.floor(input.limit ?? 50)));
+    const viewer = input.viewer ?? null;
+    if (input.aroundMessageId) {
+      const pivot = this.getMessage(input.aroundMessageId);
+      if (!pivot || pivot.directMessageId !== input.directMessageId) {
+        throw new Error("around message not found");
+      }
+      const beforeLimit = Math.floor(limit / 2);
+      const afterLimit = Math.max(1, limit - beforeLimit - 1);
+      const before = this.listMessages({
+        directMessageId: input.directMessageId,
+        beforeSeq: pivot.dmSeq,
+        limit: beforeLimit,
+        viewer,
+      }).messages.reverse();
+      const after = this.listMessages({
+        directMessageId: input.directMessageId,
+        afterSeq: pivot.dmSeq,
+        limit: afterLimit,
+        viewer,
+      }).messages;
+      return {
+        messages: [...before, this.projectMessage(pivot.id, viewer), ...after],
+        nextBeforeSeq: before[0]?.dmSeq ?? null,
+      };
+    }
     if (input.afterSeq != null) {
       const rows = this.getConn().prepare(`
         SELECT * FROM direct_messages
@@ -241,7 +316,7 @@ export class MessageStore extends BaseStore {
         LIMIT ?
       `).all(input.directMessageId, input.afterSeq, limit) as MessageRow[];
       return {
-        messages: rows.map(messageFromRow),
+        messages: rows.map((row) => this.projectMessage(row.id, viewer)),
         nextBeforeSeq: null,
       };
     }
@@ -253,21 +328,75 @@ export class MessageStore extends BaseStore {
       LIMIT ?
     `).all(input.directMessageId, beforeSeq, limit) as MessageRow[];
     return {
-      messages: rows.map(messageFromRow),
+      messages: rows.map((row) => this.projectMessage(row.id, viewer)),
       nextBeforeSeq: rows.length === limit ? rows.at(-1)!.dm_seq : null,
     };
   }
 
-  getMessage(id: string): DirectMessage | null {
+  getMessage(id: string, viewer?: { type: ParticipantType; id: string } | null): DirectMessage | null {
     const row = this.getConn().prepare("SELECT * FROM direct_messages WHERE id = ?").get(id) as MessageRow | undefined;
-    return row ? messageFromRow(row) : null;
+    return row ? this.projectMessage(row.id, viewer ?? null) : null;
+  }
+
+  addReaction(input: {
+    directMessageId: string;
+    messageId: string;
+    actorType: ParticipantType;
+    actorId: string;
+    emoji: string;
+  }): DirectMessage {
+    const emoji = input.emoji.trim();
+    if (!emoji) throw new Error("emoji is required");
+    const conn = this.getConn();
+    return conn.transaction(() => {
+      this.requireMessage(input.directMessageId, input.messageId);
+      conn.prepare(`
+        INSERT OR IGNORE INTO direct_message_reactions (message_id, actor_type, actor_id, emoji, created_at_ms)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(input.messageId, input.actorType, input.actorId, emoji, nowMs());
+      appendChatEvent(conn, {
+        type: "reaction.added",
+        actorType: input.actorType,
+        actorId: input.actorId,
+        target: directMessageTarget(input.directMessageId),
+        entityType: "message",
+        entityId: input.messageId,
+      });
+      return this.projectMessage(input.messageId, { type: input.actorType, id: input.actorId });
+    })();
+  }
+
+  removeReaction(input: {
+    directMessageId: string;
+    messageId: string;
+    actorType: ParticipantType;
+    actorId: string;
+    emoji: string;
+  }): DirectMessage {
+    const conn = this.getConn();
+    return conn.transaction(() => {
+      this.requireMessage(input.directMessageId, input.messageId);
+      conn.prepare(`
+        DELETE FROM direct_message_reactions
+        WHERE message_id = ? AND actor_type = ? AND actor_id = ? AND emoji = ?
+      `).run(input.messageId, input.actorType, input.actorId, input.emoji);
+      appendChatEvent(conn, {
+        type: "reaction.removed",
+        actorType: input.actorType,
+        actorId: input.actorId,
+        target: directMessageTarget(input.directMessageId),
+        entityType: "message",
+        entityId: input.messageId,
+      });
+      return this.projectMessage(input.messageId, { type: input.actorType, id: input.actorId });
+    })();
   }
 
   getMessageByImportKey(importKey: string): DirectMessage | null {
     const row = this.getConn().prepare(
       "SELECT * FROM direct_messages WHERE import_key = ?",
     ).get(importKey) as MessageRow | undefined;
-    return row ? messageFromRow(row) : null;
+    return row ? this.projectMessage(row.id, null) : null;
   }
 
   listThread(input: { directMessageId: string; rootMessageId: string }): {
@@ -281,7 +410,7 @@ export class MessageStore extends BaseStore {
       WHERE direct_message_id = ? AND thread_root_id = ?
       ORDER BY dm_seq
     `).all(input.directMessageId, input.rootMessageId) as MessageRow[];
-    return { root, replies: rows.map(messageFromRow) };
+    return { root, replies: rows.map((row) => this.projectMessage(row.id, null)) };
   }
 
   search(input: {
@@ -301,7 +430,7 @@ export class MessageStore extends BaseStore {
       ORDER BY created_at_ms DESC
       LIMIT ?
     `).all(...input.directMessageIds, `%${q}%`, limit) as MessageRow[];
-    return rows.map(messageFromRow);
+    return rows.map((row) => this.projectMessage(row.id, null));
   }
 
   private ensureConversation(input: {
@@ -349,7 +478,30 @@ export class MessageStore extends BaseStore {
       "SELECT * FROM direct_messages WHERE id = ? AND direct_message_id = ?",
     ).get(id, directMessageId) as MessageRow | undefined;
     if (!row) throw new Error(`Message not found: ${id}`);
-    return messageFromRow(row);
+    return this.projectMessage(row.id, null);
+  }
+
+  private projectMessage(
+    messageId: string,
+    viewer: { type: ParticipantType; id: string } | null,
+  ): DirectMessage {
+    const row = this.getConn().prepare("SELECT * FROM direct_messages WHERE id = ?").get(messageId) as MessageRow | undefined;
+    if (!row) throw new Error(`Message not found: ${messageId}`);
+    const reactions = this.getConn().prepare(`
+      SELECT emoji,
+             COUNT(*) AS count,
+             SUM(CASE WHEN actor_type = ? AND actor_id = ? THEN 1 ELSE 0 END) AS reacted
+      FROM direct_message_reactions WHERE message_id = ? GROUP BY emoji ORDER BY emoji
+    `).all(
+      viewer?.type ?? "",
+      viewer?.id ?? "",
+      messageId,
+    ) as Array<{ emoji: string; count: number; reacted: number }>;
+    return messageFromRow(row, reactions.map((reaction) => ({
+      emoji: reaction.emoji,
+      count: reaction.count,
+      reacted: Boolean(reaction.reacted),
+    })));
   }
 }
 
@@ -377,7 +529,10 @@ function conversationFromRow(row: ConversationRow): DirectMessageConversation {
   };
 }
 
-function messageFromRow(row: MessageRow): DirectMessage {
+function messageFromRow(
+  row: MessageRow,
+  reactions: DirectMessage["reactions"] = [],
+): DirectMessage {
   return {
     id: row.id,
     directMessageId: row.direct_message_id,
@@ -391,6 +546,7 @@ function messageFromRow(row: MessageRow): DirectMessage {
     editedAtMs: row.edited_at_ms,
     deletedAtMs: row.deleted_at_ms,
     importKey: row.import_key,
+    reactions,
   };
 }
 
@@ -398,7 +554,7 @@ function migrateChatEventTargetKinds(conn: Database.Database): void {
   const schema = conn.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'chat_events'")
     .get() as { sql: string } | undefined;
   if (!schema?.sql.includes("'direct-chat'")) return;
-  // Widen CHECK so legacy rows remain readable; new writes use direct-message.
+  // 放宽 CHECK 以便遗留行仍可读；新写入使用 direct-message。
   conn.exec(`
     CREATE TABLE IF NOT EXISTS chat_events_next (
       seq INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,3 +1,10 @@
+/**
+ * runtime — 在现有 Pi / Claude seam 上启动一次 Message Fabric activation。
+ *
+ * 复用 AgentContextManager 的活跃 Runtime Session（或懒创建）。
+ * 不另建第三套 Agent loop。Message Tools 按 agentId 绑定到 Pi（进程内）
+ * 与 Claude（经 listToolsForClaudeMcp 的 MCP grant）。
+ */
 import type { AppRuntime } from "../api/runtime.js";
 import type { InboxItem } from "./inbox-store.js";
 import { buildWakePrompt, MESSAGE_OPERATING_INSTRUCTIONS } from "./prompts.js";
@@ -5,8 +12,9 @@ import { createMessageToolRegistry } from "./message-tools.js";
 import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
 import { ClaudeCodeRuntime } from "../agent/runtime/claude-code/runtime.js";
 import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
+import { claudeMcpUrlFromOrigin } from "../api/claude-session-stream.js";
 import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
-import { agentConfigForRequest, openSessionManager } from "../api/helpers.js";
+import { agentConfigFromSnapshot, openSessionManager } from "../api/helpers.js";
 import {
   AGENT_SNAPSHOT_ENTRY,
   appendAgentSnapshot,
@@ -16,10 +24,11 @@ import {
 } from "../agent/runtime/pi/sessions.js";
 import { buildTradexToolRegistry } from "../api/agent_tools.js";
 import { ensurePrivateWorkspace } from "../agent/private-workspace.js";
+import { memoryApplyRetention } from "../agent/memory.js";
 
 /**
- * Starts one Agent activation for pending inbox items using the existing Runtime seam.
- * Wake prompt is content-free; Agent must call Message Tools to read bodies.
+ * 用现有 Runtime seam 为 pending inbox 启动一次 Agent activation。
+ * wake prompt 无正文；Agent 必须调用 Message Tools 读取正文。
  */
 export async function startMessageActivation(
   runtime: AppRuntime,
@@ -30,6 +39,11 @@ export async function startMessageActivation(
   if (!agent) throw new Error(`Agent not found: ${agentId}`);
 
   const workspace = ensurePrivateWorkspace(agentId);
+  try {
+    memoryApplyRetention(agentId);
+  } catch {
+    // retention failure must not block Shared Message activation
+  }
   runtime.agentContextManager.updateStatus(agentId, {
     workspacePath: workspace.workspacePath,
     memoryScope: workspace.memoryPath,
@@ -44,11 +58,43 @@ export async function startMessageActivation(
     throw new Error("agent session already active");
   }
 
-  const wake = buildWakePrompt(pending);
-  const prompt = [MESSAGE_OPERATING_INSTRUCTIONS, "", wake].join("\n");
+  // ops 进 system；user prompt 只留短 wake（多条 pending 合并为一次）。
+  const prompt = buildWakePrompt(pending);
   const messageTools = createMessageToolRegistry(runtime, agentId);
   runtime.lockedAgentSessions.add(sessionId);
 
+  try {
+    await runActivationOnce(runtime, agent, agentId, sessionId, workspace, prompt, messageTools);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const resumeFailed = /resume|session.*not found|conversation.*not found|native_session_resume/i.test(detail);
+    const overflow = /context.*(overflow|length|too long)|maximum context/i.test(detail);
+    if (!resumeFailed && !overflow) throw error;
+    const reason = overflow ? "context-overflow" as const : "resume-failure" as const;
+    const nextSessionId = await createRotatedSession(runtime, agentId, reason);
+    runtime.lockedAgentSessions.delete(sessionId);
+    runtime.lockedAgentSessions.add(nextSessionId);
+    try {
+      await runActivationOnce(runtime, agent, agentId, nextSessionId, workspace, prompt, messageTools);
+    } finally {
+      runtime.lockedAgentSessions.delete(nextSessionId);
+    }
+    return;
+  } finally {
+    runtime.activeAgents.delete(sessionId);
+    runtime.lockedAgentSessions.delete(sessionId);
+  }
+}
+
+async function runActivationOnce(
+  runtime: AppRuntime,
+  agent: NonNullable<ReturnType<AppRuntime["agentStore"]["get"]>>,
+  agentId: string,
+  sessionId: string,
+  workspace: ReturnType<typeof ensurePrivateWorkspace>,
+  prompt: string,
+  messageTools: ReturnType<typeof createMessageToolRegistry>,
+): Promise<void> {
   try {
     if (agent.runtime === "claude-code") {
       const availability = await detectClaudeCode();
@@ -72,7 +118,7 @@ export async function startMessageActivation(
       ].filter(Boolean).join("\n\n");
       const run = await new ClaudeCodeRuntime({
         executablePath: availability.executablePath,
-        mcpUrl: "http://127.0.0.1:8765/mcp",
+        mcpUrl: claudeMcpUrlFromOrigin(runtime.listenOrigin),
         grants: runtime.mcpRunGrants,
       }).start({
         tradexSessionId: sessionId,
@@ -106,10 +152,7 @@ export async function startMessageActivation(
       };
       appendAgentSnapshot(mgr, snapshot);
     }
-    const requestConfig = agentConfigForRequest(runtime.config.agent, {
-      provider: snapshot.provider,
-      model: snapshot.model,
-    });
+    const requestConfig = agentConfigFromSnapshot(runtime.config.agent, snapshot);
     const { tools } = await buildTradexToolRegistry(runtime, {
       sessionId,
       config: requestConfig,
@@ -121,6 +164,7 @@ export async function startMessageActivation(
     const systemPrompt = [
       snapshot.systemPrompt.trim() || MAIN_AGENT_PROMPT,
       currentTimeInstruction("run_command"),
+      MESSAGE_OPERATING_INSTRUCTIONS,
       `Private workspace: ${workspace.workspacePath}`,
       `Private memory: ${workspace.memoryPath}`,
     ].filter(Boolean).join("\n\n");
@@ -138,11 +182,87 @@ export async function startMessageActivation(
     if (result.error) throw new Error(result.error);
   } finally {
     runtime.activeAgents.delete(sessionId);
-    runtime.lockedAgentSessions.delete(sessionId);
   }
 }
 
+/** 配置变更后轮换物理 Runtime Session；不改变 DM 身份。 */
+export async function rotateAgentSessionForConfigChange(
+  runtime: AppRuntime,
+  agentId: string,
+): Promise<string> {
+  return createRotatedSession(runtime, agentId, "config-change");
+}
+
+/**
+ * Human Owner 三档 reset（对齐 Raft Lifecycle）：
+ * - restart：中止当前 run，保留同一 Runtime Session，解除 pause 并继续 pending
+ * - session-reset：新开物理 Session，workspace/memory 保留
+ * - full-reset：新开物理 Session，并清空 private workspace/memory
+ */
+export async function applyAgentLifecycleReset(
+  runtime: AppRuntime,
+  agentId: string,
+  mode: "restart" | "session-reset" | "full-reset",
+): Promise<{ mode: string; sessionId: string | null }> {
+  if (!runtime.agentStore.get(agentId)) throw new Error(`Agent not found: ${agentId}`);
+  await runtime.agentCoordinator?.abort(agentId);
+
+  if (mode === "restart") {
+    runtime.agentContextManager.updateStatus(agentId, {
+      paused: false,
+      status: "idle",
+      lastError: null,
+    });
+    runtime.agentCoordinator?.notify(agentId);
+    return {
+      mode,
+      sessionId: runtime.agentContextManager.get(agentId)?.activeSessionId ?? null,
+    };
+  }
+
+  if (mode === "full-reset") {
+    const { wipePrivateWorkspace } = await import("../agent/private-workspace.js");
+    const workspace = wipePrivateWorkspace(agentId);
+    runtime.agentContextManager.updateStatus(agentId, {
+      workspacePath: workspace.workspacePath,
+      memoryScope: workspace.memoryPath,
+      paused: false,
+      status: "idle",
+      lastError: null,
+    });
+  } else {
+    runtime.agentContextManager.updateStatus(agentId, {
+      paused: false,
+      status: "idle",
+      lastError: null,
+    });
+  }
+
+  const sessionId = await createRotatedSession(
+    runtime,
+    agentId,
+    mode === "full-reset" ? "full-reset" : "session-reset",
+  );
+  runtime.agentCoordinator?.notify(agentId);
+  return { mode, sessionId };
+}
+
+/** 为 Agent Context 懒创建第一个物理 Runtime Session。 */
 async function ensureActivationSession(runtime: AppRuntime, agentId: string): Promise<string> {
+  return createRotatedSession(runtime, agentId, "activation");
+}
+
+async function createRotatedSession(
+  runtime: AppRuntime,
+  agentId: string,
+  reason:
+    | "activation"
+    | "context-overflow"
+    | "config-change"
+    | "resume-failure"
+    | "session-reset"
+    | "full-reset",
+): Promise<string> {
   const agent = runtime.agentStore.get(agentId);
   if (!agent) throw new Error(`Agent not found: ${agentId}`);
   if (agent.runtime === "claude-code") {
@@ -158,11 +278,19 @@ async function ensureActivationSession(runtime: AppRuntime, agentId: string): Pr
         reasoningEffort: agent.reasoningEffort,
       },
     });
-    runtime.agentContextManager.attachSession(agentId, {
-      sessionId: metadata.id,
-      runtime: "claude-code",
-      rotationReason: "activation",
-    });
+    if (reason === "activation") {
+      runtime.agentContextManager.attachSession(agentId, {
+        sessionId: metadata.id,
+        runtime: "claude-code",
+        rotationReason: reason,
+      });
+    } else {
+      runtime.agentContextManager.rotateSession(agentId, {
+        sessionId: metadata.id,
+        runtime: "claude-code",
+        reason,
+      });
+    }
     return metadata.id;
   }
   const mgr = createPiSession({ title: `Activation ${agentId}` });
@@ -171,10 +299,18 @@ async function ensureActivationSession(runtime: AppRuntime, agentId: string): Pr
   mgr.appendModelChange(piProviderName(provider), model);
   mgr.appendThinkingLevelChange(agent.reasoningEffort || runtime.config.agent.reasoningEffort);
   runtime.pendingSessionManagers.set(mgr.getSessionId(), mgr);
-  runtime.agentContextManager.attachSession(agentId, {
-    sessionId: mgr.getSessionId(),
-    runtime: "pi",
-    rotationReason: "activation",
-  });
+  if (reason === "activation") {
+    runtime.agentContextManager.attachSession(agentId, {
+      sessionId: mgr.getSessionId(),
+      runtime: "pi",
+      rotationReason: reason,
+    });
+  } else {
+    runtime.agentContextManager.rotateSession(agentId, {
+      sessionId: mgr.getSessionId(),
+      runtime: "pi",
+      reason,
+    });
+  }
   return mgr.getSessionId();
 }

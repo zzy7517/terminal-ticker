@@ -3,13 +3,20 @@ import { ToolRegistry } from "../../agent/tools/registry.js";
 import { McpRunGrantStore } from "./grants.js";
 
 describe("MCP run grants", () => {
-  it("binds a short-lived token to one Tradex Session and explicit read tools", () => {
+  it("binds a short-lived token to collaboration tools including message writes, never trading writes", () => {
     const registry = new ToolRegistry();
     registry.register({
       name: "quote",
       description: "quote",
       parameters: { type: "object", properties: {} },
       policy: { access: "read", domain: "market", runtimeExposure: ["pi", "claude-code"] },
+      execute: () => "ok",
+    });
+    registry.register({
+      name: "message_send",
+      description: "send",
+      parameters: { type: "object", properties: {} },
+      policy: { access: "write", domain: "other", runtimeExposure: ["pi", "claude-code"] },
       execute: () => "ok",
     });
     registry.register({
@@ -25,7 +32,7 @@ describe("MCP run grants", () => {
     const grant = store.resolve(issued.token);
 
     expect(grant?.tradexSessionId).toBe("s1");
-    expect(grant?.tools.map((tool) => tool.name)).toEqual(["quote"]);
+    expect(grant?.tools.map((tool) => tool.name).sort()).toEqual(["message_send", "quote"]);
     expect(store.resolve("wrong")).toBeNull();
     store.revoke(issued.token);
     expect(store.resolve(issued.token)).toBeNull();

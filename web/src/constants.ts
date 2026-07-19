@@ -21,10 +21,8 @@ export const BROWSER_HASH = '#/settings/browser';
 export const OPTIONS_HASH = '#/settings/options';
 export const PROXY_HASH = '#/settings/proxy';
 
-export const ANALYSIS_INTERVAL_OPTIONS = ['1m', '3m', '5m', '15m', '30m', '1H', '4H', '1D', '1W', '1M'];
 export type SettingsSection = 'providers' | 'agents' | 'agent-context' | 'watchlist' | 'news' | 'cron' | 'mcp' | 'browser' | 'options' | 'proxy';
 export type SearchSource = 'bitget' | 'hyperliquid';
-export type SourceHint = SearchSource;
 export type AppRoute =
   | { view: 'workspace' }
   | { view: 'settings'; section: SettingsSection };

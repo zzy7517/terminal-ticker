@@ -1,4 +1,11 @@
-/** 提供 Agent/Session REST API，并把运行请求分发给对应 Runtime。 */
+/**
+ * Agent / Session / Chat DM REST 路由。
+ *
+ * - `/api/chat/agents/...`：Human–Agent 唯一 DM timeline、发送、Coordinator presence/pause
+ * - `/api/agents`：Agent 定义 CRUD（创建时确保 Context + Human–Agent DM）
+ * - `/api/agent/sessions...`：Runtime Session（私有执行历史，非 DM 权威源）
+ * - `/api/agent/runtimes...`：Pi / Claude 可用性与模型目录
+ */
 import { Hono } from "hono";
 import { AgentModelRegistry } from "../../agent/runtime/pi/models/registry.js";
 import {
@@ -27,7 +34,7 @@ import {
   openSessionManager,
   sessionResponse,
   sessionHistory,
-  agentConfigForRequest,
+  agentConfigFromSnapshot,
   requireConfigPath,
   reloadAndState,
   mergeProviderProfile,
@@ -38,8 +45,13 @@ import {
 export function agentRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
 
+  // --- Agent 定义 -----------------------------------------------------------
+
   app.get("/api/agents", (c) => c.json({ agents: runtime.agentStore.list() }));
 
+  // --- Shared Message Fabric：Human–Agent 唯一 DM ---------------------------
+
+  /** 读取 Shared Message Store 中的 DM timeline；generations 仅作 Runtime trace。 */
   app.get("/api/chat/agents/:agentId/messages", (c) => {
     const agentId = c.req.param("agentId");
     if (!runtime.agentStore.get(agentId)) return c.json({ detail: "Agent not found" }, 404);
@@ -60,13 +72,23 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     });
   });
 
+  /** Human 发 DM：append → inbox → Coordinator 唤醒（正文不注入 wake prompt）。 */
   app.post("/api/chat/agents/:agentId/messages", async (c) => {
     const agentId = c.req.param("agentId");
     if (!runtime.agentStore.get(agentId)) return c.json({ detail: "Agent not found" }, 404);
     try {
       const body = await c.req.json() as Record<string, unknown>;
-      const content = String(body.content ?? body.message ?? "").trim();
-      if (!content) return c.json({ detail: "content is required" }, 400);
+      const images = Array.isArray(body.images)
+        ? body.images.filter((entry): entry is { data: string; mimeType: string } => (
+          !!entry
+          && typeof entry === "object"
+          && typeof (entry as { data?: unknown }).data === "string"
+          && typeof (entry as { mimeType?: unknown }).mimeType === "string"
+        ))
+        : [];
+      const { buildDmMessageContent, saveDmImageAttachments } = await import("../../chat/dm-attachments.js");
+      const attachmentPaths = saveDmImageAttachments(agentId, images);
+      const content = buildDmMessageContent(String(body.content ?? body.message ?? ""), attachmentPaths);
       runtime.agentContextManager.ensure(agentId);
       const { appendHumanDmAndNotify } = await import("../../chat/dispatch.js");
       const { message, directMessageId } = appendHumanDmAndNotify(runtime, {
@@ -84,6 +106,9 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     }
   });
 
+  // --- Coordinator：presence / 治理 ----------------------------------------
+
+  /** Coordinator 侧 presence（idle/active/paused/running），不同于 Session runState。 */
   app.get("/api/chat/agents/status", (c) => {
     const agents = runtime.agentStore.list().map((agent) => ({
       agentId: agent.id,
@@ -92,18 +117,41 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     return c.json({ agents });
   });
 
+  /** 暂停 Agent：持久化 paused，并 abort 当前 activation。 */
   app.post("/api/chat/agents/:id/pause", async (c) => {
     await runtime.agentCoordinator?.pause(c.req.param("id"));
     return c.json({ ok: true });
   });
+  /** 恢复 Agent，并在仍有 pending inbox 时重新 notify。 */
   app.post("/api/chat/agents/:id/resume", async (c) => {
     await runtime.agentCoordinator?.resume(c.req.param("id"));
     return c.json({ ok: true });
   });
+  /** 仅 abort 当前 run，不永久 pause。 */
   app.post("/api/chat/agents/:id/abort", async (c) => {
     await runtime.agentCoordinator?.abort(c.req.param("id"));
     return c.json({ ok: true });
   });
+
+  /**
+   * Human Owner reset（对齐 Raft Lifecycle）：
+   * restart | session-reset | full-reset
+   */
+  app.post("/api/chat/agents/:id/reset", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({})) as { mode?: string };
+      const mode = body.mode === "session-reset" || body.mode === "full-reset"
+        ? body.mode
+        : "restart";
+      const { applyAgentLifecycleReset } = await import("../../chat/runtime.js");
+      const result = await applyAgentLifecycleReset(runtime, c.req.param("id"), mode);
+      return c.json(result);
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : "Agent reset failed" }, 400);
+    }
+  });
+
+  // --- Runtime 探测 ---------------------------------------------------------
 
   app.get("/api/agent/runtimes", async (c) => c.json({
     runtimes: [
@@ -123,6 +171,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     supportsCustomModel: true,
   }));
 
+  /** 创建 Agent，并确保逻辑 Context + 唯一 Human–Agent DM 入口存在。 */
   app.post("/api/agents", async (c) => {
     try {
       const body = await c.req.json() as AgentFileInput;
@@ -141,7 +190,19 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       if (typeof body.id === "string" && body.id !== c.req.param("id")) {
         return c.json({ detail: "Agent id cannot be changed" }, 400);
       }
+      const previous = runtime.agentStore.get(c.req.param("id"));
       const agent = runtime.agentStore.update(c.req.param("id"), body);
+      const configChanged = previous && (
+        previous.systemPrompt !== agent.systemPrompt
+        || previous.model !== agent.model
+        || previous.provider !== agent.provider
+        || previous.reasoningEffort !== agent.reasoningEffort
+        || previous.runtime !== agent.runtime
+      );
+      if (configChanged) {
+        const { rotateAgentSessionForConfigChange } = await import("../../chat/runtime.js");
+        await rotateAgentSessionForConfigChange(runtime, agent.id);
+      }
       return c.json({ agent, agents: runtime.agentStore.list() });
     } catch (error) {
       return c.json({ detail: error instanceof Error ? error.message : "Agent update failed" }, 400);
@@ -167,10 +228,15 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     }
   });
 
-  // Lists all persisted agent sessions with summary metadata.
+  // --- Runtime Session（私有执行历史；不是 DM 权威 timeline）----------------
+
+  /** 列出持久化 Runtime Session 摘要（供 trace / 兼容旧 UI）。 */
   app.get("/api/agent/sessions", async (c) => c.json(await sessionHistory(runtime)));
 
-  // Creates a new agent session and returns it alongside the updated history.
+  /**
+   * 创建新的物理 Runtime Session，并挂到 Agent Context。
+   * 不创建新的用户可见 DM；Human–Agent 仍只有一条 Shared Message DM。
+   */
   app.post("/api/agent/sessions", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : "default";
@@ -196,10 +262,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const mgr = createPiSession({
       title: String(body.title || "New Agent Session"),
     });
-    mgr.appendModelChange(
-      piProviderName(String(body.provider || snapshot.provider)),
-      String(body.model || snapshot.model),
-    );
+    // Routing is frozen from the Agent snapshot at Session create — never from the request body.
+    mgr.appendModelChange(piProviderName(snapshot.provider), snapshot.model);
     mgr.appendThinkingLevelChange(snapshot.reasoningEffort);
     runtime.pendingSessionManagers.set(mgr.getSessionId(), mgr);
     runtime.pendingAgentSnapshots.set(mgr.getSessionId(), snapshot);
@@ -275,7 +339,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       return c.json({ detail: "message or images is required" }, 400);
     }
 
-    // Prefer Shared Message Fabric for Human-Agent DM text turns when agent context is known.
+    // 已知 Agent Context 时，纯文本优先写入 Shared Message Fabric。
     const context = runtime.agentContextManager.contextForSession(sessionId);
     if (context && message && requestImages.length === 0) {
       const { appendHumanDmAndNotify } = await import("../../chat/dispatch.js");
@@ -325,14 +389,10 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       runtime.pendingAgentSnapshots.delete(sessionId);
     }
 
-    const requestConfig = agentConfigForRequest(runtime.config.agent, {
-      ...body,
-      provider: typeof body.provider === "string" && body.provider ? body.provider : agentSnapshot.provider,
-      model: typeof body.model === "string" && body.model ? body.model : agentSnapshot.model,
-    });
-    requestConfig.reasoningEffort = typeof body.reasoningEffort === "string" && body.reasoningEffort.trim()
-      ? body.reasoningEffort.trim()
-      : mgr.buildSessionContext().thinkingLevel || agentSnapshot.reasoningEffort || requestConfig.reasoningEffort;
+    const requestConfig = agentConfigFromSnapshot(runtime.config.agent, agentSnapshot);
+    requestConfig.reasoningEffort = mgr.buildSessionContext().thinkingLevel
+      || agentSnapshot.reasoningEffort
+      || requestConfig.reasoningEffort;
     return streamPiSession({
       runtime,
       sessionId,

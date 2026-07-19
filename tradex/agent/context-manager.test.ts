@@ -61,4 +61,15 @@ describe("AgentContextManager", () => {
     ]);
     expect(manager.listSessions("cindy")).toHaveLength(2);
   });
+
+  it("aborts the active Runtime run by trusted agentId", () => {
+    const manager = createManager();
+    manager.attachSession("cindy", { sessionId: "session-1", runtime: "pi" });
+    let aborted = false;
+    const activeRuns = new Map([["session-1", { abort: () => { aborted = true; } }]]);
+    expect(manager.resolveActiveBinding("cindy")).toEqual({ agentId: "cindy", sessionId: "session-1" });
+    expect(manager.abortActiveRun("cindy", activeRuns)).toEqual({ aborted: true, sessionId: "session-1" });
+    expect(aborted).toBe(true);
+    expect(manager.abortActiveRun("missing", activeRuns)).toEqual({ aborted: false, sessionId: null });
+  });
 });

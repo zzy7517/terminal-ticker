@@ -161,10 +161,26 @@ export class ToolRegistry {
     return [...this.tools.values()];
   }
 
+  /**
+   * 按 Runtime 过滤工具。
+   * access "read" → 仅读工具；access "write" → 读+写（超集）。
+   * 缺失 policy 默认仅 Pi 可读（对 Claude 有意 fail-closed）。
+   */
   listToolsForRuntime(runtime: AgentRuntimeId, access: "read" | "write" = "read"): ToolDefinition[] {
     return this.listTools().filter((tool) => {
       const policy = tool.policy ?? { access: "read" as const, domain: "other" as const, runtimeExposure: ["pi"] as const };
       return policy.runtimeExposure.includes(runtime) && (access === "write" || policy.access === "read");
+    });
+  }
+
+  /**
+   * Claude 单次 run 可通过 Tradex MCP 调用的工具。
+   * 包含 Message/Channel 协作 write（domain other），永不包含交易 write。
+   */
+  listToolsForClaudeMcp(): ToolDefinition[] {
+    return this.listToolsForRuntime("claude-code", "write").filter((tool) => {
+      const policy = tool.policy ?? { access: "read" as const, domain: "other" as const, runtimeExposure: ["pi"] as const };
+      return !(policy.access === "write" && policy.domain === "trading");
     });
   }
 

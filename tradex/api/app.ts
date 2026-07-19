@@ -11,7 +11,7 @@ import { browserRoutes } from "./routes/browser.js";
 import { optionsRoutes } from "./routes/options.js";
 import { proxyRoutes } from "./routes/proxy.js";
 import { channelRoutes } from "./routes/channel.js";
-import { chatEventRoutes } from "./chat-events.js";
+import { chatEventRoutes } from "./routes/chat.js";
 import { tradexMcpRoutes } from "../mcp/server/routes.js";
 
 export interface CreateAppOptions {

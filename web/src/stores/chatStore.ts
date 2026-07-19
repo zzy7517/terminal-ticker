@@ -1,3 +1,9 @@
+/**
+ * chatStore — 前端 Chat 壳状态（对应 Raft Chat：Channels + Saved/Pinned + 未读）。
+ *
+ * 管理 Channel 列表/消息/thread、活动目标、引用与未读游标；
+ * Agent DM timeline 仍由 agentStore 持有，本 Store 只协调 Chat 壳导航。
+ */
 import { create } from 'zustand';
 import {
   connectChatEvents,
@@ -7,14 +13,18 @@ import {
   fetchChannelMessages,
   fetchChannelThread,
   fetchChatBootstrap,
+  markChatUnreadRead,
   sendChannelMessage,
   sendChannelThreadReply,
   setChatReference,
   setChannelReaction,
 } from '../api';
-import type { Channel, ChannelMessage, ChannelThreadResponse, ChatMessageReference, ChatTarget } from '../types';
+import type { Channel, ChannelMessage, ChannelThreadResponse, ChatMessageReference, ChatTarget, ChatUnreadEntry } from '../types';
+import { agentIdForDirectMessage, recoverDirectMessageTarget } from '../chat/directMessageWorkspace';
+import { chronologicalMessages } from '../chat/timeline';
 import { useAgentStore } from './agentStore';
 
+/** Chat 壳 Zustand 状态：Channel / 引用 / 未读 / 活动目标。 */
 interface ChatState {
   channels: Channel[];
   activeTarget: ChatTarget | null;
@@ -24,14 +34,16 @@ interface ChatState {
   threadsByRootId: Record<string, ChannelThreadResponse>;
   saved: ChatMessageReference[];
   pinned: ChatMessageReference[];
+  unread: ChatUnreadEntry[];
   openThreadId: string | null;
+  agentProfileOpen: boolean;
   lastEventSeq: number;
   eventStatus: 'connected' | 'disconnected' | 'error';
   loading: boolean;
   sending: boolean;
   error: string | null;
   initChat: () => () => void;
-  selectDirectChat: (directMessageId: string) => void;
+  selectDirectMessage: (directMessageId: string) => void;
   openCollection: (collection: 'saved' | 'pinned') => void;
   selectChannel: (channelId: string) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
@@ -39,13 +51,17 @@ interface ChatState {
   sendMessage: (content: string, threadRootId?: string) => Promise<void>;
   openThread: (rootMessageId: string) => Promise<void>;
   closeThread: () => void;
+  toggleAgentProfile: () => void;
+  closeAgentProfile: () => void;
   editMessage: (messageId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   toggleReaction: (message: ChannelMessage, emoji: string) => Promise<void>;
   toggleSaved: (target: ChatTarget, messageId: string) => Promise<void>;
   togglePinned: (target: ChatTarget, messageId: string) => Promise<void>;
+  markTargetRead: (target: ChatTarget, seq: number, messageId?: string | null) => Promise<void>;
 }
 
+/** Human Chat 壳 Store：bootstrap、选中目标、发消息、Saved/Pinned、未读。 */
 export const useChatStore = create<ChatState>((set, get) => ({
   channels: [],
   activeTarget: null,
@@ -55,7 +71,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   threadsByRootId: {},
   saved: [],
   pinned: [],
+  unread: [],
   openThreadId: null,
+  agentProfileOpen: false,
   lastEventSeq: 0,
   eventStatus: 'disconnected',
   loading: false,
@@ -67,7 +85,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let disconnect: (() => void) | null = null;
     let pendingEventSeq = 0;
     let recoveryRunning = false;
-    const pendingDirectAgents = new Map<string, number>();
+    const pendingDirectTargets = new Map<string, number>();
     set({ loading: true, error: null });
     void fetchChatBootstrap()
       .then((payload) => {
@@ -76,6 +94,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           channels: payload.channels,
           saved: payload.saved,
           pinned: payload.pinned,
+          unread: payload.unread ?? [],
           lastEventSeq: payload.lastEventSeq,
           loading: false,
         });
@@ -86,23 +105,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
             pendingEventSeq = Math.max(pendingEventSeq, event.seq);
             if (event.target.kind === 'direct-message') {
               const directMessageId = event.target.directMessageId;
-              const agentId = useAgentStore.getState().agents.find((agent) => (
-                useAgentStore.getState().directMessageIdByAgentId[agent.id] === directMessageId
-              ))?.id;
-              if (agentId) {
-                pendingDirectAgents.set(
-                  agentId,
-                  Math.max(pendingDirectAgents.get(agentId) ?? 0, event.seq),
-                );
-              }
+              pendingDirectTargets.set(
+                directMessageId,
+                Math.max(pendingDirectTargets.get(directMessageId) ?? 0, event.seq),
+              );
             }
             const recover = async (): Promise<void> => {
               if (recoveryRunning) return;
               recoveryRunning = true;
               let attempt = 0;
-              while (!disposed && (pendingEventSeq > get().lastEventSeq || pendingDirectAgents.size > 0)) {
+              while (!disposed && (pendingEventSeq > get().lastEventSeq || pendingDirectTargets.size > 0)) {
                 const targetSeq = pendingEventSeq;
-                const directAgents = new Map(pendingDirectAgents);
+                const directTargets = new Map(pendingDirectTargets);
                 const current = get();
                 const activeChannelId = current.activeTarget?.kind === 'channel'
                   ? current.activeTarget.channelId
@@ -117,17 +131,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     current.openThreadId
                       ? fetchChannelThread(current.openThreadId).catch(() => null)
                       : Promise.resolve(null),
-                    ...[...directAgents.keys()].map((agentId) => useAgentStore.getState().refreshAgentDirectMessages(agentId)),
+                    ...[...directTargets.keys()].map((directMessageId) => recoverDirectMessageTarget(directMessageId)),
                   ]);
                   if (disposed) break;
                   set((state) => ({
                     channels: snapshot.channels,
                     saved: snapshot.saved,
                     pinned: snapshot.pinned,
+                    unread: snapshot.unread ?? state.unread,
                     lastEventSeq: snapshot.lastEventSeq,
                     error: null,
                     messagesByChannelId: activeChannelId && channelMessages
-                      ? { ...state.messagesByChannelId, [activeChannelId]: [...channelMessages.messages].reverse() }
+                      ? { ...state.messagesByChannelId, [activeChannelId]: chronologicalMessages(channelMessages.messages) }
                       : state.messagesByChannelId,
                     nextBeforeSeqByChannelId: activeChannelId && channelMessages
                       ? { ...state.nextBeforeSeqByChannelId, [activeChannelId]: channelMessages.nextBeforeSeq }
@@ -136,8 +151,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
                       ? { ...state.threadsByRootId, [thread.root.id]: thread }
                       : state.threadsByRootId,
                   }));
-                  for (const [agentId, seq] of directAgents) {
-                    if ((pendingDirectAgents.get(agentId) ?? 0) <= seq) pendingDirectAgents.delete(agentId);
+                  for (const [directMessageId, seq] of directTargets) {
+                    if ((pendingDirectTargets.get(directMessageId) ?? 0) <= seq) pendingDirectTargets.delete(directMessageId);
                   }
                   if (snapshot.lastEventSeq < targetSeq) {
                     await delay(100);
@@ -166,32 +181,65 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
   },
 
-  selectDirectChat: (directMessageId) => set({
-    activeTarget: { kind: 'direct-message', directMessageId },
-    activeCollection: null,
-    openThreadId: null,
-  }),
+  selectDirectMessage: (directMessageId) => {
+    const previous = get().activeTarget;
+    const sameTarget = previous?.kind === 'direct-message' && previous.directMessageId === directMessageId;
+    set({
+      activeTarget: { kind: 'direct-message', directMessageId },
+      activeCollection: null,
+      openThreadId: null,
+      agentProfileOpen: sameTarget ? get().agentProfileOpen : false,
+    });
+    const agentId = agentIdForDirectMessage(directMessageId);
+    const messages = agentId ? useAgentStore.getState().directMessagesByAgentId[agentId] ?? [] : [];
+    const latest = messages.length ? messages[messages.length - 1] : null;
+    if (latest) {
+      void get().markTargetRead(
+        { kind: 'direct-message', directMessageId },
+        latest.dmSeq,
+        latest.id,
+      );
+    }
+  },
 
-  openCollection: (activeCollection) => set({ activeCollection, openThreadId: null }),
+  openCollection: (activeCollection) => set({ activeCollection, openThreadId: null, agentProfileOpen: false }),
 
   selectChannel: async (channelId) => {
-    set({ activeTarget: { kind: 'channel', channelId }, activeCollection: null, openThreadId: null, loading: true, error: null });
+    set({ activeTarget: { kind: 'channel', channelId }, activeCollection: null, openThreadId: null, agentProfileOpen: false, loading: true, error: null });
     try {
       const payload = await fetchChannelMessages(channelId);
+      const messages = chronologicalMessages(payload.messages);
       set((state) => ({
         messagesByChannelId: {
           ...state.messagesByChannelId,
-          [channelId]: [...payload.messages].reverse(),
+          [channelId]: messages,
         },
         nextBeforeSeqByChannelId: {
           ...state.nextBeforeSeqByChannelId,
           [channelId]: payload.nextBeforeSeq,
         },
       }));
+      const latest = messages.length ? messages[messages.length - 1] : null;
+      if (latest) {
+        await get().markTargetRead(
+          { kind: 'channel', channelId },
+          latest.channelSeq,
+          latest.id,
+        );
+      }
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
     } finally {
       set({ loading: false });
+    }
+  },
+
+  markTargetRead: async (target, seq, messageId = null) => {
+    try {
+      const payload = await markChatUnreadRead({ target, seq, messageId });
+      set({ unread: payload.unread });
+    } catch (error) {
+      console.error('mark unread failed:', error);
     }
   },
 
@@ -207,7 +255,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messagesByChannelId: {
           ...state.messagesByChannelId,
           [target.channelId]: [
-            ...[...payload.messages].reverse(),
+          ...chronologicalMessages(payload.messages),
             ...(state.messagesByChannelId[target.channelId] ?? []),
           ],
         },
@@ -284,6 +332,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   closeThread: () => set({ openThreadId: null }),
+
+  toggleAgentProfile: () => set((state) => ({ agentProfileOpen: !state.agentProfileOpen })),
+
+  closeAgentProfile: () => set({ agentProfileOpen: false }),
 
   editMessage: async (messageId, content) => {
     const clean = content.trim();

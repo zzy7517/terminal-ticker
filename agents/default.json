@@ -1,0 +1,10 @@
+{
+  "id": "default",
+  "name": "Default Agent",
+  "description": "Tradex built-in trading and market analysis Agent",
+  "systemPrompt": null,
+  "runtime": "pi",
+  "provider": "openai",
+  "model": "openrouter/anthropic/claude-opus-4.6",
+  "reasoningEffort": null
+}

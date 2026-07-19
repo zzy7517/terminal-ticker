@@ -12,7 +12,6 @@ import type { ActiveRuntimeRun, RuntimeEvent, RuntimeRunResult } from "../types.
 import { claudeLineType, classifyClaudeError, parseClaudeLine } from "./protocol.js";
 
 export { classifyClaudeError, parseClaudeLine } from "./protocol.js";
-export { CLAUDE_CODE_CAPABILITIES } from "../capabilities.js";
 
 export interface ClaudeArgsInput {
   prompt: string;
@@ -118,7 +117,8 @@ export class ClaudeCodeRuntime {
       })}\n`, { encoding: "utf8", mode: 0o600 });
 
       const assignedNativeSessionId = input.nativeSessionId ? undefined : randomUUID();
-      const allowedMcpTools = input.registry.listToolsForRuntime("claude-code", "read").map((tool) => tool.name);
+      // 必须与 McpRunGrantStore.issue 一致：允许协作写，禁止交易写。
+      const allowedMcpTools = input.registry.listToolsForClaudeMcp().map((tool) => tool.name);
       const args = buildClaudeArgs({
         prompt: input.prompt,
         instructions: input.instructions,

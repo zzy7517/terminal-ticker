@@ -1,13 +1,20 @@
+/**
+ * chat-overlay — Saved / Pinned 消息引用的 overlay 存储。
+ *
+ * 对应 Raft 侧栏 Saved / Pinned：只存「指向哪条消息」的引用，
+ * 不复制 Shared Message Fabric 正文；权威消息仍在 ChannelStore / MessageStore。
+ */
 import Database from "better-sqlite3";
 import path from "node:path";
-import { appendChatEvent, initChatEventSchema } from "./chat-events.js";
-import { BaseStore, defaultCacheDir, nowMs } from "./db.js";
+import { appendChatEvent, initChatEventSchema } from "./events.js";
+import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
 import {
   chatTargetFromRow,
   chatTargetRef,
   type ChatTarget,
-} from "./channel/domain.js";
+} from "../channel/domain.js";
 
+/** 一条 Saved 或 Pinned 引用（actor + ChatTarget + messageId）。 */
 export interface ChatMessageReference {
   actorId: string;
   target: ChatTarget;
@@ -29,6 +36,10 @@ interface ReferenceInput {
   messageId: string;
 }
 
+/**
+ * Saved（按 actor）与 Pinned（按 target）的 SQLite overlay。
+ * 写入时追加 chat_events，供前端实时刷新。
+ */
 export class ChatOverlayStore extends BaseStore {
   constructor(dbPath = path.join(defaultCacheDir(), "chat.sqlite3")) {
     super(dbPath);
@@ -56,22 +67,27 @@ export class ChatOverlayStore extends BaseStore {
     `);
   }
 
+  /** 收藏消息（Saved）。 */
   save(input: ReferenceInput): void {
     this.add("chat_saved", "saved.added", input);
   }
 
+  /** 取消收藏。 */
   unsave(input: ReferenceInput): void {
     this.remove("chat_saved", "saved.removed", input, true);
   }
 
+  /** 固定消息到目标（Pinned）。 */
   pin(input: ReferenceInput): void {
     this.add("chat_pins", "pin.added", input);
   }
 
+  /** 取消固定。 */
   unpin(input: ReferenceInput): void {
     this.remove("chat_pins", "pin.removed", input, false);
   }
 
+  /** 列出某 actor 的全部 Saved。 */
   listSaved(actorId: string): ChatMessageReference[] {
     const rows = this.getConn().prepare(`
       SELECT * FROM chat_saved WHERE actor_id = ? ORDER BY created_at_ms DESC, rowid DESC
@@ -79,6 +95,7 @@ export class ChatOverlayStore extends BaseStore {
     return rows.map(referenceFromRow);
   }
 
+  /** 列出某 ChatTarget 上的 Pinned。 */
   listPinned(target: ChatTarget): ChatMessageReference[] {
     const rows = this.getConn().prepare(`
       SELECT * FROM chat_pins WHERE target_kind = ? AND target_ref = ?
@@ -87,6 +104,7 @@ export class ChatOverlayStore extends BaseStore {
     return rows.map(referenceFromRow);
   }
 
+  /** 列出全部 Pinned（跨目标，供侧栏汇总）。 */
   listAllPinned(): ChatMessageReference[] {
     const rows = this.getConn().prepare(`
       SELECT * FROM chat_pins ORDER BY created_at_ms DESC, rowid DESC

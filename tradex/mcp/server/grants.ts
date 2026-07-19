@@ -16,13 +16,16 @@ export class McpRunGrantStore {
     this.now = input.now ?? Date.now;
   }
 
-  /** 为一次 Claude run 签发随机 token，并只在内存中保存其 hash 和工具集合。 */
+  /**
+   * 为一次 Claude run 签发随机 token，并只在内存中保存其 hash 和工具集合。
+   * 工具集合来自 listToolsForClaudeMcp：含 Message/Channel 协作写，永不含交易写。
+   */
   issue(input: { tradexSessionId: string; registry: ToolRegistry; ttlMs: number }): { token: string; expiresAt: number } {
     const token = randomBytes(32).toString("base64url");
     const expiresAt = this.now() + input.ttlMs;
     this.grants.set(hashToken(token), {
       tradexSessionId: input.tradexSessionId,
-      tools: input.registry.listToolsForRuntime("claude-code", "read"),
+      tools: input.registry.listToolsForClaudeMcp(),
       expiresAt,
     });
     return { token, expiresAt };

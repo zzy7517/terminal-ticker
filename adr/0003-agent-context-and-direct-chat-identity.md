@@ -1,33 +1,33 @@
-# ADR-0003: Agent Context and Direct Chat identity
+# ADR-0003：Agent Context 与 Direct Chat 身份
 
-- Status: superseded
-- Date: 2026-07-18
-- Superseded-by: `0004-agent-context-and-direct-message-identity.md`
-- Supersedes: the parts of ADR-0001 that treated a Session as the user-facing conversation identity
+- 状态：已取代
+- 日期：2026-07-18
+- 被取代于：`0004-agent-context-and-direct-message-identity.md`
+- 取代：ADR-0001 中将 Session 视为用户侧对话身份的部分
 
-> **Superseded.** The multi Direct Chat / New Chat / `direct-chat` ChatTarget model below is historical.
-> Follow ADR-0004 and `docs/raft-style-agent-team-design.md` instead.
+> **已取代。** 下文中的多 Direct Chat / New Chat / `direct-chat` ChatTarget 模型仅为历史记录。
+> 请改读 ADR-0004 与 `docs/raft-style-agent-team-design.md`。
 
-## Decision (historical)
+## 决策（历史）
 
-Tradex exposes one stable Direct Message Entry per Agent. A Human can create multiple Direct Chats under that entry, but only one Chat is active and writable. A Chat owns one or more Runtime Session generations; a Native Session remains a Runtime-private resume handle.
+Tradex 为每个 Agent 暴露一个稳定的 Direct Message Entry。Human 可在该入口下创建多个 Direct Chat，但同一时间只有一个 Chat 处于活跃且可写。一个 Chat 拥有一代或多代 Runtime Session；Native Session 仍是 Runtime 私有的 resume 句柄。
 
-`AgentContextManager` is the trusted identity boundary for:
+`AgentContextManager` 是可信的身份边界，负责：
 
-- ensuring the active Chat for an Agent;
-- validating `agentId + chatId` ownership;
-- creating New Chat only while the Agent is idle;
-- binding and removing Runtime Session generations;
-- indexing persisted Pi and Claude Sessions as imported Chats.
+- 确保某个 Agent 的活跃 Chat；
+- 校验 `agentId + chatId` 归属；
+- 仅在 Agent 空闲时允许创建 New Chat；
+- 绑定与移除 Runtime Session 代际；
+- 将已持久化的 Pi / Claude Session 索引为导入的 Chat。
 
-Channel-specific operations continue to use `channelId`. `ChatTarget` is not a replacement for Channel: it is used only when one generic feature must reference either `{ kind: "channel", channelId }` or `{ kind: "direct-chat", agentId, chatId }`. Phase 1 uses it for Chat events, Saved, and Pinned references; future Tasks must reuse the same boundary.
+Channel 相关操作继续使用 `channelId`。`ChatTarget` 不是 Channel 的替代品：仅当某一通用能力需要同时引用 `{ kind: "channel", channelId }` 或 `{ kind: "direct-chat", agentId, chatId }` 时才使用。Phase 1 将其用于 Chat 事件、Saved 与 Pinned 引用；未来的 Tasks 必须复用同一边界。
 
-Shared Channel messages remain authoritative SQLite facts. They are never appended directly to another Agent's private Runtime Session.
+共享 Channel 消息始终是权威的 SQLite 事实，绝不会被直接追加到另一 Agent 的私有 Runtime Session。
 
-## Consequences (historical)
+## 后果（历史）
 
-- New Chat creates a clean product conversation without duplicating the Agent in the sidebar.
-- Existing Session files are indexed, not migrated or rewritten.
-- Historical Chats remain readable but are not reopened for writes.
-- Runtime context rotation can add a Session generation without changing the Chat ID.
-- Phase 2 Channel activation can reuse Agent Context without inventing a Channel-owned model context.
+- New Chat 可开启干净的产品对话，而无需在侧栏复制 Agent。
+- 既有 Session 文件只做索引，不迁移、不改写。
+- 历史 Chat 只读，不可重新打开写入。
+- Runtime 上下文轮转可新增 Session 代际，而不改变 Chat ID。
+- Phase 2 的 Channel 激活可复用 Agent Context，无需另造一套 Channel 自有的模型上下文。

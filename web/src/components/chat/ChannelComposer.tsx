@@ -1,6 +1,10 @@
+/**
+ * ChannelComposer — Channel / Thread 输入框（含 @Agent 自动补全）。
+ */
 import { Loader2, Send } from 'lucide-react';
 import { useAgentStore } from '../../stores/agentStore';
 
+/** Channel 或 Thread 的消息输入区。 */
 export function ChannelComposer({
   draft,
   setDraft,
@@ -41,7 +45,7 @@ export function ChannelComposer({
           ))}
         </div>
       ) : null}
-      <div className="channel-composer">
+      <div className="session-compose">
         <textarea
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
@@ -51,12 +55,21 @@ export function ChannelComposer({
             }
           }}
           placeholder={placeholder}
-          rows={2}
+          rows={3}
           value={draft}
         />
-        <button className="shell-button primary" disabled={!draft.trim() || sending} onClick={() => void submit()} type="button">
-          {sending ? <Loader2 className="spin" size={14} /> : <Send size={14} />} {label}
-        </button>
+        <div className="session-compose-actions">
+          <button
+            aria-label={label}
+            className="shell-button primary lg session-submit"
+            disabled={!draft.trim() || sending}
+            onClick={() => void submit()}
+            type="button"
+          >
+            {sending ? <Loader2 className="spin" size={16} /> : <Send size={16} />}
+            <span className="session-submit-label">{label}</span>
+          </button>
+        </div>
       </div>
     </div>
   );
