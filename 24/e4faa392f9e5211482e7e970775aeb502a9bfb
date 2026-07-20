@@ -1,0 +1,100 @@
+web/src/components/chat/ChannelPanel.tsx
+  s_0c5d5b1463a25f::t_9f41a10971a9ec 3,111
+tradex/chat/dispatch.ts
+  s_0c5d5b1463a25f::t_8337bf588def81 118
+web/src/components/chat/ChannelMessageItem.tsx
+  s_0c5d5b1463a25f::t_d98799007a4d33 2,5
+tradex/channel/store.ts
+  s_0c5d5b1463a25f::t_5eef7ca509af34 478,490
+  s_0c5d5b1463a25f::t_6c2967ff8f837d 12
+  s_0c5d5b1463a25f::t_4dd63a160b85ac 145
+  s_0c5d5b1463a25f::t_9cdd87d9ca6516 298-299,312,318
+  s_0c5d5b1463a25f::t_7e8fe10aa8adb5 726,729
+  s_0c5d5b1463a25f::t_97446187053555 620
+  s_0c5d5b1463a25f::t_aef266b9dd79c3 648
+  s_0c5d5b1463a25f::t_956f8ed1c7a612 441
+tradex/chat/message-tools.ts
+  s_e88ba2a02b1b1a::t_33120812e90efe 247
+  s_e88ba2a02b1b1a::t_0bbe9e836be455 275
+  s_e88ba2a02b1b1a::t_7613f8e5f8db82 130
+  s_e88ba2a02b1b1a::t_14419e687bcb30 196
+  s_e88ba2a02b1b1a::t_15b8aeea04a117 255
+  s_e88ba2a02b1b1a::t_cfc14079d6a99b 359
+  s_e88ba2a02b1b1a::t_9f9b478d492d88 74
+  s_e88ba2a02b1b1a::t_d68dd825860ccd 151
+  s_0c5d5b1463a25f::t_204e87055b32de 154
+  s_e88ba2a02b1b1a::t_9fb152cacd556d 172
+  s_e88ba2a02b1b1a::t_f04f6ebb7660ca 297
+  s_0c5d5b1463a25f::t_4d00891f999624 332
+  s_e88ba2a02b1b1a::t_b9993319dfd5cd 335
+  s_e88ba2a02b1b1a::t_f7c3285e73ec0f 220
+  s_e88ba2a02b1b1a::t_bcaaacc63ea495 100
+web/src/components/workspace/AgentSessionPanel.tsx
+  s_206ffaebc3364e::t_d3bebcf3b32e4e 3
+web/src/stores/agentStore.ts
+  s_206ffaebc3364e::t_1b1ec9e37bd427 211
+  s_206ffaebc3364e::t_2d75e3c50f6b0e 229
+tradex/chat/message-target.ts
+  s_0c5d5b1463a25f::t_372ad7835587f9 14,17
+tradex/api/routes/channel.ts
+  s_0c5d5b1463a25f::t_f935ab02ad6f5b 67
+  s_0c5d5b1463a25f::t_7c1d4a57e5e4aa 183
+web/src/types.ts
+  s_206ffaebc3364e::t_399b620693434e 304
+tradex/channel/store.test.ts
+  s_0c5d5b1463a25f::t_62473164af060c 38,44,51-54,59,61-62
+web/src/stores/chatStore.ts
+  s_0c5d5b1463a25f::t_e879fecf5b430c 4,20,47,121,190,193,274,280-287
+web/src/components/chat/ChannelPanel.css
+  s_0c5d5b1463a25f::t_e3ce1bf10af16a 296
+  s_0c5d5b1463a25f::t_91c42d1ff41c3b 341
+tradex/chat/legacy-schema.ts
+  s_0c5d5b1463a25f::t_f2c3dd051f232c 1-17
+web/src/components/chat/ChannelComposer.tsx
+  s_0c5d5b1463a25f::t_637a87723fc625 2,7
+tradex/api/routes/channel.test.ts
+  s_0c5d5b1463a25f::t_5af7ce239297fc 99,123-128
+web/src/chat/shellController.ts
+  s_0c5d5b1463a25f::t_637a87723fc625 15,25,36
+tradex/chat/message-store.ts
+  s_0c5d5b1463a25f::t_fb8a7a3d809722 13
+  s_0c5d5b1463a25f::t_497777fe670dca 88
+  s_0c5d5b1463a25f::t_8f66acf652b73f 236-237,250,256,268,311,323,530
+tradex/chat/message-fabric.ts
+  s_0c5d5b1463a25f::t_060fbd4381b743 210
+  s_0c5d5b1463a25f::t_eddc7648294ee5 34-38,53
+web/src/api.ts
+  s_0c5d5b1463a25f::t_637a87723fc625 360,364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "24e4faa392f9e5211482e7e970775aeb502a9bfb",
+  "prompts": {},
+  "sessions": {
+    "s_0c5d5b1463a25f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a48439a8-816f-4b9a-ae2f-37e9754808b3",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_206ffaebc3364e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "41195c26-e550-402c-b4fd-4af7c51b61ba",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_e88ba2a02b1b1a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a8e474d7-1426-4886-9989-2d4caf97905d",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
