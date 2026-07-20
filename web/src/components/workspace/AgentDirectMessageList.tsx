@@ -1,9 +1,9 @@
 /**
- * AgentDirectMessageList — Chat 左侧导航：Direct Messages + Channels + Saved/Pinned。
+ * AgentDirectMessageList — Chat 左侧导航：Direct Messages + Channels。
  * 对应 Raft Chat 壳的侧栏入口。
  */
 import { useState } from 'react';
-import { Bookmark, Bot, Hash, Loader2, Pin, Plus, X } from 'lucide-react';
+import { Bot, Hash, Loader2, Plus, X } from 'lucide-react';
 import { useChatPresence } from '../../chat/presenceStore';
 import { createLiveChatShellController } from '../../chat/shellController';
 import { channelTarget, directMessageTarget, unreadCountForTarget } from '../../chat/timeline';
@@ -25,10 +25,6 @@ export function AgentDirectMessageList() {
   const activeTarget = useChatStore((state) => state.activeTarget);
   const createChannel = useChatStore((state) => state.createChannel);
   const unread = useChatStore((state) => state.unread);
-  const savedCount = useChatStore((state) => state.saved.length);
-  const pinnedCount = useChatStore((state) => state.pinned.length);
-  const activeCollection = useChatStore((state) => state.activeCollection);
-  const openCollection = useChatStore((state) => state.openCollection);
 
   async function submitChannel() {
     if (!channelName.trim()) return;
@@ -40,8 +36,6 @@ export function AgentDirectMessageList() {
   return (
     <aside className="direct-message-list">
       <header className="chat-sidebar-title">Chat</header>
-      <button className={`chat-reference-summary ${activeCollection === 'saved' ? 'active' : ''}`} onClick={() => openCollection('saved')} type="button"><Bookmark size={13} /> Saved <span>{savedCount}</span></button>
-      <button className={`chat-reference-summary ${activeCollection === 'pinned' ? 'active' : ''}`} onClick={() => openCollection('pinned')} type="button"><Pin size={13} /> Pinned <span>{pinnedCount}</span></button>
       <header>JOINT CHANNELS <span>0</span></header>
       <header>
         CHANNELS <span>{channels.length}</span>

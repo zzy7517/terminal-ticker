@@ -6,60 +6,51 @@ import type { RefObject, UIEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  Bookmark,
   Loader2,
-  Pin,
   X,
 } from 'lucide-react';
-import type { AgentDirectMessage, ChatTarget } from '../../types';
-import { useChatStore } from '../../stores/chatStore';
+import type { AgentDirectMessage } from '../../types';
+import { useAgentStore } from '../../stores/agentStore';
 import { projectDirectMessageTimeline, type DirectMessageTimelineItem } from '../../chat/directMessageTimeline';
+import { MessageReactions } from '../chat/MessageReactions';
 
 function DirectMessageRow({
+  agentId,
   message,
-  reference,
+  source,
 }: {
+  agentId: string;
   message: DirectMessageTimelineItem;
-  reference: { target: ChatTarget; messageId: string } | null;
+  source: AgentDirectMessage | undefined;
 }) {
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
   const content = message.error || message.content || (message.role === 'assistant' ? '' : 'No content.');
-  const toggleSaved = useChatStore((state) => state.toggleSaved);
-  const togglePinned = useChatStore((state) => state.togglePinned);
-  const saved = useChatStore((state) => reference ? state.saved.some((item) => (
-    item.messageId === reference.messageId
-    && item.target.kind === 'direct-message'
-    && reference.target.kind === 'direct-message'
-    && item.target.directMessageId === reference.target.directMessageId
-  )) : false);
-  const pinned = useChatStore((state) => reference ? state.pinned.some((item) => (
-    item.messageId === reference.messageId
-    && item.target.kind === 'direct-message'
-    && reference.target.kind === 'direct-message'
-    && item.target.directMessageId === reference.target.directMessageId
-  )) : false);
+  const toggleDirectMessageReaction = useAgentStore((state) => state.toggleDirectMessageReaction);
+  const reactions = source?.reactions ?? [];
+
   return (
     <div className={`session-message ${message.role}`}>
       <div className="session-message-head">
         <span>{label}</span>
         <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
-        {reference ? (
-          <span className="session-message-reference-actions">
-            <button className={saved ? 'active' : ''} onClick={() => void toggleSaved(reference.target, reference.messageId)} title="Save message" type="button"><Bookmark size={11} /></button>
-            <button className={pinned ? 'active' : ''} onClick={() => void togglePinned(reference.target, reference.messageId)} title="Pin message" type="button"><Pin size={11} /></button>
-          </span>
-        ) : null}
       </div>
       {content && (
         <div className="session-message-text markdown-body">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
       )}
+      {source && !source.deletedAtMs ? (
+        <MessageReactions
+          reactions={reactions}
+          onToggle={(emoji) => void toggleDirectMessageReaction(agentId, source.id, emoji)}
+        />
+      ) : null}
     </div>
   );
 }
 
 export interface DirectMessageTimelineProps {
+  agentId: string;
   directMessageId: string | null;
   directMessages: AgentDirectMessage[];
   sessionLoading: boolean;
@@ -72,8 +63,9 @@ export interface DirectMessageTimelineProps {
   onScroll: (event: UIEvent<HTMLDivElement>) => void;
 }
 
-/** DM Shared Message 时间线 UI（含 Saved/Pinned 快捷操作）。 */
+/** DM Shared Message 时间线 UI（含 Raft-style reaction 快捷操作）。 */
 export function DirectMessageTimeline({
+  agentId,
   directMessageId,
   directMessages,
   sessionLoading,
@@ -86,6 +78,7 @@ export function DirectMessageTimeline({
   onScroll,
 }: DirectMessageTimelineProps) {
   const messages = projectDirectMessageTimeline(directMessageId, directMessages);
+  const byId = new Map(directMessages.map((entry) => [entry.id, entry]));
 
   return (
     <div
@@ -108,11 +101,9 @@ export function DirectMessageTimeline({
       {!sessionLoading && messages.map((message) => (
         <DirectMessageRow
           key={message.id}
+          agentId={agentId}
           message={message}
-          reference={directMessageId ? {
-            target: { kind: 'direct-message', directMessageId },
-            messageId: String(message.id),
-          } : null}
+          source={byId.get(String(message.id))}
         />
       ))}
       {!sessionLoading && streamingContent !== null && (

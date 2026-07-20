@@ -1,36 +1,30 @@
 /**
- * chatStore — 前端 Chat 壳状态（对应 Raft Chat：Channels + Saved/Pinned + 未读）。
+ * chatStore — 前端 Chat 壳状态（对应 Raft Chat：Channels + 未读）。
  *
- * 管理 Channel 列表/消息、活动目标、引用与未读游标；
+ * 管理 Channel 列表/消息、活动目标与未读游标；
  * Agent DM timeline 仍由 agentStore 持有，本 Store 只协调 Chat 壳导航。
  */
 import { create } from 'zustand';
 import {
   connectChatEvents,
   createChannel,
-  deleteChannelMessage,
-  editChannelMessage,
   fetchChannelMessages,
   fetchChatBootstrap,
   markChatUnreadRead,
   sendChannelMessage,
-  setChatReference,
   setChannelReaction,
 } from '../api';
-import type { Channel, ChannelMessage, ChatMessageReference, ChatTarget, ChatUnreadEntry } from '../types';
+import type { Channel, ChannelMessage, ChatTarget, ChatUnreadEntry } from '../types';
 import { agentIdForDirectMessage, recoverDirectMessageTarget } from '../chat/directMessageWorkspace';
 import { chronologicalMessages } from '../chat/timeline';
 import { useAgentStore } from './agentStore';
 
-/** Chat 壳 Zustand 状态：Channel / 引用 / 未读 / 活动目标。 */
+/** Chat 壳 Zustand 状态：Channel / 未读 / 活动目标。 */
 interface ChatState {
   channels: Channel[];
   activeTarget: ChatTarget | null;
-  activeCollection: 'saved' | 'pinned' | null;
   messagesByChannelId: Record<string, ChannelMessage[]>;
   nextBeforeSeqByChannelId: Record<string, number | null>;
-  saved: ChatMessageReference[];
-  pinned: ChatMessageReference[];
   unread: ChatUnreadEntry[];
   agentProfileOpen: boolean;
   lastEventSeq: number;
@@ -40,30 +34,22 @@ interface ChatState {
   error: string | null;
   initChat: () => () => void;
   selectDirectMessage: (directMessageId: string) => void;
-  openCollection: (collection: 'saved' | 'pinned') => void;
   selectChannel: (channelId: string) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   createChannel: (name: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   toggleAgentProfile: () => void;
   closeAgentProfile: () => void;
-  editMessage: (messageId: string, content: string) => Promise<void>;
-  deleteMessage: (messageId: string) => Promise<void>;
   toggleReaction: (message: ChannelMessage, emoji: string) => Promise<void>;
-  toggleSaved: (target: ChatTarget, messageId: string) => Promise<void>;
-  togglePinned: (target: ChatTarget, messageId: string) => Promise<void>;
   markTargetRead: (target: ChatTarget, seq: number, messageId?: string | null) => Promise<void>;
 }
 
-/** Human Chat 壳 Store：bootstrap、选中目标、发消息、Saved/Pinned、未读。 */
+/** Human Chat 壳 Store：bootstrap、选中目标、发消息、未读。 */
 export const useChatStore = create<ChatState>((set, get) => ({
   channels: [],
   activeTarget: null,
-  activeCollection: null,
   messagesByChannelId: {},
   nextBeforeSeqByChannelId: {},
-  saved: [],
-  pinned: [],
   unread: [],
   agentProfileOpen: false,
   lastEventSeq: 0,
@@ -84,8 +70,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (disposed) return;
         set({
           channels: payload.channels,
-          saved: payload.saved,
-          pinned: payload.pinned,
           unread: payload.unread ?? [],
           lastEventSeq: payload.lastEventSeq,
           loading: false,
@@ -125,8 +109,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   if (disposed) break;
                   set((state) => ({
                     channels: snapshot.channels,
-                    saved: snapshot.saved,
-                    pinned: snapshot.pinned,
                     unread: snapshot.unread ?? state.unread,
                     lastEventSeq: snapshot.lastEventSeq,
                     error: null,
@@ -172,7 +154,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const sameTarget = previous?.kind === 'direct-message' && previous.directMessageId === directMessageId;
     set({
       activeTarget: { kind: 'direct-message', directMessageId },
-      activeCollection: null,
       agentProfileOpen: sameTarget ? get().agentProfileOpen : false,
     });
     const agentId = agentIdForDirectMessage(directMessageId);
@@ -187,10 +168,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  openCollection: (activeCollection) => set({ activeCollection, agentProfileOpen: false }),
-
   selectChannel: async (channelId) => {
-    set({ activeTarget: { kind: 'channel', channelId }, activeCollection: null, agentProfileOpen: false, loading: true, error: null });
+    set({ activeTarget: { kind: 'channel', channelId }, agentProfileOpen: false, loading: true, error: null });
     try {
       const payload = await fetchChannelMessages(channelId);
       const messages = chronologicalMessages(payload.messages);
@@ -240,7 +219,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messagesByChannelId: {
           ...state.messagesByChannelId,
           [target.channelId]: [
-          ...chronologicalMessages(payload.messages),
+            ...chronologicalMessages(payload.messages),
             ...(state.messagesByChannelId[target.channelId] ?? []),
           ],
         },
@@ -296,51 +275,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   closeAgentProfile: () => set({ agentProfileOpen: false }),
 
-  editMessage: async (messageId, content) => {
-    const clean = content.trim();
-    if (!clean) return;
-    try {
-      const payload = await editChannelMessage(messageId, clean);
-      set((state) => updateMessageState(state, payload.message, payload.channel));
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-    }
-  },
-
-  deleteMessage: async (messageId) => {
-    try {
-      const payload = await deleteChannelMessage(messageId);
-      set((state) => updateMessageState(state, payload.message, payload.channel));
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-    }
-  },
-
   toggleReaction: async (message, emoji) => {
     const active = !message.reactions.some((reaction) => reaction.emoji === emoji && reaction.reacted);
     try {
       const payload = await setChannelReaction(message.id, emoji, active);
       set((state) => updateMessageState(state, payload.message, payload.channel));
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-    }
-  },
-
-  toggleSaved: async (target, messageId) => {
-    const active = !get().saved.some((reference) => sameReference(reference, target, messageId));
-    try {
-      const payload = await setChatReference('saved', target, messageId, active);
-      set({ saved: payload.saved, pinned: payload.pinned });
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-    }
-  },
-
-  togglePinned: async (target, messageId) => {
-    const active = !get().pinned.some((reference) => sameReference(reference, target, messageId));
-    try {
-      const payload = await setChatReference('pins', target, messageId, active);
-      set({ saved: payload.saved, pinned: payload.pinned });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
     }
@@ -367,14 +306,6 @@ function updateMessageState(state: ChatState, message: ChannelMessage, channel: 
     channels: replaceChannel(state.channels, channel),
     messagesByChannelId: replaceMessage(state.messagesByChannelId, message.channelId, message),
   };
-}
-
-function sameReference(reference: ChatMessageReference, target: ChatTarget, messageId: string): boolean {
-  if (reference.messageId !== messageId || reference.target.kind !== target.kind) return false;
-  return target.kind === 'channel'
-    ? reference.target.kind === 'channel' && reference.target.channelId === target.channelId
-    : reference.target.kind === 'direct-message'
-      && reference.target.directMessageId === target.directMessageId;
 }
 
 function delay(ms: number): Promise<void> {

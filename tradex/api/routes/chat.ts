@@ -1,11 +1,10 @@
 /**
- * Chat HTTP 路由：bootstrap 快照、Saved/Pinned、未读游标、SSE 事件。
+ * Chat HTTP 路由：bootstrap 快照、未读游标、SSE 事件。
  * Channel CRUD 在 routes/channel.ts；Agent DM timeline 在 routes/agent.ts。
  */
-import { Hono, type Context } from "hono";
+import { Hono } from "hono";
 import type { AppRuntime } from "../runtime.js";
 import { channelTarget, directMessageTarget, parseChatTarget } from "../../channel/domain.js";
-import { sessionResponse } from "../helpers.js";
 
 const EVENT_POLL_MS = 750;
 
@@ -33,7 +32,7 @@ function humanUnreadProjection(runtime: AppRuntime): Array<{
   return unread;
 }
 
-/** 注册 Chat bootstrap / Saved·Pinned / 未读 / SSE 路由。 */
+/** 注册 Chat bootstrap / 未读 / SSE 路由。 */
 export function chatEventRoutes(runtime: AppRuntime): Hono {
   const app = new Hono();
 
@@ -44,8 +43,6 @@ export function chatEventRoutes(runtime: AppRuntime): Hono {
     const lastEventSeq = runtime.chatEventStore.latestSeq();
     return c.json({
       channels: runtime.channelStore.listChannels(),
-      saved: runtime.chatReferences.listSaved("owner"),
-      pinned: runtime.chatReferences.listPinned(),
       unread: humanUnreadProjection(runtime),
       lastEventSeq,
     });
@@ -70,38 +67,6 @@ export function chatEventRoutes(runtime: AppRuntime): Hono {
       return c.json({ detail: error instanceof Error ? error.message : "Unread update failed" }, 400);
     }
   });
-
-  app.post("/api/chat/saved", async (c) => mutateReference(c, "save"));
-  app.delete("/api/chat/saved", async (c) => mutateReference(c, "unsave"));
-  app.post("/api/chat/pins", async (c) => mutateReference(c, "pin"));
-  app.delete("/api/chat/pins", async (c) => mutateReference(c, "unpin"));
-
-  async function mutateReference(c: Context, action: "save" | "unsave" | "pin" | "unpin") {
-    try {
-      const body = await c.req.json() as Record<string, unknown>;
-      const target = parseChatTarget(body.target);
-      const messageId = String(body.messageId ?? "");
-      if ((action === "save" || action === "pin") && target.kind === "direct-message") {
-        const message = runtime.messageStore.getMessage(messageId);
-        if (!message || message.directMessageId !== target.directMessageId) {
-          // Allow legacy sessionId:messageId while Shared Message import catches up.
-          await requireLegacyDirectMessage(runtime, messageId);
-        }
-      }
-      const input = {
-        actorId: "owner",
-        target,
-        messageId,
-      };
-      runtime.chatReferences[action](input);
-      return c.json({
-        saved: runtime.chatReferences.listSaved("owner"),
-        pinned: runtime.chatReferences.listPinned(),
-      });
-    } catch (error) {
-      return c.json({ detail: error instanceof Error ? error.message : "Chat reference update failed" }, 400);
-    }
-  }
 
   app.get("/api/chat/events", (c) => {
     const querySeq = Number(c.req.query("after_seq"));
@@ -141,18 +106,4 @@ export function chatEventRoutes(runtime: AppRuntime): Hono {
   });
 
   return app;
-}
-
-async function requireLegacyDirectMessage(runtime: AppRuntime, referenceId: string): Promise<void> {
-  const separator = referenceId.lastIndexOf(":");
-  if (separator <= 0 || separator === referenceId.length - 1) throw new Error("Invalid Direct Message reference");
-  const sessionId = referenceId.slice(0, separator);
-  const messageId = referenceId.slice(separator + 1);
-  const payload = await sessionResponse(runtime, sessionId);
-  const messages = Array.isArray(payload.messages) ? payload.messages : [];
-  if (!messages.some((message) => (
-    message && typeof message === "object" && String((message as Record<string, unknown>).id) === messageId
-  ))) {
-    throw new Error("Message not found for ChatTarget");
-  }
 }

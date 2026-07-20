@@ -45,7 +45,7 @@ Raft Cursor Agent 的实证与 Raft 风格 Agent Team 设计修订了该边界�
 
 Channel 相关操作继续使用 `channelId`。
 
-`ChatTarget` 仅用于必须同时引用 Channel 或 Direct Message 的通用能力（Chat 事件、Saved、Pinned，以及未来的 Tasks）：
+`ChatTarget` 仅用于必须同时引用 Channel 或 Direct Message 的通用能力（Chat 事件，以及未来的 Tasks）：
 
 - `{ kind: "channel", channelId }`
 - `{ kind: "direct-message", directMessageId }`

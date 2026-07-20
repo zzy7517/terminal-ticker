@@ -105,6 +105,50 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     }
   });
 
+  app.post("/api/chat/agents/:agentId/messages/:messageId/reactions", async (c) => {
+    try {
+      const agentId = c.req.param("agentId");
+      if (!runtime.agentStore.get(agentId)) return c.json({ detail: "Agent not found" }, 404);
+      const dm = runtime.messageStore.requireHumanAgentDm(agentId);
+      const messageId = c.req.param("messageId");
+      const existing = runtime.messageStore.getMessage(messageId);
+      if (!existing || existing.directMessageId !== dm.id) return c.json({ detail: "Message not found" }, 404);
+      const body = await c.req.json() as Record<string, unknown>;
+      const message = runtime.messageStore.addReaction({
+        directMessageId: dm.id,
+        messageId,
+        actorType: "human",
+        actorId: "owner",
+        emoji: String(body.emoji ?? ""),
+      });
+      return c.json({ message }, 201);
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : "Reaction add failed" }, 400);
+    }
+  });
+
+  app.delete("/api/chat/agents/:agentId/messages/:messageId/reactions", async (c) => {
+    try {
+      const agentId = c.req.param("agentId");
+      if (!runtime.agentStore.get(agentId)) return c.json({ detail: "Agent not found" }, 404);
+      const dm = runtime.messageStore.requireHumanAgentDm(agentId);
+      const messageId = c.req.param("messageId");
+      const existing = runtime.messageStore.getMessage(messageId);
+      if (!existing || existing.directMessageId !== dm.id) return c.json({ detail: "Message not found" }, 404);
+      const body = await c.req.json() as Record<string, unknown>;
+      const message = runtime.messageStore.removeReaction({
+        directMessageId: dm.id,
+        messageId,
+        actorType: "human",
+        actorId: "owner",
+        emoji: String(body.emoji ?? ""),
+      });
+      return c.json({ message });
+    } catch (error) {
+      return c.json({ detail: error instanceof Error ? error.message : "Reaction remove failed" }, 400);
+    }
+  });
+
   // --- Coordinator：presence / 治理 ----------------------------------------
 
   /** Coordinator 侧 presence（idle/active/paused/running），不同于 Session runState。 */

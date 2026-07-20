@@ -23,6 +23,7 @@ import {
   fetchAgentSession,
   fetchAgentSessions,
   sendAgentDirectMessage,
+  setDirectMessageReaction,
   streamAgentMessage,
   type ImageAttachment,
 } from '../api';
@@ -149,6 +150,7 @@ interface AgentState {
   initSessions: () => () => void;
   refreshModelRegistry: () => Promise<void>;
   refreshAgentDirectMessages: (agentId: string) => Promise<void>;
+  toggleDirectMessageReaction: (agentId: string, messageId: string, emoji: string) => Promise<void>;
   selectAgent: (agentId: string) => Promise<void>;
   runAgentAnalysis: (sessionId?: string, options?: { includeDraft?: boolean }) => Promise<void>;
   removeFollowUp: (id: string) => void;
@@ -457,12 +459,35 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   refreshAgentDirectMessages: async (agentId) => {
     const payload = await fetchAgentDirectMessages(agentId);
     // API returns newest-first (dm_seq DESC) for before_seq pagination; UI is oldest→newest.
-    const messages = chronologicalMessages(payload.messages);
+    const messages = chronologicalMessages(payload.messages).map((message) => ({
+      ...message,
+      reactions: message.reactions ?? [],
+    }));
     set((s) => ({
       directMessageIdByAgentId: { ...s.directMessageIdByAgentId, [agentId]: payload.target.directMessageId },
       directMessagesByAgentId: { ...s.directMessagesByAgentId, [agentId]: messages },
       generationsByAgentId: { ...s.generationsByAgentId, [agentId]: payload.generations ?? [] },
     }));
+  },
+
+  toggleDirectMessageReaction: async (agentId, messageId, emoji) => {
+    const current = get().directMessagesByAgentId[agentId] ?? [];
+    const message = current.find((entry) => entry.id === messageId);
+    if (!message) return;
+    const active = !message.reactions.some((reaction) => reaction.emoji === emoji && reaction.reacted);
+    try {
+      const payload = await setDirectMessageReaction(agentId, messageId, emoji, active);
+      set((s) => ({
+        directMessagesByAgentId: {
+          ...s.directMessagesByAgentId,
+          [agentId]: (s.directMessagesByAgentId[agentId] ?? []).map((entry) => (
+            entry.id === messageId ? { ...entry, ...payload.message, reactions: payload.message.reactions ?? [] } : entry
+          )),
+        },
+      }));
+    } catch (error) {
+      console.error('Direct Message reaction failed:', error);
+    }
   },
 
   selectAgent: async (agentId) => {

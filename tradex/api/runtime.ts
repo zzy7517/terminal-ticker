@@ -28,7 +28,6 @@ import { MessageStore } from "../chat/message-store.js";
 import { InboxStore } from "../chat/inbox-store.js";
 import { UnreadStore } from "../chat/unread-store.js";
 import { ChatEventStore } from "../chat/events.js";
-import { ChatReferenceManager } from "../chat/references.js";
 import type { AgentCoordinator } from "../chat/coordinator.js";
 import type { SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
 import { McpRunGrantStore } from "../mcp/server/grants.js";
@@ -56,7 +55,6 @@ export class AppRuntime {
   readonly inboxStore: InboxStore;
   readonly unreadStore: UnreadStore;
   readonly chatEventStore: ChatEventStore;
-  readonly chatReferences: ChatReferenceManager;
   agentCoordinator: AgentCoordinator | null = null;
   /** Session-level mutation lock covering setup, streaming, and delete. */
   readonly lockedAgentSessions = new Set<string>();
@@ -84,11 +82,6 @@ export class AppRuntime {
     this.inboxStore = new InboxStore();
     this.unreadStore = new UnreadStore();
     this.chatEventStore = new ChatEventStore();
-    this.chatReferences = new ChatReferenceManager(
-      this.channelStore,
-      this.messageStore,
-      this.agentContextManager,
-    );
     this._modelRuntimeSnapshot = modelRuntimeSnapshot;
     this.instruments = instruments;
     this.controller = new TickerController({ config, instruments });
@@ -197,7 +190,6 @@ export class AppRuntime {
     this.inboxStore.close();
     this.unreadStore.close();
     this.chatEventStore.close();
-    this.chatReferences.close();
     this.optionsService = config.options.enabled ? new OptionsService(config.options) : null;
     if (shouldRestart) {
       this.controller.start();

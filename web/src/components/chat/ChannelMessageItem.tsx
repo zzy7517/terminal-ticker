@@ -1,120 +1,40 @@
 /**
- * ChannelMessageItem — 单条 Channel 消息行（编辑/删除/reaction/Saved/Pinned）。
+ * ChannelMessageItem — 单条 Channel 消息行（reaction）。
  */
-import { useState } from 'react';
-import { Bookmark, Pencil, Pin, Save, Trash2, X } from 'lucide-react';
 import type { ChannelMessage } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
+import { MessageReactions } from './MessageReactions';
 
-const QUICK_REACTIONS = ['👍', '👀', '✅'];
-
-/** 渲染一条 Channel 共享消息及其操作。 */
+/** 渲染一条 Channel 共享消息及其 reaction 操作。 */
 export function ChannelMessageItem({
   message,
 }: {
   message: ChannelMessage;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(message.content);
   const agents = useAgentStore((state) => state.agents);
-  const editMessage = useChatStore((state) => state.editMessage);
-  const deleteMessage = useChatStore((state) => state.deleteMessage);
   const toggleReaction = useChatStore((state) => state.toggleReaction);
-  const toggleSaved = useChatStore((state) => state.toggleSaved);
-  const togglePinned = useChatStore((state) => state.togglePinned);
-  const saved = useChatStore((state) => state.saved.some((reference) => (
-    reference.messageId === message.id
-    && reference.target.kind === 'channel'
-    && reference.target.channelId === message.channelId
-  )));
-  const pinned = useChatStore((state) => state.pinned.some((reference) => (
-    reference.messageId === message.id
-    && reference.target.kind === 'channel'
-    && reference.target.channelId === message.channelId
-  )));
   const deleted = message.deletedAtMs !== null;
   const isHuman = message.authorType === 'human';
   const authorLabel = isHuman && message.authorId === 'owner'
     ? 'You'
     : (agents.find((agent) => agent.id === message.authorId)?.name ?? message.authorId);
 
-  async function saveEdit() {
-    if (!draft.trim() || draft.trim() === message.content) {
-      setEditing(false);
-      setDraft(message.content);
-      return;
-    }
-    await editMessage(message.id, draft);
-    setEditing(false);
-  }
-
   return (
     <article className={`session-message channel-message${isHuman ? ' user' : ''}${deleted ? ' deleted' : ''}`}>
       <div className="session-message-head">
         <span>{authorLabel}</span>
         <time>{new Date(message.createdAtMs).toLocaleTimeString()}</time>
-        {message.editedAtMs && !deleted ? <small>edited</small> : null}
-        {!deleted && (
-          <div className="session-message-reference-actions">
-            <button
-              className={saved ? 'active' : ''}
-              onClick={() => void toggleSaved({ kind: 'channel', channelId: message.channelId }, message.id)}
-              title={saved ? 'Unsave' : 'Save'}
-              type="button"
-            >
-              <Bookmark size={12} />
-            </button>
-            <button
-              className={pinned ? 'active' : ''}
-              onClick={() => void togglePinned({ kind: 'channel', channelId: message.channelId }, message.id)}
-              title={pinned ? 'Unpin' : 'Pin'}
-              type="button"
-            >
-              <Pin size={12} />
-            </button>
-          </div>
-        )}
       </div>
-      {editing ? (
-        <div className="channel-message-edit">
-          <textarea onChange={(event) => setDraft(event.target.value)} rows={3} value={draft} />
-          <button className="shell-button sm" onClick={() => void saveEdit()} type="button"><Save size={12} /> Save</button>
-          <button className="shell-button sm" onClick={() => { setEditing(false); setDraft(message.content); }} type="button"><X size={12} /> Cancel</button>
-        </div>
-      ) : (
-        <div className="session-message-text">
-          <p>{deleted ? 'Message deleted' : message.content}</p>
-        </div>
-      )}
-      {!deleted && (
-        <div className="channel-message-actions">
-          {isHuman && message.authorId === 'owner' && (
-            <>
-              <button onClick={() => setEditing(true)} type="button"><Pencil size={12} /> Edit</button>
-              <button onClick={() => void deleteMessage(message.id)} type="button"><Trash2 size={12} /> Delete</button>
-            </>
-          )}
-        </div>
-      )}
-      {!deleted && (
-        <div className="channel-reactions">
-          {QUICK_REACTIONS.map((emoji) => {
-            const reaction = message.reactions.find((entry) => entry.emoji === emoji);
-            return (
-              <button
-                className={reaction?.reacted ? 'active' : ''}
-                key={emoji}
-                onClick={() => void toggleReaction(message, emoji)}
-                title={reaction?.reacted ? 'Remove reaction' : 'Add reaction'}
-                type="button"
-              >
-                {emoji}{reaction?.count ? <span>{reaction.count}</span> : null}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div className="session-message-text">
+        <p>{deleted ? 'Message deleted' : message.content}</p>
+      </div>
+      {!deleted ? (
+        <MessageReactions
+          reactions={message.reactions}
+          onToggle={(emoji) => void toggleReaction(message, emoji)}
+        />
+      ) : null}
     </article>
   );
 }

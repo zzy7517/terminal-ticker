@@ -232,10 +232,19 @@
 
 .session-message {
   background: transparent;
-  border: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
   display: grid;
   gap: 7px;
   padding: 9px 14px;
+  position: relative;
+  transition: border-color 120ms ease;
+}
+
+.session-message:hover,
+.session-message:focus-within,
+.session-message:has(.message-reactions.open) {
+  border-color: var(--text-primary);
 }
 
 .session-message.user {
@@ -246,6 +255,12 @@
   max-inline-size: min(50ch, 80%);
   padding: 7px 10px;
   border-radius: var(--radius-md);
+}
+
+.session-message.user:hover,
+.session-message.user:focus-within,
+.session-message.user:has(.message-reactions.open) {
+  border-color: var(--text-primary);
 }
 
 .session-message-head {
@@ -268,29 +283,6 @@
   color: var(--text-muted);
   font-family: var(--mono);
   font-size: 12px;
-}
-
-.session-message-reference-actions {
-  display: inline-flex;
-  gap: 3px;
-  margin-left: auto;
-}
-
-.session-message-reference-actions button {
-  align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: inline-flex;
-  padding: 2px;
-}
-
-.session-message-reference-actions button:hover,
-.session-message-reference-actions button.active {
-  background: var(--accent-tint);
-  border-color: var(--line-soft);
-  color: var(--text-primary);
 }
 
 .session-generation-divider {

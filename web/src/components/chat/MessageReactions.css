@@ -1,0 +1,109 @@
+/**
+ * Hover react toolbar + picker for Channel / DM message rows.
+ * Selection frame styles live on `.session-message` in panel CSS.
+ */
+
+.message-reactions {
+  position: static;
+}
+
+.message-react-toolbar {
+  position: absolute;
+  top: 0;
+  right: 10px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease;
+}
+
+.session-message:hover .message-react-toolbar,
+.session-message:focus-within .message-react-toolbar,
+.message-reactions.open .message-react-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.message-react-toolbar > button {
+  align-items: center;
+  background: var(--panel-elevated, var(--bg-elevated, #fff));
+  border: 1px solid var(--line-strong, var(--line-soft));
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  padding: 4px 6px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+.message-react-toolbar > button:hover,
+.message-react-toolbar > button.active {
+  background: var(--accent-tint);
+  border-color: var(--line-soft);
+  color: var(--text-primary);
+}
+
+.message-react-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 220px;
+  padding: 4px;
+  background: var(--panel-elevated, var(--bg-elevated, #fff));
+  border: 1px solid var(--line-strong, var(--line-soft));
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
+}
+
+.message-react-picker button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 6px;
+}
+
+.message-react-picker button:hover,
+.message-react-picker button.active {
+  background: var(--accent-tint);
+  border-color: var(--line-soft);
+}
+
+.message-react-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.message-react-chips button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 4px;
+  padding: 2px 7px;
+}
+
+.message-react-chips button:hover,
+.message-react-chips button.active {
+  background: var(--accent-tint);
+  color: var(--text-primary);
+}
+
+.message-react-chips button span {
+  font-family: var(--mono);
+  font-size: 10px;
+}

@@ -178,6 +178,7 @@ export interface AgentDirectMessage {
   editedAtMs: number | null;
   deletedAtMs: number | null;
   importKey: string | null;
+  reactions: ChannelReactionSummary[];
 }
 
 export interface AgentDirectMessageResponse {
@@ -246,13 +247,6 @@ export interface ChatEvent {
   createdAtMs: number;
 }
 
-export interface ChatMessageReference {
-  actorId: string;
-  target: ChatTarget;
-  messageId: string;
-  createdAtMs: number;
-}
-
 export interface ChannelMember {
   subjectType: string;
   subjectId: string;
@@ -288,8 +282,6 @@ export interface ChatUnreadEntry {
 
 export interface ChatBootstrapResponse {
   channels: Channel[];
-  saved: ChatMessageReference[];
-  pinned: ChatMessageReference[];
   unread?: ChatUnreadEntry[];
   lastEventSeq: number;
 }

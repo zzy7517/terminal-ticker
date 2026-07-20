@@ -226,6 +226,7 @@ export function AgentSessionPanel({
         </div>
       </header>
       <DirectMessageTimeline
+        agentId={selectedAgentId ?? ''}
         agentDisplayName={agentDisplayName}
         directMessageId={directMessageId}
         directMessages={directMessages}

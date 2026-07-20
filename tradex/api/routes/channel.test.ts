@@ -3,9 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatEventStore } from "../../chat/events.js";
-import { ChatOverlayStore } from "../../chat/overlay.js";
-import { ChatReferenceManager } from "../../chat/references.js";
-import { channelTarget, directMessageTarget } from "../../channel/domain.js";
+import { channelTarget } from "../../channel/domain.js";
 import { ChannelStore } from "../../channel/store.js";
 import { MessageStore } from "../../chat/message-store.js";
 import { InboxStore } from "../../chat/inbox-store.js";
@@ -41,12 +39,6 @@ describe("Channel HTTP API", () => {
       agentCoordinator: null,
       agentStore: { list: () => [], get: () => null },
       chatEventStore: new ChatEventStore(dbPath),
-      chatReferences: new ChatReferenceManager(
-        channelStore,
-        messageStore,
-        agentContextManager,
-        new ChatOverlayStore(dbPath),
-      ),
     } as unknown as AppRuntime;
   }
 
@@ -96,42 +88,36 @@ describe("Channel HTTP API", () => {
     ]);
   });
 
-  it("supports Human edit, reaction, and audited delete routes", async () => {
+  it("supports Human reaction add and remove routes", async () => {
     const appRuntime = runtime();
     const routes = channelRoutes(appRuntime);
     const channel = appRuntime.channelStore.createChannel({ name: "btc-research" });
     const root = appRuntime.channelStore.appendMessage({ channelId: channel.id, authorId: "owner", content: "Initial" });
 
-    const edit = await routes.request(`/api/channels/messages/${root.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ channelId: channel.id, content: "Updated" }),
-    });
     const reaction = await routes.request(`/api/channels/messages/${root.id}/reactions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ channelId: channel.id, emoji: "👍" }),
     });
-    const deleted = await routes.request(`/api/channels/messages/${root.id}`, {
+    const removed = await routes.request(`/api/channels/messages/${root.id}/reactions`, {
       method: "DELETE",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ channelId: channel.id }),
+      body: JSON.stringify({ channelId: channel.id, emoji: "👍" }),
     });
 
-    expect(edit.status).toBe(200);
     expect(reaction.status).toBe(201);
     expect(await reaction.json()).toEqual(expect.objectContaining({
       message: expect.objectContaining({
-        content: "Updated",
+        content: "Initial",
         reactions: [{ emoji: "👍", count: 1, reacted: true }],
       }),
     }));
-    expect(await deleted.json()).toEqual(expect.objectContaining({
-      message: expect.objectContaining({ content: "", deletedAtMs: expect.any(Number) }),
-      revisions: [
-        expect.objectContaining({ action: "edit", content: "Initial" }),
-        expect.objectContaining({ action: "delete", content: "Updated" }),
-      ],
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toEqual(expect.objectContaining({
+      message: expect.objectContaining({
+        content: "Initial",
+        reactions: [],
+      }),
     }));
   });
 
@@ -158,47 +144,16 @@ describe("Channel HTTP API", () => {
     expect(frame).toContain('"type":"message.created"');
   });
 
-  it("persists Saved and Pinned message references through ChatTarget", async () => {
+  it("bootstraps channels without reference collections", async () => {
     const appRuntime = runtime();
-    const channel = appRuntime.channelStore.createChannel({ name: "btc-research" });
-    const message = appRuntime.channelStore.appendMessage({ channelId: channel.id, authorId: "owner", content: "Keep" });
+    appRuntime.channelStore.createChannel({ name: "btc-research" });
     const routes = chatEventRoutes(appRuntime);
-    const body = JSON.stringify({ target: channelTarget(channel.id), messageId: message.id });
-
-    const saved = await routes.request("/api/chat/saved", {
-      method: "POST", headers: { "content-type": "application/json" }, body,
-    });
-    const pinned = await routes.request("/api/chat/pins", {
-      method: "POST", headers: { "content-type": "application/json" }, body,
-    });
     const bootstrap = await routes.request("/api/chat/bootstrap");
-    const snapshot = await bootstrap.json() as { saved: unknown[]; pinned: unknown[] };
+    const snapshot = await bootstrap.json() as Record<string, unknown>;
 
-    expect(saved.status).toBe(200);
-    expect(pinned.status).toBe(200);
-    expect(snapshot.saved).toEqual([expect.objectContaining({ messageId: message.id, target: channelTarget(channel.id) })]);
-    expect(snapshot.pinned).toEqual([expect.objectContaining({ messageId: message.id, target: channelTarget(channel.id) })]);
-  });
-
-  it("rejects a forged Direct Message target for generic message references", async () => {
-    const appRuntime = runtime();
-    const dm = appRuntime.messageStore.ensureHumanAgentDm("cindy");
-    appRuntime.agentContextManager.ensure("cindy");
-    appRuntime.agentContextManager.attachSession("cindy", { sessionId: "session-1", runtime: "pi" });
-    const routes = chatEventRoutes(appRuntime);
-
-    const missingMessage = await routes.request("/api/chat/saved", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ target: directMessageTarget(dm.id), messageId: "missing-uuid" }),
-    });
-    const forged = await routes.request("/api/chat/saved", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ target: directMessageTarget("00000000-0000-4000-8000-000000000000"), messageId: "session-1:1" }),
-    });
-
-    expect(missingMessage.status).toBe(400);
-    expect(forged.status).toBe(400);
+    expect(bootstrap.status).toBe(200);
+    expect(snapshot.channels).toEqual([expect.objectContaining({ name: "btc-research" })]);
+    expect(snapshot).not.toHaveProperty("saved");
+    expect(snapshot).not.toHaveProperty("pinned");
   });
 });

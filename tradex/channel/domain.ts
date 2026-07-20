@@ -1,7 +1,7 @@
 /**
  * Channel 领域类型与 ChatTarget 辅助函数。
  *
- * ChatTarget 是事件、Saved/Pinned 与未来 Tasks 使用的内部可信引用。
+ * ChatTarget 是事件流与未来 Tasks 使用的内部可信引用。
  * Agent 工具使用字符串 Message Target，并在工具边界转换（见 message-target.ts）。
  */
 
@@ -31,14 +31,14 @@ export function parseChatTarget(value: unknown): ChatTarget {
     return directMessageTarget(input.directMessageId);
   }
   // 遗留 Phase 1 使用 direct-chat + agentId/chatId。拒绝伪造；
-  // 调用方写入新 overlay 前须经 MessageStore 迁移。
+  // 调用方写入新 ChatTarget 前须经 MessageStore 迁移。
   if (input.kind === "direct-chat") {
     throw new Error("direct-chat ChatTarget is retired; use direct-message");
   }
   throw new Error("Invalid ChatTarget");
 }
 
-/** ChatTarget 的稳定 SQLite 引用载荷（用于 inbox/overlay）。 */
+/** ChatTarget 的稳定 SQLite 引用载荷（用于 inbox / chat events）。 */
 export function chatTargetRef(target: ChatTarget): string {
   return target.kind === "channel"
     ? JSON.stringify([target.channelId])
@@ -117,14 +117,4 @@ export interface ChannelReactionSummary {
   emoji: string;
   count: number;
   reacted: boolean;
-}
-
-/** 消息编辑/删除修订记录。 */
-export interface ChannelMessageRevision {
-  messageId: string;
-  revision: number;
-  content: string;
-  action: "edit" | "delete";
-  editedBy: string;
-  createdAtMs: number;
 }

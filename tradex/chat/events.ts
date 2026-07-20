@@ -39,7 +39,7 @@ interface ChatEventRow {
   created_at_ms: number;
 }
 
-/** 初始化 chat_events 表（可与 Overlay / Channel 共用同一连接）。 */
+/** 初始化 chat_events 表（可与 Channel / Message / Inbox 共用同一连接）。 */
 export function initChatEventSchema(conn: Database.Database): void {
   conn.exec(`
     CREATE TABLE IF NOT EXISTS chat_events (

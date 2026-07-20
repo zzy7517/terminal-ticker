@@ -1,16 +1,15 @@
 /**
  * 将遗留 Phase 1 `direct-chat` 行改写为真实 `direct-message` ChatTarget。
  * 不得伪造 `legacy:agentId:chatId` 作为 directMessageId。
+ * 同时丢弃已退役的 `chat_saved` / `chat_pins` 表。
  */
 import type Database from "better-sqlite3";
 import { chatTargetRef, directMessageTarget } from "../channel/domain.js";
 
-const TABLES: Array<{ table: string; hasActor: boolean }> = [
-  { table: "chat_saved", hasActor: true },
-  { table: "chat_pins", hasActor: true },
-  { table: "agent_inbox", hasActor: false },
-  { table: "chat_unread_cursors", hasActor: false },
-  { table: "chat_events", hasActor: false },
+const TABLES: Array<{ table: string }> = [
+  { table: "agent_inbox" },
+  { table: "chat_unread_cursors" },
+  { table: "chat_events" },
 ];
 
 /**
@@ -21,6 +20,11 @@ export function migrateLegacyDirectChatTargets(
   conn: Database.Database,
   resolveDmId: (agentId: string) => string,
 ): number {
+  conn.exec(`
+    DROP TABLE IF EXISTS chat_saved;
+    DROP TABLE IF EXISTS chat_pins;
+  `);
+
   let rewritten = 0;
   for (const { table } of TABLES) {
     const exists = conn.prepare(`
@@ -28,9 +32,13 @@ export function migrateLegacyDirectChatTargets(
     `).get(table) as { ok: number } | undefined;
     if (!exists) continue;
 
+    // Alias rowid explicitly: INTEGER PRIMARY KEY tables (e.g. chat_events.seq)
+    // cause better-sqlite3 to name the column after the PK, not "rowid".
     const rows = conn.prepare(`
-      SELECT rowid, target_ref FROM ${table} WHERE target_kind = 'direct-chat'
-    `).all() as Array<{ rowid: number; target_ref: string }>;
+      SELECT rowid AS _rowid, target_ref AS target_ref
+      FROM ${table}
+      WHERE target_kind = 'direct-chat'
+    `).all() as Array<{ _rowid: number; target_ref: string }>;
 
     for (const row of rows) {
       let values: unknown;
@@ -43,12 +51,12 @@ export function migrateLegacyDirectChatTargets(
       const agentId = values[0];
       const dmId = resolveDmId(agentId);
       const nextRef = chatTargetRef(directMessageTarget(dmId));
-      conn.prepare(`
+      const result = conn.prepare(`
         UPDATE ${table}
         SET target_kind = 'direct-message', target_ref = ?
         WHERE rowid = ?
-      `).run(nextRef, row.rowid);
-      rewritten += 1;
+      `).run(nextRef, row._rowid);
+      if (result.changes > 0) rewritten += 1;
     }
   }
   return rewritten;

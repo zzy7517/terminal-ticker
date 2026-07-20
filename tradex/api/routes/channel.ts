@@ -180,43 +180,7 @@ export function channelRoutes(runtime: AppRuntime): Hono {
     }
   });
 
-  // --- 消息编辑 / 删除 / reaction -------------------------------------------
-
-  app.patch("/api/channels/messages/:id", async (c) => {
-    try {
-      const message = runtime.channelStore.getMessage(c.req.param("id"));
-      if (!message) return c.json({ detail: "Message not found" }, 404);
-      const body = await c.req.json() as Record<string, unknown>;
-      const updated = runtime.channelStore.editMessage({
-        channelId: message.channelId,
-        messageId: message.id,
-        actorId: "owner",
-        content: String(body.content ?? ""),
-      });
-      return c.json({ message: updated, channel: runtime.channelStore.getChannel(message.channelId) });
-    } catch (error) {
-      return c.json({ detail: error instanceof Error ? error.message : "Message edit failed" }, 400);
-    }
-  });
-
-  app.delete("/api/channels/messages/:id", async (c) => {
-    try {
-      const message = runtime.channelStore.getMessage(c.req.param("id"));
-      if (!message) return c.json({ detail: "Message not found" }, 404);
-      const deleted = runtime.channelStore.deleteMessage({
-        channelId: message.channelId,
-        messageId: message.id,
-        actorId: "owner",
-      });
-      return c.json({
-        message: deleted,
-        revisions: runtime.channelStore.listRevisions({ channelId: message.channelId, messageId: message.id }),
-        channel: runtime.channelStore.getChannel(message.channelId),
-      });
-    } catch (error) {
-      return c.json({ detail: error instanceof Error ? error.message : "Message delete failed" }, 400);
-    }
-  });
+  // --- reaction ----------------------------------------------------------------
 
   app.post("/api/channels/messages/:id/reactions", async (c) => {
     try {

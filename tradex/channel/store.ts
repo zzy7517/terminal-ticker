@@ -14,7 +14,6 @@ import {
   channelTarget,
   type Channel,
   type ChannelMessage,
-  type ChannelMessageRevision,
   type ChannelReactionSummary,
 } from "./domain.js";
 import * as heldDrafts from "./held-drafts.js";
@@ -43,15 +42,6 @@ interface ChannelMessageRow {
   created_at_ms: number;
   edited_at_ms: number | null;
   deleted_at_ms: number | null;
-}
-
-interface ChannelMessageRevisionRow {
-  message_id: string;
-  revision: number;
-  content: string;
-  action: "edit" | "delete";
-  edited_by: string;
-  created_at_ms: number;
 }
 
 /**
@@ -94,6 +84,7 @@ export class ChannelStore extends BaseStore {
       );
       CREATE INDEX IF NOT EXISTS idx_channel_messages_timeline
         ON channel_messages (channel_id, channel_seq DESC);
+      -- Legacy: product no longer supports message edit/delete; table kept for existing DBs.
       CREATE TABLE IF NOT EXISTS channel_message_revisions (
         message_id TEXT NOT NULL REFERENCES channel_messages(id) ON DELETE CASCADE,
         revision INTEGER NOT NULL,
@@ -502,67 +493,6 @@ export class ChannelStore extends BaseStore {
     return row ? this.projectMessage(row) : null;
   }
 
-  editMessage(input: { channelId: string; messageId: string; actorId: string; content: string }): ChannelMessage {
-    const content = input.content.trim();
-    if (!content) throw new Error("message content is required");
-    const conn = this.getConn();
-    return conn.transaction(() => {
-      const current = this.requireMessage(input.channelId, input.messageId);
-      if (current.deletedAtMs) throw new Error("cannot edit a deleted message");
-      if (current.authorType !== "human" || current.authorId !== input.actorId) throw new Error("message edit is not allowed");
-      this.saveRevision(current, input.actorId, "edit");
-      const editedAtMs = nowMs();
-      conn.prepare("UPDATE channel_messages SET content = ?, edited_at_ms = ? WHERE id = ?").run(content, editedAtMs, input.messageId);
-      this.bumpChannelVersion(input.channelId);
-      appendChatEvent(conn, {
-        type: "message.edited",
-        actorType: "human",
-        actorId: input.actorId,
-        target: channelTarget(input.channelId),
-        entityType: "message",
-        entityId: input.messageId,
-      });
-      return this.requireMessage(input.channelId, input.messageId);
-    })();
-  }
-
-  deleteMessage(input: { channelId: string; messageId: string; actorId: string }): ChannelMessage {
-    const conn = this.getConn();
-    return conn.transaction(() => {
-      const current = this.requireMessage(input.channelId, input.messageId);
-      if (current.deletedAtMs) return current;
-      if (current.authorType !== "human" || current.authorId !== input.actorId) throw new Error("message delete is not allowed");
-      this.saveRevision(current, input.actorId, "delete");
-      const deletedAtMs = nowMs();
-      conn.prepare("UPDATE channel_messages SET content = '', deleted_at_ms = ? WHERE id = ?").run(deletedAtMs, input.messageId);
-      this.bumpChannelVersion(input.channelId);
-      appendChatEvent(conn, {
-        type: "message.deleted",
-        actorType: "human",
-        actorId: input.actorId,
-        target: channelTarget(input.channelId),
-        entityType: "message",
-        entityId: input.messageId,
-      });
-      return this.requireMessage(input.channelId, input.messageId);
-    })();
-  }
-
-  listRevisions(input: { channelId: string; messageId: string }): ChannelMessageRevision[] {
-    this.requireMessage(input.channelId, input.messageId);
-    const rows = this.getConn().prepare(`
-      SELECT * FROM channel_message_revisions WHERE message_id = ? ORDER BY revision
-    `).all(input.messageId) as ChannelMessageRevisionRow[];
-    return rows.map((row) => ({
-      messageId: row.message_id,
-      revision: row.revision,
-      content: row.content,
-      action: row.action,
-      editedBy: row.edited_by,
-      createdAtMs: row.created_at_ms,
-    }));
-  }
-
   addReaction(input: {
     channelId: string;
     messageId: string;
@@ -587,18 +517,6 @@ export class ChannelStore extends BaseStore {
       requireMessage: (channelId, messageId) => this.requireMessage(channelId, messageId),
       bumpChannelVersion: (channelId) => this.bumpChannelVersion(channelId),
     });
-  }
-
-  private saveRevision(message: ChannelMessage, actorId: string, action: "edit" | "delete"): void {
-    const conn = this.getConn();
-    const next = conn.prepare(`
-      SELECT COALESCE(MAX(revision), 0) + 1 AS revision
-      FROM channel_message_revisions WHERE message_id = ?
-    `).get(message.id) as { revision: number };
-    conn.prepare(`
-      INSERT INTO channel_message_revisions (message_id, revision, content, action, edited_by, created_at_ms)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(message.id, next.revision, message.content, action, actorId, nowMs());
   }
 
   private bumpChannelVersion(channelId: string): void {

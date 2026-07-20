@@ -35,32 +35,21 @@ describe("ChannelStore", () => {
     });
   });
 
-  it("keeps revisions and reactions attached to the Channel message", () => {
+  it("keeps reactions attached to the Channel message", () => {
     const store = createStore();
     const channel = store.createChannel({ name: "btc-research" });
     const root = store.appendMessage({ channelId: channel.id, authorId: "owner", content: "Initial thesis" });
-
-    const edited = store.editMessage({ channelId: channel.id, messageId: root.id, actorId: "owner", content: "Updated thesis" });
     const detail = store.appendMessage({ channelId: channel.id, authorId: "owner", content: "Follow-up detail" });
     const reacted = store.addReaction({ channelId: channel.id, messageId: root.id, actorId: "owner", emoji: "👍" });
 
-    expect(edited).toEqual(expect.objectContaining({ content: "Updated thesis", editedAtMs: expect.any(Number) }));
-    expect(store.listRevisions({ channelId: channel.id, messageId: root.id })).toEqual([
-      expect.objectContaining({ revision: 1, content: "Initial thesis", action: "edit" }),
-    ]);
     expect(store.listMessages({ channelId: channel.id }).messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: root.id }),
+      expect.objectContaining({ id: root.id, content: "Initial thesis" }),
       expect.objectContaining({ id: detail.id, content: "Follow-up detail" }),
     ]));
     expect(reacted.reactions).toEqual([{ emoji: "👍", count: 1, reacted: true }]);
 
     const unreacted = store.removeReaction({ channelId: channel.id, messageId: root.id, actorId: "owner", emoji: "👍" });
     expect(unreacted.reactions).toEqual([]);
-    const deleted = store.deleteMessage({ channelId: channel.id, messageId: detail.id, actorId: "owner" });
-    expect(deleted).toEqual(expect.objectContaining({ content: "", deletedAtMs: expect.any(Number) }));
-    expect(store.listRevisions({ channelId: channel.id, messageId: detail.id })).toEqual([
-      expect.objectContaining({ content: "Follow-up detail", action: "delete" }),
-    ]);
   });
 
   it("records recoverable generic events with monotonic global sequence", () => {

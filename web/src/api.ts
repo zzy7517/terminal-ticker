@@ -45,7 +45,6 @@ import type {
   AgentPresence,
   ChatBootstrapResponse,
   ChatEvent,
-  ChatMessageReference,
   ChatTarget,
   ChatUnreadEntry,
 } from './types';
@@ -200,6 +199,24 @@ export async function sendAgentDirectMessage(
   return response.json();
 }
 
+export async function setDirectMessageReaction(
+  agentId: string,
+  messageId: string,
+  emoji: string,
+  active: boolean,
+): Promise<{ message: AgentDirectMessage }> {
+  const response = await fetch(
+    `/api/chat/agents/${encodeURIComponent(agentId)}/messages/${encodeURIComponent(messageId)}/reactions`,
+    {
+      method: active ? 'POST' : 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji }),
+    },
+  );
+  if (!response.ok) throw await responseError(response, 'Direct Message reaction failed');
+  return response.json();
+}
+
 export async function fetchChatBootstrap(): Promise<ChatBootstrapResponse> {
   const response = await fetch('/api/chat/bootstrap');
   if (!response.ok) throw await responseError(response, 'Chat bootstrap failed');
@@ -225,21 +242,6 @@ export function connectChatEvents(
     source.close();
     onStatus('disconnected');
   };
-}
-
-export async function setChatReference(
-  kind: 'saved' | 'pins',
-  target: ChatTarget,
-  messageId: string,
-  active: boolean,
-): Promise<{ saved: ChatMessageReference[]; pinned: ChatMessageReference[] }> {
-  const response = await fetch(`/api/chat/${kind}`, {
-    method: active ? 'POST' : 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ target, messageId }),
-  });
-  if (!response.ok) throw await responseError(response, `Chat ${kind} update failed`);
-  return response.json();
 }
 
 export async function createChannel(input: { name: string; topic?: string }): Promise<{ channel: Channel; channels: Channel[] }> {
@@ -367,22 +369,6 @@ export async function sendChannelMessage(channelId: string, content: string): Pr
   return response.json();
 }
 
-
-export async function editChannelMessage(messageId: string, content: string): Promise<{ message: ChannelMessage; channel: Channel }> {
-  const response = await fetch(`/api/channels/messages/${encodeURIComponent(messageId)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
-  });
-  if (!response.ok) throw await responseError(response, 'Channel message edit failed');
-  return response.json();
-}
-
-export async function deleteChannelMessage(messageId: string): Promise<{ message: ChannelMessage; channel: Channel }> {
-  const response = await fetch(`/api/channels/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' });
-  if (!response.ok) throw await responseError(response, 'Channel message delete failed');
-  return response.json();
-}
 
 export async function setChannelReaction(messageId: string, emoji: string, active: boolean): Promise<{ message: ChannelMessage; channel: Channel }> {
   const response = await fetch(`/api/channels/messages/${encodeURIComponent(messageId)}/reactions`, {

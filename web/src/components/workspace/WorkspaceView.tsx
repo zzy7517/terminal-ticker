@@ -19,7 +19,6 @@ import { CalendarPanel } from './CalendarPanel';
 import { OptionsPanel } from './OptionsPanel';
 import { useChatStore } from '../../stores/chatStore';
 import { ChannelPanel } from '../chat/ChannelPanel';
-import { ChatReferencePanel } from '../chat/ChatReferencePanel';
 import { AgentTracePanel } from '../chat/AgentTracePanel';
 import { useAgentStore } from '../../stores/agentStore';
 import './AgentChatLayout.css';
@@ -28,7 +27,6 @@ export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);
   const activeTab = useUiStore((s) => s.activeWorkspace);
   const activeTarget = useChatStore((s) => s.activeTarget);
-  const activeCollection = useChatStore((s) => s.activeCollection);
   const agentProfileOpen = useChatStore((s) => s.agentProfileOpen);
   const selectedAgentId = useAgentStore((s) => s.selectedAgentId);
 
@@ -68,9 +66,7 @@ export function WorkspaceView() {
           {activeTab === 'agent' && (
             <div className="agent-tab-layout">
               <AgentDirectMessageList />
-              {activeCollection ? (
-                <ChatReferencePanel />
-              ) : activeTarget?.kind === 'channel' ? (
+              {activeTarget?.kind === 'channel' ? (
                 <ChannelPanel />
               ) : (
                 <div className={`agent-chat-main${agentProfileOpen ? ' with-trace' : ''}`}>

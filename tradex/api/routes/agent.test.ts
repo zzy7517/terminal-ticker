@@ -161,6 +161,28 @@ describe("Agent HTTP API", () => {
     ]);
   });
 
+  it("supports Human reactions on Direct Message timeline", async () => {
+    const appRuntime = runtime();
+    const routes = agentRoutes(appRuntime);
+    const send = await routes.request("/api/chat/agents/ict/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: "scan btc" }),
+    });
+    const sent = await send.json() as { message: { id: string } };
+    const reaction = await routes.request(`/api/chat/agents/ict/messages/${sent.message.id}/reactions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
+    const payload = await reaction.json() as {
+      message: { reactions: Array<{ emoji: string; count: number; reacted: boolean }> };
+    };
+
+    expect(reaction.status).toBe(201);
+    expect(payload.message.reactions).toEqual([{ emoji: "👍", count: 1, reacted: true }]);
+  });
+
   it("binds Sessions to Agent Context and rejects concurrent session create while running", async () => {
     const appRuntime = runtime();
     const routes = agentRoutes(appRuntime);

@@ -20,7 +20,7 @@ Tradex 为每个 Agent 暴露一个稳定的 Direct Message Entry。Human 可在
 - 绑定与移除 Runtime Session 代际；
 - 将已持久化的 Pi / Claude Session 索引为导入的 Chat。
 
-Channel 相关操作继续使用 `channelId`。`ChatTarget` 不是 Channel 的替代品：仅当某一通用能力需要同时引用 `{ kind: "channel", channelId }` 或 `{ kind: "direct-chat", agentId, chatId }` 时才使用。Phase 1 将其用于 Chat 事件、Saved 与 Pinned 引用；未来的 Tasks 必须复用同一边界。
+Channel 相关操作继续使用 `channelId`。`ChatTarget` 不是 Channel 的替代品：仅当某一通用能力需要同时引用 `{ kind: "channel", channelId }` 或 `{ kind: "direct-chat", agentId, chatId }` 时才使用。Phase 1 将其用于 Chat 事件引用；未来的 Tasks 必须复用同一边界。
 
 共享 Channel 消息始终是权威的 SQLite 事实，绝不会被直接追加到另一 Agent 的私有 Runtime Session。
 

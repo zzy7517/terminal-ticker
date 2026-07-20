@@ -21,7 +21,7 @@ The built-in Agent that makes Tradex usable without Agent setup. It cannot be re
 _Avoid_: System Agent, hard-coded Agent
 
 **Chat**:
-The unified product shell that presents Direct Messages, Channels, Saved, and Pinned in one workspace. Chat is a UI entry, not a persisted domain entity and not a message store.
+The unified product shell that presents Direct Messages and Channels in one workspace. Chat is a UI entry, not a persisted domain entity and not a message store.
 _Avoid_: Session, Direct Message, Channel
 
 **Direct Message Entry**:
@@ -29,16 +29,20 @@ The single stable navigation entry for one Agent. Its identity is the Agent ID; 
 _Avoid_: Session, Chat ID
 
 **Direct Message**:
-The unique one-to-one conversation for a normalized participant pair (Human–Agent or Agent–Agent). Messages are authoritative SQLite facts in the Shared Message Fabric. One participant pair has exactly one Direct Message; Runtime Session rotation does not create another.
+The unique one-to-one conversation for a normalized participant pair (Human–Agent or Agent–Agent). Messages are authoritative SQLite facts in the Shared Message Fabric. One participant pair has exactly one Direct Message; Runtime Session rotation does not create another. Humans and Agents may add emoji reactions on Direct Message rows.
 _Avoid_: Direct Chat, Chat ID, New Chat, Session
 
 **Channel**:
-A shared Human/Agent conversation whose messages are authoritative SQLite facts. A Channel is not a Runtime Session and does not own one shared model context.
+A shared Human/Agent conversation whose messages are authoritative SQLite facts. A Channel is not a Runtime Session and does not own one shared model context. Humans and Agents may add emoji reactions on Channel messages.
 _Avoid_: Session, group Session
 
 **Chat Target**:
-A stable reference used only by features that can point at either a Direct Message or a Channel: `{ kind: "direct-message", directMessageId }` or `{ kind: "channel", channelId }`. Channel-specific commands continue to use `channelId`; Chat Target is reserved for generic event, Saved, Pinned, and future Task references. The retired `direct-chat` shape is legacy only.
+A stable reference used only by features that can point at either a Direct Message or a Channel: `{ kind: "direct-message", directMessageId }` or `{ kind: "channel", channelId }`. Channel-specific commands continue to use `channelId`; Chat Target is reserved for generic event streams and future Task references. The retired `direct-chat` shape is legacy only.
 _Avoid_: Channel replacement, generic Session, chatId
+
+**Message Reaction**:
+An emoji response attached to one Shared Message (Channel or Direct Message). In the Human UI, hovering a message shows a selection frame and a smile control; clicking the smile opens the quick set `👍 ❤️ 🎉 👀 🔥 😂 ✅`. Existing reactions remain visible as chips on the message. Agents use Message Tools (`message_add_reaction` / `message_remove_reaction`) with any emoji string. Reactions are Shared Message metadata, not inbox wake content.
+_Avoid_: sticker pack, composer emoji, always-visible emoji strip
 
 **Chat Event**:
 A persistent, globally ordered change record identified by `seq`. The UI resumes after its last observed sequence and refreshes the affected Direct Message or Channel projection.

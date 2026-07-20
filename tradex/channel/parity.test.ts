@@ -131,27 +131,26 @@ describe("Raft-style channel parity", () => {
   });
 
   it("rewrites legacy direct-chat rows to real direct-message ids", () => {
-    const { dbPath, messageStore } = createStores();
+    const { dbPath, channelStore, inboxStore, messageStore } = createStores();
     const dm = messageStore.ensureHumanAgentDm("alpha");
+    channelStore.close();
+    inboxStore.close();
+    messageStore.close();
+
     const conn = new Database(dbPath);
-    conn.exec(`
-      CREATE TABLE IF NOT EXISTS chat_saved (
-        actor_id TEXT NOT NULL,
-        target_kind TEXT NOT NULL,
-        target_ref TEXT NOT NULL,
-        message_id TEXT NOT NULL,
-        created_at_ms INTEGER NOT NULL,
-        PRIMARY KEY (actor_id, target_kind, target_ref, message_id)
-      );
-    `);
     conn.prepare(`
-      INSERT INTO chat_saved (actor_id, target_kind, target_ref, message_id, created_at_ms)
-      VALUES ('owner', 'direct-chat', ?, 'msg-1', 1)
+      INSERT INTO chat_events (
+        type, actor_type, actor_id, target_kind, target_ref, entity_type, entity_id, payload_json, created_at_ms
+      ) VALUES ('message.created', 'human', 'owner', 'direct-chat', ?, 'message', 'msg-1', '{}', 1)
     `).run(JSON.stringify(["alpha", "old-chat"]));
     conn.close();
-    expect(messageStore.migrateLegacyDirectChatTargets()).toBe(1);
+
+    const reopened = new MessageStore(dbPath);
+    expect(reopened.migrateLegacyDirectChatTargets()).toBe(1);
+    reopened.close();
+
     const verify = new Database(dbPath, { readonly: true });
-    const row = verify.prepare("SELECT target_kind, target_ref FROM chat_saved").get() as {
+    const row = verify.prepare("SELECT target_kind, target_ref FROM chat_events WHERE entity_id = 'msg-1'").get() as {
       target_kind: string;
       target_ref: string;
     };
