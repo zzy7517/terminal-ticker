@@ -2,7 +2,6 @@
 import { chronologicalMessages } from '../chat/timeline';
 import { create } from 'zustand';
 import type {
-  AgentContextUsage,
   AgentDefinition,
   AgentDirectMessage,
   AgentDirectMessageResponse,
@@ -10,7 +9,6 @@ import type {
   AgentModelRegistry,
   AgentSessionResponse,
   AgentSessionRun,
-  AgentSessionStats,
   AgentSessionSummary,
   QueuedFollowUp,
 } from '../types';
@@ -94,13 +92,8 @@ const initialModels = loadPersistedModels();
 import { useMarketStore } from './marketStore';
 import { mergeFollowUps, shouldAutoRunFollowUps, validateFollowUpImages } from '../utils/followUpQueue';
 
-type ContextUsage = AgentContextUsage | null;
-type SessionStatsState = AgentSessionStats | null;
-
 interface SessionRunProjection extends AgentSessionRun {
   pendingToolCalls: Set<string>;
-  contextUsage: ContextUsage;
-  sessionStats: SessionStatsState;
 }
 
 interface AgentState {
@@ -121,8 +114,6 @@ interface AgentState {
   pendingToolCalls: Set<string>;
   modelRegistry: AgentModelRegistry | null;
   modelRegistryLoading: boolean;
-  contextUsage: ContextUsage;
-  sessionStats: SessionStatsState;
   activeAgentSessionId: string | null;
   agentSessionById: Record<string, AgentSessionResponse>;
   runStateBySessionId: Record<string, SessionRunProjection>;
@@ -185,8 +176,6 @@ function idleRun(sessionId: string): SessionRunProjection {
     lastSeq: 0,
     error: null,
     pendingToolCalls: new Set(),
-    contextUsage: null,
-    sessionStats: null,
   };
 }
 
@@ -204,8 +193,6 @@ function mergeRunPayload(
     lastSeq: run?.lastSeq ?? previous?.lastSeq ?? 0,
     error: run?.error ?? previous?.error ?? null,
     pendingToolCalls: status === 'running' ? new Set(previous?.pendingToolCalls ?? []) : new Set(),
-    contextUsage: previous?.contextUsage ?? null,
-    sessionStats: previous?.sessionStats ?? null,
   };
 }
 
@@ -221,7 +208,7 @@ function mergeHistoryRuns(
 }
 
 function sessionFromSummary(summary: AgentSessionSummary): AgentSessionResponse {
-  return { session: summary, messages: [], contextUsage: summary.contextUsage ?? null, sessionStats: summary.sessionStats ?? null, run: summary.run };
+  return { session: summary, messages: [], run: summary.run };
 }
 
 function visibleSession(state: ActiveMirrorSource): AgentSessionResponse | null {
@@ -239,7 +226,7 @@ function pendingImagesKey(activeId: string | null): string {
 
 function activeFields(state: ActiveMirrorSource): Pick<
   AgentState,
-  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'contextUsage' | 'sessionStats' | 'agentBusyKey' | 'streamingMessage' | 'pendingImages' | 'queuedFollowUps'
+  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'agentBusyKey' | 'streamingMessage' | 'pendingImages' | 'queuedFollowUps'
 > {
   const activeId = state.activeAgentSessionId;
   const run = activeId ? state.runStateBySessionId[activeId] : undefined;
@@ -249,8 +236,6 @@ function activeFields(state: ActiveMirrorSource): Pick<
     agentSession: session,
     agentPrompt: state.draftBySessionId[key] ?? '',
     pendingToolCalls: new Set(run?.pendingToolCalls ?? []),
-    contextUsage: run?.contextUsage ?? session?.contextUsage ?? null,
-    sessionStats: run?.sessionStats ?? session?.sessionStats ?? null,
     agentBusyKey: activeId && run?.status === 'running' ? activeId : null,
     streamingMessage: activeId ? state.streamingMessageBySessionId[activeId] ?? null : null,
     pendingImages: state.pendingImagesBySessionId[key] ?? [],
@@ -322,7 +307,6 @@ function upsertOptimisticSessionSummary(
         updatedAt,
         messageCount,
         preview,
-        contextUsage: payload.contextUsage ?? null,
         run,
       };
   return [summary, ...history.filter((item) => item.id !== summary.id)];
@@ -354,8 +338,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   pendingToolCalls: new Set(),
   modelRegistry: null,
   modelRegistryLoading: false,
-  contextUsage: null,
-  sessionStats: null,
   activeAgentSessionId: null,
   agentSessionById: {},
   runStateBySessionId: {},
@@ -916,9 +898,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           }
 
           if (event.type === 'agent_end') {
-            const totalTokens = typeof event.totalTokens === 'number' ? event.totalTokens : 0;
-            const promptTokens = event.promptTokens ?? 0;
-            const stats = event.sessionStats ?? null;
             set((s) => {
               const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
               const unexpectedError = event.error && !userAbortedSessions.has(sessionId) ? event.error : null;
@@ -930,8 +909,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
                   ...previous,
                   runId: envelope.runId,
                   lastSeq: envelope.seq,
-                  contextUsage: { promptTokens, totalTokens },
-                  sessionStats: stats,
                   status: unexpectedError ? 'error' : previous.status,
                   error: unexpectedError ?? previous.error,
                 },

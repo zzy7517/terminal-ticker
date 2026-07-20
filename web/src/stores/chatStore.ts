@@ -1,7 +1,7 @@
 /**
  * chatStore — 前端 Chat 壳状态（对应 Raft Chat：Channels + Saved/Pinned + 未读）。
  *
- * 管理 Channel 列表/消息/thread、活动目标、引用与未读游标；
+ * 管理 Channel 列表/消息、活动目标、引用与未读游标；
  * Agent DM timeline 仍由 agentStore 持有，本 Store 只协调 Chat 壳导航。
  */
 import { create } from 'zustand';
@@ -11,15 +11,13 @@ import {
   deleteChannelMessage,
   editChannelMessage,
   fetchChannelMessages,
-  fetchChannelThread,
   fetchChatBootstrap,
   markChatUnreadRead,
   sendChannelMessage,
-  sendChannelThreadReply,
   setChatReference,
   setChannelReaction,
 } from '../api';
-import type { Channel, ChannelMessage, ChannelThreadResponse, ChatMessageReference, ChatTarget, ChatUnreadEntry } from '../types';
+import type { Channel, ChannelMessage, ChatMessageReference, ChatTarget, ChatUnreadEntry } from '../types';
 import { agentIdForDirectMessage, recoverDirectMessageTarget } from '../chat/directMessageWorkspace';
 import { chronologicalMessages } from '../chat/timeline';
 import { useAgentStore } from './agentStore';
@@ -31,11 +29,9 @@ interface ChatState {
   activeCollection: 'saved' | 'pinned' | null;
   messagesByChannelId: Record<string, ChannelMessage[]>;
   nextBeforeSeqByChannelId: Record<string, number | null>;
-  threadsByRootId: Record<string, ChannelThreadResponse>;
   saved: ChatMessageReference[];
   pinned: ChatMessageReference[];
   unread: ChatUnreadEntry[];
-  openThreadId: string | null;
   agentProfileOpen: boolean;
   lastEventSeq: number;
   eventStatus: 'connected' | 'disconnected' | 'error';
@@ -48,9 +44,7 @@ interface ChatState {
   selectChannel: (channelId: string) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   createChannel: (name: string) => Promise<void>;
-  sendMessage: (content: string, threadRootId?: string) => Promise<void>;
-  openThread: (rootMessageId: string) => Promise<void>;
-  closeThread: () => void;
+  sendMessage: (content: string) => Promise<void>;
   toggleAgentProfile: () => void;
   closeAgentProfile: () => void;
   editMessage: (messageId: string, content: string) => Promise<void>;
@@ -68,11 +62,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeCollection: null,
   messagesByChannelId: {},
   nextBeforeSeqByChannelId: {},
-  threadsByRootId: {},
   saved: [],
   pinned: [],
   unread: [],
-  openThreadId: null,
   agentProfileOpen: false,
   lastEventSeq: 0,
   eventStatus: 'disconnected',
@@ -126,11 +118,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   // Load dependent projections only afterwards so a newer cursor
                   // can never be committed with an older message snapshot.
                   const snapshot = await fetchChatBootstrap();
-                  const [channelMessages, thread] = await Promise.all([
+                  const [channelMessages] = await Promise.all([
                     activeChannelId ? fetchChannelMessages(activeChannelId) : Promise.resolve(null),
-                    current.openThreadId
-                      ? fetchChannelThread(current.openThreadId).catch(() => null)
-                      : Promise.resolve(null),
                     ...[...directTargets.keys()].map((directMessageId) => recoverDirectMessageTarget(directMessageId)),
                   ]);
                   if (disposed) break;
@@ -147,9 +136,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     nextBeforeSeqByChannelId: activeChannelId && channelMessages
                       ? { ...state.nextBeforeSeqByChannelId, [activeChannelId]: channelMessages.nextBeforeSeq }
                       : state.nextBeforeSeqByChannelId,
-                    threadsByRootId: thread
-                      ? { ...state.threadsByRootId, [thread.root.id]: thread }
-                      : state.threadsByRootId,
                   }));
                   for (const [directMessageId, seq] of directTargets) {
                     if ((pendingDirectTargets.get(directMessageId) ?? 0) <= seq) pendingDirectTargets.delete(directMessageId);
@@ -187,7 +173,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       activeTarget: { kind: 'direct-message', directMessageId },
       activeCollection: null,
-      openThreadId: null,
       agentProfileOpen: sameTarget ? get().agentProfileOpen : false,
     });
     const agentId = agentIdForDirectMessage(directMessageId);
@@ -202,10 +187,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  openCollection: (activeCollection) => set({ activeCollection, openThreadId: null, agentProfileOpen: false }),
+  openCollection: (activeCollection) => set({ activeCollection, agentProfileOpen: false }),
 
   selectChannel: async (channelId) => {
-    set({ activeTarget: { kind: 'channel', channelId }, activeCollection: null, openThreadId: null, agentProfileOpen: false, loading: true, error: null });
+    set({ activeTarget: { kind: 'channel', channelId }, activeCollection: null, agentProfileOpen: false, loading: true, error: null });
     try {
       const payload = await fetchChannelMessages(channelId);
       const messages = chronologicalMessages(payload.messages);
@@ -286,52 +271,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendMessage: async (content, threadRootId) => {
+  sendMessage: async (content) => {
     const target = get().activeTarget;
     const clean = content.trim();
     if (target?.kind !== 'channel' || !clean || get().sending) return;
     set({ sending: true, error: null });
     try {
-      if (threadRootId) {
-        const payload = await sendChannelThreadReply(threadRootId, clean);
-        set((state) => ({
-          threadsByRootId: { ...state.threadsByRootId, [threadRootId]: payload.thread },
-          messagesByChannelId: replaceMessage(
-            state.messagesByChannelId,
-            target.channelId,
-            payload.thread.root,
-          ),
-        }));
-      } else {
-        const payload = await sendChannelMessage(target.channelId, clean);
-        set((state) => ({
-          channels: replaceChannel(state.channels, payload.channel),
-          messagesByChannelId: {
-            ...state.messagesByChannelId,
-            [target.channelId]: [...(state.messagesByChannelId[target.channelId] ?? []), payload.message],
-          },
-        }));
-      }
+      const payload = await sendChannelMessage(target.channelId, clean);
+      set((state) => ({
+        channels: replaceChannel(state.channels, payload.channel),
+        messagesByChannelId: {
+          ...state.messagesByChannelId,
+          [target.channelId]: [...(state.messagesByChannelId[target.channelId] ?? []), payload.message],
+        },
+      }));
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
     } finally {
       set({ sending: false });
     }
   },
-
-  openThread: async (rootMessageId) => {
-    set({ openThreadId: rootMessageId, loading: true, error: null });
-    try {
-      const thread = await fetchChannelThread(rootMessageId);
-      set((state) => ({ threadsByRootId: { ...state.threadsByRootId, [rootMessageId]: thread } }));
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : String(error) });
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  closeThread: () => set({ openThreadId: null }),
 
   toggleAgentProfile: () => set((state) => ({ agentProfileOpen: !state.agentProfileOpen })),
 
@@ -404,21 +363,9 @@ function replaceMessage(
 }
 
 function updateMessageState(state: ChatState, message: ChannelMessage, channel: Channel): Partial<ChatState> {
-  const threadsByRootId = { ...state.threadsByRootId };
-  for (const [rootId, thread] of Object.entries(threadsByRootId)) {
-    if (thread.root.id === message.id) {
-      threadsByRootId[rootId] = { ...thread, root: message };
-    } else if (thread.replies.some((reply) => reply.id === message.id)) {
-      threadsByRootId[rootId] = {
-        ...thread,
-        replies: thread.replies.map((reply) => reply.id === message.id ? message : reply),
-      };
-    }
-  }
   return {
     channels: replaceChannel(state.channels, channel),
     messagesByChannelId: replaceMessage(state.messagesByChannelId, message.channelId, message),
-    threadsByRootId,
   };
 }
 

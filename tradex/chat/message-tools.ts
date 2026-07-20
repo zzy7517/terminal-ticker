@@ -16,7 +16,6 @@ import {
   assertCanRead,
   listReadableTargets,
   readTimeline,
-  readThread,
   removeReaction,
   resolveHeldDraftAndFanOut,
   searchReadable,
@@ -72,6 +71,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
   const resolveParsed = (raw: string) => parseMessageTarget(raw, actor, resolver);
   const resolveTarget = (raw: string) => resolveParsed(raw).chatTarget;
 
+  // 查本 Agent 未读 inbox：只返回目标/原因等元数据，不含消息正文。
   registry.register(tool(
     "message_check",
     "List unread inbox items for this Agent. Returns metadata only, never message bodies.",
@@ -97,6 +97,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     },
   ));
 
+  // 按目标读取 Channel/DM 消息，支持 before/after/around 游标分页。
   registry.register(tool(
     "message_read",
     "Read messages for a Channel or DM target. Supports before/after/around cursors.",
@@ -126,6 +127,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     },
   ));
 
+  // 在本 Agent 有权读取的 Channel/DM 中按关键词搜索消息。
   registry.register(tool(
     "message_search",
     "Search messages in targets this Agent can read.",
@@ -146,15 +148,15 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     )),
   ));
 
+  // 向 Channel 或 DM 发送消息；Channel 版本落后时会生成 held draft。
   registry.register(tool(
     "message_send",
-    "Send a message to a Channel, DM, or thread target.",
+    "Send a message to a Channel or DM target.",
     {
       type: "object",
       properties: {
         target: { type: "string" },
         content: { type: "string" },
-        threadRootId: { type: "string" },
         observedVersion: { type: "number" },
       },
       required: ["target", "content"],
@@ -162,12 +164,12 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     },
     async (args) => text(sendAgentMessage(runtime, agentId, resolveTarget(String(args.target ?? "")), {
       content: String(args.content ?? ""),
-      threadRootId: typeof args.threadRootId === "string" ? args.threadRootId : null,
       observedVersion: typeof args.observedVersion === "number" ? args.observedVersion : null,
     })),
     "write",
   ));
 
+  // 给 Channel/DM 消息添加 reaction（表情回应）。
   registry.register(tool(
     "message_add_reaction",
     "Add a reaction to a Channel or DM message.",
@@ -191,6 +193,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     "write",
   ));
 
+  // 移除本 Agent 在某条消息上的 reaction。
   registry.register(tool(
     "message_remove_reaction",
     "Remove this Agent's reaction from a Channel or DM message.",
@@ -214,26 +217,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     "write",
   ));
 
-  registry.register(tool(
-    "message_read_thread",
-    "Read a thread under a Channel or DM root message.",
-    {
-      type: "object",
-      properties: {
-        target: { type: "string" },
-        rootMessageId: { type: "string" },
-      },
-      required: ["target", "rootMessageId"],
-      additionalProperties: false,
-    },
-    async (args) => text(readThread(
-      runtime,
-      agentId,
-      resolveTarget(String(args.target ?? "")),
-      String(args.rootMessageId ?? ""),
-    )),
-  ));
-
+  // 将 inbox 条目标为已读 / 忽略 / 延后处理。
   registry.register(tool(
     "message_mark_inbox",
     "Mark an inbox item as read, ignored, or deferred.",
@@ -260,6 +244,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     "write",
   ));
 
+  // 列出本 Agent 可访问的 Channel 与 DM 目标。
   registry.register(tool(
     "message_list_targets",
     "List Channel and DM targets this Agent can access.",
@@ -267,6 +252,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     async () => text(listReadableTargets(runtime, agentId)),
   ));
 
+  // 列出指定 Channel 的成员。
   registry.register(tool(
     "message_list_members",
     "List members for a Channel target.",
@@ -286,6 +272,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     },
   ));
 
+  // 处理 held draft：重试发布、替换正文，或丢弃。
   registry.register(tool(
     "channel_resolve_draft",
     "Retry, replace, or discard a held draft.",
@@ -307,6 +294,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     "write",
   ));
 
+  // 在 Channel 上为本 Agent 创建或取消 reminder。
   registry.register(tool(
     "channel_set_reminder",
     "Create or cancel a reminder for this Agent on a Channel.",
@@ -341,8 +329,10 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     "write",
   ));
 
+  // 私有 MEMORY / notes 读写工具（见 memory-tools.ts）。
   registerMemoryTools(registry, agentId);
 
+  // 自行加入允许 self-join 的公开 Channel。
   registry.register(tool(
     "channel_join",
     "Join a public Channel that allows self-join.",
@@ -366,6 +356,7 @@ export function createMessageToolRegistry(runtime: AppRuntime, agentId: string):
     "write",
   ));
 
+  // 离开指定 Channel。
   registry.register(tool(
     "channel_leave",
     "Leave a Channel.",

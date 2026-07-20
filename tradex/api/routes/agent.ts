@@ -94,7 +94,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       const { message, directMessageId } = appendHumanDmAndNotify(runtime, {
         agentId,
         content,
-        threadRootId: typeof body.threadRootId === "string" ? body.threadRootId : null,
       });
       return c.json({
         message,

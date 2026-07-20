@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
 import { appendChatEvent, initChatEventSchema } from "./events.js";
+import { nullOutLegacyColumn } from "./legacy-schema.js";
 import { directMessageTarget } from "../channel/domain.js";
 import { migrateLegacyDirectChatTargets as rewriteLegacyDirectChatTargets } from "./migrate-legacy-targets.js";
 
@@ -38,7 +39,6 @@ export interface DirectMessage {
   authorId: string;
   kind: string;
   content: string;
-  threadRootId: string | null;
   createdAtMs: number;
   editedAtMs: number | null;
   deletedAtMs: number | null;
@@ -63,7 +63,6 @@ interface MessageRow {
   author_id: string;
   kind: string;
   content: string;
-  thread_root_id: string | null;
   created_at_ms: number;
   edited_at_ms: number | null;
   deleted_at_ms: number | null;
@@ -86,6 +85,7 @@ export class MessageStore extends BaseStore {
   protected override initSchema(conn: Database.Database): void {
     initChatEventSchema(conn);
     migrateChatEventTargetKinds(conn);
+    nullOutLegacyColumn(conn, "direct_messages", "thread_root_id");
     conn.exec(`
       CREATE TABLE IF NOT EXISTS direct_message_conversations (
         id TEXT PRIMARY KEY,
@@ -104,7 +104,6 @@ export class MessageStore extends BaseStore {
         author_id TEXT NOT NULL,
         kind TEXT NOT NULL,
         content TEXT NOT NULL,
-        thread_root_id TEXT REFERENCES direct_messages(id),
         created_at_ms INTEGER NOT NULL,
         edited_at_ms INTEGER,
         deleted_at_ms INTEGER,
@@ -208,7 +207,6 @@ export class MessageStore extends BaseStore {
     authorType: DirectMessage["authorType"];
     authorId: string;
     content: string;
-    threadRootId?: string | null;
     kind?: string;
     createdAtMs?: number;
     importKey?: string | null;
@@ -235,8 +233,8 @@ export class MessageStore extends BaseStore {
       conn.prepare(`
         INSERT INTO direct_messages (
           id, direct_message_id, dm_seq, author_type, author_id, kind, content,
-          thread_root_id, created_at_ms, edited_at_ms, deleted_at_ms, import_key
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+          created_at_ms, edited_at_ms, deleted_at_ms, import_key
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
       `).run(
         id,
         input.directMessageId,
@@ -245,18 +243,17 @@ export class MessageStore extends BaseStore {
         input.authorId,
         input.kind?.trim() || "message",
         content,
-        this.validateThreadRoot(input.directMessageId, input.threadRootId),
         createdAtMs,
         input.importKey ?? null,
       );
       appendChatEvent(conn, {
-        type: input.threadRootId ? "thread.reply-created" : "message.created",
+        type: "message.created",
         actorType: input.authorType === "system" ? "system" : input.authorType,
         actorId: input.authorId,
         target: directMessageTarget(input.directMessageId),
         entityType: "message",
         entityId: id,
-        payload: input.threadRootId ? { threadRootId: input.threadRootId } : {},
+        payload: {},
       });
       const message = this.requireMessage(input.directMessageId, id);
       input.withinTransaction?.(conn, message);
@@ -268,7 +265,7 @@ export class MessageStore extends BaseStore {
   countMessagesAfterSeq(directMessageId: string, afterSeq: number): number {
     const row = this.getConn().prepare(`
       SELECT COUNT(*) AS count FROM direct_messages
-      WHERE direct_message_id = ? AND thread_root_id IS NULL AND dm_seq > ?
+      WHERE direct_message_id = ? AND dm_seq > ?
         AND deleted_at_ms IS NULL
     `).get(directMessageId, afterSeq) as { count: number };
     return Number(row.count) || 0;
@@ -311,7 +308,7 @@ export class MessageStore extends BaseStore {
     if (input.afterSeq != null) {
       const rows = this.getConn().prepare(`
         SELECT * FROM direct_messages
-        WHERE direct_message_id = ? AND thread_root_id IS NULL AND dm_seq > ?
+        WHERE direct_message_id = ? AND dm_seq > ?
         ORDER BY dm_seq
         LIMIT ?
       `).all(input.directMessageId, input.afterSeq, limit) as MessageRow[];
@@ -323,7 +320,7 @@ export class MessageStore extends BaseStore {
     const beforeSeq = input.beforeSeq ?? Number.MAX_SAFE_INTEGER;
     const rows = this.getConn().prepare(`
       SELECT * FROM direct_messages
-      WHERE direct_message_id = ? AND thread_root_id IS NULL AND dm_seq < ?
+      WHERE direct_message_id = ? AND dm_seq < ?
       ORDER BY dm_seq DESC
       LIMIT ?
     `).all(input.directMessageId, beforeSeq, limit) as MessageRow[];
@@ -399,19 +396,6 @@ export class MessageStore extends BaseStore {
     return row ? this.projectMessage(row.id, null) : null;
   }
 
-  listThread(input: { directMessageId: string; rootMessageId: string }): {
-    root: DirectMessage;
-    replies: DirectMessage[];
-  } {
-    const root = this.requireMessage(input.directMessageId, input.rootMessageId);
-    if (root.threadRootId) throw new Error("Thread root must be a top-level message");
-    const rows = this.getConn().prepare(`
-      SELECT * FROM direct_messages
-      WHERE direct_message_id = ? AND thread_root_id = ?
-      ORDER BY dm_seq
-    `).all(input.directMessageId, input.rootMessageId) as MessageRow[];
-    return { root, replies: rows.map((row) => this.projectMessage(row.id, null)) };
-  }
 
   search(input: {
     directMessageIds: string[];
@@ -466,12 +450,6 @@ export class MessageStore extends BaseStore {
     })();
   }
 
-  private validateThreadRoot(directMessageId: string, threadRootId: string | null | undefined): string | null {
-    if (!threadRootId) return null;
-    const root = this.requireMessage(directMessageId, threadRootId);
-    if (root.threadRootId) throw new Error("Thread root must be a top-level message");
-    return root.id;
-  }
 
   private requireMessage(directMessageId: string, id: string): DirectMessage {
     const row = this.getConn().prepare(
@@ -541,7 +519,6 @@ function messageFromRow(
     authorId: row.author_id,
     kind: row.kind,
     content: row.content,
-    threadRootId: row.thread_root_id,
     createdAtMs: row.created_at_ms,
     editedAtMs: row.edited_at_ms,
     deletedAtMs: row.deleted_at_ms,
@@ -549,6 +526,7 @@ function messageFromRow(
     reactions,
   };
 }
+
 
 function migrateChatEventTargetKinds(conn: Database.Database): void {
   const schema = conn.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'chat_events'")

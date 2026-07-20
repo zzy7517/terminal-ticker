@@ -42,7 +42,6 @@ import type {
   ChannelMember,
   ChannelMessage,
   ChannelMessagesResponse,
-  ChannelThreadResponse,
   AgentPresence,
   ChatBootstrapResponse,
   ChatEvent,
@@ -358,31 +357,16 @@ export async function fetchChannelMessages(channelId: string, beforeSeq?: number
   return response.json();
 }
 
-export async function sendChannelMessage(channelId: string, content: string, threadRootId?: string): Promise<{ message: ChannelMessage; channel: Channel }> {
+export async function sendChannelMessage(channelId: string, content: string): Promise<{ message: ChannelMessage; channel: Channel }> {
   const response = await fetch(`/api/channels/${encodeURIComponent(channelId)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, threadRootId }),
+    body: JSON.stringify({ content }),
   });
   if (!response.ok) throw await responseError(response, 'Channel message send failed');
   return response.json();
 }
 
-export async function fetchChannelThread(messageId: string): Promise<ChannelThreadResponse> {
-  const response = await fetch(`/api/channels/messages/${encodeURIComponent(messageId)}/thread`);
-  if (!response.ok) throw await responseError(response, 'Channel thread fetch failed');
-  return response.json();
-}
-
-export async function sendChannelThreadReply(messageId: string, content: string): Promise<{ message: ChannelMessage; thread: ChannelThreadResponse }> {
-  const response = await fetch(`/api/channels/messages/${encodeURIComponent(messageId)}/thread`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
-  });
-  if (!response.ok) throw await responseError(response, 'Thread reply failed');
-  return response.json();
-}
 
 export async function editChannelMessage(messageId: string, content: string): Promise<{ message: ChannelMessage; channel: Channel }> {
   const response = await fetch(`/api/channels/messages/${encodeURIComponent(messageId)}`, {

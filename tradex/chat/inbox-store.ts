@@ -20,7 +20,6 @@ export type InboxReason =
   | "joined-channel"
   | "mention"
   | "dm"
-  | "thread"
   | "reminder"
   | "held-draft"
   | "system";

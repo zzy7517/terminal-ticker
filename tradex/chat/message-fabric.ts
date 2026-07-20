@@ -31,6 +31,11 @@ export function assertCanWrite(runtime: AppRuntime, agentId: string, target: Cha
 /**
  * 按需读取目标时间线（对应 Raft message read）。
  * Channel 侧会顺带把 held draft 标为已审阅到当前 version。
+ *
+ * @param input.limit 条数上限
+ * @param input.beforeSeq 按序号向前分页
+ * @param input.afterSeq 按序号向后分页
+ * @param input.aroundMessageId 以某条消息为中心取上下文
  */
 export function readTimeline(
   runtime: AppRuntime,
@@ -45,6 +50,7 @@ export function readTimeline(
 ): {
   target: ChatTarget;
   aroundMessageId: string | null | undefined;
+  /** Channel version 快照，供 Agent 后续 send 做 held-draft 冲突检测。 */
   channelVersion?: number | null;
   messages: unknown[];
   nextBeforeSeq: number | null;
@@ -91,23 +97,6 @@ export function readTimeline(
   };
 }
 
-/** 读取某条消息下的 thread 回复。 */
-export function readThread(
-  runtime: AppRuntime,
-  agentId: string,
-  target: ChatTarget,
-  rootMessageId: string,
-): unknown {
-  assertCanRead(runtime, agentId, target);
-  if (target.kind === "channel") {
-    return runtime.channelStore.listThread({ channelId: target.channelId, rootMessageId });
-  }
-  return runtime.messageStore.listThread({
-    directMessageId: target.directMessageId,
-    rootMessageId,
-  });
-}
-
 /**
  * Agent 发送消息。Channel 上若 observedVersion 落后则生成 Held Draft（对应 Raft held draft），
  * 否则写入权威消息并 fan-out inbox。
@@ -118,7 +107,6 @@ export function sendAgentMessage(
   target: ChatTarget,
   input: {
     content: string;
-    threadRootId?: string | null;
     observedVersion?: number | null;
   },
 ): unknown {
@@ -149,7 +137,6 @@ export function sendAgentMessage(
       authorType: "agent",
       authorId: agentId,
       content,
-      threadRootId: input.threadRootId ?? null,
     });
     return {
       published: true,
@@ -162,7 +149,6 @@ export function sendAgentMessage(
     authorType: "agent",
     authorId: agentId,
     content,
-    threadRootId: input.threadRootId ?? null,
   });
   return { published: true, message };
 }
@@ -221,7 +207,7 @@ export function removeReaction(
 
 /**
  * 在 Agent 可读的 Channel/DM 中搜索消息（对应 Raft message search）。
- * 返回命中列表，调用方再按需 readTimeline / readThread 拉上下文。
+ * 返回命中列表，调用方再按需 readTimeline 拉上下文。
  */
 export function searchReadable(
   runtime: AppRuntime,

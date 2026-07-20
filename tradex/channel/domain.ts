@@ -106,11 +106,9 @@ export interface ChannelMessage {
   authorId: string;
   kind: string;
   content: string;
-  threadRootId: string | null;
   createdAtMs: number;
   editedAtMs: number | null;
   deletedAtMs: number | null;
-  replyCount: number;
   reactions: ChannelReactionSummary[];
 }
 

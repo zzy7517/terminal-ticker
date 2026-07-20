@@ -124,33 +124,9 @@ export interface AgentSessionRun {
   error: string | null;
 }
 
-export interface AgentContextUsage {
-  promptTokens?: number;
-  totalTokens?: number;
-  /** Estimated context tokens from last assistant response, or null if unknown. */
-  tokens?: number | null;
-  contextWindow?: number | null;
-  percent?: number | null;
-}
-
-/**
- * Cumulative session token statistics.
- */
-export interface AgentSessionStats {
-  tokens: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    total: number;
-  };
-}
-
 export interface AgentSessionSummary extends AgentSession {
   messageCount: number;
   preview: string;
-  contextUsage?: AgentContextUsage | null;
-  sessionStats?: AgentSessionStats | null;
   run?: AgentSessionRun;
 }
 
@@ -176,8 +152,6 @@ export interface QueuedFollowUp {
 export interface AgentSessionResponse {
   session: AgentSession | null;
   messages: AgentMessage[];
-  contextUsage?: AgentContextUsage | null;
-  sessionStats?: AgentSessionStats | null;
   run?: AgentSessionRun;
 }
 
@@ -200,7 +174,6 @@ export interface AgentDirectMessage {
   authorId: string;
   kind: string;
   content: string;
-  threadRootId: string | null;
   createdAtMs: number;
   editedAtMs: number | null;
   deletedAtMs: number | null;
@@ -249,11 +222,9 @@ export interface ChannelMessage {
   authorId: string;
   kind: string;
   content: string;
-  threadRootId: string | null;
   createdAtMs: number;
   editedAtMs: number | null;
   deletedAtMs: number | null;
-  replyCount: number;
   reactions: ChannelReactionSummary[];
 }
 
@@ -262,10 +233,6 @@ export interface ChannelMessagesResponse {
   nextBeforeSeq: number | null;
 }
 
-export interface ChannelThreadResponse {
-  root: ChannelMessage;
-  replies: ChannelMessage[];
-}
 
 export interface ChatEvent {
   seq: number;
@@ -334,7 +301,7 @@ export type AgentStreamPayload =
   | { type: 'message_start' | 'message_update' | 'message_end'; message: Partial<AgentMessage> & { clientId?: string; role: AgentMessage['role']; content: string; metadata?: AgentMessageMetadata | null; error?: string | null }; delta?: string }
   | { type: 'tool_execution_start'; toolCall: AgentToolCall }
   | { type: 'tool_execution_end'; toolCall: AgentToolCall; toolResult: LoopToolResult }
-  | { type: 'agent_end'; error: string | null; totalTokens?: number; promptTokens?: number; sessionStats?: AgentSessionStats | null }
+  | { type: 'agent_end'; error: string | null }
   | { type: 'error'; error: string }
   | { type: 'session_update'; session: AgentSessionResponse; history: AgentSessionHistoryResponse; state: MarketState };
 

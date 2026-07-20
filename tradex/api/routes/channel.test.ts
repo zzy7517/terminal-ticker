@@ -96,7 +96,7 @@ describe("Channel HTTP API", () => {
     ]);
   });
 
-  it("supports Human thread, edit, reaction, and audited delete routes", async () => {
+  it("supports Human edit, reaction, and audited delete routes", async () => {
     const appRuntime = runtime();
     const routes = channelRoutes(appRuntime);
     const channel = appRuntime.channelStore.createChannel({ name: "btc-research" });
@@ -107,17 +107,11 @@ describe("Channel HTTP API", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ channelId: channel.id, content: "Updated" }),
     });
-    const reply = await routes.request(`/api/channels/messages/${root.id}/thread`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ channelId: channel.id, content: "Thread reply" }),
-    });
     const reaction = await routes.request(`/api/channels/messages/${root.id}/reactions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ channelId: channel.id, emoji: "👍" }),
     });
-    const thread = await routes.request(`/api/channels/messages/${root.id}/thread?channel_id=${channel.id}`);
     const deleted = await routes.request(`/api/channels/messages/${root.id}`, {
       method: "DELETE",
       headers: { "content-type": "application/json" },
@@ -125,12 +119,13 @@ describe("Channel HTTP API", () => {
     });
 
     expect(edit.status).toBe(200);
-    expect(reply.status).toBe(201);
     expect(reaction.status).toBe(201);
-    expect(await thread.json()).toEqual({
-      root: expect.objectContaining({ content: "Updated", reactions: [{ emoji: "👍", count: 1, reacted: true }] }),
-      replies: [expect.objectContaining({ content: "Thread reply" })],
-    });
+    expect(await reaction.json()).toEqual(expect.objectContaining({
+      message: expect.objectContaining({
+        content: "Updated",
+        reactions: [{ emoji: "👍", count: 1, reacted: true }],
+      }),
+    }));
     expect(await deleted.json()).toEqual(expect.objectContaining({
       message: expect.objectContaining({ content: "", deletedAtMs: expect.any(Number) }),
       revisions: [

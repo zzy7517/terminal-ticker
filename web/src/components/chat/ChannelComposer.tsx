@@ -1,10 +1,10 @@
 /**
- * ChannelComposer — Channel / Thread 输入框（含 @Agent 自动补全）。
+ * ChannelComposer — Channel 输入框（含 @Agent 自动补全）。
  */
 import { Loader2, Send } from 'lucide-react';
 import { useAgentStore } from '../../stores/agentStore';
 
-/** Channel 或 Thread 的消息输入区。 */
+/** Channel 的消息输入区。 */
 export function ChannelComposer({
   draft,
   setDraft,

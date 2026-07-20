@@ -1,13 +1,12 @@
 /**
  * AgentSessionPanel — Agent Context runner：头栏 + composer。
- * DM transcript 在 DirectMessageTimeline；本面板负责发消息与上下文用量展示。
+ * DM transcript 在 DirectMessageTimeline；本面板负责发消息。
  */
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import './AgentSessionPanel.css';
 
 import {
   Bot,
-  CircleDot,
   Paperclip,
   Square,
   X,
@@ -19,22 +18,10 @@ import { useChatPresence } from '../../chat/presenceStore';
 import { projectDirectMessageTimeline } from '../../chat/directMessageTimeline';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
-import { contextUsagePercent, formatContextPercent, resolveContextWindow } from '../../utils/contextUsage';
 import { processImageForUpload } from '../../utils/imageResize';
 import { DirectMessageTimeline } from './DirectMessageTimeline';
 
 const EMPTY_DIRECT_MESSAGES: AgentDirectMessage[] = [];
-
-/**
- * Format token counts for compact display.
- */
-function formatTokenCount(count: number): string {
-  if (count < 1000) return String(count);
-  if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-  if (count < 1000000) return `${Math.round(count / 1000)}k`;
-  if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-  return `${Math.round(count / 1000000)}M`;
-}
 
 /** Agent Context 头栏 + composer（选中 Agent 的 DM runner）。 */
 export function AgentSessionPanel({
@@ -52,7 +39,6 @@ export function AgentSessionPanel({
   const agentChatActionKey = useAgentStore((s) => s.agentChatActionKey);
   const agentSessionLoadingKey = useAgentStore((s) => s.agentSessionLoadingKey);
   const modelRegistry = useAgentStore((s) => s.modelRegistry);
-  const contextUsage = useAgentStore((s) => s.contextUsage);
   const streamingMessage = useAgentStore((s) => s.streamingMessage);
   const queuedFollowUps = useAgentStore((s) => s.queuedFollowUps);
   const directMessageId = useAgentStore((s) => s.directMessageIdByAgentId[s.selectedAgentId] ?? null);
@@ -197,13 +183,6 @@ export function AgentSessionPanel({
     e.preventDefault();
   }, []);
 
-  const contextWindow = isClaudeAgent || !boundProvider || !boundModel
-    ? null
-    : resolveContextWindow(boundProvider, boundModel, modelRegistry);
-  const rawContextPercent = contextUsagePercent(contextUsage, contextWindow);
-  const contextPercentLabel = formatContextPercent(rawContextPercent);
-  const contextPercentLevel = rawContextPercent ?? 0;
-
   return (
     <div className="agent-card agent-readout agent-session-card">
       <header className="dm-conversation-header">
@@ -235,11 +214,6 @@ export function AgentSessionPanel({
             >
               <Square size={12} />
             </button>
-          )}
-          {contextPercentLabel !== null && (
-            <span className={`badge mono${contextPercentLevel > 90 ? ' danger' : contextPercentLevel > 70 ? ' warning' : ''}`}>
-              <CircleDot size={10} /> {contextPercentLabel}%{contextWindow ? `/${formatTokenCount(contextWindow)}` : ''}
-            </span>
           )}
           <button className="session-model-trigger subtle" type="button" disabled title="Provider and model are fixed for this Agent">
             {!isClaudeAgent && boundProviderOption && (

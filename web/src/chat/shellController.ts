@@ -12,7 +12,7 @@ export interface ChatShellPorts {
   initChat: () => () => void;
   selectChannel: (channelId: string) => Promise<void>;
   openDirectMessageEntry: (agentId: string) => Promise<void>;
-  sendChannelMessage: (content: string, threadRootId?: string) => Promise<void>;
+  sendChannelMessage: (content: string) => Promise<void>;
   getActiveTarget: () => ChatTarget | null;
 }
 
@@ -22,7 +22,7 @@ export function createChatShellController(ports: ChatShellPorts) {
     start: () => ports.initChat(),
     openChannel: (channelId: string) => ports.selectChannel(channelId),
     openDirectMessage: (agentId: string) => ports.openDirectMessageEntry(agentId),
-    send: (content: string, threadRootId?: string) => ports.sendChannelMessage(content, threadRootId),
+    send: (content: string) => ports.sendChannelMessage(content),
     activeTarget: () => ports.getActiveTarget(),
   };
 }
@@ -33,7 +33,7 @@ export function createLiveChatShellController() {
     initChat: () => useChatStore.getState().initChat(),
     selectChannel: (channelId) => useChatStore.getState().selectChannel(channelId),
     openDirectMessageEntry,
-    sendChannelMessage: (content, threadRootId) => useChatStore.getState().sendMessage(content, threadRootId),
+    sendChannelMessage: (content) => useChatStore.getState().sendMessage(content),
     getActiveTarget: () => useChatStore.getState().activeTarget,
   });
 }

@@ -11,10 +11,10 @@ export type MessageActor =
   | { type: "human"; id: string }
   | { type: "agent"; id: string };
 
-/** 解析结果：内部 ChatTarget + 可选 messageId（around/thread）。 */
+/** 解析结果：内部 ChatTarget + 可选 messageId（around 定位）。 */
 export interface ParsedMessageTarget {
   chatTarget: ChatTarget;
-  /** `:` 后可选的 message id，用于 around/thread 定位。 */
+  /** `:` 后可选的 message id，用于 around 定位。 */
   messageId: string | null;
   raw: string;
 }

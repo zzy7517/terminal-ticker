@@ -1,8 +1,8 @@
 /**
- * ChannelMessageItem — 单条 Channel 消息行（编辑/删除/reaction/Saved/Pinned/开 thread）。
+ * ChannelMessageItem — 单条 Channel 消息行（编辑/删除/reaction/Saved/Pinned）。
  */
 import { useState } from 'react';
-import { Bookmark, MessageCircle, Pencil, Pin, Save, Trash2, X } from 'lucide-react';
+import { Bookmark, Pencil, Pin, Save, Trash2, X } from 'lucide-react';
 import type { ChannelMessage } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
@@ -12,10 +12,8 @@ const QUICK_REACTIONS = ['👍', '👀', '✅'];
 /** 渲染一条 Channel 共享消息及其操作。 */
 export function ChannelMessageItem({
   message,
-  onReply,
 }: {
   message: ChannelMessage;
-  onReply?: (message: ChannelMessage) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
@@ -91,11 +89,6 @@ export function ChannelMessageItem({
       )}
       {!deleted && (
         <div className="channel-message-actions">
-          {onReply && (
-            <button onClick={() => onReply(message)} type="button">
-              <MessageCircle size={12} /> {message.replyCount ? `${message.replyCount} replies` : 'Reply'}
-            </button>
-          )}
           {isHuman && message.authorId === 'owner' && (
             <>
               <button onClick={() => setEditing(true)} type="button"><Pencil size={12} /> Edit</button>

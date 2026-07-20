@@ -1,6 +1,6 @@
 /**
  * ChannelPanel — Channel 主聊天面板（对应 Raft Channel 视图）。
- * 含消息列表、thread 侧栏、composer 与成员面板入口。
+ * 含消息列表、composer 与成员面板入口。
  */
 import { useEffect, useState } from 'react';
 import { Hash, Loader2, Users } from 'lucide-react';
@@ -8,7 +8,6 @@ import { fetchChannelMembers } from '../../api';
 import { useChatStore } from '../../stores/chatStore';
 import type { ChannelMessage } from '../../types';
 import { ChannelMessageItem } from './ChannelMessageItem';
-import { ThreadPanel } from './ThreadPanel';
 import { ChannelComposer } from './ChannelComposer';
 import { MemberPanel } from './MemberPanel';
 import '../workspace/AgentSessionPanel.css';
@@ -31,7 +30,6 @@ export function ChannelPanel() {
   const sending = useChatStore((state) => state.sending);
   const error = useChatStore((state) => state.error);
   const sendMessage = useChatStore((state) => state.sendMessage);
-  const openThread = useChatStore((state) => state.openThread);
   const nextBeforeSeq = useChatStore((state) => activeChannelId ? state.nextBeforeSeqByChannelId[activeChannelId] ?? null : null);
   const loadOlderMessages = useChatStore((state) => state.loadOlderMessages);
 
@@ -110,7 +108,7 @@ export function ChannelPanel() {
             </div>
           )}
           {messages.map((message) => (
-            <ChannelMessageItem key={message.id} message={message} onReply={(entry) => void openThread(entry.id)} />
+            <ChannelMessageItem key={message.id} message={message} />
           ))}
         </div>
 
@@ -137,7 +135,6 @@ export function ChannelPanel() {
           />
         ) : null}
       </div>
-      <ThreadPanel />
     </section>
   );
 }

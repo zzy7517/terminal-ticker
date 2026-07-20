@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
 import { appendChatEvent, initChatEventSchema } from "../chat/events.js";
+import { nullOutLegacyColumn } from "../chat/legacy-schema.js";
 import {
   channelTarget,
   type Channel,
@@ -39,7 +40,6 @@ interface ChannelMessageRow {
   author_id: string;
   kind: string;
   content: string;
-  thread_root_id: string | null;
   created_at_ms: number;
   edited_at_ms: number | null;
   deleted_at_ms: number | null;
@@ -87,7 +87,6 @@ export class ChannelStore extends BaseStore {
         author_id TEXT NOT NULL,
         kind TEXT NOT NULL,
         content TEXT NOT NULL,
-        thread_root_id TEXT REFERENCES channel_messages(id),
         created_at_ms INTEGER NOT NULL,
         edited_at_ms INTEGER,
         deleted_at_ms INTEGER,
@@ -143,6 +142,7 @@ export class ChannelStore extends BaseStore {
     ensureColumn(conn, "channel_messages", "deleted_at_ms", "INTEGER");
     ensureMessageKindForwardCompatible(conn);
     ensureMembershipSchema(conn);
+    nullOutLegacyColumn(conn, "channel_messages", "thread_root_id");
     conn.exec(`
       CREATE INDEX IF NOT EXISTS idx_channel_messages_timeline
         ON channel_messages (channel_id, channel_seq DESC);
@@ -237,7 +237,6 @@ export class ChannelStore extends BaseStore {
     channelId: string;
     authorId: string;
     content: string;
-    threadRootId?: string | null;
     kind?: string;
     withinTransaction?: (conn: Database.Database, message: ChannelMessage) => void;
   }): ChannelMessage {
@@ -251,7 +250,6 @@ export class ChannelStore extends BaseStore {
     channelId: string;
     authorId: string;
     content: string;
-    threadRootId?: string | null;
     kind?: string;
     withinTransaction?: (conn: Database.Database, message: ChannelMessage) => void;
   }): ChannelMessage {
@@ -281,7 +279,6 @@ export class ChannelStore extends BaseStore {
     authorType: "human" | "agent" | "system";
     authorId: string;
     content: string;
-    threadRootId?: string | null;
     kind?: string;
     withinTransaction?: (conn: Database.Database, message: ChannelMessage) => void;
   }): ChannelMessage {
@@ -298,8 +295,8 @@ export class ChannelStore extends BaseStore {
       const id = crypto.randomUUID();
       conn.prepare(`
         INSERT INTO channel_messages (
-          id, channel_id, channel_seq, author_type, author_id, kind, content, thread_root_id, created_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, channel_id, channel_seq, author_type, author_id, kind, content, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         input.channelId,
@@ -308,18 +305,17 @@ export class ChannelStore extends BaseStore {
         input.authorId,
         input.kind?.trim() || "message",
         content,
-        this.validateThreadRoot(input.channelId, input.threadRootId),
         nowMs(),
       );
       conn.prepare("UPDATE chat_channels SET version = version + 1 WHERE id = ?").run(input.channelId);
       appendChatEvent(conn, {
-        type: input.threadRootId ? "thread.reply-created" : "message.created",
+        type: "message.created",
         actorType: input.authorType === "system" ? "system" : input.authorType,
         actorId: input.authorId,
         target: channelTarget(input.channelId),
         entityType: "message",
         entityId: id,
-        payload: input.threadRootId ? { threadRootId: input.threadRootId } : {},
+        payload: {},
       });
       const message = this.requireMessage(input.channelId, id);
       input.withinTransaction?.(conn, message);
@@ -442,7 +438,7 @@ export class ChannelStore extends BaseStore {
   countMessagesAfterSeq(channelId: string, afterSeq: number): number {
     const row = this.getConn().prepare(`
       SELECT COUNT(*) AS count FROM channel_messages
-      WHERE channel_id = ? AND thread_root_id IS NULL AND channel_seq > ?
+      WHERE channel_id = ? AND channel_seq > ?
         AND deleted_at_ms IS NULL
     `).get(channelId, afterSeq) as { count: number };
     return Number(row.count) || 0;
@@ -479,7 +475,7 @@ export class ChannelStore extends BaseStore {
     if (input.afterSeq != null) {
       const rows = this.getConn().prepare(`
         SELECT * FROM channel_messages
-        WHERE channel_id = ? AND thread_root_id IS NULL AND channel_seq > ?
+        WHERE channel_id = ? AND channel_seq > ?
         ORDER BY channel_seq
         LIMIT ?
       `).all(input.channelId, input.afterSeq, limit) as ChannelMessageRow[];
@@ -491,7 +487,7 @@ export class ChannelStore extends BaseStore {
     const beforeSeq = input.beforeSeq ?? Number.MAX_SAFE_INTEGER;
     const rows = this.getConn().prepare(`
       SELECT * FROM channel_messages
-      WHERE channel_id = ? AND thread_root_id IS NULL AND channel_seq < ?
+      WHERE channel_id = ? AND channel_seq < ?
       ORDER BY channel_seq DESC
       LIMIT ?
     `).all(input.channelId, beforeSeq, limit) as ChannelMessageRow[];
@@ -504,17 +500,6 @@ export class ChannelStore extends BaseStore {
   getMessage(id: string): ChannelMessage | null {
     const row = this.getConn().prepare("SELECT * FROM channel_messages WHERE id = ?").get(id) as ChannelMessageRow | undefined;
     return row ? this.projectMessage(row) : null;
-  }
-
-  listThread(input: { channelId: string; rootMessageId: string }): { root: ChannelMessage; replies: ChannelMessage[] } {
-    const root = this.requireMessage(input.channelId, input.rootMessageId);
-    if (root.threadRootId) throw new Error("Thread root must be a top-level message");
-    const rows = this.getConn().prepare(`
-      SELECT * FROM channel_messages
-      WHERE channel_id = ? AND thread_root_id = ?
-      ORDER BY channel_seq
-    `).all(input.channelId, input.rootMessageId) as ChannelMessageRow[];
-    return { root, replies: rows.map((row) => this.projectMessage(row)) };
   }
 
   editMessage(input: { channelId: string; messageId: string; actorId: string; content: string }): ChannelMessage {
@@ -604,13 +589,6 @@ export class ChannelStore extends BaseStore {
     });
   }
 
-  private validateThreadRoot(channelId: string, threadRootId: string | null | undefined): string | null {
-    if (!threadRootId) return null;
-    const root = this.requireMessage(channelId, threadRootId);
-    if (root.threadRootId) throw new Error("Thread root must be a top-level message");
-    return root.id;
-  }
-
   private saveRevision(message: ChannelMessage, actorId: string, action: "edit" | "delete"): void {
     const conn = this.getConn();
     const next = conn.prepare(`
@@ -634,15 +612,12 @@ export class ChannelStore extends BaseStore {
   }
 
   private projectMessage(row: ChannelMessageRow): ChannelMessage {
-    const replyCount = (this.getConn().prepare(
-      "SELECT COUNT(*) AS count FROM channel_messages WHERE thread_root_id = ?",
-    ).get(row.id) as { count: number }).count;
     const reactions = this.getConn().prepare(`
       SELECT emoji, COUNT(*) AS count,
         MAX(CASE WHEN actor_type = 'human' AND actor_id = 'owner' THEN 1 ELSE 0 END) AS reacted
       FROM channel_reactions WHERE message_id = ? GROUP BY emoji ORDER BY emoji
     `).all(row.id) as Array<{ emoji: string; count: number; reacted: number }>;
-    return messageFromRow(row, replyCount, reactions.map((reaction): ChannelReactionSummary => ({
+    return messageFromRow(row, reactions.map((reaction): ChannelReactionSummary => ({
       emoji: reaction.emoji,
       count: reaction.count,
       reacted: Boolean(reaction.reacted),
@@ -670,7 +645,7 @@ function channelFromRow(row: ChannelRow): Channel {
   };
 }
 
-function messageFromRow(row: ChannelMessageRow, replyCount: number, reactions: ChannelReactionSummary[]): ChannelMessage {
+function messageFromRow(row: ChannelMessageRow, reactions: ChannelReactionSummary[]): ChannelMessage {
   return {
     id: row.id,
     channelId: row.channel_id,
@@ -679,11 +654,9 @@ function messageFromRow(row: ChannelMessageRow, replyCount: number, reactions: C
     authorId: row.author_id,
     kind: row.kind,
     content: row.content,
-    threadRootId: row.thread_root_id,
     createdAtMs: row.created_at_ms,
     editedAtMs: row.edited_at_ms,
     deletedAtMs: row.deleted_at_ms,
-    replyCount,
     reactions,
   };
 }
@@ -743,7 +716,6 @@ function ensureMessageKindForwardCompatible(conn: Database.Database): void {
         author_id TEXT NOT NULL,
         kind TEXT NOT NULL,
         content TEXT NOT NULL,
-        thread_root_id TEXT REFERENCES channel_messages(id),
         created_at_ms INTEGER NOT NULL,
         edited_at_ms INTEGER,
         deleted_at_ms INTEGER,
@@ -751,10 +723,10 @@ function ensureMessageKindForwardCompatible(conn: Database.Database): void {
       );
       INSERT INTO channel_messages_next (
         id, channel_id, channel_seq, author_type, author_id, kind, content,
-        thread_root_id, created_at_ms, edited_at_ms, deleted_at_ms
+        created_at_ms, edited_at_ms, deleted_at_ms
       )
       SELECT id, channel_id, channel_seq, author_type, author_id, kind, content,
-        thread_root_id, created_at_ms, edited_at_ms, deleted_at_ms
+        created_at_ms, edited_at_ms, deleted_at_ms
       FROM channel_messages;
       DROP TABLE channel_messages;
       ALTER TABLE channel_messages_next RENAME TO channel_messages;

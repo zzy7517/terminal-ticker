@@ -88,7 +88,6 @@ export function appendTargetMessageAndNotify(
     authorType: "human" | "agent";
     authorId: string;
     content: string;
-    threadRootId?: string | null;
     reason?: InboxReason;
   },
 ): { message: AppendedSharedMessage; target: ChatTarget; recipients: string[] } {
@@ -105,7 +104,6 @@ export function appendTargetMessageAndNotify(
       authorType: input.authorType,
       authorId: input.authorId,
       content: input.content,
-      threadRootId: input.threadRootId,
       withinTransaction: (conn, created) => {
         fanOutInbox(runtime, conn, recipients, target, created.id, "dm");
       },
@@ -117,7 +115,7 @@ export function appendTargetMessageAndNotify(
   const mentioned = resolveMentionedAgentIds(runtime, target.channelId, input.content)
     .filter((agentId) => recipients.includes(agentId));
   const mentionedSet = new Set(mentioned);
-  const defaultReason = input.reason ?? (input.threadRootId ? "thread" : "joined-channel");
+  const defaultReason = input.reason ?? "joined-channel";
   const withinTransaction = (conn: Database.Database, created: ChannelMessage) => {
     for (const agentId of recipients) {
       runtime.inboxStore.notifyWithConn(conn, {
@@ -133,14 +131,12 @@ export function appendTargetMessageAndNotify(
       channelId: target.channelId,
       authorId: input.authorId,
       content: input.content,
-      threadRootId: input.threadRootId,
       withinTransaction,
     })
     : runtime.channelStore.appendMessage({
       channelId: target.channelId,
       authorId: input.authorId,
       content: input.content,
-      threadRootId: input.threadRootId,
       withinTransaction,
     });
   wakeRecipients(runtime, recipients);
@@ -153,7 +149,6 @@ export function appendHumanDmAndNotify(
   input: {
     agentId: string;
     content: string;
-    threadRootId?: string | null;
   },
 ): { message: DirectMessage; directMessageId: string; recipients: string[] } {
   const dm = runtime.messageStore.requireHumanAgentDm(input.agentId);
@@ -162,7 +157,6 @@ export function appendHumanDmAndNotify(
     authorType: "human",
     authorId: "owner",
     content: input.content,
-    threadRootId: input.threadRootId,
   });
   return {
     message: result.message as DirectMessage,
@@ -179,7 +173,6 @@ export function appendDirectMessageAndNotify(
     authorType: "human" | "agent";
     authorId: string;
     content: string;
-    threadRootId?: string | null;
   },
 ): { message: DirectMessage; directMessageId: string; recipients: string[] } {
   const result = appendTargetMessageAndNotify(runtime, {
@@ -187,7 +180,6 @@ export function appendDirectMessageAndNotify(
     authorType: input.authorType,
     authorId: input.authorId,
     content: input.content,
-    threadRootId: input.threadRootId,
   });
   return {
     message: result.message as DirectMessage,
@@ -204,7 +196,6 @@ export function appendChannelMessageAndNotify(
     authorType: "human" | "agent";
     authorId: string;
     content: string;
-    threadRootId?: string | null;
     reason?: InboxReason;
   },
 ): { message: ChannelMessage; recipients: string[] } {
@@ -213,7 +204,6 @@ export function appendChannelMessageAndNotify(
     authorType: input.authorType,
     authorId: input.authorId,
     content: input.content,
-    threadRootId: input.threadRootId,
     reason: input.reason,
   });
   return {

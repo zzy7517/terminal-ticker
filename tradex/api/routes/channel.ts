@@ -64,7 +64,7 @@ export function channelRoutes(runtime: AppRuntime): Hono {
     }
   });
 
-  // --- 消息 / thread --------------------------------------------------------
+  // --- 消息 ----------------------------------------------------------------
 
   app.get("/api/channels/:id/messages", (c) => {
     const channel = runtime.channelStore.getChannel(c.req.param("id"));
@@ -89,7 +89,6 @@ export function channelRoutes(runtime: AppRuntime): Hono {
         authorType: "human",
         authorId: "owner",
         content: String(body.content ?? ""),
-        threadRootId: typeof body.threadRootId === "string" ? body.threadRootId : null,
       });
       return c.json({ message, channel: runtime.channelStore.getChannel(channelId) }, 201);
     } catch (error) {
@@ -181,7 +180,7 @@ export function channelRoutes(runtime: AppRuntime): Hono {
     }
   });
 
-  // --- 消息编辑 / 删除 / thread / reaction ----------------------------------
+  // --- 消息编辑 / 删除 / reaction -------------------------------------------
 
   app.patch("/api/channels/messages/:id", async (c) => {
     try {
@@ -216,37 +215,6 @@ export function channelRoutes(runtime: AppRuntime): Hono {
       });
     } catch (error) {
       return c.json({ detail: error instanceof Error ? error.message : "Message delete failed" }, 400);
-    }
-  });
-
-  app.get("/api/channels/messages/:id/thread", (c) => {
-    try {
-      const message = runtime.channelStore.getMessage(c.req.param("id"));
-      if (!message) return c.json({ detail: "Message not found" }, 404);
-      return c.json(runtime.channelStore.listThread({ channelId: message.channelId, rootMessageId: message.id }));
-    } catch (error) {
-      return c.json({ detail: error instanceof Error ? error.message : "Thread fetch failed" }, 400);
-    }
-  });
-
-  /** Human 回复 thread；inbox reason 为 thread。 */
-  app.post("/api/channels/messages/:id/thread", async (c) => {
-    try {
-      const root = runtime.channelStore.getMessage(c.req.param("id"));
-      if (!root) return c.json({ detail: "Message not found" }, 404);
-      const body = await c.req.json() as Record<string, unknown>;
-      const { appendChannelMessageAndNotify } = await import("../../chat/dispatch.js");
-      const { message } = appendChannelMessageAndNotify(runtime, {
-        channelId: root.channelId,
-        authorType: "human",
-        authorId: "owner",
-        content: String(body.content ?? ""),
-        threadRootId: root.id,
-        reason: "thread",
-      });
-      return c.json({ message, thread: runtime.channelStore.listThread({ channelId: root.channelId, rootMessageId: root.id }) }, 201);
-    } catch (error) {
-      return c.json({ detail: error instanceof Error ? error.message : "Thread reply failed" }, 400);
     }
   });
 
