@@ -17,9 +17,9 @@ const THEME_STORAGE_KEY = 'tradex-theme';
 
 function loadTheme(): Theme {
   try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'light' ? 'light' : 'dark';
   } catch {
-    return 'light';
+    return 'dark';
   }
 }
 

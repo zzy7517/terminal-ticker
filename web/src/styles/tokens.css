@@ -1,105 +1,118 @@
 /* ═══════════════════════════════════════════════════════════════════
    TRADEX — Design Tokens
-   Warm graphite workstation · single terracotta accent
-   Calibrated for sustained viewing during long trading sessions.
+   Ethereal glass · OLED void · monochrome chrome
+   The interface is achromatic; market data is the only color on screen.
    ═══════════════════════════════════════════════════════════════════ */
 
 :root {
   color-scheme: light;
 
-  /* ── Surfaces — warm paper neutrals ─────────────────────────────── */
-  --canvas: #f6f5f1;
-  --canvas-2: #eeede8;
-  --panel: #fbfaf7;
+  /* ── Surfaces — soft structural silver ──────────────────────────── */
+  --void: #ebebed;
+  --canvas: #f4f4f5;
+  --canvas-2: #ececee;
+  --panel: #fafafa;
   --panel-raised: #ffffff;
   --panel-elevated: #ffffff;
-  --sidebar: #f1f0eb;
   --surface: var(--panel-raised);
+  --bezel: rgba(9, 9, 11, 0.03);
 
-  /* ── Borders — quiet warm grays ─────────────────────────────────── */
-  --line-soft: #e7e5df;
-  --line-strong: #d7d4cc;
+  /* ── Hairlines ──────────────────────────────────────────────────── */
+  --line-soft: rgba(9, 9, 11, 0.07);
+  --line-strong: rgba(9, 9, 11, 0.13);
+  --line-hairline: rgba(9, 9, 11, 0.05);
 
-  /* ── Text — warm ink hierarchy, never pure black ────────────────── */
-  --text-primary: #2b2a26;
-  --text-secondary: #6a6760;
-  --text-muted: #98948a;
+  /* ── Text — cool ink hierarchy, never pure black ────────────────── */
+  --text-primary: #1c1c1f;
+  --text-secondary: #55555e;
+  --text-muted: #8b8b94;
   --text-tertiary: var(--text-muted);
-  --text-bright: #1d1c19;
+  --text-bright: #101013;
 
-  /* ── Semantic — desaturated market colors ───────────────────────── */
-  --up: #297552;
-  --down: #b04f49;
-  --success: #297552;
-  --danger: #b04f49;
-  --warning: #8a6a2b;
+  /* ── Semantic — the only voiced colors in the interface ─────────── */
+  --up: #177950;
+  --down: #c13d33;
+  --success: #177950;
+  --danger: #c13d33;
+  --warning: #93651c;
 
-  /* ── Structural accent — graphite, for labels and chrome ────────── */
-  --accent: #57544d;
-  --accent-contrast: #ffffff;
-  --accent-tint: rgba(51, 48, 42, 0.06);
-  --accent-tint-strong: rgba(51, 48, 42, 0.11);
-  --accent-ring: rgba(51, 48, 42, 0.28);
+  /* ── Structural accent — monochrome ink ─────────────────────────── */
+  --accent: #3f3f46;
+  --accent-contrast: #fafafa;
+  --accent-tint: rgba(9, 9, 11, 0.05);
+  --accent-tint-strong: rgba(9, 9, 11, 0.09);
+  --accent-ring: rgba(9, 9, 11, 0.22);
 
-  /* ── Brand accent — terracotta, the single voiced color ─────────── */
-  --control-accent: #c16c4c;
-  --control-accent-hover: #ad5d40;
-  --control-accent-contrast: #fff7f2;
-  --control-accent-tint: rgba(193, 108, 76, 0.10);
-  --control-accent-tint-strong: rgba(193, 108, 76, 0.17);
-  --control-accent-ring: rgba(193, 108, 76, 0.36);
+  /* ── Interactive accent — same ink, voiced through weight ───────── */
+  --control-accent: #18181b;
+  --control-accent-hover: #303036;
+  --control-accent-contrast: #fafafa;
+  --control-accent-tint: rgba(9, 9, 11, 0.06);
+  --control-accent-tint-strong: rgba(9, 9, 11, 0.10);
+  --control-accent-ring: rgba(9, 9, 11, 0.25);
 
   /* ── Semantic tints ─────────────────────────────────────────────── */
-  --danger-tint: rgba(176, 79, 73, 0.08);
-  --danger-tint-strong: rgba(176, 79, 73, 0.16);
-  --warning-tint: rgba(138, 106, 43, 0.09);
-  --warning-tint-strong: rgba(138, 106, 43, 0.17);
-  --success-tint: rgba(41, 117, 82, 0.08);
-  --success-tint-strong: rgba(41, 117, 82, 0.15);
+  --danger-tint: rgba(193, 61, 51, 0.07);
+  --danger-tint-strong: rgba(193, 61, 51, 0.14);
+  --warning-tint: rgba(147, 101, 28, 0.08);
+  --warning-tint-strong: rgba(147, 101, 28, 0.16);
+  --success-tint: rgba(23, 121, 80, 0.07);
+  --success-tint-strong: rgba(23, 121, 80, 0.14);
 
-  /* ── Elevation — warm-tinted diffusion, reserved for overlays ───── */
-  --shadow-soft: 0 1px 2px rgba(52, 46, 36, 0.05);
-  --shadow-md: 0 6px 20px -6px rgba(52, 46, 36, 0.12);
-  --shadow-pop: 0 16px 40px -12px rgba(52, 46, 36, 0.22);
-  --shadow-inner-edge: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  /* ── Elevation — diffused ambience, never harsh ─────────────────── */
+  --shadow-soft:
+    0 1px 1px rgba(16, 16, 19, 0.03),
+    0 4px 14px -6px rgba(16, 16, 19, 0.07);
+  --shadow-md:
+    0 1px 2px rgba(16, 16, 19, 0.04),
+    0 12px 32px -12px rgba(16, 16, 19, 0.14);
+  --shadow-pop:
+    0 2px 6px rgba(16, 16, 19, 0.05),
+    0 24px 60px -16px rgba(16, 16, 19, 0.22);
+  --shadow-inner-edge: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --shadow-bezel:
+    inset 0 1px 1px rgba(255, 255, 255, 0.7),
+    0 1px 2px rgba(16, 16, 19, 0.04),
+    0 16px 40px -18px rgba(16, 16, 19, 0.12);
 
-  --scrollbar: #c2beb4;
-  --scrollbar-hover: #a19d92;
+  --scrollbar: rgba(9, 9, 11, 0.16);
+  --scrollbar-hover: rgba(9, 9, 11, 0.30);
 
-  /* ── Shape — soft geometry, never pill-heavy ────────────────────── */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  /* ── Shape — machined squircles, concentric nesting ─────────────── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-frame: 18px;
   --radius-chip: var(--radius-sm);
   --radius-control: var(--radius-md);
   --radius-surface: var(--radius-lg);
 
-  /* ── Typography — Geist UI voice · JetBrains Mono data voice ────── */
-  --mono: "JetBrains Mono", "SF Mono", "Cascadia Mono", "Consolas", "Courier New", monospace;
+  /* ── Typography — Geist voice · Geist Mono data ─────────────────── */
+  --mono: "Geist Mono", "JetBrains Mono", "SF Mono", "Cascadia Mono", monospace;
   --display: "Geist", "SF Pro Display", "PingFang SC", system-ui, -apple-system, sans-serif;
   --ui: "Geist", "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   --reading: "Geist", "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
 
-  /* ── Motion — fluid, transform/opacity only ─────────────────────── */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.44, 1);
-  --dur-1: 110ms;
-  --dur-2: 220ms;
-  --dur-3: 360ms;
+  /* ── Motion — weighted mass, custom cubic-beziers only ──────────── */
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.44, 1);
+  --dur-1: 140ms;
+  --dur-2: 300ms;
+  --dur-3: 560ms;
 
   /* ── Control tokens — terminal-grade density ────────────────────── */
   --ctl-h-sm: 28px;
   --ctl-h-md: 32px;
   --ctl-h-lg: 38px;
   --ctl-px-sm: 10px;
-  --ctl-px-md: 12px;
-  --ctl-px-lg: 16px;
+  --ctl-px-md: 13px;
+  --ctl-px-lg: 17px;
   --ctl-radius: var(--radius-md);
   --ctl-radius-sm: var(--radius-sm);
   --ctl-font: 14px;
   --ctl-weight: 500;
-  --ctl-weight-strong: 700;
+  --ctl-weight-strong: 650;
   --ctl-disabled-opacity: 0.35;
   --ctl-transition:
     background-color var(--dur-1) var(--ease-out),
@@ -113,54 +126,67 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --canvas: #262521;
-  --canvas-2: #222120;
-  --panel: #2d2c28;
-  --panel-raised: #343330;
-  --panel-elevated: #3a3934;
-  --sidebar: #2a2925;
+  /* ── Surfaces — OLED void with glass strata ─────────────────────── */
+  --void: #050505;
+  --canvas: #0a0a0c;
+  --canvas-2: #070708;
+  --panel: #0e0e11;
+  --panel-raised: #141418;
+  --panel-elevated: #1a1a20;
   --surface: var(--panel-raised);
+  --bezel: rgba(255, 255, 255, 0.03);
 
-  --line-soft: #403f39;
-  --line-strong: #52504a;
+  --line-soft: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.13);
+  --line-hairline: rgba(255, 255, 255, 0.05);
 
-  --text-primary: #eeece5;
-  --text-secondary: #b6b3aa;
-  --text-muted: #8b887f;
+  --text-primary: #ededef;
+  --text-secondary: #a0a0a8;
+  --text-muted: #6e6e78;
   --text-tertiary: var(--text-muted);
-  --text-bright: #faf8f2;
+  --text-bright: #fcfcfd;
 
-  --up: #7cbd96;
-  --down: #e08a80;
-  --success: #7cbd96;
-  --danger: #e08a80;
-  --warning: #d2ad64;
+  --up: #4cc38a;
+  --down: #e5716a;
+  --success: #4cc38a;
+  --danger: #e5716a;
+  --warning: #d3b05f;
 
-  --accent: #d7d4cb;
-  --accent-contrast: #262521;
-  --accent-tint: rgba(250, 248, 242, 0.055);
-  --accent-tint-strong: rgba(250, 248, 242, 0.10);
-  --accent-ring: rgba(250, 248, 242, 0.28);
+  --accent: #d6d6db;
+  --accent-contrast: #0a0a0c;
+  --accent-tint: rgba(255, 255, 255, 0.05);
+  --accent-tint-strong: rgba(255, 255, 255, 0.09);
+  --accent-ring: rgba(255, 255, 255, 0.24);
 
-  --control-accent: #d68a63;
-  --control-accent-hover: #e29a74;
-  --control-accent-contrast: #2a1c14;
-  --control-accent-tint: rgba(214, 138, 99, 0.14);
-  --control-accent-tint-strong: rgba(214, 138, 99, 0.22);
-  --control-accent-ring: rgba(214, 138, 99, 0.44);
+  --control-accent: #f4f4f5;
+  --control-accent-hover: #ffffff;
+  --control-accent-contrast: #0b0b0d;
+  --control-accent-tint: rgba(255, 255, 255, 0.06);
+  --control-accent-tint-strong: rgba(255, 255, 255, 0.11);
+  --control-accent-ring: rgba(255, 255, 255, 0.28);
 
-  --danger-tint: rgba(224, 138, 128, 0.10);
-  --danger-tint-strong: rgba(224, 138, 128, 0.18);
-  --warning-tint: rgba(210, 173, 100, 0.11);
-  --warning-tint-strong: rgba(210, 173, 100, 0.18);
-  --success-tint: rgba(124, 189, 150, 0.10);
-  --success-tint-strong: rgba(124, 189, 150, 0.18);
+  --danger-tint: rgba(229, 113, 106, 0.09);
+  --danger-tint-strong: rgba(229, 113, 106, 0.17);
+  --warning-tint: rgba(211, 176, 95, 0.09);
+  --warning-tint-strong: rgba(211, 176, 95, 0.17);
+  --success-tint: rgba(76, 195, 138, 0.09);
+  --success-tint-strong: rgba(76, 195, 138, 0.17);
 
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.22);
-  --shadow-md: 0 6px 20px -6px rgba(0, 0, 0, 0.42);
-  --shadow-pop: 0 16px 40px -12px rgba(0, 0, 0, 0.55);
-  --shadow-inner-edge: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* ── Elevation — depth via darkness and inner light ─────────────── */
+  --shadow-soft:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 32px -10px rgba(0, 0, 0, 0.55);
+  --shadow-pop:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 24px 70px -14px rgba(0, 0, 0, 0.8);
+  --shadow-inner-edge: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  --shadow-bezel:
+    inset 0 1px 1px rgba(255, 255, 255, 0.06),
+    0 20px 50px -20px rgba(0, 0, 0, 0.7);
 
-  --scrollbar: #55524b;
-  --scrollbar-hover: #6d6a61;
+  --scrollbar: rgba(255, 255, 255, 0.12);
+  --scrollbar-hover: rgba(255, 255, 255, 0.24);
 }

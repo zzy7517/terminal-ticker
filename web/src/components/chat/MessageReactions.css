@@ -55,10 +55,12 @@
 
 .message-react-picker {
   animation: pop-in var(--dur-2) var(--ease-spring) both;
-  background: var(--panel-elevated);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  background: color-mix(in srgb, var(--panel-elevated) 82%, transparent);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-inner-edge), var(--shadow-md);
   display: flex;
   flex-wrap: wrap;
   gap: 2px;

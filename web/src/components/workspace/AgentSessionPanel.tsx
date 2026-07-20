@@ -108,6 +108,11 @@ export function AgentSessionPanel({
   const modelLabel = isClaudeAgent
     ? (boundModel || 'Local Claude default')
     : (boundModelOption?.name || boundModel || 'No model bound');
+  // Path-style ids ("openrouter/anthropic/claude-…") would truncate at the
+  // tail and hide the actual model; show the final segment, full id in title.
+  const modelDisplayLabel = modelLabel.includes('/')
+    ? modelLabel.slice(modelLabel.lastIndexOf('/') + 1)
+    : modelLabel;
   const lastMessage = messages[messages.length - 1] ?? null;
   const lastMessageToolCallCount = 0;
 
@@ -216,13 +221,18 @@ export function AgentSessionPanel({
               <Square size={12} />
             </button>
           )}
-          <button className="session-model-trigger subtle" type="button" disabled title="Provider and model are fixed for this Agent">
+          <button
+            className="session-model-trigger subtle"
+            type="button"
+            disabled
+            title={`${modelLabel} — provider and model are fixed for this Agent`}
+          >
             {!isClaudeAgent && boundProviderOption && (
               <span className="session-model-provider-icon">
                 <ProviderIcon provider={boundProviderOption.providerId} size={14} />
               </span>
             )}
-            <span>{modelLabel}</span>
+            <span>{modelDisplayLabel}</span>
           </button>
         </div>
       </header>

@@ -170,7 +170,7 @@
 .channel-sidebar-row.active,
 .direct-message-row.active {
   background: var(--panel-raised);
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--shadow-inner-edge), var(--shadow-soft);
   color: var(--text-bright);
 }
 

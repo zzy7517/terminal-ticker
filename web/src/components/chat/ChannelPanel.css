@@ -29,10 +29,12 @@
 
 .member-popover {
   animation: pop-in var(--dur-2) var(--ease-out) both;
-  background: var(--panel-elevated);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  background: color-mix(in srgb, var(--panel-elevated) 84%, transparent);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-pop);
+  box-shadow: var(--shadow-inner-edge), var(--shadow-pop);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   max-height: min(520px, calc(100% - 24px));
@@ -349,11 +351,13 @@
 /* ── Mention picker ───────────────────────────────────────────────── */
 .channel-mention-picker {
   animation: pop-in var(--dur-2) var(--ease-out) both;
-  background: var(--panel-elevated);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  background: color-mix(in srgb, var(--panel-elevated) 84%, transparent);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
   bottom: 100%;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-inner-edge), var(--shadow-md);
   display: grid;
   left: 14px;
   margin-bottom: 6px;

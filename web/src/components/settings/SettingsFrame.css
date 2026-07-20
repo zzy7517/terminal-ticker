@@ -4,19 +4,18 @@
 }
 
 .settings-frame {
-  background: var(--canvas);
+  background: transparent;
   display: grid;
   grid-template-columns: 276px minmax(0, 1fr);
   min-height: 100dvh;
 }
 
 .settings-nav {
-  background: var(--sidebar);
-  border-right: 1px solid var(--line-soft);
+  background: transparent;
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
-  padding: 24px 10px 14px;
+  padding: 24px 12px 14px;
 }
 
 .settings-nav-top {
@@ -172,10 +171,15 @@
 }
 
 .settings-stage {
-  height: 100dvh;
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-frame);
+  box-shadow: var(--shadow-bezel);
+  height: calc(100dvh - 16px);
+  margin: 8px 8px 8px 0;
   min-width: 0;
   overflow-y: auto;
-  padding: 48px clamp(28px, 5vw, 72px) 64px;
+  padding: 44px clamp(28px, 5vw, 72px) 64px;
 }
 
 .settings-stage-inner {
@@ -269,7 +273,11 @@
   }
 
   .settings-stage {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
     height: auto;
+    margin: 0;
     min-height: calc(100dvh - 112px);
     overflow: visible;
     padding: 28px 16px 40px;

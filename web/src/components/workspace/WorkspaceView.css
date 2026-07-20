@@ -1,11 +1,14 @@
-/* ── Shell & top bar ──────────────────────────────────────────────── */
+/* ── Shell & top bar — inside the glass window ───────────────────── */
 .app-shell {
-  min-height: 100vh;
+  min-height: 100%;
   padding: 0;
 }
 
 .workspace-page {
-  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
   padding: 0 22px 18px;
 }
 
@@ -37,8 +40,11 @@
 
 /* ── Workspace layout ─────────────────────────────────────────────── */
 .workspace {
+  flex: 1;
   margin: 0 auto;
   max-width: 1760px;
+  min-height: 0;
+  width: 100%;
 }
 
 /* ── Main content area ────────────────────────────────────────────── */
@@ -47,22 +53,24 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: calc(100dvh - 82px);
+  height: 100%;
   min-width: 0;
   overflow: auto;
 }
 
-/* ── Topbar ───────────────────────────────────────────────────────── */
+/* ── Topbar — hairline header strip ──────────────────────────────── */
 .topbar {
   align-items: center;
   border-bottom: 1px solid var(--line-soft);
   display: flex;
+  flex-shrink: 0;
   gap: 12px;
   justify-content: space-between;
-  margin: 0 auto 14px;
+  margin: 0 auto 16px;
   max-width: 1740px;
-  min-height: 64px;
-  padding: 10px 0;
+  min-height: 62px;
+  padding: 12px 0;
+  width: 100%;
 }
 
 .topbar-left {
@@ -73,13 +81,15 @@
 
 .workspace-title-icon {
   align-items: center;
-  background: var(--accent-tint);
+  background: var(--panel-raised);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-inner-edge);
   color: var(--text-secondary);
   display: inline-flex;
-  height: 32px;
+  height: 34px;
   justify-content: center;
-  width: 32px;
+  width: 34px;
 }
 
 .workspace-subtitle {
@@ -106,8 +116,8 @@
   color: var(--text-bright);
   font-family: var(--display);
   font-size: 16px;
-  font-weight: 680;
-  letter-spacing: -0.01em;
+  font-weight: 640;
+  letter-spacing: -0.012em;
 }
 
 .brand-mark {
@@ -123,13 +133,13 @@
 
 /* ── Agent tab layout ─────────────────────────────────────────────── */
 .agent-tab-layout {
-  background: var(--panel);
+  background: transparent;
   border: 0;
   border-radius: 0;
   display: grid;
   gap: 0;
   grid-template-columns: minmax(228px, 268px) minmax(0, 1fr);
-  height: calc(100dvh - 20px);
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -141,14 +151,9 @@
   max-width: none;
 }
 
-.workspace-page--chat .agent-tab-layout {
-  border-left: 1px solid var(--line-soft);
-  height: 100dvh;
-}
-
 .market-workspace {
   border-radius: var(--radius-lg);
-  height: calc(100dvh - 98px);
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -189,17 +194,8 @@
     width: 100%;
   }
 
-  .main-content {
-    max-height: none;
-  }
-
   .agent-tab-layout {
     grid-template-columns: 1fr;
-  }
-
-  .agent-tab-layout .session-history {
-    max-height: 200px;
-    min-height: 0;
   }
 }
 
