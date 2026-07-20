@@ -1,0 +1,57 @@
+web/src/components/chat/MessageReactions.css
+  s_c27c65d802dc64::t_ec7142b0d9b8d5 58-60,63
+web/src/styles/base.css
+  s_c27c65d802dc64::t_4f615de7072cf1 3,20,31-60,65,69-73,75-76,109-110,117-118,125-126,138,142-146,166-168,178,197,200,202,205,214,225,260,265,272,325-338
+web/src/styles/tokens.css
+  s_c27c65d802dc64::t_83742c28a17e82 3-4,10-14,18,20-23,25-28,30-52,55-86,91-92,97-102,109-110,115,129-135,137,139-141,143-145,147-191
+web/src/components/ProviderIcon.tsx
+  s_c27c65d802dc64::t_0617ac7e2196da 2-7,9,14-17,19-48,50-57
+web/src/components/settings/SettingsFrame.css
+  s_c27c65d802dc64::t_934e00586de268 174-179,182
+  s_c27c65d802dc64::t_45814b8bf8d624 276-278,280
+  s_c27c65d802dc64::t_d49e6cb7a7213d 7,14,18
+web/src/components/workspace/AgentSessionPanel.tsx
+  s_c27c65d802dc64::t_ce0c74542a2f23 224-229,235
+  s_c27c65d802dc64::t_c9909d12a0dbe7 111-115
+web/src/components/AppSidebar.css
+  s_c27c65d802dc64::t_9ede576c527136 1,3-4,7-8,10,18,20,26-27,34,37,42-44,50,56,58,64-65,67,77,87,91,94,97-98,100,104,112,120,122,125,160,197-202
+  s_c27c65d802dc64::t_5e84ac99e43c05 203-204
+web/src/components/workspace/WorkspaceView.css
+  s_c27c65d802dc64::t_ebdac289a7532c 1,3,8-11,43,46-47,56,61,66,69,71-73,84-85,87,90,92,119-120,136,142,156
+web/src/styles/chat/chat-shell.css
+  s_c27c65d802dc64::t_3c3078ed2928c7 173
+web/src/styles/chat/chat-transcript.css
+  s_c27c65d802dc64::t_49fd0a01c52c5f 88-89,92,101-102
+  s_c27c65d802dc64::t_8e2ff9cf34675d 278-280
+  s_c27c65d802dc64::t_1fdb7af0910149 122
+web/src/components/settings/AgentsSettingsPanel.css
+  s_c27c65d802dc64::t_fd0e191a1975c6 6
+web/src/styles/controls.css
+  s_c27c65d802dc64::t_b1e8a9a2286364 696-721
+  s_c27c65d802dc64::t_bd1f6379e99749 3,9,54,57-59,63-64,66,68,74-76,81,87,93,98-99,103-106,113,118,123-125,127,129,154,158,161,164-165,172,191,203,239-240,255,257-258,275,279-281,314-315,318,320-321,327,333,339,376,379-381,384,391,442,459-461,471,492-493,499,504,580-582,586,591-593,610-611,615,617,619,624,640,648,653-656,660
+web/index.html
+  s_c27c65d802dc64::t_0c43a8a935ed4b 2,9,12
+web/src/components/chat/ChannelPanel.css
+  s_c27c65d802dc64::t_9c775269b30a16 354-356,360
+  s_c27c65d802dc64::t_b0c4876371bafd 32-34,37
+web/src/stores/uiStore.ts
+  s_c27c65d802dc64::t_61547caa51920d 20,22
+web/src/styles/chat/chat-composer.css
+  s_c27c65d802dc64::t_1d2a527e9fad6d 3,20-21,51-52,54-57,59,61-63,67-68,72-76,81-82,93-96,115,118,145,152,159-170,190-191,198,203-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "1e697c295fca7f81064dc04c4ade1340d5de545e",
+  "prompts": {},
+  "sessions": {
+    "s_c27c65d802dc64": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "9da72075-1848-4148-8867-b193c8051701",
+        "model": "claude-fable-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
