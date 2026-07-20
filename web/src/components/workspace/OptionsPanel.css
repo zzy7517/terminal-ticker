@@ -356,11 +356,11 @@
   text-transform: uppercase;
 }
 
-.options-activity__signal.opening { background: rgba(34, 197, 94, 0.15); color: var(--up); }
-.options-activity__signal.closing { background: rgba(239, 68, 68, 0.15); color: var(--down); }
-.options-activity__signal.sweep   { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
-.options-activity__signal.block   { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
-.options-activity__signal.unknown { background: rgba(161, 161, 170, 0.15); color: var(--text-muted); }
+.options-activity__signal.opening { background: var(--success-tint-strong); color: var(--up); }
+.options-activity__signal.closing { background: var(--danger-tint-strong); color: var(--down); }
+.options-activity__signal.sweep   { background: var(--control-accent-tint-strong); color: var(--control-accent); }
+.options-activity__signal.block   { background: var(--warning-tint-strong); color: var(--warning); }
+.options-activity__signal.unknown { background: var(--accent-tint); color: var(--text-muted); }
 
 .options-activity__type {
   font-weight: 600;

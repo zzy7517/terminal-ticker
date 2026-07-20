@@ -3,9 +3,10 @@
  * DM transcript 在 DirectMessageTimeline；本面板负责发消息。
  */
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
-import './AgentSessionPanel.css';
+import '../../styles/chat/index.css';
 
 import {
+  ArrowUp,
   Bot,
   Paperclip,
   Square,
@@ -317,7 +318,7 @@ export function AgentSessionPanel({
             }}
             disabled={!canSend}
           >
-            {busy ? <Zap size={16} /> : <Bot size={16} />}
+            {busy ? <Zap size={16} /> : <ArrowUp size={16} />}
             <span className="session-submit-label">
               {busy ? 'Queue' : 'Send'}
             </span>

@@ -1,4 +1,4 @@
-/* ── Shell & top bar — Bloomberg Terminal grid ────────────────────── */
+/* ── Shell & top bar ──────────────────────────────────────────────── */
 .app-shell {
   min-height: 100vh;
   padding: 0;
@@ -43,6 +43,7 @@
 
 /* ── Main content area ────────────────────────────────────────────── */
 .main-content {
+  animation: panel-enter var(--dur-3) var(--ease-out) both;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -51,53 +52,10 @@
   overflow: auto;
 }
 
-/* ── Workspace tabs — Bloomberg function key style ────────────────── */
-.workspace-tabs {
-  align-items: center;
-  background: var(--panel-raised);
-  border: 1px solid var(--line-strong);
-  display: flex;
-  gap: 0;
-  margin: 0 auto 10px 0;
-  max-width: 1740px;
-  padding: 0;
-  width: fit-content;
-}
-
-.workspace-tab {
-  background: transparent;
-  border: 0;
-  border-right: 1px solid var(--line-strong);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  min-height: 34px;
-  padding: 0 16px;
-  text-transform: uppercase;
-}
-
-.workspace-tab:last-child {
-  border-right: 0;
-}
-
-.workspace-tab:hover:not(.active) {
-  background: var(--accent-tint);
-  color: var(--text-primary);
-}
-
-.workspace-tab.active {
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font-weight: 700;
-}
-
-/* ── Topbar — Bloomberg header bar ────────────────────────────────── */
+/* ── Topbar ───────────────────────────────────────────────────────── */
 .topbar {
   align-items: center;
-  border-bottom: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-soft);
   display: flex;
   gap: 12px;
   justify-content: space-between;
@@ -110,17 +68,18 @@
 .topbar-left {
   align-items: center;
   display: flex;
-  gap: 10px;
+  gap: 12px;
 }
 
 .workspace-title-icon {
   align-items: center;
-  color: var(--accent);
+  background: var(--accent-tint);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
   display: inline-flex;
-  height: 30px;
+  height: 32px;
   justify-content: center;
-  width: 30px;
-  border-radius: var(--radius-sm);
+  width: 32px;
 }
 
 .workspace-subtitle {
@@ -136,7 +95,7 @@
   gap: 6px;
 }
 
-/* Brand — Bloomberg-style wordmark */
+/* Brand lockup */
 .brand-lockup {
   align-items: center;
   display: flex;
@@ -144,18 +103,18 @@
 }
 
 .brand-lockup h1 {
-  color: var(--accent);
-  font-family: var(--mono);
+  color: var(--text-bright);
+  font-family: var(--display);
   font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 680;
+  letter-spacing: -0.01em;
 }
 
 .brand-mark {
   align-items: center;
-  background: var(--accent);
-  color: var(--accent-contrast);
+  background: var(--control-accent);
+  border-radius: 7px;
+  color: var(--control-accent-contrast);
   display: inline-flex;
   height: 24px;
   justify-content: center;
@@ -164,33 +123,33 @@
 
 /* ── Agent tab layout ─────────────────────────────────────────────── */
 .agent-tab-layout {
-  display: grid;
   background: var(--panel);
   border: 0;
+  border-radius: 0;
+  display: grid;
   gap: 0;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  grid-template-columns: minmax(228px, 268px) minmax(0, 1fr);
   height: calc(100dvh - 20px);
   min-height: 0;
-  border-radius: 0;
   overflow: hidden;
 }
 
 .workspace-page--chat .workspace,
 .workspace-page--chat .main-content--chat {
-  max-width: none;
-  margin: 0;
   height: 100%;
+  margin: 0;
+  max-width: none;
 }
 
 .workspace-page--chat .agent-tab-layout {
-  height: 100dvh;
   border-left: 1px solid var(--line-soft);
+  height: 100dvh;
 }
 
 .market-workspace {
+  border-radius: var(--radius-lg);
   height: calc(100dvh - 98px);
   min-height: 0;
-  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -242,7 +201,6 @@
     max-height: 200px;
     min-height: 0;
   }
-
 }
 
 @media (max-width: 640px) {

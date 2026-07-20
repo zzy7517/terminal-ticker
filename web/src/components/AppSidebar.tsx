@@ -47,11 +47,12 @@ export function AppSidebar() {
   return (
     <aside className="app-sidebar">
       <div className="app-sidebar-brand">
-        <span>Tradex</span>
+        <span className="app-sidebar-brand-mark" aria-hidden="true">tx</span>
+        <span className="app-sidebar-brand-name">Tradex</span>
       </div>
 
       <nav className="app-sidebar-nav" aria-label="Workspace navigation">
-        {items.filter((item) => item.available !== false).map((item) => {
+        {items.filter((item) => item.available !== false).map((item, index) => {
           const Icon = item.icon;
           const active = route.view === 'workspace' && activeWorkspace === item.id;
           return (
@@ -59,6 +60,7 @@ export function AppSidebar() {
               className={'app-sidebar-item' + (active ? ' active' : '')}
               key={item.id}
               onClick={() => openWorkspace(item.id)}
+              style={{ '--nav-index': index } as React.CSSProperties}
               type="button"
             >
               <Icon size={17} />
@@ -70,7 +72,7 @@ export function AppSidebar() {
 
       <div className="app-sidebar-footer">
         <div className="app-sidebar-utility-row">
-          <div className="app-sidebar-status">
+          <div className={'app-sidebar-status' + (state ? '' : ' connecting')}>
             <Radio size={14} />
             <span>{state ? 'Runtime connected' : 'Connecting'}</span>
           </div>

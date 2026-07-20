@@ -8,7 +8,6 @@ import type {
   AgentMessage,
   AgentModelRegistry,
   AgentSessionResponse,
-  AgentSessionRun,
   AgentSessionSummary,
   QueuedFollowUp,
 } from '../types';
@@ -27,75 +26,34 @@ import {
   streamAgentMessage,
   type ImageAttachment,
 } from '../api';
-
-const STORAGE_KEY_PROVIDER = 'tradex-agent-provider';
-const STORAGE_KEY_MODELS = 'tradex-agent-models-by-provider';
-
-function loadPersistedProvider(): string {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_PROVIDER);
-    if (stored) return stored;
-  } catch {}
-  return '';
-}
-
-function loadPersistedModels(): Record<string, string> {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_MODELS);
-    if (!stored) return {};
-    const parsed = JSON.parse(stored) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return Object.fromEntries(
-        Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-      );
-    }
-  } catch {}
-  return {};
-}
-
-function persistProviderModel(provider: string, model: string): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_PROVIDER, provider);
-    const models = loadPersistedModels();
-    if (provider && model) models[provider] = model;
-    localStorage.setItem(STORAGE_KEY_MODELS, JSON.stringify(models));
-  } catch {}
-}
-
-function selectableModels(registry: AgentModelRegistry | null, provider?: string) {
-  return registry?.models.filter((model) => (
-    model.selected && model.runnable && (!provider || model.providerId === provider)
-  )) ?? [];
-}
-
-function registrySelection(
-  registry: AgentModelRegistry,
-  provider: string,
-  model: string,
-): { provider: string; model: string } {
-  const persistedModels = loadPersistedModels();
-  const canonicalProvider = registry.providers.find((item) => (
-    item.providerId === provider || item.configProviderId === provider
-  ))?.providerId ?? provider;
-  const providerModels = selectableModels(registry, canonicalProvider);
-  const remembered = persistedModels[canonicalProvider] ?? persistedModels[provider];
-  const selected = providerModels.find((item) => item.id === model)
-    ?? providerModels.find((item) => item.id === remembered)
-    ?? providerModels[0]
-    ?? selectableModels(registry)[0];
-  return selected
-    ? { provider: selected.providerId, model: selected.id }
-    : { provider: canonicalProvider, model };
-}
+import { useMarketStore } from './marketStore';
+import { mergeFollowUps, shouldAutoRunFollowUps, validateFollowUpImages } from '../utils/followUpQueue';
+import {
+  loadPersistedModels,
+  loadPersistedProvider,
+  persistProviderModel,
+  registrySelection,
+  sessionProviderModel,
+} from './agent/modelPreferences';
+import {
+  activeFields,
+  appendSessionMessage,
+  cacheSession,
+  idleRun,
+  mergeHistoryRuns,
+  mergeRunPayload,
+  NEW_SESSION_PENDING_KEY,
+  pendingImagesKey,
+  replaceRunState,
+  selectionUpdate,
+  sessionFromSummary,
+  upsertOptimisticSessionSummary,
+  type AgentSelection,
+  type SessionRunProjection,
+} from './agent/sessionProjection';
 
 const initialProvider = loadPersistedProvider();
 const initialModels = loadPersistedModels();
-import { useMarketStore } from './marketStore';
-import { mergeFollowUps, shouldAutoRunFollowUps, validateFollowUpImages } from '../utils/followUpQueue';
-
-interface SessionRunProjection extends AgentSessionRun {
-  pendingToolCalls: Set<string>;
-}
 
 interface AgentState {
   agents: AgentDefinition[];
@@ -160,167 +118,8 @@ interface AgentState {
   deleteAgentConversation: (sessionId: string) => Promise<void>;
 }
 
-type ActiveMirrorSource = Pick<
-  AgentState,
-  'activeAgentSessionId' | 'agentSessionById' | 'agentSessionHistory' | 'runStateBySessionId' | 'draftBySessionId' | 'streamingMessageBySessionId' | 'pendingImagesBySessionId' | 'queuedFollowUpsBySessionId'
->;
-
-const NEW_SESSION_PENDING_KEY = '__new__';
 let modelRegistryRequest: Promise<AgentModelRegistry> | null = null;
 const userAbortedSessions = new Set<string>();
-
-function idleRun(sessionId: string): SessionRunProjection {
-  return {
-    sessionId,
-    runId: null,
-    status: 'idle',
-    activeFlags: [],
-    lastSeq: 0,
-    error: null,
-    pendingToolCalls: new Set(),
-  };
-}
-
-function mergeRunPayload(
-  previous: SessionRunProjection | undefined,
-  sessionId: string,
-  run?: AgentSessionRun,
-): SessionRunProjection {
-  const status = run?.status ?? previous?.status ?? 'idle';
-  return {
-    sessionId,
-    runId: run?.runId ?? previous?.runId ?? null,
-    status,
-    activeFlags: run?.activeFlags ?? previous?.activeFlags ?? [],
-    lastSeq: run?.lastSeq ?? previous?.lastSeq ?? 0,
-    error: run?.error ?? previous?.error ?? null,
-    pendingToolCalls: status === 'running' ? new Set(previous?.pendingToolCalls ?? []) : new Set(),
-  };
-}
-
-function mergeHistoryRuns(
-  history: AgentSessionSummary[],
-  previous: Record<string, SessionRunProjection>,
-): Record<string, SessionRunProjection> {
-  const next = { ...previous };
-  for (const item of history) {
-    next[item.id] = mergeRunPayload(next[item.id], item.id, item.run);
-  }
-  return next;
-}
-
-function sessionFromSummary(summary: AgentSessionSummary): AgentSessionResponse {
-  return { session: summary, messages: [], run: summary.run };
-}
-
-function visibleSession(state: ActiveMirrorSource): AgentSessionResponse | null {
-  const activeId = state.activeAgentSessionId;
-  if (!activeId) return null;
-  const cached = state.agentSessionById[activeId];
-  if (cached) return cached;
-  const summary = state.agentSessionHistory.find((item) => item.id === activeId);
-  return summary ? sessionFromSummary(summary) : null;
-}
-
-function pendingImagesKey(activeId: string | null): string {
-  return activeId ?? NEW_SESSION_PENDING_KEY;
-}
-
-function activeFields(state: ActiveMirrorSource): Pick<
-  AgentState,
-  'agentSession' | 'agentPrompt' | 'pendingToolCalls' | 'agentBusyKey' | 'streamingMessage' | 'pendingImages' | 'queuedFollowUps'
-> {
-  const activeId = state.activeAgentSessionId;
-  const run = activeId ? state.runStateBySessionId[activeId] : undefined;
-  const session = visibleSession(state);
-  const key = pendingImagesKey(activeId);
-  return {
-    agentSession: session,
-    agentPrompt: state.draftBySessionId[key] ?? '',
-    pendingToolCalls: new Set(run?.pendingToolCalls ?? []),
-    agentBusyKey: activeId && run?.status === 'running' ? activeId : null,
-    streamingMessage: activeId ? state.streamingMessageBySessionId[activeId] ?? null : null,
-    pendingImages: state.pendingImagesBySessionId[key] ?? [],
-    queuedFollowUps: activeId ? state.queuedFollowUpsBySessionId[activeId] ?? [] : [],
-  };
-}
-
-type AgentSelection = Pick<AgentState, 'selectedAgentId' | 'activeAgentSessionId'>;
-
-function selectionUpdate(state: AgentState, selection: AgentSelection) {
-  const next = { ...state, ...selection };
-  return { ...selection, ...activeFields(next) };
-}
-
-function appendSessionMessage(
-  state: AgentState,
-  sessionId: string,
-  message: AgentMessage,
-): Record<string, AgentSessionResponse> {
-  const session = responseForSession(state, sessionId);
-  return {
-    ...state.agentSessionById,
-    [sessionId]: {
-      ...session,
-      messages: [...session.messages, message],
-    },
-  };
-}
-
-function cacheSession(
-  cache: Record<string, AgentSessionResponse>,
-  payload: AgentSessionResponse,
-): Record<string, AgentSessionResponse> {
-  const sessionId = payload.session?.id;
-  return sessionId ? { ...cache, [sessionId]: payload } : cache;
-}
-
-function sessionProviderModel(payload: AgentSessionResponse | null): Partial<Pick<AgentState, 'agentProvider' | 'agentModel'>> {
-  const session = payload?.session;
-  if (!session?.provider || !session.model) return {};
-  persistProviderModel(session.provider, session.model);
-  return { agentProvider: session.provider, agentModel: session.model };
-}
-
-function responseForSession(state: AgentState, sessionId: string): AgentSessionResponse {
-  const cached = state.agentSessionById[sessionId];
-  if (cached) return cached;
-  const summary = state.agentSessionHistory.find((item) => item.id === sessionId);
-  return summary ? sessionFromSummary(summary) : { session: null, messages: [] };
-}
-
-
-function upsertOptimisticSessionSummary(
-  history: AgentSessionSummary[],
-  payload: AgentSessionResponse,
-  prompt: string,
-  updatedAt: string,
-  run: SessionRunProjection,
-): AgentSessionSummary[] {
-  if (!payload.session) return history;
-  const existing = history.find((item) => item.id === payload.session?.id);
-  const preview = (existing?.preview || prompt.replace(/[\n\r]+/g, ' ').trim()).slice(0, 120);
-  const messageCount = Math.max(existing?.messageCount ?? 0, payload.messages.length, 1);
-  const summary: AgentSessionSummary = existing
-    ? { ...existing, updatedAt, messageCount, run }
-    : {
-        ...payload.session,
-        active: false,
-        updatedAt,
-        messageCount,
-        preview,
-        run,
-      };
-  return [summary, ...history.filter((item) => item.id !== summary.id)];
-}
-
-function replaceRunState(
-  map: Record<string, SessionRunProjection>,
-  sessionId: string,
-  run: SessionRunProjection,
-): Record<string, SessionRunProjection> {
-  return { ...map, [sessionId]: run };
-}
 
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: [],

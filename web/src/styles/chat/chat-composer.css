@@ -1,0 +1,207 @@
+/* ═══════════════════════════════════════════════════════════════════
+   CHAT — Composer
+   Message input · attachments · send actions · bound-model readout
+   ═══════════════════════════════════════════════════════════════════ */
+
+.session-compose {
+  background: var(--panel-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xl);
+  display: grid;
+  gap: 0;
+  margin-inline: auto;
+  max-width: 880px;
+  overflow: hidden;
+  transition: border-color var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+  width: 100%;
+}
+
+.session-compose:focus-within {
+  border-color: var(--control-accent);
+  box-shadow: 0 0 0 3px var(--control-accent-tint);
+}
+
+.session-compose textarea {
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  font-family: var(--ui);
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 72px;
+  outline: 0;
+  padding: 12px 14px 8px;
+  resize: vertical;
+  width: 100%;
+}
+
+.session-compose textarea:focus {
+  border-color: transparent;
+}
+
+.session-compose textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.session-compose textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Docked variant inside the chat column */
+.agent-tab-layout .session-compose {
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--line-soft);
+  flex-shrink: 0;
+  margin: 0;
+  max-width: none;
+  padding: 12px 14px;
+  width: 100%;
+}
+
+.agent-tab-layout .session-compose:focus-within {
+  border-top-color: var(--control-accent-ring);
+  box-shadow: none;
+}
+
+.agent-tab-layout .session-compose textarea {
+  background: var(--canvas-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+  transition: var(--ctl-transition);
+}
+
+.agent-tab-layout .session-compose textarea:focus {
+  background: var(--panel-raised);
+  border-color: var(--control-accent);
+  box-shadow: 0 0 0 3px var(--control-accent-tint);
+}
+
+/* ── Pending attachments ──────────────────────────────────────────── */
+.session-pending-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 0 6px;
+}
+
+.pending-image-thumb {
+  animation: pop-in var(--dur-2) var(--ease-spring) both;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  height: 48px;
+  overflow: hidden;
+  position: relative;
+  width: 48px;
+}
+
+.pending-image-thumb img {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.pending-image-remove {
+  align-items: center;
+  background: rgba(20, 17, 12, 0.75);
+  border: 0;
+  border-radius: 0 0 0 6px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  height: 16px;
+  justify-content: center;
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+  width: 16px;
+}
+
+.pending-image-thumb:hover .pending-image-remove {
+  opacity: 1;
+}
+
+/* ── Composer actions ─────────────────────────────────────────────── */
+.session-compose-actions {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  padding: 6px 8px 8px;
+}
+
+.agent-tab-layout .session-compose-actions {
+  padding: 8px 0 0;
+}
+
+.session-compose-actions .shell-button.sm {
+  flex-shrink: 0;
+}
+
+.session-submit {
+  min-width: var(--ctl-h-lg);
+  padding: 0;
+  width: var(--ctl-h-lg);
+}
+
+.session-submit-label {
+  display: none;
+}
+
+/* ── Bound model readout / picker trigger ─────────────────────────── */
+.session-pickers-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.session-model-picker {
+  position: relative;
+}
+
+.session-model-trigger {
+  align-items: center;
+  background: var(--canvas-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 12px;
+  gap: 5px;
+  padding: 3px 8px;
+  transition: var(--ctl-transition);
+}
+
+.session-model-trigger:hover {
+  border-color: var(--text-muted);
+}
+
+.session-model-trigger.subtle {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  max-width: 220px;
+  min-height: 28px;
+  opacity: 0.85;
+  padding: 0 6px;
+}
+
+.session-model-trigger.subtle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-model-provider-icon {
+  align-items: center;
+  color: var(--text-secondary);
+  display: inline-flex;
+}

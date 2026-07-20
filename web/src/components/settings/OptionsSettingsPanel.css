@@ -232,7 +232,7 @@
 }
 
 .options-status.error {
-  color: var(--danger, #d9534f);
+  color: var(--danger);
 }
 
 @media (max-width: 768px) {

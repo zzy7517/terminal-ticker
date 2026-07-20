@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════
-   TRADEX — Absolutely base
-   Warm neutral · flat surfaces · soft geometry
+   TRADEX — Base
+   Warm graphite · flat surfaces · fluid, functional motion
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Reset ────────────────────────────────────────────────────────── */
@@ -64,28 +64,28 @@ p {
   margin: 0;
 }
 
-/* ── Typography — monospace hierarchy ─────────────────────────────── */
+/* ── Typography — weight-driven hierarchy, restrained scale ───────── */
 h1 {
   font-family: var(--display);
   font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   line-height: 1.2;
 }
 
 h2 {
   font-family: var(--display);
   font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.008em;
+  line-height: 1.25;
 }
 
 h3 {
   font-family: var(--display);
   font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-weight: 640;
+  letter-spacing: -0.004em;
 }
 
 ::selection {
@@ -118,11 +118,11 @@ textarea:focus-visible {
 
 .eyebrow,
 .panel-label {
-  color: var(--accent);
+  color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -132,14 +132,14 @@ textarea:focus-visible {
   gap: 6px;
 }
 
-/* ── Scrollbar — minimal, terminal-style ──────────────────────────── */
+/* ── Scrollbar — hairline, terminal-style ─────────────────────────── */
 ::-webkit-scrollbar {
-  height: 4px;
-  width: 4px;
+  height: 5px;
+  width: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--canvas);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -151,12 +151,38 @@ textarea:focus-visible {
   background: var(--scrollbar-hover);
 }
 
-/* ── NO atmospheric effects — flat dark, no decoration ───────────── */
-
-/* ── Animations — minimal, functional only ────────────────────────── */
+/* ── Motion — fluid, transform/opacity only ───────────────────────── */
 @keyframes panel-enter {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes spin {
@@ -175,8 +201,13 @@ textarea:focus-visible {
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
 }
 
 /* Price flash — desaturated green/red bg flash on tick */
@@ -191,13 +222,19 @@ textarea:focus-visible {
 }
 
 @keyframes toolStepIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes toolCheckIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes toolDetailIn {
@@ -211,6 +248,22 @@ textarea:focus-visible {
 
 .blink {
   animation: blink 1s step-end infinite;
+}
+
+/* ── Skeleton — layout-matched loading placeholder ────────────────── */
+.skeleton {
+  background: linear-gradient(
+    100deg,
+    var(--accent-tint) 40%,
+    var(--accent-tint-strong) 50%,
+    var(--accent-tint) 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: var(--radius-sm);
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* ── Reduced motion ───────────────────────────────────────────────── */

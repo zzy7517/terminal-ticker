@@ -1,7 +1,8 @@
 /* Raft-style compact agent profile sidebar. */
 .agent-profile-panel {
+  animation: panel-enter var(--dur-2) var(--ease-out) both;
   background: var(--panel);
-  border-left: 1px solid var(--line-strong);
+  border-left: 1px solid var(--line-soft);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
@@ -39,12 +40,18 @@
   align-items: center;
   background: transparent;
   border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   cursor: pointer;
   display: inline-flex;
   height: 28px;
   justify-content: center;
+  transition: var(--ctl-transition);
   width: 28px;
+}
+
+.agent-profile-icon-btn:active {
+  transform: scale(0.94);
 }
 
 .agent-profile-icon-btn:hover {
@@ -63,12 +70,14 @@
 .agent-profile-tabs button {
   background: transparent;
   border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
   min-height: 30px;
   padding: 0 8px;
+  transition: var(--ctl-transition);
 }
 
 .agent-profile-tabs button:hover {
@@ -97,8 +106,10 @@
 
 .agent-profile-avatar {
   align-items: center;
-  background: var(--canvas);
-  border: 1px solid var(--line-strong);
+  background: var(--accent-tint-strong);
+  border: 0;
+  border-radius: 10px;
+  color: var(--text-secondary);
   display: inline-flex;
   flex-shrink: 0;
   justify-content: center;
@@ -158,11 +169,11 @@
 }
 
 .agent-profile-status.paused {
-  color: var(--warning, #c9a227);
+  color: var(--warning);
 }
 
 .agent-profile-status.paused i {
-  background: var(--warning, #c9a227);
+  background: var(--warning);
 }
 
 .agent-profile-status.error {
@@ -234,6 +245,7 @@
 .agent-profile-tag {
   background: var(--canvas);
   border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   font-family: var(--mono);
   font-size: 11px;
   font-style: normal;
@@ -246,11 +258,11 @@
 }
 
 .agent-profile-tag.runtime {
-  background: color-mix(in srgb, var(--accent-tint) 70%, transparent);
+  background: var(--accent-tint);
 }
 
 .agent-profile-tag.model {
-  background: color-mix(in srgb, var(--success) 12%, var(--canvas));
+  background: var(--success-tint);
 }
 
 .agent-profile-runtime-grid {

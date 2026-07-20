@@ -1,0 +1,434 @@
+/* ═══════════════════════════════════════════════════════════════════
+   CHAT — Shell
+   Left rail (Channels + Direct Messages) · conversation frame · header
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Chat cards (roots of DM runner / Channel main) ───────────────── */
+.agent-card {
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  padding: 8px 10px;
+}
+
+.agent-card p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.agent-readout {
+  border-color: var(--line-strong);
+}
+
+.agent-session-card {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-bias {
+  background: var(--panel-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  text-transform: uppercase;
+}
+
+/* Legacy hook kept for PositionsPanel container. */
+.agent-main-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+}
+
+/* ── Left rail — Channels + Direct Messages ───────────────────────── */
+.direct-message-list {
+  background: var(--canvas);
+  border-right: 1px solid var(--line-soft);
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 8px 12px;
+}
+
+.chat-sidebar-title {
+  color: var(--text-bright) !important;
+  font-family: var(--display) !important;
+  font-size: 15px !important;
+  font-weight: 660 !important;
+  letter-spacing: -0.008em !important;
+  padding: 10px 10px 14px !important;
+  text-transform: none !important;
+}
+
+.direct-message-list > header {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 650;
+  gap: 6px;
+  justify-content: space-between;
+  letter-spacing: 0.09em;
+  padding: 10px 8px 6px;
+  text-transform: uppercase;
+}
+
+.direct-message-list > header:not(:first-child) {
+  margin-top: 8px;
+}
+
+.chat-sidebar-add {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  margin-left: auto;
+  padding: 2px;
+  transition: var(--ctl-transition);
+}
+
+.chat-sidebar-add:hover {
+  background: var(--accent-tint-strong);
+  color: var(--text-primary);
+}
+
+.channel-create-row {
+  animation: rise-in var(--dur-2) var(--ease-out) both;
+  display: flex;
+  gap: 5px;
+  padding: 0 4px 8px;
+}
+
+.channel-create-row input {
+  background: var(--panel-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  min-width: 0;
+  padding: 6px 8px;
+  transition: var(--ctl-transition);
+  width: 100%;
+}
+
+.channel-create-row input:focus {
+  border-color: var(--control-accent);
+  box-shadow: 0 0 0 3px var(--control-accent-tint);
+  outline: 0;
+}
+
+/* ── Rail rows — shared row anatomy ───────────────────────────────── */
+.channel-sidebar-row,
+.direct-message-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  text-align: left;
+  transition: var(--ctl-transition);
+  width: 100%;
+}
+
+.channel-sidebar-row {
+  font-size: 13.5px;
+  font-weight: 520;
+  min-height: 32px;
+}
+
+.direct-message-row {
+  gap: 9px;
+  min-height: 40px;
+}
+
+.channel-sidebar-row:hover,
+.direct-message-row:hover {
+  background: var(--accent-tint);
+  color: var(--text-primary);
+}
+
+.channel-sidebar-row:active,
+.direct-message-row:active {
+  transform: scale(0.985);
+}
+
+.channel-sidebar-row.active,
+.direct-message-row.active {
+  background: var(--panel-raised);
+  box-shadow: var(--shadow-soft);
+  color: var(--text-bright);
+}
+
+.channel-sidebar-row.active svg {
+  color: var(--control-accent);
+}
+
+.direct-message-avatar {
+  align-items: center;
+  background: var(--accent-tint);
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 26px;
+  justify-content: center;
+  transition: var(--ctl-transition);
+  width: 26px;
+}
+
+.direct-message-row.active .direct-message-avatar {
+  background: var(--control-accent-tint-strong);
+  color: var(--control-accent);
+}
+
+.direct-message-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.direct-message-copy strong,
+.direct-message-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.direct-message-copy strong {
+  font-size: 13.5px;
+  font-weight: 570;
+}
+
+.direct-message-copy small {
+  font-size: 11px;
+  opacity: 0.68;
+}
+
+.direct-message-presence {
+  background: var(--line-strong);
+  border-radius: 50%;
+  flex-shrink: 0;
+  height: 7px;
+  transition: background-color var(--dur-2) var(--ease-out);
+  width: 7px;
+}
+
+.direct-message-presence.running {
+  animation: pulse-dot 2.2s ease-in-out infinite;
+  background: var(--success);
+}
+
+.direct-message-presence.error {
+  background: var(--danger);
+}
+
+.direct-message-presence.paused {
+  background: var(--warning);
+}
+
+.unread-badge {
+  align-items: center;
+  background: var(--control-accent);
+  border-radius: 999px;
+  color: var(--control-accent-contrast);
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 650;
+  justify-content: center;
+  line-height: 1;
+  margin-left: auto;
+  min-width: 18px;
+  padding: 3px 6px;
+}
+
+/* ── Conversation frame ───────────────────────────────────────────── */
+.agent-chat-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agent-chat-main.with-trace {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+
+.agent-tab-layout .agent-session-card {
+  background: var(--panel);
+  border: 0;
+  display: grid;
+  gap: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+/* ── Conversation header ──────────────────────────────────────────── */
+.dm-conversation-header {
+  align-items: center;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 54px;
+  padding: 8px 16px;
+}
+
+.dm-conversation-identity {
+  align-items: center;
+  align-self: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 10px;
+  max-width: min(320px, 70%);
+  min-width: 0;
+  padding: 4px 8px 4px 4px;
+  text-align: left;
+  transition: var(--ctl-transition);
+  width: max-content;
+}
+
+.dm-conversation-identity:hover,
+.dm-conversation-identity.open {
+  background: var(--accent-tint);
+}
+
+.dm-conversation-identity:active {
+  transform: scale(0.985);
+}
+
+.dm-conversation-avatar {
+  align-items: center;
+  background: var(--accent-tint-strong);
+  border: 0;
+  border-radius: 9px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.dm-conversation-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.dm-conversation-identity strong,
+.dm-conversation-copy strong {
+  font-family: var(--display);
+  font-size: 14.5px;
+  font-weight: 640;
+  letter-spacing: -0.006em;
+}
+
+.dm-presence-label {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  text-transform: capitalize;
+}
+
+.dm-presence-label.online {
+  color: var(--success);
+}
+
+.dm-presence-label.paused {
+  color: var(--warning);
+}
+
+.dm-conversation-meta {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+/* ── Beginning-of-conversation empty state ────────────────────────── */
+.dm-beginning {
+  align-items: center;
+  animation: rise-in var(--dur-3) var(--ease-out) both;
+  color: var(--text-muted);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  min-height: 0;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.dm-beginning::before {
+  align-items: center;
+  background: var(--accent-tint);
+  border-radius: 14px;
+  color: var(--text-muted);
+  content: '@';
+  display: inline-flex;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+  height: 44px;
+  justify-content: center;
+  margin-bottom: 4px;
+  width: 44px;
+}
+
+.dm-beginning strong {
+  color: var(--text-primary);
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 630;
+}
+
+.dm-beginning span {
+  font-size: 13px;
+}
+
+@media (max-width: 960px) {
+  .agent-tab-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .agent-tab-layout .agent-session-card {
+    height: auto;
+  }
+
+  .agent-tab-layout .session-transcript {
+    min-height: 200px;
+  }
+}

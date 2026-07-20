@@ -1,0 +1,5 @@
+/* Chat feature styles — shared by the DM runner and Channel panels. */
+@import './chat-shell.css';
+@import './chat-transcript.css';
+@import './chat-markdown.css';
+@import './chat-composer.css';

@@ -21,7 +21,7 @@ import { useChatStore } from '../../stores/chatStore';
 import { ChannelPanel } from '../chat/ChannelPanel';
 import { AgentTracePanel } from '../chat/AgentTracePanel';
 import { useAgentStore } from '../../stores/agentStore';
-import './AgentChatLayout.css';
+import '../../styles/chat/index.css';
 
 export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);

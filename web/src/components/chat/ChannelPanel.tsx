@@ -10,7 +10,7 @@ import type { ChannelMessage } from '../../types';
 import { ChannelMessageItem } from './ChannelMessageItem';
 import { ChannelComposer } from './ChannelComposer';
 import { MemberPanel } from './MemberPanel';
-import '../workspace/AgentSessionPanel.css';
+import '../../styles/chat/index.css';
 import './ChannelPanel.css';
 
 const EMPTY_CHANNEL_MESSAGES: ChannelMessage[] = [];

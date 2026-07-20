@@ -87,9 +87,20 @@ export function DirectMessageTimeline({
       onScroll={onScroll}
     >
       {sessionLoading && (
-        <div className="empty-state row">
-          <Loader2 className="spin" size={16} />
-          <span>Loading conversation</span>
+        <div className="transcript-skeleton" role="status" aria-label="Loading conversation">
+          <div className="transcript-skeleton-group user">
+            <span className="skeleton bubble" />
+          </div>
+          <div className="transcript-skeleton-group">
+            <span className="skeleton w-25" />
+            <span className="skeleton w-85" />
+            <span className="skeleton w-65" />
+            <span className="skeleton w-45" />
+          </div>
+          <div className="transcript-skeleton-group">
+            <span className="skeleton w-25" />
+            <span className="skeleton w-65" />
+          </div>
         </div>
       )}
       {!sessionLoading && messages.length === 0 && !streamingContent && (
