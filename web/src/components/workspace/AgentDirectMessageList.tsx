@@ -3,7 +3,8 @@
  * 对应 Raft Chat 壳的侧栏入口。
  */
 import { useState } from 'react';
-import { Bot, Hash, Loader2, Plus, X } from 'lucide-react';
+import { Hash, Loader2, Plus, X } from 'lucide-react';
+import { AgentAvatar } from '../../avatar';
 import { agentPresenceView } from '../../chat/presenceDisplay';
 import { useChatPresence } from '../../chat/presenceStore';
 import { createLiveChatShellController } from '../../chat/shellController';
@@ -86,7 +87,7 @@ export function AgentDirectMessageList() {
             onClick={() => void chatShell.openDirectMessage(agent.id)}
             type="button"
           >
-            <span className="direct-message-avatar"><Bot size={16} /></span>
+            <span className="direct-message-avatar"><AgentAvatar agent={agent} size="md" /></span>
             <span className="direct-message-copy">
               <strong>{agent.name}</strong>
               <small>{statusLabel}</small>

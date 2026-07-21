@@ -81,6 +81,8 @@ export interface AgentDefinition {
   id: string;
   name: string;
   description: string;
+  /** When set, overrides `id` as the avatar generator seed. */
+  avatarSeed: string | null;
   systemPrompt: string | null;
   runtime: 'pi' | 'claude-code' | 'cursor';
   provider: string | null;
@@ -90,6 +92,13 @@ export interface AgentDefinition {
 }
 
 export type AgentDefinitionInput = Omit<AgentDefinition, 'builtIn'>;
+
+/** Identity-only patch: display name, signature (description), avatar seed. */
+export type AgentIdentityPatch = {
+  name?: string;
+  description?: string;
+  avatarSeed?: string | null;
+};
 
 export interface AgentRuntimeStatus {
   id: 'pi' | 'claude-code' | 'cursor';

@@ -719,3 +719,58 @@
   justify-content: center;
   line-height: 1;
 }
+
+/* ── Agent identity form fields (Settings + Profile) ──────────────── */
+.agent-field {
+  color: var(--text-secondary);
+  display: grid;
+  font: 12px var(--mono);
+  gap: 6px;
+  text-transform: uppercase;
+}
+
+.agent-field input,
+.agent-field select,
+.agent-field textarea {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font: 13px var(--mono);
+  min-width: 0;
+  padding: 10px;
+  text-transform: none;
+  transition: var(--ctl-transition);
+  width: 100%;
+}
+
+.agent-field input:hover:not(:disabled):not(:focus),
+.agent-field select:hover:not(:disabled):not(:focus),
+.agent-field textarea:hover:not(:disabled):not(:focus) {
+  border-color: var(--control-accent-ring);
+}
+
+.agent-field input:focus,
+.agent-field select:focus,
+.agent-field textarea:focus {
+  border-color: var(--control-accent-ring);
+  outline: none;
+}
+
+.agent-field input:disabled,
+.agent-field select:disabled,
+.agent-field textarea:disabled {
+  cursor: not-allowed;
+  opacity: var(--ctl-disabled-opacity);
+}
+
+.agent-field input::placeholder,
+.agent-field textarea::placeholder {
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+.agent-field textarea {
+  line-height: 1.55;
+  resize: vertical;
+}

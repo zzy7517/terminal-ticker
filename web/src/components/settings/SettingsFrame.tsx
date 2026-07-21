@@ -9,6 +9,7 @@ import {
   Clock,
   Network,
   Newspaper,
+  Palette,
   Search,
   Settings,
 } from 'lucide-react';
@@ -32,6 +33,7 @@ export function SettingsFrame({
       label: 'Agent',
       items: [
         { id: 'agents' as const, label: 'Agents', icon: Bot },
+        { id: 'appearance' as const, label: 'Appearance', icon: Palette },
         { id: 'providers' as const, label: 'Runtimes', icon: Settings },
         { id: 'agent-context' as const, label: 'Agent Context', icon: Bot },
       ],

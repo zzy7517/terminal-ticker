@@ -7,7 +7,6 @@ import '../../styles/chat/index.css';
 
 import {
   ArrowUp,
-  Bot,
   Paperclip,
   Play,
   Square,
@@ -15,6 +14,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { pauseChatAgent, resumeChatAgent } from '../../api';
+import { AgentAvatar, avatarSeedSource } from '../../avatar';
 import { ProviderIcon } from '../ProviderIcon';
 import type { AgentDirectMessage } from '../../types';
 import { agentPresenceView } from '../../chat/presenceDisplay';
@@ -198,7 +198,7 @@ export function AgentSessionPanel({
           type="button"
         >
           <span className="dm-conversation-avatar" aria-hidden="true">
-            <Bot size={16} />
+            <AgentAvatar agent={avatarSeedSource(selectedAgentId, selectedAgent)} size="lg" />
           </span>
           <span className="dm-conversation-copy">
             <strong>{agentDisplayName}</strong>

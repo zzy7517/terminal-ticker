@@ -1,9 +1,9 @@
 import {
   Activity,
-  Bot,
   CalendarDays,
   Clock,
   LineChart,
+  MessageSquare,
   Newspaper,
   Radio,
   Settings,
@@ -17,7 +17,7 @@ import './AppSidebar.css';
 type NavItem = {
   id: WorkspaceViewId;
   label: string;
-  icon: typeof Bot;
+  icon: typeof MessageSquare;
   available?: boolean;
 };
 
@@ -30,7 +30,7 @@ export function AppSidebar() {
   const optionsState = (state as any)?.options?.snapshots;
   const optionsAvailable = Boolean(optionsState && Object.keys(optionsState).length > 0);
   const items: NavItem[] = [
-    { id: 'agent', label: 'Chat', icon: Bot },
+    { id: 'agent', label: 'Chat', icon: MessageSquare },
     { id: 'market', label: 'Market', icon: LineChart },
     { id: 'news', label: 'News', icon: Newspaper },
     { id: 'calendar', label: 'Calendar', icon: CalendarDays, available: jin10Available },

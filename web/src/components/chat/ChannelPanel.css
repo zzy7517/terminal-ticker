@@ -131,19 +131,20 @@
   border-radius: 8px;
   display: inline-flex;
   flex-shrink: 0;
-  height: 28px;
   justify-content: center;
-  width: 28px;
+  overflow: hidden;
 }
 
 .member-avatar.agent {
-  background: var(--control-accent-tint);
+  background: transparent;
   color: var(--control-accent);
 }
 
 .member-avatar.human {
   background: var(--accent-tint);
   color: var(--text-muted);
+  height: 32px;
+  width: 32px;
 }
 
 .member-presence {
@@ -398,4 +399,26 @@
 
 .channel-mention-picker span {
   color: var(--text-muted);
+}
+
+/* ── Channel message avatars (Agent only) ─────────────────────────── */
+.session-message.channel-message.agent {
+  align-items: flex-start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.channel-message-avatar {
+  border-radius: 8px;
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 2px;
+  overflow: hidden;
+}
+
+.channel-message-body {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
 }

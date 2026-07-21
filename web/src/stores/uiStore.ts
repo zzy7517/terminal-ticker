@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { AppRoute } from '../constants';
+import { isAvatarStyle, type AvatarStyle } from '../avatar/avatar';
 import { readRouteFromHash, navigateToRoute } from '../utils';
 
 export type WorkspaceViewId =
@@ -14,6 +15,7 @@ export type WorkspaceViewId =
 export type Theme = 'light' | 'dark';
 
 const THEME_STORAGE_KEY = 'tradex-theme';
+const AVATAR_STYLE_STORAGE_KEY = 'tradex-avatar-style';
 
 function loadTheme(): Theme {
   try {
@@ -30,10 +32,26 @@ function applyTheme(theme: Theme): void {
   } catch {}
 }
 
+function loadAvatarStyle(): AvatarStyle {
+  try {
+    const raw = window.localStorage.getItem(AVATAR_STYLE_STORAGE_KEY);
+    return isAvatarStyle(raw) ? raw : 'beam';
+  } catch {
+    return 'beam';
+  }
+}
+
+function persistAvatarStyle(style: AvatarStyle): void {
+  try {
+    window.localStorage.setItem(AVATAR_STYLE_STORAGE_KEY, style);
+  } catch {}
+}
+
 interface UiState {
   route: AppRoute;
   activeWorkspace: WorkspaceViewId;
   theme: Theme;
+  avatarStyle: AvatarStyle;
   watchlistOpen: boolean;
   selectedKey: string | null;
   activeGroup: string | null;
@@ -42,6 +60,7 @@ interface UiState {
   setActiveWorkspace: (view: WorkspaceViewId) => void;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
+  setAvatarStyle: (style: AvatarStyle) => void;
   toggleWatchlist: () => void;
   setWatchlistOpen: (open: boolean) => void;
   setSelectedKey: (key: string | null) => void;
@@ -52,11 +71,13 @@ interface UiState {
 
 const initialTheme = loadTheme();
 applyTheme(initialTheme);
+const initialAvatarStyle = loadAvatarStyle();
 
 export const useUiStore = create<UiState>((set, get) => ({
   route: readRouteFromHash(),
   activeWorkspace: 'agent',
   theme: initialTheme,
+  avatarStyle: initialAvatarStyle,
   watchlistOpen: false,
   selectedKey: null,
   activeGroup: null,
@@ -68,6 +89,10 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({ theme });
   },
   toggleTheme: () => get().setTheme(get().theme === 'light' ? 'dark' : 'light'),
+  setAvatarStyle: (avatarStyle) => {
+    persistAvatarStyle(avatarStyle);
+    set({ avatarStyle });
+  },
   toggleWatchlist: () => set((s) => ({ watchlistOpen: !s.watchlistOpen })),
   setWatchlistOpen: (open) => set({ watchlistOpen: open }),
   setSelectedKey: (key) => set({ selectedKey: key }),

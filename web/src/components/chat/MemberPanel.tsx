@@ -3,7 +3,7 @@
  * 可加/移成员，并查看/丢弃超时 Held Draft。
  */
 import { useEffect, useState } from 'react';
-import { Bot, User, UserPlus, Users, X } from 'lucide-react';
+import { User, UserPlus, Users, X } from 'lucide-react';
 import {
   addChannelMember,
   discardChannelDraft,
@@ -11,6 +11,7 @@ import {
   fetchChannelMembers,
   removeChannelMember,
 } from '../../api';
+import { AgentAvatar, avatarSeedSource } from '../../avatar';
 import { agentPresenceView } from '../../chat/presenceDisplay';
 import { useChatPresence } from '../../chat/presenceStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -93,7 +94,7 @@ export function MemberPanel({
                 return (
                   <li key={`${member.subjectType}:${member.subjectId}`}>
                     <span className="member-avatar agent" aria-hidden>
-                      <Bot size={14} />
+                      <AgentAvatar agent={avatarSeedSource(member.subjectId, agent)} size="md" />
                     </span>
                     <div>
                       <strong>{agent?.name ?? member.subjectId}</strong>

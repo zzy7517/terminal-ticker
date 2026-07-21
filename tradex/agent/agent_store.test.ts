@@ -44,6 +44,7 @@ describe("AgentStore", () => {
 
     expect(fs.existsSync(path.join(dir, "price-action.json"))).toBe(true);
     expect(store.update(created.id, { name: "价格行为分析师" }).name).toBe("价格行为分析师");
+    expect(store.update(created.id, { avatarSeed: "face-42" }).avatarSeed).toBe("face-42");
     store.remove(created.id, () => false);
     expect(store.get(created.id)).toBeNull();
   });

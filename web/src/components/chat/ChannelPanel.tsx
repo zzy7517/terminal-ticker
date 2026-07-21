@@ -66,7 +66,7 @@ export function ChannelPanel() {
       <div className="channel-main agent-card agent-readout agent-session-card">
         <header className="dm-conversation-header">
           <div className="dm-conversation-identity static">
-            <span className="dm-conversation-avatar" aria-hidden="true">
+            <span className="dm-conversation-avatar dm-conversation-avatar--icon" aria-hidden="true">
               <Hash size={16} />
             </span>
             <span className="dm-conversation-copy">

@@ -20,8 +20,9 @@ export const MCP_HASH = '#/settings/mcp';
 export const BROWSER_HASH = '#/settings/browser';
 export const OPTIONS_HASH = '#/settings/options';
 export const PROXY_HASH = '#/settings/proxy';
+export const APPEARANCE_HASH = '#/settings/appearance';
 
-export type SettingsSection = 'providers' | 'agents' | 'agent-context' | 'watchlist' | 'news' | 'cron' | 'mcp' | 'browser' | 'options' | 'proxy';
+export type SettingsSection = 'providers' | 'agents' | 'agent-context' | 'appearance' | 'watchlist' | 'news' | 'cron' | 'mcp' | 'browser' | 'options' | 'proxy';
 export type SearchSource = 'bitget' | 'hyperliquid';
 export type AppRoute =
   | { view: 'workspace' }

@@ -2,6 +2,7 @@ export { SettingsFrame } from './SettingsFrame';
 export { WatchlistSettingsPanel } from './WatchlistSettingsPanel';
 export { LocalAgentsSettingsPanel } from './LocalAgentsSettingsPanel';
 export { AgentContextSettingsPanel } from './AgentContextSettingsPanel';
+export { AppearanceSettingsPanel } from './AppearanceSettingsPanel';
 export { AgentsSettingsPanel } from './AgentsSettingsPanel';
 export { NewsSettingsPanel } from './NewsSettingsPanel';
 export { CronSettingsPanel } from './CronSettingsPanel';

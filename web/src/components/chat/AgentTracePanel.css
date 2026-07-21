@@ -106,23 +106,14 @@
 
 .agent-profile-avatar {
   align-items: center;
-  background: var(--accent-tint-strong);
+  background: transparent;
   border: 0;
   border-radius: 10px;
-  color: var(--text-secondary);
   display: inline-flex;
   flex-shrink: 0;
   justify-content: center;
-}
-
-.agent-profile-avatar.sm {
-  height: 24px;
-  width: 24px;
-}
-
-.agent-profile-avatar.lg {
-  height: 40px;
-  width: 40px;
+  overflow: hidden;
+  padding: 0;
 }
 
 .agent-profile-name-row {
@@ -198,36 +189,25 @@
   padding: 10px 0 2px;
 }
 
-.agent-profile-field > header,
+.agent-profile-field.agent-field textarea {
+  min-height: 88px;
+}
+
 .agent-profile-block > header {
+  align-items: center;
   color: var(--text-muted);
+  display: flex;
   font-family: var(--mono);
   font-size: 10px;
   font-weight: 700;
+  gap: 6px;
   letter-spacing: 0.06em;
   margin-bottom: 6px;
   text-transform: uppercase;
 }
 
-.agent-profile-block > header {
-  align-items: center;
-  display: flex;
-  gap: 6px;
-}
-
 .agent-profile-block > header span {
   margin-left: auto;
-}
-
-.agent-profile-field > p {
-  font-size: 13px;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.agent-profile-field > p.muted {
-  color: var(--text-muted);
-  font-style: italic;
 }
 
 .agent-profile-info-row {

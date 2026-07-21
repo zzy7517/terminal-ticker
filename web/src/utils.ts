@@ -6,6 +6,7 @@ import type {
 import {
   AGENT_CONTEXT_HASH,
   AGENTS_HASH,
+  APPEARANCE_HASH,
   BROWSER_HASH,
   CRON_HASH,
   MCP_HASH,
@@ -23,6 +24,7 @@ import {
 
 export function readRouteFromHash(): AppRoute {
   if (window.location.hash.startsWith(AGENTS_HASH)) return { view: 'settings', section: 'agents' };
+  if (window.location.hash.startsWith(APPEARANCE_HASH)) return { view: 'settings', section: 'appearance' };
   if (window.location.hash.startsWith(PROXY_HASH)) {
     return { view: 'settings', section: 'proxy' };
   }
@@ -60,6 +62,8 @@ export function navigateToRoute(route: AppRoute) {
         ? CRON_HASH
         : route.section === 'agents'
         ? AGENTS_HASH
+        : route.section === 'appearance'
+        ? APPEARANCE_HASH
         : route.section === 'agent-context'
         ? AGENT_CONTEXT_HASH
         : route.section === 'news'

@@ -12,6 +12,7 @@ import {
   LocalAgentsSettingsPanel,
   AgentContextSettingsPanel,
   AgentsSettingsPanel,
+  AppearanceSettingsPanel,
   NewsSettingsPanel,
   CronSettingsPanel,
   McpSettingsPanel,
@@ -83,6 +84,8 @@ export default function App() {
           <LocalAgentsSettingsPanel />
         ) : route.section === 'agents' ? (
           <AgentsSettingsPanel />
+        ) : route.section === 'appearance' ? (
+          <AppearanceSettingsPanel />
         ) : route.section === 'agent-context' ? (
           <AgentContextSettingsPanel />
         ) : route.section === 'news' ? (

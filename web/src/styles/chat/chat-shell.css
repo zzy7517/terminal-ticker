@@ -180,21 +180,19 @@
 
 .direct-message-avatar {
   align-items: center;
-  background: var(--accent-tint);
+  background: transparent;
   border: 0;
   border-radius: 8px;
-  color: var(--text-secondary);
   display: inline-flex;
   flex-shrink: 0;
-  height: 26px;
   justify-content: center;
+  overflow: hidden;
   transition: var(--ctl-transition);
-  width: 26px;
 }
 
 .direct-message-row.active .direct-message-avatar {
-  background: var(--control-accent-tint-strong);
-  color: var(--control-accent);
+  outline: 1px solid var(--control-accent-ring);
+  outline-offset: 1px;
 }
 
 .direct-message-copy {
@@ -335,9 +333,14 @@
   color: var(--text-secondary);
   display: inline-flex;
   flex-shrink: 0;
-  height: 30px;
   justify-content: center;
-  width: 30px;
+  overflow: hidden;
+}
+
+/* Channel header uses a Hash icon, not AgentAvatar — keep a fixed chip. */
+.dm-conversation-avatar--icon {
+  height: 36px;
+  width: 36px;
 }
 
 .dm-conversation-copy {

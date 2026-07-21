@@ -3,7 +3,9 @@ import { chronologicalMessages } from '../chat/timeline';
 import { create } from 'zustand';
 import type {
   AgentDefinition,
+  AgentDefinitionInput,
   AgentDirectMessage,
+  AgentIdentityPatch,
   AgentMessage,
   AgentModelRegistry,
   AgentSessionResponse,
@@ -12,7 +14,9 @@ import type {
 } from '../types';
 import {
   AgentStreamDisconnectError,
+  createAgent,
   createAgentSession,
+  deleteAgent,
   deleteAgentSessionById,
   fetchAgentDirectMessages,
   fetchAgentModelRegistry,
@@ -22,8 +26,10 @@ import {
   sendAgentDirectMessage,
   setDirectMessageReaction,
   streamAgentMessage,
+  updateAgent,
   type ImageAttachment,
 } from '../api';
+import { randomAvatarSeed } from '../avatar';
 import { useMarketStore } from './marketStore';
 import { mergeFollowUps, shouldAutoRunFollowUps, validateFollowUpImages } from '../utils/followUpQueue';
 import {
@@ -107,6 +113,18 @@ interface AgentState {
   refreshAgentDirectMessages: (agentId: string) => Promise<void>;
   toggleDirectMessageReaction: (agentId: string, messageId: string, emoji: string) => Promise<void>;
   selectAgent: (agentId: string) => Promise<void>;
+  /** Refresh the agents list from the Agent definition store. */
+  refreshAgents: () => Promise<AgentDefinition[]>;
+  /** Patch identity fields (name / signature / avatarSeed) and refresh the agents list. */
+  patchAgent: (agentId: string, patch: AgentIdentityPatch) => Promise<AgentDefinition>;
+  /** Mint a new avatar seed and persist it. */
+  rerollAgentAvatar: (agentId: string) => Promise<AgentDefinition>;
+  /** Create an Agent definition and refresh the agents list. */
+  createAgentDefinition: (input: AgentDefinitionInput) => Promise<AgentDefinition>;
+  /** Update an Agent definition (full editor patch) and refresh the agents list. */
+  updateAgentDefinition: (agentId: string, patch: Partial<AgentDefinitionInput>) => Promise<AgentDefinition>;
+  /** Delete an Agent definition and refresh the agents list. */
+  removeAgentDefinition: (agentId: string) => Promise<AgentDefinition[]>;
   runAgentAnalysis: (sessionId?: string, options?: { includeDraft?: boolean }) => Promise<void>;
   removeFollowUp: (id: string) => void;
   clearFollowUps: () => void;
@@ -315,6 +333,34 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     } catch (error) {
       console.error('Agent Direct Messages fetch failed:', error);
     }
+  },
+
+  patchAgent: async (agentId, patch) => get().updateAgentDefinition(agentId, patch),
+
+  rerollAgentAvatar: async (agentId) => get().patchAgent(agentId, { avatarSeed: randomAvatarSeed() }),
+
+  refreshAgents: async () => {
+    const payload = await fetchAgents();
+    set({ agents: payload.agents });
+    return payload.agents;
+  },
+
+  createAgentDefinition: async (input) => {
+    const payload = await createAgent(input);
+    set({ agents: payload.agents });
+    return payload.agent;
+  },
+
+  updateAgentDefinition: async (agentId, patch) => {
+    const payload = await updateAgent(agentId, patch);
+    set({ agents: payload.agents });
+    return payload.agent;
+  },
+
+  removeAgentDefinition: async (agentId) => {
+    const payload = await deleteAgent(agentId);
+    set({ agents: payload.agents });
+    return payload.agents;
   },
 
   initSessions: () => {

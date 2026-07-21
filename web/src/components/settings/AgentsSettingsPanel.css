@@ -54,6 +54,51 @@
   text-align: left;
 }
 
+.agent-list-row {
+  align-items: flex-start;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+}
+
+.agent-list-row.active {
+  background: var(--accent-tint);
+  border-color: var(--control-accent-ring);
+  color: var(--text-primary);
+}
+
+.agent-list-row .agent-list-avatar,
+.agent-editor-avatar {
+  border-radius: 8px;
+}
+
+.agent-list-select {
+  align-items: flex-start;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 2px;
+  text-align: left;
+}
+
+.agent-editor-avatar-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.agent-editor-avatar-row small {
+  color: var(--text-muted);
+}
+
 .agents-settings-layout aside button.active {
   background: var(--accent-tint);
   border-color: var(--control-accent-ring);
@@ -61,7 +106,7 @@
 }
 
 .agents-settings-layout aside span,
-.agent-editor label {
+.agent-editor .agent-field {
   display: grid;
 }
 
@@ -102,31 +147,9 @@
   padding: 20px 20px 12px;
 }
 
-.agent-editor label {
-  color: var(--text-secondary);
-  display: grid;
-  font: 12px var(--mono);
-  gap: 6px;
-  text-transform: uppercase;
-}
-
-.agent-editor input,
-.agent-editor select,
-.agent-editor textarea {
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
-  color: var(--text-primary);
-  font: 13px var(--mono);
-  min-width: 0;
-  padding: 10px;
-  width: 100%;
-}
-
 .agent-editor-prompt textarea {
   box-sizing: border-box;
   height: 220px;
-  line-height: 1.55;
   max-height: 220px;
   min-height: 220px;
   overflow-y: auto;

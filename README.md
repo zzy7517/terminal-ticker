@@ -59,7 +59,7 @@ http://127.0.0.1:5173
 - **Calendar**：经济日历（来自 Jin10），按时间排列重要经济事件和数据发布。
 - **Options**：期权 GEX 可视化——net GEX、gamma regime、Zero Gamma Level、Call/Put Wall 等关键位，以及逐行权价的 GEX 柱状图。
 - **Cron**：管理定时看盘任务、手动触发任务并查看运行记录。
-- **Settings**：管理 Providers、Watchlist、Agent Context、News、Cron、MCP、Options 和 Browser 配置。
+- **Settings**：管理 Providers、Watchlist、Agent Context、Appearance（头像风格）、News、Cron、MCP、Options 和 Browser 配置。
 
 ## 本地数据
 
@@ -99,3 +99,9 @@ npm run build:backend
 - [**earendil-works/pi**](https://github.com/earendil-works/pi) 
 - [**openai/codex**](https://github.com/openai/codex)
 - [**iFurySt/open-browser-use**](https://github.com/iFurySt/open-browser-use)
+- [**PokeAPI/sprites**](https://github.com/PokeAPI/sprites)：可选 Pokemon official artwork 头像的远程图片来源
+
+## Agent 头像与版权说明
+
+- Pokemon 及相关图像版权属于 **Nintendo / Creatures Inc. / GAME FREAK Inc.**（以及 The Pokémon Company）。
+- [PokeAPI/sprites](https://github.com/PokeAPI/sprites) 方便社区引用，**并不等于**授予任天堂 IP 的商业使用许可。仓库自身也声明图像内容仍属 The Pokémon Company。

@@ -1,17 +1,32 @@
 /** 提供 Pi、Claude Code 与 Cursor CLI Agent 的创建和编辑界面。 */
 import { useEffect, useMemo, useState } from 'react';
-import { Bot, Loader2, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
-import { createAgent, deleteAgent, fetchAgentRuntimes, fetchAgents, fetchClaudeCodeModels, fetchCursorModels, updateAgent } from '../../api';
+import { Loader2, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { AgentAvatar, AvatarRerollButton } from '../../avatar';
+import { fetchAgentRuntimes, fetchClaudeCodeModels, fetchCursorModels } from '../../api';
 import type { AgentDefinition, AgentDefinitionInput, AgentRuntimeStatus, ClaudeCodeModelsResponse, CursorModelsResponse } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
 import './AgentsSettingsPanel.css';
 import './AgentsSettingsPanel.runtime.css';
 
-const EMPTY: AgentDefinitionInput = { id: '', name: '', description: '', systemPrompt: '', runtime: 'pi', provider: null, model: null, reasoningEffort: null };
+const EMPTY: AgentDefinitionInput = {
+  id: '',
+  name: '',
+  description: '',
+  avatarSeed: null,
+  systemPrompt: '',
+  runtime: 'pi',
+  provider: null,
+  model: null,
+  reasoningEffort: null,
+};
 const EXTERNAL_RUNTIMES = new Set(['claude-code', 'cursor']);
 
 export function AgentsSettingsPanel() {
-  const [agents, setAgents] = useState<AgentDefinition[]>([]);
+  const agents = useAgentStore((state) => state.agents);
+  const refreshAgents = useAgentStore((state) => state.refreshAgents);
+  const createAgentDefinition = useAgentStore((state) => state.createAgentDefinition);
+  const updateAgentDefinition = useAgentStore((state) => state.updateAgentDefinition);
+  const removeAgentDefinition = useAgentStore((state) => state.removeAgentDefinition);
   const [selectedId, setSelectedId] = useState('default');
   const [draft, setDraft] = useState<AgentDefinitionInput>(EMPTY);
   const [creating, setCreating] = useState(false);
@@ -36,6 +51,7 @@ export function AgentsSettingsPanel() {
       id: agent.id,
       name: agent.name,
       description: agent.description,
+      avatarSeed: agent.avatarSeed,
       systemPrompt: agent.systemPrompt,
       runtime: agent.runtime,
       provider: agent.provider,
@@ -44,10 +60,33 @@ export function AgentsSettingsPanel() {
     });
     setMessage('');
   };
+
+  useEffect(() => {
+    if (creating || !selectedId) return;
+    const agent = agents.find((entry) => entry.id === selectedId);
+    if (!agent) return;
+    setDraft((current) => (
+      current.avatarSeed === agent.avatarSeed
+        && current.name === agent.name
+        && current.description === agent.description
+        ? current
+        : {
+          id: agent.id,
+          name: agent.name,
+          description: agent.description,
+          avatarSeed: agent.avatarSeed,
+          systemPrompt: agent.systemPrompt,
+          runtime: agent.runtime,
+          provider: agent.provider,
+          model: agent.model,
+          reasoningEffort: agent.reasoningEffort,
+        }
+    ));
+  }, [agents, creating, selectedId]);
+
   const load = async () => {
-    const payload = await fetchAgents();
-    setAgents(payload.agents);
-    const selected = payload.agents.find((item) => item.id === selectedId) ?? payload.agents[0];
+    const next = await refreshAgents();
+    const selected = next.find((item) => item.id === selectedId) ?? next[0];
     if (selected) select(selected);
   };
   useEffect(() => {
@@ -60,17 +99,15 @@ export function AgentsSettingsPanel() {
     setMessage('');
     try {
       if (creating) {
-        const payload = await createAgent(draft);
-        setAgents(payload.agents);
-        select(payload.agent);
+        const agent = await createAgentDefinition(draft);
+        select(agent);
       } else {
         const { id: _id, provider, model, ...rest } = draft;
         const updates: Partial<AgentDefinitionInput> = { ...rest };
         if (!providerLocked) updates.provider = provider;
         if (!modelLocked) updates.model = model;
-        const payload = await updateAgent(selectedId, updates);
-        setAgents(payload.agents);
-        select(payload.agent);
+        const agent = await updateAgentDefinition(selectedId, updates);
+        select(agent);
       }
       setMessage('Saved');
     } catch (error) {
@@ -84,9 +121,8 @@ export function AgentsSettingsPanel() {
     setBusy(true);
     setMessage('');
     try {
-      const payload = await deleteAgent(selectedId);
-      setAgents(payload.agents);
-      if (payload.agents[0]) select(payload.agents[0]);
+      const next = await removeAgentDefinition(selectedId);
+      if (next[0]) select(next[0]);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -144,6 +180,38 @@ export function AgentsSettingsPanel() {
       ? 'Instructions prepended to Cursor CLI prompts'
       : 'System prompt';
 
+  const commitIdentityField = async (field: 'name' | 'description', value: string) => {
+    if (creating || !selectedId || busy) return;
+    const next = value.trim();
+    if (field === 'name') {
+      if (!next) {
+        setDraft((current) => ({ ...current, name: selectedAgent?.name ?? '' }));
+        return;
+      }
+      if (next === selectedAgent?.name) return;
+      setBusy(true);
+      setMessage('');
+      try {
+        await updateAgentDefinition(selectedId, { name: next });
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (next === (selectedAgent?.description ?? '')) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      await updateAgentDefinition(selectedId, { description: next });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return <section className="agents-settings">
     <header>
       <div className="eyebrow">Agent Identities</div>
@@ -156,18 +224,42 @@ export function AgentsSettingsPanel() {
           <Plus size={14}/> New Agent
         </button>
         {agents.map((agent) => (
-          <button key={agent.id} type="button" className={selectedId === agent.id && !creating ? 'active' : ''} onClick={() => select(agent)}>
-            <Bot size={15}/>
-            <span><strong>{agent.name}</strong><small>{agent.description}</small></span>
-          </button>
+          <div key={agent.id} className={`agent-list-row ${selectedId === agent.id && !creating ? 'active' : ''}`}>
+            <span className="agent-list-avatar" aria-hidden="true">
+              <AgentAvatar agent={agent} size="xs" />
+            </span>
+            <button className="agent-list-select" type="button" onClick={() => select(agent)}>
+              <span><strong>{agent.name}</strong><small>{agent.description}</small></span>
+            </button>
+          </div>
         ))}
       </aside>
       <div className="agent-editor">
         <div className="agent-editor-fields">
-        <label>Id<input disabled={!creating} value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="market-analyst" /></label>
-        <label>Name<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
-        <label>Description<input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
-        <label>Runtime<select disabled={!creating} value={draft.runtime} onChange={(e) => {
+        {!creating && draft.id ? (
+          <div className="agent-editor-avatar-row">
+            <AvatarRerollButton
+              agent={draft}
+              className="agent-editor-avatar"
+              disabled={busy}
+              size="xl"
+            />
+            <small>Click avatar to randomize</small>
+          </div>
+        ) : null}
+        <label className="agent-field">Id<input disabled={!creating} value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="market-analyst" /></label>
+        <label className="agent-field">Name<input
+          value={draft.name}
+          onBlur={() => { void commitIdentityField('name', draft.name); }}
+          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+        /></label>
+        <label className="agent-field">Signature<input
+          value={draft.description}
+          onBlur={() => { void commitIdentityField('description', draft.description); }}
+          onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+          placeholder="Short signature"
+        /></label>
+        <label className="agent-field">Runtime<select disabled={!creating} value={draft.runtime} onChange={(e) => {
           const runtime = e.target.value as AgentDefinitionInput['runtime'];
           setDraft({
             ...draft,
@@ -183,7 +275,7 @@ export function AgentsSettingsPanel() {
         </select></label>
         {runtimeStatus && <div className="agent-editor-message">{runtimeStatus.available ? `Available${runtimeStatus.version ? ` · ${runtimeStatus.version}` : ''}` : `Unavailable · ${runtimeStatus.error ?? 'CLI not found'}`}</div>}
         {draft.runtime === 'pi' ? <>
-          <label>
+          <label className="agent-field">
             Model
             <select
               disabled={piModelSelectDisabled}
@@ -201,10 +293,10 @@ export function AgentsSettingsPanel() {
               ))}
             </select>
           </label>
-          <label>Reasoning effort<select value={draft.reasoningEffort ?? ''} onChange={(e) => setDraft({ ...draft, reasoningEffort: e.target.value || null })}><option value="">Use global default</option>{['minimal','low','medium','high','xhigh'].map((effort) => <option key={effort}>{effort}</option>)}</select></label>
+          <label className="agent-field">Reasoning effort<select value={draft.reasoningEffort ?? ''} onChange={(e) => setDraft({ ...draft, reasoningEffort: e.target.value || null })}><option value="">Use global default</option>{['minimal','low','medium','high','xhigh'].map((effort) => <option key={effort}>{effort}</option>)}</select></label>
         </> : draft.runtime === 'claude-code' ? <>
           <div className="claude-agent-model-field">
-            <label>Claude model
+            <label className="agent-field">Claude model
               <select
                 disabled={modelLocked}
                 value={selectedClaudeModel?.id ?? ''}
@@ -223,7 +315,7 @@ export function AgentsSettingsPanel() {
               {fetchingClaudeModels ? <Loader2 className="spin" size={14}/> : <RefreshCw size={14}/>} Fetch
             </button>
           </div>
-          <label>Full Claude model ID
+          <label className="agent-field">Full Claude model ID
             <input
               disabled={modelLocked || Boolean(selectedClaudeModel)}
               value={selectedClaudeModel ? '' : draft.model ?? ''}
@@ -231,10 +323,10 @@ export function AgentsSettingsPanel() {
               placeholder="Optional custom model ID"
             />
           </label>
-          <label>Claude effort<select value={draft.reasoningEffort ?? ''} onChange={(e) => setDraft({ ...draft, reasoningEffort: e.target.value || null })}><option value="">Use local CLI default</option>{claudeEfforts.map((effort) => <option key={effort}>{effort}</option>)}</select></label>
+          <label className="agent-field">Claude effort<select value={draft.reasoningEffort ?? ''} onChange={(e) => setDraft({ ...draft, reasoningEffort: e.target.value || null })}><option value="">Use local CLI default</option>{claudeEfforts.map((effort) => <option key={effort}>{effort}</option>)}</select></label>
         </> : <>
           <div className="claude-agent-model-field">
-            <label>Cursor model
+            <label className="agent-field">Cursor model
               <select
                 disabled={modelLocked}
                 value={selectedCursorModel?.id ?? ''}
@@ -253,7 +345,7 @@ export function AgentsSettingsPanel() {
               {fetchingCursorModels ? <Loader2 className="spin" size={14}/> : <RefreshCw size={14}/>} Fetch
             </button>
           </div>
-          <label>Full Cursor model ID
+          <label className="agent-field">Full Cursor model ID
             <input
               disabled={modelLocked || Boolean(selectedCursorModel)}
               value={selectedCursorModel ? '' : draft.model ?? ''}
@@ -262,7 +354,7 @@ export function AgentsSettingsPanel() {
             />
           </label>
         </>}
-        <label className="agent-editor-prompt">
+        <label className="agent-field agent-editor-prompt">
           {promptLabel}
           <textarea
             rows={12}

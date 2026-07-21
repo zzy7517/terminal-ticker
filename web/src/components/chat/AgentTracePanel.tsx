@@ -1,19 +1,20 @@
 /**
  * AgentTracePanel — DM 侧 Agent 资料栏（对应 Raft Agent detail）。
- * Profile 展示身份/runtime；Activity 展示 Stop/Resume 切换与 reset。
+ * Profile 可编辑显示名 / 个性签名，点击头像随机换一张；Activity 管生命周期。
  */
 import { useEffect, useState } from 'react';
-import { Bot, Play, Square, X } from 'lucide-react';
+import { Play, Square, X } from 'lucide-react';
 import {
   pauseChatAgent,
   resetChatAgent,
   resumeChatAgent,
 } from '../../api';
+import { AvatarRerollButton, avatarSeedSource } from '../../avatar';
 import { agentPresenceView } from '../../chat/presenceDisplay';
 import { useChatPresence, usePresenceStore } from '../../chat/presenceStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
-import type { AgentDirectMessage, AgentPresence } from '../../types';
+import type { AgentDirectMessage, AgentIdentityPatch, AgentPresence } from '../../types';
 import './AgentTracePanel.css';
 
 const EMPTY_MESSAGES: AgentDirectMessage[] = [];
@@ -30,12 +31,16 @@ function runtimeLabel(runtime: string | undefined): string {
 /** Agent 资料侧栏：Profile / Activity 与生命周期控制。 */
 export function AgentTracePanel({ agentId }: { agentId: string }) {
   const agent = useAgentStore((state) => state.agents.find((entry) => entry.id === agentId) ?? null);
+  const patchAgent = useAgentStore((state) => state.patchAgent);
   const directMessages = useAgentStore((state) => state.directMessagesByAgentId[agentId] ?? EMPTY_MESSAGES);
   const closeAgentProfile = useChatStore((state) => state.closeAgentProfile);
   const [tab, setTab] = useState<ProfileTab>('profile');
   const presenceByAgentId = useChatPresence();
   const presence: AgentPresence | null = presenceByAgentId[agentId] ?? null;
   const [error, setError] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const [signatureDraft, setSignatureDraft] = useState('');
+  const [saving, setSaving] = useState(false);
 
   async function refreshPresence() {
     try {
@@ -50,14 +55,53 @@ export function AgentTracePanel({ agentId }: { agentId: string }) {
     setTab('profile');
   }, [agentId]);
 
+  useEffect(() => {
+    setNameDraft(agent?.name ?? '');
+    setSignatureDraft(agent?.description ?? '');
+  }, [agent?.id, agent?.name, agent?.description]);
+
+  async function persist(patch: AgentIdentityPatch) {
+    if (!agent || saving) return;
+    setSaving(true);
+    try {
+      await patchAgent(agentId, patch);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function commitName() {
+    const next = nameDraft.trim();
+    if (!next || next === agent?.name) {
+      setNameDraft(agent?.name ?? '');
+      return;
+    }
+    await persist({ name: next });
+  }
+
+  async function commitSignature() {
+    const next = signatureDraft.trim();
+    if (next === (agent?.description ?? '')) return;
+    await persist({ description: next });
+  }
+
   const { label: statusLabel, tone: statusTone } = agentPresenceView(presence);
   const handle = `@${(agent?.id ?? agentId).replace(/^agent:/, '')}`;
+  const avatarAgent = avatarSeedSource(agentId, agent);
 
   return (
     <aside className="agent-profile-panel">
       <header className="agent-profile-topbar">
         <div className="agent-profile-topbar-title">
-          <span className="agent-profile-avatar sm" aria-hidden="true"><Bot size={14} /></span>
+          <AvatarRerollButton
+            agent={avatarAgent}
+            className="agent-profile-avatar"
+            disabled={saving || !agent}
+            size="sm"
+          />
           <strong>{agent?.name ?? 'Agent'}</strong>
         </div>
         <button
@@ -94,7 +138,12 @@ export function AgentTracePanel({ agentId }: { agentId: string }) {
         {tab === 'profile' ? (
           <>
             <section className="agent-profile-hero">
-              <span className="agent-profile-avatar lg" aria-hidden="true"><Bot size={22} /></span>
+              <AvatarRerollButton
+                agent={avatarAgent}
+                className="agent-profile-avatar"
+                disabled={saving || !agent}
+                size="xl"
+              />
               <div>
                 <div className="agent-profile-name-row">
                   <strong>{agent?.name ?? 'Agent'}</strong>
@@ -107,17 +156,32 @@ export function AgentTracePanel({ agentId }: { agentId: string }) {
               </div>
             </section>
 
-            <section className="agent-profile-field">
-              <header>Display name</header>
-              <p>{agent?.name ?? '—'}</p>
-            </section>
+            <label className="agent-field agent-profile-field">
+              Display name
+              <input
+                disabled={saving || !agent}
+                onBlur={() => void commitName()}
+                onChange={(event) => setNameDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.currentTarget.blur();
+                  }
+                }}
+                value={nameDraft}
+              />
+            </label>
 
-            <section className="agent-profile-field">
-              <header>Description</header>
-              <p className={!agent?.description ? 'muted' : undefined}>
-                {agent?.description || 'No description'}
-              </p>
-            </section>
+            <label className="agent-field agent-profile-field">
+              Signature
+              <textarea
+                disabled={saving || !agent}
+                onBlur={() => void commitSignature()}
+                onChange={(event) => setSignatureDraft(event.target.value)}
+                placeholder="Short signature"
+                rows={3}
+                value={signatureDraft}
+              />
+            </label>
 
             <section className="agent-profile-block">
               <header>Info</header>

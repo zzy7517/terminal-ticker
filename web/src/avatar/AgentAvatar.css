@@ -1,0 +1,51 @@
+.agent-avatar {
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  flex-shrink: 0;
+  line-height: 0;
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.agent-avatar svg,
+.agent-avatar img {
+  display: block;
+}
+
+.agent-avatar--pokemon {
+  background: var(--accent-tint);
+}
+
+.agent-avatar--pokemon img {
+  height: 100%;
+  /* Official artwork is high-res illustration — smooth downscale looks better than pixelated. */
+  image-rendering: auto;
+  object-fit: contain;
+  width: 100%;
+}
+
+.agent-avatar-reroll {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  overflow: hidden;
+  padding: 0;
+  transition: var(--ctl-transition);
+}
+
+.agent-avatar-reroll:hover:not(:disabled) {
+  outline: 1px solid var(--control-accent-ring);
+  outline-offset: 2px;
+}
+
+.agent-avatar-reroll:active:not(:disabled) {
+  opacity: 0.86;
+}
+
+.agent-avatar-reroll:disabled {
+  cursor: default;
+  opacity: 0.7;
+}

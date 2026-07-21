@@ -10,6 +10,8 @@ export interface AgentDefinition {
   id: string;
   name: string;
   description: string;
+  /** When set, overrides `id` as the avatar generator seed. */
+  avatarSeed: string | null;
   systemPrompt: string | null;
   runtime: AgentRuntimeId;
   provider: string | null;
@@ -18,12 +20,19 @@ export interface AgentDefinition {
   builtIn: boolean;
 }
 
-export type AgentFileInput = Omit<AgentDefinition, "builtIn">;
+export type AgentFileInput = Omit<AgentDefinition, "builtIn" | "avatarSeed"> & {
+  avatarSeed?: string | null;
+};
+
+/** Normalized Agent file payload after validation (`avatarSeed` always present). */
+type AgentFileRecord = Omit<AgentDefinition, "builtIn">;
+
 
 const BUILT_IN_DEFAULT: AgentDefinition = {
   id: DEFAULT_AGENT_ID,
   name: "Default Agent",
   description: "Tradex built-in trading and market analysis Agent",
+  avatarSeed: null,
   systemPrompt: null,
   runtime: "pi",
   provider: null,
@@ -76,7 +85,7 @@ export class AgentStore {
     fs.unlinkSync(this.filePath(id));
   }
 
-  private readFiles(): AgentFileInput[] {
+  private readFiles(): AgentFileRecord[] {
     if (!fs.existsSync(this.directory)) return [];
     return fs.readdirSync(this.directory)
       .filter((name) => name.endsWith(".json"))
@@ -86,7 +95,7 @@ export class AgentStore {
       });
   }
 
-  private write(agent: AgentFileInput): void {
+  private write(agent: AgentFileRecord): void {
     fs.mkdirSync(this.directory, { recursive: true });
     const target = this.filePath(agent.id);
     const temporary = `${target}.${process.pid}.tmp`;
@@ -100,11 +109,14 @@ export class AgentStore {
   }
 }
 
-function validateAgent(value: AgentFileInput, source = "Agent"): AgentFileInput {
+function validateAgent(value: AgentFileInput, source = "Agent"): AgentFileRecord {
   if (!value || typeof value !== "object") throw new Error(`${source} must be an object`);
   assertAgentId(value.id);
   if (typeof value.name !== "string" || !value.name.trim()) throw new Error(`${source} name is required`);
   if (typeof value.description !== "string") throw new Error(`${source} description must be a string`);
+  if (value.avatarSeed != null && typeof value.avatarSeed !== "string") {
+    throw new Error(`${source} avatarSeed must be a string or null`);
+  }
   if (value.systemPrompt !== null && typeof value.systemPrompt !== "string") throw new Error(`${source} systemPrompt must be a string or null`);
   if (value.runtime !== "pi" && value.runtime !== "claude-code" && value.runtime !== "cursor") {
     throw new Error(`${source} runtime must be pi, claude-code, or cursor`);
@@ -118,10 +130,12 @@ function validateAgent(value: AgentFileInput, source = "Agent"): AgentFileInput 
   for (const key of ["provider", "model", "reasoningEffort"] as const) {
     if (value[key] !== null && typeof value[key] !== "string") throw new Error(`${source} ${key} must be a string or null`);
   }
+  const avatarSeed = typeof value.avatarSeed === "string" ? (value.avatarSeed.trim() || null) : null;
   return {
     id: value.id,
     name: value.name.trim(),
     description: value.description.trim(),
+    avatarSeed,
     systemPrompt: value.systemPrompt,
     runtime: value.runtime,
     provider: value.runtime === "pi" ? (value.provider?.trim() || null) : null,
@@ -137,7 +151,7 @@ function assertAgentId(id: string): void {
 }
 
 /** Pi Agents must bind a concrete provider+model at create time. */
-function assertProviderModelBoundAtCreate(agent: AgentFileInput): void {
+function assertProviderModelBoundAtCreate(agent: AgentFileRecord): void {
   if (agent.runtime !== "pi") return;
   if (!agent.provider) throw new Error("Pi Agent provider is required at create time");
   if (!agent.model) throw new Error("Pi Agent model is required at create time");
