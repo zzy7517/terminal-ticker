@@ -156,11 +156,6 @@ export async function resumeChatAgent(agentId: string): Promise<void> {
   if (!response.ok) throw await responseError(response, 'Agent resume failed');
 }
 
-export async function abortChatAgent(agentId: string): Promise<void> {
-  const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/abort`, { method: 'POST' });
-  if (!response.ok) throw await responseError(response, 'Agent abort failed');
-}
-
 export async function resetChatAgent(
   agentId: string,
   mode: 'restart' | 'session-reset' | 'full-reset',

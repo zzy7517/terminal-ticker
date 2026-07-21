@@ -1,13 +1,13 @@
 /**
- * AgentContextStore — 逻辑 Agent Context 与 Runtime generation 的持久化。
+ * AgentContextStore — 逻辑 Agent Context 与当前 Runtime Session 绑定的持久化。
  *
- * 以 agentId 为主键。物理 Runtime Session 轮换会递增 generation，
- * 但不会创建用户可见的新 DM 或 chatId。存在遗留 agent_chats 行时会迁移。
+ * 以 agentId 为主键。物理 Runtime Session 轮换只覆盖当前绑定，
+ * 不保留 generations 历史，也不创建用户可见的新 DM。
  */
 import Database from "better-sqlite3";
 import crypto from "node:crypto";
 import path from "node:path";
-import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
+import { BaseStore, defaultCacheDir } from "../db.js";
 import { initChatEventSchema } from "../chat/events.js";
 import type { AgentRuntimeId } from "./runtime/types.js";
 
@@ -16,8 +16,6 @@ export interface AgentContextRecord {
   agentId: string;
   /** Agent 的稳定逻辑 session id；不是用户可见 chatId。 */
   logicalSessionId: string;
-  activeRuntimeGeneration: number;
-  snapshotGeneration: number;
   status: "idle" | "active" | "error" | "paused" | "offline";
   paused: boolean;
   workspacePath: string | null;
@@ -25,18 +23,16 @@ export interface AgentContextRecord {
   lastActivationAtMs: number | null;
   lastError: string | null;
   activeSessionId: string | null;
+  activeRuntime: AgentRuntimeId | null;
+  nativeSessionId: string | null;
 }
 
-/** 一次物理 Runtime Session generation 记录。 */
-export interface AgentContextSession {
+/** 当前物理 Runtime Session 绑定。 */
+export interface AgentSessionBinding {
   agentId: string;
-  generation: number;
   sessionId: string;
   runtime: AgentRuntimeId;
   nativeSessionId: string | null;
-  startedAtMs: number;
-  endedAtMs: number | null;
-  rotationReason: string;
 }
 
 /** 遗留 Session 行，用于导入/绑定到 Agent Context。 */
@@ -52,28 +48,18 @@ export interface ExistingAgentSession {
 interface ContextRow {
   agent_id: string;
   logical_session_id: string;
-  active_runtime_generation: number;
-  snapshot_generation: number;
   status: AgentContextRecord["status"];
   paused: number;
   workspace_path: string | null;
   memory_scope: string | null;
   last_activation_at_ms: number | null;
   last_error: string | null;
-}
-
-interface SessionRow {
-  agent_id: string;
-  generation: number;
-  session_id: string;
-  runtime: AgentRuntimeId;
+  active_session_id: string | null;
+  active_runtime: AgentRuntimeId | null;
   native_session_id: string | null;
-  started_at_ms: number;
-  ended_at_ms: number | null;
-  rotation_reason: string;
 }
 
-/** Agent Context / generation 的 SQLite 持久化。 */
+/** Agent Context / 当前 Session 绑定的 SQLite 持久化。 */
 export class AgentContextStore extends BaseStore {
   constructor(dbPath = path.join(defaultCacheDir(), "chat.sqlite3")) {
     super(dbPath);
@@ -85,31 +71,23 @@ export class AgentContextStore extends BaseStore {
       CREATE TABLE IF NOT EXISTS agent_contexts (
         agent_id TEXT PRIMARY KEY,
         logical_session_id TEXT NOT NULL,
-        active_runtime_generation INTEGER NOT NULL DEFAULT 0,
-        snapshot_generation INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'idle'
           CHECK (status IN ('idle', 'active', 'error', 'paused', 'offline')),
         paused INTEGER NOT NULL DEFAULT 0,
         workspace_path TEXT,
         memory_scope TEXT,
         last_activation_at_ms INTEGER,
-        last_error TEXT
+        last_error TEXT,
+        active_session_id TEXT,
+        active_runtime TEXT CHECK (
+          active_runtime IS NULL OR active_runtime IN ('pi', 'claude-code', 'cursor')
+        ),
+        native_session_id TEXT
       );
-      CREATE TABLE IF NOT EXISTS agent_context_sessions (
-        agent_id TEXT NOT NULL REFERENCES agent_contexts(agent_id) ON DELETE CASCADE,
-        generation INTEGER NOT NULL,
-        session_id TEXT NOT NULL UNIQUE,
-        runtime TEXT NOT NULL CHECK (runtime IN ('pi', 'claude-code', 'cursor')),
-        native_session_id TEXT,
-        started_at_ms INTEGER NOT NULL,
-        ended_at_ms INTEGER,
-        rotation_reason TEXT NOT NULL DEFAULT 'initial',
-        PRIMARY KEY (agent_id, generation)
-      );
-      CREATE INDEX IF NOT EXISTS idx_agent_context_sessions_session
-        ON agent_context_sessions (session_id);
     `);
-    this.migrateRuntimeConstraint(conn);
+    // 必须先补列：旧库 CREATE TABLE IF NOT EXISTS 是 no-op，索引依赖新列。
+    this.migrateBindingColumns(conn);
+    this.migrateFromSessionHistory(conn);
     this.migrateLegacyChats(conn);
   }
 
@@ -122,9 +100,10 @@ export class AgentContextStore extends BaseStore {
       const logicalSessionId = crypto.randomUUID();
       conn.prepare(`
         INSERT INTO agent_contexts (
-          agent_id, logical_session_id, active_runtime_generation, snapshot_generation,
-          status, paused, workspace_path, memory_scope, last_activation_at_ms, last_error
-        ) VALUES (?, ?, 0, 0, 'idle', 0, NULL, NULL, NULL, NULL)
+          agent_id, logical_session_id, status, paused,
+          workspace_path, memory_scope, last_activation_at_ms, last_error,
+          active_session_id, active_runtime, native_session_id
+        ) VALUES (?, ?, 'idle', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
       `).run(agentId, logicalSessionId);
       return this.require(agentId);
     })();
@@ -135,125 +114,95 @@ export class AgentContextStore extends BaseStore {
       "SELECT * FROM agent_contexts WHERE agent_id = ?",
     ).get(agentId) as ContextRow | undefined;
     if (!row) return null;
-    return contextFromRow(row, this.activeSessionId(agentId));
+    return contextFromRow(row);
   }
 
+  /** 覆盖写入当前物理 Session 绑定；同 sessionId 幂等。 */
   attachSession(agentId: string, input: {
     sessionId: string;
     runtime: AgentRuntimeId;
     nativeSessionId?: string | null;
-    startedAtMs?: number;
-    rotationReason?: string;
-  }): AgentContextSession {
+  }): AgentSessionBinding {
     const conn = this.getConn();
     return conn.transaction(() => {
       this.ensure(agentId);
-      const existing = conn.prepare(
-        "SELECT * FROM agent_context_sessions WHERE session_id = ?",
-      ).get(input.sessionId) as SessionRow | undefined;
-      if (existing) {
-        if (existing.agent_id !== agentId) throw new Error("Session belongs to another Agent");
-        return sessionFromRow(existing);
+      const owner = conn.prepare(
+        "SELECT agent_id FROM agent_contexts WHERE active_session_id = ?",
+      ).get(input.sessionId) as { agent_id: string } | undefined;
+      if (owner && owner.agent_id !== agentId) {
+        throw new Error("Session belongs to another Agent");
       }
       const current = this.require(agentId);
-      if (current.activeSessionId) {
-        conn.prepare(`
-          UPDATE agent_context_sessions SET ended_at_ms = ?
-          WHERE agent_id = ? AND generation = ? AND ended_at_ms IS NULL
-        `).run(nowMs(), agentId, current.activeRuntimeGeneration);
+      if (current.activeSessionId === input.sessionId) {
+        return {
+          agentId,
+          sessionId: input.sessionId,
+          runtime: current.activeRuntime ?? input.runtime,
+          nativeSessionId: current.nativeSessionId,
+        };
       }
-      const generation = current.activeRuntimeGeneration + 1;
-      const startedAtMs = input.startedAtMs ?? nowMs();
       conn.prepare(`
-        INSERT INTO agent_context_sessions (
-          agent_id, generation, session_id, runtime, native_session_id,
-          started_at_ms, ended_at_ms, rotation_reason
-        ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+        UPDATE agent_contexts
+        SET active_session_id = ?, active_runtime = ?, native_session_id = ?
+        WHERE agent_id = ?
       `).run(
-        agentId,
-        generation,
         input.sessionId,
         input.runtime,
         input.nativeSessionId ?? null,
-        startedAtMs,
-        input.rotationReason ?? "initial",
+        agentId,
       );
-      conn.prepare(`
-        UPDATE agent_contexts SET active_runtime_generation = ? WHERE agent_id = ?
-      `).run(generation, agentId);
-      return this.listSessions(agentId).at(-1)!;
+      return {
+        agentId,
+        sessionId: input.sessionId,
+        runtime: input.runtime,
+        nativeSessionId: input.nativeSessionId ?? null,
+      };
     })();
-  }
-
-  listSessions(agentId: string): AgentContextSession[] {
-    const rows = this.getConn().prepare(`
-      SELECT * FROM agent_context_sessions WHERE agent_id = ? ORDER BY generation
-    `).all(agentId) as SessionRow[];
-    return rows.map(sessionFromRow);
   }
 
   contextForSession(sessionId: string): AgentContextRecord | null {
     const row = this.getConn().prepare(`
-      SELECT c.* FROM agent_contexts c
-      JOIN agent_context_sessions s ON s.agent_id = c.agent_id
-      WHERE s.session_id = ?
+      SELECT * FROM agent_contexts WHERE active_session_id = ?
     `).get(sessionId) as ContextRow | undefined;
     if (!row) return null;
-    return contextFromRow(row, this.activeSessionId(row.agent_id));
+    return contextFromRow(row);
   }
 
+  /** 若 sessionId 是当前绑定则清空；否则 no-op。 */
   removeSession(sessionId: string): void {
-    const conn = this.getConn();
-    conn.transaction(() => {
-      const session = conn.prepare(
-        "SELECT * FROM agent_context_sessions WHERE session_id = ?",
-      ).get(sessionId) as SessionRow | undefined;
-      if (!session) return;
-      conn.prepare("DELETE FROM agent_context_sessions WHERE session_id = ?").run(sessionId);
-      const latest = conn.prepare(`
-        SELECT COALESCE(MAX(generation), 0) AS generation
-        FROM agent_context_sessions WHERE agent_id = ?
-      `).get(session.agent_id) as { generation: number };
-      conn.prepare(`
-        UPDATE agent_contexts SET active_runtime_generation = ? WHERE agent_id = ?
-      `).run(latest.generation, session.agent_id);
-      if (latest.generation > 0) {
-        conn.prepare(`
-          UPDATE agent_context_sessions SET ended_at_ms = NULL
-          WHERE agent_id = ? AND generation = ?
-        `).run(session.agent_id, latest.generation);
-      }
-    })();
+    this.getConn().prepare(`
+      UPDATE agent_contexts
+      SET active_session_id = NULL, active_runtime = NULL, native_session_id = NULL
+      WHERE active_session_id = ?
+    `).run(sessionId);
   }
 
   hasSessionsForAgent(agentId: string): boolean {
     return Boolean(this.getConn().prepare(`
-      SELECT 1 FROM agent_context_sessions WHERE agent_id = ? LIMIT 1
+      SELECT 1 FROM agent_contexts
+      WHERE agent_id = ? AND active_session_id IS NOT NULL
+      LIMIT 1
     `).get(agentId));
   }
 
+  /** 每个 Agent 只绑最新一条；已有当前绑定则跳过。 */
   indexSessions(sessions: ExistingAgentSession[]): void {
     const conn = this.getConn();
     conn.transaction(() => {
-      const byAgent = new Map<string, ExistingAgentSession[]>();
+      const newestByAgent = new Map<string, ExistingAgentSession>();
       for (const session of sessions) {
-        if (conn.prepare("SELECT 1 FROM agent_context_sessions WHERE session_id = ?").get(session.sessionId)) {
-          continue;
+        const current = newestByAgent.get(session.agentId);
+        if (!current || session.createdAtMs >= current.createdAtMs) {
+          newestByAgent.set(session.agentId, session);
         }
-        const existing = byAgent.get(session.agentId) ?? [];
-        existing.push(session);
-        byAgent.set(session.agentId, existing);
       }
-      for (const [agentId, pending] of byAgent) {
-        this.ensure(agentId);
-        for (const session of pending.sort((left, right) => left.createdAtMs - right.createdAtMs)) {
-          this.attachSession(agentId, {
-            sessionId: session.sessionId,
-            runtime: session.runtime,
-            startedAtMs: session.createdAtMs,
-            rotationReason: "imported",
-          });
-        }
+      for (const [agentId, session] of newestByAgent) {
+        const context = this.ensure(agentId);
+        if (context.activeSessionId) continue;
+        this.attachSession(agentId, {
+          sessionId: session.sessionId,
+          runtime: session.runtime,
+        });
       }
     })();
   }
@@ -291,49 +240,63 @@ export class AgentContextStore extends BaseStore {
     })();
   }
 
-  private activeSessionId(agentId: string): string | null {
-    const row = this.getConn().prepare(`
-      SELECT session_id FROM agent_context_sessions
-      WHERE agent_id = ?
-      ORDER BY generation DESC LIMIT 1
-    `).get(agentId) as { session_id: string } | undefined;
-    return row?.session_id ?? null;
-  }
-
   private require(agentId: string): AgentContextRecord {
     const context = this.get(agentId);
     if (!context) throw new Error(`Agent Context not found: ${agentId}`);
     return context;
   }
 
-  private migrateRuntimeConstraint(conn: Database.Database): void {
-    const row = conn.prepare(
-      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_context_sessions'",
-    ).get() as { sql: string } | undefined;
-    if (!row?.sql || row.sql.includes("'cursor'")) return;
-    conn.transaction(() => {
-      conn.exec(`
-        CREATE TABLE agent_context_sessions_v2 (
-        agent_id TEXT NOT NULL REFERENCES agent_contexts(agent_id) ON DELETE CASCADE,
-        generation INTEGER NOT NULL,
-        session_id TEXT NOT NULL UNIQUE,
-        runtime TEXT NOT NULL CHECK (runtime IN ('pi', 'claude-code', 'cursor')),
-        native_session_id TEXT,
-        started_at_ms INTEGER NOT NULL,
-        ended_at_ms INTEGER,
-        rotation_reason TEXT NOT NULL DEFAULT 'initial',
-        PRIMARY KEY (agent_id, generation)
-      );
-      INSERT INTO agent_context_sessions_v2
-        SELECT agent_id, generation, session_id, runtime, native_session_id,
-               started_at_ms, ended_at_ms, rotation_reason
-        FROM agent_context_sessions;
-      DROP TABLE agent_context_sessions;
-      ALTER TABLE agent_context_sessions_v2 RENAME TO agent_context_sessions;
-        CREATE INDEX IF NOT EXISTS idx_agent_context_sessions_session
-          ON agent_context_sessions (session_id);
-      `);
-    })();
+  /** 为已有 agent_contexts 表补当前绑定列。 */
+  private migrateBindingColumns(conn: Database.Database): void {
+    const cols = conn.prepare("PRAGMA table_info(agent_contexts)").all() as Array<{ name: string }>;
+    const names = new Set(cols.map((col) => col.name));
+    if (!names.has("active_session_id")) {
+      conn.exec("ALTER TABLE agent_contexts ADD COLUMN active_session_id TEXT");
+    }
+    if (!names.has("active_runtime")) {
+      conn.exec("ALTER TABLE agent_contexts ADD COLUMN active_runtime TEXT");
+    }
+    if (!names.has("native_session_id")) {
+      conn.exec("ALTER TABLE agent_contexts ADD COLUMN native_session_id TEXT");
+    }
+    conn.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_contexts_active_session
+        ON agent_contexts (active_session_id)
+        WHERE active_session_id IS NOT NULL
+    `);
+  }
+
+  /** 从旧 generations 表迁出每个 Agent 的最新绑定后 DROP。 */
+  private migrateFromSessionHistory(conn: Database.Database): void {
+    const hasHistory = conn.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_context_sessions'",
+    ).get() as { name: string } | undefined;
+    if (!hasHistory) return;
+
+    const latest = conn.prepare(`
+      SELECT s.agent_id, s.session_id, s.runtime, s.native_session_id
+      FROM agent_context_sessions s
+      INNER JOIN (
+        SELECT agent_id, MAX(generation) AS generation
+        FROM agent_context_sessions
+        GROUP BY agent_id
+      ) latest
+        ON latest.agent_id = s.agent_id AND latest.generation = s.generation
+    `).all() as Array<{
+      agent_id: string;
+      session_id: string;
+      runtime: AgentRuntimeId;
+      native_session_id: string | null;
+    }>;
+
+    for (const row of latest) {
+      conn.prepare(`
+        UPDATE agent_contexts
+        SET active_session_id = ?, active_runtime = ?, native_session_id = ?
+        WHERE agent_id = ? AND active_session_id IS NULL
+      `).run(row.session_id, row.runtime, row.native_session_id, row.agent_id);
+    }
+    conn.exec("DROP TABLE agent_context_sessions");
   }
 
   private migrateLegacyChats(conn: Database.Database): void {
@@ -359,73 +322,55 @@ export class AgentContextStore extends BaseStore {
       const logicalSessionId = crypto.randomUUID();
       conn.prepare(`
         INSERT OR IGNORE INTO agent_contexts (
-          agent_id, logical_session_id, active_runtime_generation, snapshot_generation,
-          status, paused, workspace_path, memory_scope, last_activation_at_ms, last_error
-        ) VALUES (?, ?, 0, 0, 'idle', 0, NULL, NULL, NULL, NULL)
+          agent_id, logical_session_id, status, paused,
+          workspace_path, memory_scope, last_activation_at_ms, last_error,
+          active_session_id, active_runtime, native_session_id
+        ) VALUES (?, ?, 'idle', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
       `).run(agentId, logicalSessionId);
-      let generation = 0;
+
+      let latest: {
+        session_id: string;
+        runtime: AgentRuntimeId;
+        created_at_ms: number;
+      } | null = null;
       for (const chat of agentChats) {
         const sessions = conn.prepare(`
-          SELECT session_id, runtime, created_at_ms, rotation_reason
+          SELECT session_id, runtime, created_at_ms
           FROM agent_chat_sessions WHERE chat_id = ? ORDER BY generation
         `).all(chat.id) as Array<{
           session_id: string;
           runtime: AgentRuntimeId;
           created_at_ms: number;
-          rotation_reason: string;
         }>;
         for (const session of sessions) {
-          if (conn.prepare("SELECT 1 FROM agent_context_sessions WHERE session_id = ?").get(session.session_id)) {
-            continue;
+          if (!latest || session.created_at_ms >= latest.created_at_ms) {
+            latest = session;
           }
-          generation += 1;
-          conn.prepare(`
-            INSERT INTO agent_context_sessions (
-              agent_id, generation, session_id, runtime, native_session_id,
-              started_at_ms, ended_at_ms, rotation_reason
-            ) VALUES (?, ?, ?, ?, NULL, ?, NULL, ?)
-          `).run(
-            agentId,
-            generation,
-            session.session_id,
-            session.runtime,
-            session.created_at_ms,
-            session.rotation_reason || "imported",
-          );
         }
       }
-      conn.prepare(`
-        UPDATE agent_contexts SET active_runtime_generation = ? WHERE agent_id = ?
-      `).run(generation, agentId);
+      if (latest) {
+        conn.prepare(`
+          UPDATE agent_contexts
+          SET active_session_id = ?, active_runtime = ?, native_session_id = NULL
+          WHERE agent_id = ?
+        `).run(latest.session_id, latest.runtime, agentId);
+      }
     }
   }
 }
 
-function contextFromRow(row: ContextRow, activeSessionId: string | null): AgentContextRecord {
+function contextFromRow(row: ContextRow): AgentContextRecord {
   return {
     agentId: row.agent_id,
     logicalSessionId: row.logical_session_id,
-    activeRuntimeGeneration: row.active_runtime_generation,
-    snapshotGeneration: row.snapshot_generation,
     status: row.status,
     paused: Boolean(row.paused),
     workspacePath: row.workspace_path,
     memoryScope: row.memory_scope,
     lastActivationAtMs: row.last_activation_at_ms,
     lastError: row.last_error,
-    activeSessionId,
-  };
-}
-
-function sessionFromRow(row: SessionRow): AgentContextSession {
-  return {
-    agentId: row.agent_id,
-    generation: row.generation,
-    sessionId: row.session_id,
-    runtime: row.runtime,
+    activeSessionId: row.active_session_id,
+    activeRuntime: row.active_runtime,
     nativeSessionId: row.native_session_id,
-    startedAtMs: row.started_at_ms,
-    endedAtMs: row.ended_at_ms,
-    rotationReason: row.rotation_reason,
   };
 }

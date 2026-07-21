@@ -4,6 +4,7 @@
  */
 import { useState } from 'react';
 import { Bot, Hash, Loader2, Plus, X } from 'lucide-react';
+import { agentPresenceView } from '../../chat/presenceDisplay';
 import { useChatPresence } from '../../chat/presenceStore';
 import { createLiveChatShellController } from '../../chat/shellController';
 import { channelTarget, directMessageTarget, unreadCountForTarget } from '../../chat/timeline';
@@ -36,7 +37,6 @@ export function AgentDirectMessageList() {
   return (
     <aside className="direct-message-list">
       <header className="chat-sidebar-title">Chat</header>
-      <header>JOINT CHANNELS <span>0</span></header>
       <header>
         CHANNELS <span>{channels.length}</span>
         <button className="chat-sidebar-add" onClick={() => setCreating((value) => !value)} title="New Channel" type="button">
@@ -74,15 +74,11 @@ export function AgentDirectMessageList() {
         <div className="empty-state sm row"><Loader2 className="spin" size={14} /> Loading Agents</div>
       )}
       {agents.map((agent) => {
-        const presence = presenceByAgentId[agent.id];
-        const running = Boolean(presence?.running);
-        const failed = presence?.status === 'error';
-        const paused = Boolean(presence?.paused);
+        const { label: statusLabel, tone } = agentPresenceView(presenceByAgentId[agent.id]);
         const directMessageId = directMessageIdByAgentId[agent.id];
         const count = directMessageId
           ? unreadCountForTarget(unread, directMessageTarget(directMessageId))
           : 0;
-        const statusLabel = paused ? 'Paused' : running ? 'Online' : failed ? 'Error' : null;
         return (
           <button
             className={`direct-message-row ${activeTarget?.kind === 'direct-message' && selectedAgentId === agent.id ? 'active' : ''}`}
@@ -93,10 +89,10 @@ export function AgentDirectMessageList() {
             <span className="direct-message-avatar"><Bot size={16} /></span>
             <span className="direct-message-copy">
               <strong>{agent.name}</strong>
-              {statusLabel ? <small>{statusLabel}</small> : null}
+              <small>{statusLabel}</small>
             </span>
             {count > 0 && directMessageId ? <em className="unread-badge">{count}</em> : null}
-            <span className={`direct-message-presence ${running ? 'running' : failed ? 'error' : paused ? 'paused' : ''}`} />
+            <span className={`direct-message-presence ${tone}`} />
           </button>
         );
       })}

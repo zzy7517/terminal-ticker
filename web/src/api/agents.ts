@@ -109,16 +109,6 @@ export async function deleteAgentSessionById(sessionId: string): Promise<AgentSe
   return response.json();
 }
 
-// Aborts the currently-running agent for a session.
-export async function abortAgentSession(sessionId: string): Promise<void> {
-  const response = await fetch(`/api/agent/sessions/${encodeURIComponent(sessionId)}/abort`, {
-    method: 'POST',
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'agent abort failed');
-  }
-}
-
 export interface ImageAttachment {
   data: string;      // base64
   mimeType: string;  // image/png, image/jpeg, etc.

@@ -11,6 +11,7 @@ import {
   fetchChannelMembers,
   removeChannelMember,
 } from '../../api';
+import { agentPresenceView } from '../../chat/presenceDisplay';
 import { useChatPresence } from '../../chat/presenceStore';
 import { useAgentStore } from '../../stores/agentStore';
 import type { ChannelHeldDraft, ChannelMember } from '../../types';
@@ -88,11 +89,7 @@ export function MemberPanel({
             <ul className="member-list">
               {agentMembers.map((member) => {
                 const agent = agents.find((entry) => entry.id === member.subjectId);
-                const presence = presenceByAgentId[member.subjectId];
-                const running = Boolean(presence?.running);
-                const failed = presence?.status === 'error';
-                const paused = Boolean(presence?.paused);
-                const statusLabel = paused ? 'Paused' : running ? 'Online' : failed ? 'Error' : 'Idle';
+                const { label: statusLabel, tone } = agentPresenceView(presenceByAgentId[member.subjectId]);
                 return (
                   <li key={`${member.subjectType}:${member.subjectId}`}>
                     <span className="member-avatar agent" aria-hidden>
@@ -101,7 +98,7 @@ export function MemberPanel({
                     <div>
                       <strong>{agent?.name ?? member.subjectId}</strong>
                       <small>
-                        <span className={`member-presence ${running ? 'online' : failed ? 'error' : paused ? 'paused' : ''}`} />
+                        <span className={`member-presence ${tone}`} />
                         {statusLabel}
                       </small>
                     </div>

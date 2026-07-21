@@ -30,7 +30,7 @@ export function validateFollowUpImages(images: ImageAttachment[]): string | null
 
 // 判断当前运行结果是否允许自动消费后续队列。
 export function shouldAutoRunFollowUps(
-  outcome: 'completed' | 'user-aborted' | 'failed',
+  outcome: 'completed' | 'failed',
   hasQueuedItems: boolean,
 ): boolean {
   return hasQueuedItems && outcome !== 'failed';

@@ -425,12 +425,16 @@ export class ChannelStore extends BaseStore {
     return heldDrafts.humanDiscardHeldDraft(this.getConn(), input);
   }
 
-  /** 统计 Human 已读游标之后的顶层消息数。 */
+  /**
+   * 统计 Human 已读游标之后的未读消息数。
+   * 排除 Human 自己发出的消息（与 DM 未读投影一致）。
+   */
   countMessagesAfterSeq(channelId: string, afterSeq: number): number {
     const row = this.getConn().prepare(`
       SELECT COUNT(*) AS count FROM channel_messages
       WHERE channel_id = ? AND channel_seq > ?
         AND deleted_at_ms IS NULL
+        AND author_type != 'human'
     `).get(channelId, afterSeq) as { count: number };
     return Number(row.count) || 0;
   }

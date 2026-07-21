@@ -1,22 +1,21 @@
 /**
  * AgentTracePanel — DM 侧 Agent 资料栏（对应 Raft Agent detail）。
- * Profile 展示身份/runtime；Activity 展示 generation 与 pause/resume/reset。
+ * Profile 展示身份/runtime；Activity 展示 Stop/Resume 切换与 reset。
  */
 import { useEffect, useState } from 'react';
-import { Bot, Pause, Play, Square, X } from 'lucide-react';
+import { Bot, Play, Square, X } from 'lucide-react';
 import {
-  abortChatAgent,
   pauseChatAgent,
   resetChatAgent,
   resumeChatAgent,
 } from '../../api';
+import { agentPresenceView } from '../../chat/presenceDisplay';
 import { useChatPresence, usePresenceStore } from '../../chat/presenceStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
-import type { AgentDirectMessage, AgentDirectMessageResponse, AgentPresence } from '../../types';
+import type { AgentDirectMessage, AgentPresence } from '../../types';
 import './AgentTracePanel.css';
 
-const EMPTY_GENERATIONS: AgentDirectMessageResponse['generations'] = [];
 const EMPTY_MESSAGES: AgentDirectMessage[] = [];
 
 type ProfileTab = 'profile' | 'activity';
@@ -31,7 +30,6 @@ function runtimeLabel(runtime: string | undefined): string {
 /** Agent 资料侧栏：Profile / Activity 与生命周期控制。 */
 export function AgentTracePanel({ agentId }: { agentId: string }) {
   const agent = useAgentStore((state) => state.agents.find((entry) => entry.id === agentId) ?? null);
-  const generations = useAgentStore((state) => state.generationsByAgentId[agentId] ?? EMPTY_GENERATIONS);
   const directMessages = useAgentStore((state) => state.directMessagesByAgentId[agentId] ?? EMPTY_MESSAGES);
   const closeAgentProfile = useChatStore((state) => state.closeAgentProfile);
   const [tab, setTab] = useState<ProfileTab>('profile');
@@ -52,22 +50,7 @@ export function AgentTracePanel({ agentId }: { agentId: string }) {
     setTab('profile');
   }, [agentId]);
 
-  const statusLabel = presence?.paused
-    ? 'Paused'
-    : presence?.running
-      ? 'Online'
-      : presence?.status === 'error'
-        ? 'Error'
-        : presence?.status === 'idle'
-          ? 'Online'
-          : (presence?.status ?? 'Offline');
-  const statusTone = presence?.paused
-    ? 'paused'
-    : presence?.running || presence?.status === 'idle'
-      ? 'online'
-      : presence?.status === 'error'
-        ? 'error'
-        : 'offline';
+  const { label: statusLabel, tone: statusTone } = agentPresenceView(presence);
   const handle = `@${(agent?.id ?? agentId).replace(/^agent:/, '')}`;
 
   return (
@@ -200,24 +183,15 @@ export function AgentTracePanel({ agentId }: { agentId: string }) {
               <div className="agent-profile-controls">
                 <button
                   className="shell-button sm"
-                  onClick={() => void pauseChatAgent(agentId).then(refreshPresence)}
+                  onClick={() => void (presence?.paused
+                    ? resumeChatAgent(agentId)
+                    : pauseChatAgent(agentId)
+                  ).then(refreshPresence)}
+                  title={presence?.paused ? 'Resume this Agent' : 'Stop this Agent'}
                   type="button"
                 >
-                  <Pause size={12} /> Pause
-                </button>
-                <button
-                  className="shell-button sm"
-                  onClick={() => void resumeChatAgent(agentId).then(refreshPresence)}
-                  type="button"
-                >
-                  <Play size={12} /> Resume
-                </button>
-                <button
-                  className="shell-button sm"
-                  onClick={() => void abortChatAgent(agentId).then(refreshPresence)}
-                  type="button"
-                >
-                  <Square size={12} /> Abort
+                  {presence?.paused ? <Play size={12} /> : <Square size={12} />}
+                  {presence?.paused ? 'Resume' : 'Stop'}
                 </button>
               </div>
             </section>
@@ -231,7 +205,7 @@ export function AgentTracePanel({ agentId }: { agentId: string }) {
                     .then(() => useAgentStore.getState().refreshAgentDirectMessages(agentId))
                     .then(refreshPresence)
                     .catch((err) => setError(err instanceof Error ? err.message : 'Restart failed'))}
-                  title="Abort current run and keep the same Runtime Session"
+                  title="Restart this Agent and keep the same Runtime Session"
                   type="button"
                 >
                   Restart
@@ -262,21 +236,6 @@ export function AgentTracePanel({ agentId }: { agentId: string }) {
                   Full reset
                 </button>
               </div>
-            </section>
-
-            <section className="agent-profile-block">
-              <header>Runtime generations <span>{generations.length}</span></header>
-              <ul className="agent-profile-generations">
-                {generations.length === 0 && (
-                  <li className="muted">No runtime generations yet.</li>
-                )}
-                {generations.map((generation) => (
-                  <li key={generation.sessionId}>
-                    <strong>{runtimeLabel(generation.runtime)}</strong>
-                    <small>{generation.sessionId.slice(0, 8)}… · {generation.rotationReason ?? 'active'}</small>
-                  </li>
-                ))}
-              </ul>
             </section>
           </>
         )}

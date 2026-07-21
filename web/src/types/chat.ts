@@ -20,13 +20,6 @@ export interface AgentDirectMessageResponse {
   target: { kind: 'direct-message'; directMessageId: string };
   messages: AgentDirectMessage[];
   nextBeforeSeq: number | null;
-  generations: Array<{
-    generation: number;
-    sessionId: string;
-    runtime: 'pi' | 'claude-code' | 'cursor';
-    createdAtMs: number;
-    rotationReason: string;
-  }>;
 }
 
 export interface Channel {

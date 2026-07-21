@@ -80,6 +80,32 @@ describe("MessageStore", () => {
     const listed = store.listConversationsForAgent("cindy");
     expect(listed.map((item) => item.id).sort()).toEqual([humanDm.id, peerDm.id].sort());
   });
+
+  it("excludes Human-authored messages from unread counts", () => {
+    const store = createStore();
+    const dm = store.ensureHumanAgentDm("cindy");
+    store.appendMessage({
+      directMessageId: dm.id,
+      authorType: "human",
+      authorId: "owner",
+      content: "hello",
+    });
+    store.appendMessage({
+      directMessageId: dm.id,
+      authorType: "agent",
+      authorId: "cindy",
+      content: "hi",
+    });
+    store.appendMessage({
+      directMessageId: dm.id,
+      authorType: "human",
+      authorId: "owner",
+      content: "thanks",
+    });
+    expect(store.countMessagesAfterSeq(dm.id, 0)).toBe(1);
+    expect(store.countMessagesAfterSeq(dm.id, 1)).toBe(1);
+    expect(store.countMessagesAfterSeq(dm.id, 2)).toBe(0);
+  });
 });
 
 describe("parseMessageTarget", () => {

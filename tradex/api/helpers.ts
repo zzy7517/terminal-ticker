@@ -111,7 +111,6 @@ function withChatProjection(runtime: AppRuntime, sessionId: string, payload: Rec
       ...(payload.session as Record<string, unknown>),
       agentId: context.agentId,
       logicalSessionId: context.logicalSessionId,
-      generation: context.activeRuntimeGeneration,
     },
   };
 }

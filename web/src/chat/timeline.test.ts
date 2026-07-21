@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { chronologicalMessages, unreadCountForTarget, channelTarget, directMessageTarget } from './timeline';
 import { createChatShellController } from './shellController';
 import { projectDirectMessageTimeline } from './directMessageTimeline';
+import { markActiveTargetReadAfterRecovery } from '../stores/chatStore';
 
 describe('Chat Target Timeline', () => {
   it('reverses newest-first pages into chronological order', () => {
@@ -59,5 +60,48 @@ describe('Chat Shell Controller', () => {
     await shell.send('hello');
     expect(calls).toEqual(['init', 'channel:btc', 'dm:alpha', 'send:hello']);
     expect(shell.activeTarget()).toEqual(directMessageTarget('dm-1'));
+  });
+});
+
+describe('markActiveTargetReadAfterRecovery', () => {
+  it('marks the open Channel after SSE recovery', async () => {
+    const markTargetRead = vi.fn(async () => undefined);
+    await markActiveTargetReadAfterRecovery({
+      activeTarget: channelTarget('c1'),
+      recoveredChannelId: 'c1',
+      channelTimeline: [
+        { id: 'm1', channelSeq: 1 } as never,
+        { id: 'm2', channelSeq: 2 } as never,
+      ],
+      recoveredDirectMessageIds: [],
+      markTargetRead,
+    });
+    expect(markTargetRead).toHaveBeenCalledWith(channelTarget('c1'), 2, 'm2');
+  });
+
+  it('does not mark a Channel that is not open', async () => {
+    const markTargetRead = vi.fn(async () => undefined);
+    await markActiveTargetReadAfterRecovery({
+      activeTarget: null,
+      recoveredChannelId: 'c1',
+      channelTimeline: [{ id: 'm1', channelSeq: 1 } as never],
+      recoveredDirectMessageIds: [],
+      markTargetRead,
+    });
+    expect(markTargetRead).not.toHaveBeenCalled();
+  });
+
+  it('does not apply a recovered Channel timeline to a different open Channel', async () => {
+    const markTargetRead = vi.fn(async () => undefined);
+    await markActiveTargetReadAfterRecovery({
+      activeTarget: channelTarget('c2'),
+      recoveredChannelId: 'c1',
+      channelTimeline: [
+        { id: 'm1', channelSeq: 9 } as never,
+      ],
+      recoveredDirectMessageIds: [],
+      markTargetRead,
+    });
+    expect(markTargetRead).not.toHaveBeenCalled();
   });
 });

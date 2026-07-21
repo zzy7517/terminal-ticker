@@ -9,13 +9,16 @@ import {
   ArrowUp,
   Bot,
   Paperclip,
+  Play,
   Square,
   X,
   Zap,
 } from 'lucide-react';
+import { pauseChatAgent, resumeChatAgent } from '../../api';
 import { ProviderIcon } from '../ProviderIcon';
 import type { AgentDirectMessage } from '../../types';
-import { useChatPresence } from '../../chat/presenceStore';
+import { agentPresenceView } from '../../chat/presenceDisplay';
+import { useChatPresence, usePresenceStore } from '../../chat/presenceStore';
 import { projectDirectMessageTimeline } from '../../chat/directMessageTimeline';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
@@ -58,7 +61,6 @@ export function AgentSessionPanel({
   const runAgentAnalysis = useAgentStore((s) => s.runAgentAnalysis);
   const removeFollowUp = useAgentStore((s) => s.removeFollowUp);
   const clearFollowUps = useAgentStore((s) => s.clearFollowUps);
-  const abortAgent = useAgentStore((s) => s.abortAgent);
   const agentProfileOpen = useChatStore((s) => s.agentProfileOpen);
   const toggleAgentProfile = useChatStore((s) => s.toggleAgentProfile);
 
@@ -66,15 +68,7 @@ export function AgentSessionPanel({
   const sessionLoading = agentSessionLoadingKey !== null;
   const chatActionKey = agentChatActionKey;
   const agentDisplayName = selectedAgent?.name ?? 'Agent';
-  const presenceLabel = presence?.paused
-    ? 'Paused'
-    : presence?.running || busy
-      ? 'Online'
-      : presence?.status === 'error'
-        ? 'Error'
-        : presence?.status === 'idle'
-          ? 'Online'
-          : (presence?.status ?? 'Offline');
+  const { label: presenceLabel, tone: presenceTone } = agentPresenceView(presence, { busy });
 
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -208,23 +202,27 @@ export function AgentSessionPanel({
           </span>
           <span className="dm-conversation-copy">
             <strong>{agentDisplayName}</strong>
-            <small className={`dm-presence-label ${presence?.running || busy ? 'online' : presence?.paused ? 'paused' : ''}`}>
+            <small className={`dm-presence-label ${presenceTone}`}>
               {presenceLabel}
             </small>
           </span>
         </button>
         <div className="dm-conversation-meta">
-          {busy && <span className="agent-bias neutral">running</span>}
-          {busy && (
+          {presenceTone === 'working' && <span className="agent-bias neutral">working</span>}
+          {selectedAgentId ? (
             <button
               className="shell-button ghost sm"
+              onClick={() => void (presence?.paused
+                ? resumeChatAgent(selectedAgentId)
+                : pauseChatAgent(selectedAgentId)
+              ).then(() => usePresenceStore.getState().refresh())}
+              title={presence?.paused ? 'Resume this Agent' : 'Stop this Agent'}
               type="button"
-              onClick={() => void abortAgent()}
-              title="Abort (Esc)"
             >
-              <Square size={12} />
+              {presence?.paused ? <Play size={12} /> : <Square size={12} />}
+              {presence?.paused ? 'Resume' : 'Stop'}
             </button>
-          )}
+          ) : null}
           <button
             className="session-model-trigger subtle"
             type="button"
@@ -282,11 +280,6 @@ export function AgentSessionPanel({
           onChange={(event) => setAgentPrompt(event.target.value)}
           onPaste={handlePaste}
           onKeyDown={(event) => {
-            if (event.key === 'Escape' && busy) {
-              event.preventDefault();
-              void abortAgent();
-              return;
-            }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
               if (canSend) void runAgentAnalysis();
@@ -294,7 +287,7 @@ export function AgentSessionPanel({
           }}
           placeholder={
             busy
-              ? 'Queue a follow-up. Esc to abort the current run.'
+              ? 'Queue a follow-up while the Agent is working.'
               : pendingImages.length > 0
                 ? `Add a note for @${agentDisplayName}, or send the image alone.`
                 : `Message @${agentDisplayName}`

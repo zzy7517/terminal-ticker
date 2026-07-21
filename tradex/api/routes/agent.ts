@@ -54,7 +54,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
   // --- Shared Message Fabric：Human–Agent 唯一 DM ---------------------------
 
-  /** 读取 Shared Message Store 中的 DM timeline；generations 仅作 Runtime trace。 */
+  /** 读取 Shared Message Store 中的 DM timeline。 */
   app.get("/api/chat/agents/:agentId/messages", (c) => {
     const agentId = c.req.param("agentId");
     if (!runtime.agentStore.get(agentId)) return c.json({ detail: "Agent not found" }, 404);
@@ -71,7 +71,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       directMessage: dm,
       target: { kind: "direct-message", directMessageId: dm.id },
       ...page,
-      generations: runtime.agentContextManager.listSessions(agentId),
     });
   });
 
@@ -154,7 +153,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
   // --- Coordinator：presence / 治理 ----------------------------------------
 
-  /** Coordinator 侧 presence（idle/active/paused/running），不同于 Session runState。 */
+  /** Coordinator 侧 presence（idle/active/paused + running→Working），不同于 Session runState。 */
   app.get("/api/chat/agents/status", (c) => {
     const agents = runtime.agentStore.list().map((agent) => ({
       agentId: agent.id,
@@ -163,7 +162,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     return c.json({ agents });
   });
 
-  /** 暂停 Agent：持久化 paused，并 abort 当前 activation。 */
+  /** 暂停 Agent：持久化 paused，并停掉当前 activation。 */
   app.post("/api/chat/agents/:id/pause", async (c) => {
     await runtime.agentCoordinator?.pause(c.req.param("id"));
     return c.json({ ok: true });
@@ -171,11 +170,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   /** 恢复 Agent，并在仍有 pending inbox 时重新 notify。 */
   app.post("/api/chat/agents/:id/resume", async (c) => {
     await runtime.agentCoordinator?.resume(c.req.param("id"));
-    return c.json({ ok: true });
-  });
-  /** 仅 abort 当前 run，不永久 pause。 */
-  app.post("/api/chat/agents/:id/abort", async (c) => {
-    await runtime.agentCoordinator?.abort(c.req.param("id"));
     return c.json({ ok: true });
   });
 
@@ -494,17 +488,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       snapshot: agentSnapshot,
       requestConfig,
     });
-  });
-
-  // Aborts the currently-running agent for a session.
-  app.post("/api/agent/sessions/:id/abort", async (c) => {
-    const sessionId = c.req.param("id");
-    const agent = runtime.activeAgents.get(sessionId);
-    if (!agent) {
-      return c.json({ detail: "no active agent run for this session" }, 409);
-    }
-    agent.abort();
-    return c.json({ ok: true });
   });
 
   // Exposes the immutable Pi catalog projection without credential material.

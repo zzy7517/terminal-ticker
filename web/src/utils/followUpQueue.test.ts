@@ -18,9 +18,8 @@ describe('batch follow-up queue', () => {
     });
   });
 
-  it('auto-runs after success or explicit abort but pauses after failure', () => {
+  it('auto-runs after success but pauses after failure', () => {
     expect(shouldAutoRunFollowUps('completed', true)).toBe(true);
-    expect(shouldAutoRunFollowUps('user-aborted', true)).toBe(true);
     expect(shouldAutoRunFollowUps('failed', true)).toBe(false);
     expect(shouldAutoRunFollowUps('completed', false)).toBe(false);
   });

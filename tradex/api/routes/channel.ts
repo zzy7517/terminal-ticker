@@ -134,7 +134,7 @@ export function channelRoutes(runtime: AppRuntime): Hono {
       });
       if (subjectType === "agent" && subjectId) {
         runtime.inboxStore.cancelForTarget(subjectId, { kind: "channel", channelId });
-        await runtime.agentCoordinator?.abort(subjectId);
+        await runtime.agentCoordinator?.stopCurrentRun(subjectId);
       }
       return c.json({ members: runtime.channelStore.listMembers(channelId) });
     } catch (error) {

@@ -249,7 +249,7 @@ export async function applyAgentLifecycleReset(
   mode: "restart" | "session-reset" | "full-reset",
 ): Promise<{ mode: string; sessionId: string | null }> {
   if (!runtime.agentStore.get(agentId)) throw new Error(`Agent not found: ${agentId}`);
-  await runtime.agentCoordinator?.abort(agentId);
+  await runtime.agentCoordinator?.stopCurrentRun(agentId);
 
   if (mode === "restart") {
     runtime.agentContextManager.updateStatus(agentId, {
@@ -299,7 +299,7 @@ async function ensureActivationSession(runtime: AppRuntime, agentId: string): Pr
 async function createRotatedSession(
   runtime: AppRuntime,
   agentId: string,
-  reason:
+  _reason:
     | "activation"
     | "context-overflow"
     | "config-change"
@@ -322,19 +322,10 @@ async function createRotatedSession(
         reasoningEffort: agent.reasoningEffort,
       },
     });
-    if (reason === "activation") {
-      runtime.agentContextManager.attachSession(agentId, {
-        sessionId: metadata.id,
-        runtime: "claude-code",
-        rotationReason: reason,
-      });
-    } else {
-      runtime.agentContextManager.rotateSession(agentId, {
-        sessionId: metadata.id,
-        runtime: "claude-code",
-        reason,
-      });
-    }
+    runtime.agentContextManager.attachSession(agentId, {
+      sessionId: metadata.id,
+      runtime: "claude-code",
+    });
     return metadata.id;
   }
   if (agent.runtime === "cursor") {
@@ -350,19 +341,10 @@ async function createRotatedSession(
         reasoningEffort: agent.reasoningEffort,
       },
     });
-    if (reason === "activation") {
-      runtime.agentContextManager.attachSession(agentId, {
-        sessionId: metadata.id,
-        runtime: "cursor",
-        rotationReason: reason,
-      });
-    } else {
-      runtime.agentContextManager.rotateSession(agentId, {
-        sessionId: metadata.id,
-        runtime: "cursor",
-        reason,
-      });
-    }
+    runtime.agentContextManager.attachSession(agentId, {
+      sessionId: metadata.id,
+      runtime: "cursor",
+    });
     return metadata.id;
   }
   const mgr = createPiSession({ title: `Activation ${agentId}` });
@@ -371,18 +353,9 @@ async function createRotatedSession(
   mgr.appendModelChange(piProviderName(provider), model);
   mgr.appendThinkingLevelChange(agent.reasoningEffort || runtime.config.agent.reasoningEffort);
   runtime.pendingSessionManagers.set(mgr.getSessionId(), mgr);
-  if (reason === "activation") {
-    runtime.agentContextManager.attachSession(agentId, {
-      sessionId: mgr.getSessionId(),
-      runtime: "pi",
-      rotationReason: reason,
-    });
-  } else {
-    runtime.agentContextManager.rotateSession(agentId, {
-      sessionId: mgr.getSessionId(),
-      runtime: "pi",
-      reason,
-    });
-  }
+  runtime.agentContextManager.attachSession(agentId, {
+    sessionId: mgr.getSessionId(),
+    runtime: "pi",
+  });
   return mgr.getSessionId();
 }

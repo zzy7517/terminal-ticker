@@ -34,6 +34,28 @@ export async function openDirectMessageEntry(agentId: string): Promise<void> {
 }
 
 /**
+ * 启动后把当前选中 Agent 的 DM 绑到 Chat activeTarget，并推进已读。
+ * 不抢占已选中的 Channel。
+ */
+export function bindSelectedDirectMessage(): void {
+  const agentState = useAgentStore.getState();
+  const chatState = useChatStore.getState();
+  if (chatState.activeTarget?.kind === 'channel') return;
+  const directMessageId = agentState.directMessageIdByAgentId[agentState.selectedAgentId];
+  if (!directMessageId) return;
+  chatState.selectDirectMessage(directMessageId);
+}
+
+/** 若该 Agent 的 DM 正是当前活动目标，刷新后推进已读游标。 */
+export function markDirectMessageReadIfActive(agentId: string): void {
+  const directMessageId = useAgentStore.getState().directMessageIdByAgentId[agentId];
+  const active = useChatStore.getState().activeTarget;
+  if (!directMessageId) return;
+  if (active?.kind !== 'direct-message' || active.directMessageId !== directMessageId) return;
+  useChatStore.getState().selectDirectMessage(directMessageId);
+}
+
+/**
  * Chat Event 恢复路径：给定 DM target id，刷新所属 Agent 的时间线。
  * 解析成功时返回 agentId。
  */

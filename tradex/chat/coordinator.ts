@@ -139,17 +139,10 @@ export class AgentCoordinator {
     };
   }
 
-  /** 持久化 paused=true，并 abort 该 Agent 当前 Runtime run。 */
+  /** 持久化 paused=true，并停掉该 Agent 当前 Runtime run。 */
   async pause(agentId: string): Promise<void> {
-    this.clearRetry(agentId);
-    this.pending.delete(agentId);
-    const debounce = this.timers.get(agentId);
-    if (debounce) {
-      clearTimeout(debounce);
-      this.timers.delete(agentId);
-    }
+    this.haltCurrentRun(agentId);
     this.runtime.agentContextManager.updateStatus(agentId, { paused: true, status: "paused" });
-    this.runtime.agentContextManager.abortActiveRun(agentId, this.runtime.activeAgents);
   }
 
   /** 清除 pause；若仍有 pending inbox 则重新 notify。 */
@@ -160,8 +153,17 @@ export class AgentCoordinator {
     this.notify(agentId);
   }
 
-  /** abort 当前 Runtime run，但不永久 pause Agent；并取消排队中的自动重试。 */
-  async abort(agentId: string): Promise<void> {
+  /**
+   * 停掉当前 activation，但不 pause。
+   * 供 lifecycle reset / 成员移除等内部清理使用；不对前端暴露 Abort 能力。
+   */
+  async stopCurrentRun(agentId: string): Promise<void> {
+    this.haltCurrentRun(agentId);
+    this.runtime.agentContextManager.updateStatus(agentId, { status: "idle" });
+  }
+
+  /** 清调度、杀当前 Runtime run、释放 running 位。 */
+  private haltCurrentRun(agentId: string): void {
     this.clearRetry(agentId);
     this.pending.delete(agentId);
     const debounce = this.timers.get(agentId);
@@ -171,7 +173,6 @@ export class AgentCoordinator {
     }
     this.runtime.agentContextManager.abortActiveRun(agentId, this.runtime.activeAgents);
     this.running.delete(agentId);
-    this.runtime.agentContextManager.updateStatus(agentId, { status: "idle" });
   }
 
   /**

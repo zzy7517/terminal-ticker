@@ -261,12 +261,16 @@ export class MessageStore extends BaseStore {
     })();
   }
 
-  /** 统计读游标之后的顶层消息数（Human 未读投影）。 */
+  /**
+   * 统计读游标之后的未读消息数（Human 未读投影）。
+   * 排除 Human 自己发出的消息，避免「正在看的会话里自己发一条就冒角标」。
+   */
   countMessagesAfterSeq(directMessageId: string, afterSeq: number): number {
     const row = this.getConn().prepare(`
       SELECT COUNT(*) AS count FROM direct_messages
       WHERE direct_message_id = ? AND dm_seq > ?
         AND deleted_at_ms IS NULL
+        AND author_type != 'human'
     `).get(directMessageId, afterSeq) as { count: number };
     return Number(row.count) || 0;
   }

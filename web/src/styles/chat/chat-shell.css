@@ -231,7 +231,7 @@
   width: 7px;
 }
 
-.direct-message-presence.running {
+.direct-message-presence.working {
   animation: pulse-dot 2.2s ease-in-out infinite;
   background: var(--success);
 }
@@ -361,12 +361,20 @@
   text-transform: capitalize;
 }
 
-.dm-presence-label.online {
+.dm-presence-label.working {
   color: var(--success);
+}
+
+.dm-presence-label.idle {
+  color: var(--text-muted);
 }
 
 .dm-presence-label.paused {
   color: var(--warning);
+}
+
+.dm-presence-label.error {
+  color: var(--danger);
 }
 
 .dm-conversation-meta {

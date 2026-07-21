@@ -93,4 +93,15 @@ describe("ChannelStore", () => {
     expect(message.kind).toBe("future-kind");
     expect(store.listMessages({ channelId: channel.id }).messages[0].kind).toBe("future-kind");
   });
+
+  it("excludes Human-authored messages from unread counts", () => {
+    const store = createStore();
+    const channel = store.createChannel({ name: "btc-research" });
+    store.appendMessage({ channelId: channel.id, authorId: "owner", content: "human ping" });
+    store.appendAgentMessage({ channelId: channel.id, authorId: "cindy", content: "agent reply" });
+    store.appendMessage({ channelId: channel.id, authorId: "owner", content: "human follow-up" });
+    expect(store.countMessagesAfterSeq(channel.id, 0)).toBe(1);
+    expect(store.countMessagesAfterSeq(channel.id, 1)).toBe(1);
+    expect(store.countMessagesAfterSeq(channel.id, 2)).toBe(0);
+  });
 });

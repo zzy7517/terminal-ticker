@@ -107,18 +107,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     ...[...directTargets.keys()].map((directMessageId) => recoverDirectMessageTarget(directMessageId)),
                   ]);
                   if (disposed) break;
+                  const channelTimeline = activeChannelId && channelMessages
+                    ? chronologicalMessages(channelMessages.messages)
+                    : null;
                   set((state) => ({
                     channels: snapshot.channels,
                     unread: snapshot.unread ?? state.unread,
                     lastEventSeq: snapshot.lastEventSeq,
                     error: null,
-                    messagesByChannelId: activeChannelId && channelMessages
-                      ? { ...state.messagesByChannelId, [activeChannelId]: chronologicalMessages(channelMessages.messages) }
+                    messagesByChannelId: activeChannelId && channelTimeline
+                      ? { ...state.messagesByChannelId, [activeChannelId]: channelTimeline }
                       : state.messagesByChannelId,
                     nextBeforeSeqByChannelId: activeChannelId && channelMessages
                       ? { ...state.nextBeforeSeqByChannelId, [activeChannelId]: channelMessages.nextBeforeSeq }
                       : state.nextBeforeSeqByChannelId,
                   }));
+                  // Viewing a target counts as read; advance cursor after the snapshot
+                  // so a later mark-read response is not overwritten by stale unread.
+                  await markActiveTargetReadAfterRecovery({
+                    activeTarget: get().activeTarget,
+                    recoveredChannelId: activeChannelId,
+                    channelTimeline,
+                    recoveredDirectMessageIds: [...directTargets.keys()],
+                    markTargetRead: get().markTargetRead,
+                  });
                   for (const [directMessageId, seq] of directTargets) {
                     if ((pendingDirectTargets.get(directMessageId) ?? 0) <= seq) pendingDirectTargets.delete(directMessageId);
                   }
@@ -264,6 +276,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           [target.channelId]: [...(state.messagesByChannelId[target.channelId] ?? []), payload.message],
         },
       }));
+      await get().markTargetRead(target, payload.message.channelSeq, payload.message.id);
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -310,4 +323,30 @@ function updateMessageState(state: ChatState, message: ChannelMessage, channel: 
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/** SSE 恢复后：若用户正看着该 target，推进已读游标。 */
+export async function markActiveTargetReadAfterRecovery(input: {
+  activeTarget: ChatTarget | null;
+  /** 本次恢复实际拉取的 Channel；与 activeTarget 不一致时不得推进已读。 */
+  recoveredChannelId: string | null;
+  channelTimeline: ChannelMessage[] | null;
+  recoveredDirectMessageIds: string[];
+  markTargetRead: (target: ChatTarget, seq: number, messageId?: string | null) => Promise<void>;
+}): Promise<void> {
+  const active = input.activeTarget;
+  if (!active) return;
+  if (active.kind === 'channel') {
+    // Recovery may outlive a target switch; never apply channel A's timeline to channel B.
+    if (!input.recoveredChannelId || active.channelId !== input.recoveredChannelId) return;
+    const timeline = input.channelTimeline;
+    const latest = timeline?.length ? timeline[timeline.length - 1] : null;
+    if (latest) await input.markTargetRead(active, latest.channelSeq, latest.id);
+    return;
+  }
+  if (!input.recoveredDirectMessageIds.includes(active.directMessageId)) return;
+  const agentId = agentIdForDirectMessage(active.directMessageId);
+  const messages = agentId ? useAgentStore.getState().directMessagesByAgentId[agentId] ?? [] : [];
+  const latest = messages.length ? messages[messages.length - 1] : null;
+  if (latest) await input.markTargetRead(active, latest.dmSeq, latest.id);
 }

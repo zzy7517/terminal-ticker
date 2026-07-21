@@ -160,12 +160,20 @@
   width: 7px;
 }
 
-.agent-profile-status.online {
+.agent-profile-status.working {
   color: var(--success);
 }
 
-.agent-profile-status.online i {
+.agent-profile-status.working i {
   background: var(--success);
+}
+
+.agent-profile-status.idle {
+  color: var(--text-muted);
+}
+
+.agent-profile-status.idle i {
+  background: var(--text-muted);
 }
 
 .agent-profile-status.paused {
@@ -217,8 +225,7 @@
   overflow-wrap: anywhere;
 }
 
-.agent-profile-field > p.muted,
-.agent-profile-generations .muted {
+.agent-profile-field > p.muted {
   color: var(--text-muted);
   font-style: italic;
 }
@@ -287,34 +294,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.agent-profile-generations {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.agent-profile-generations > li {
-  border-top: 1px solid var(--line-soft);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 0;
-}
-
-.agent-profile-generations > li:first-child {
-  border-top: 0;
-}
-
-.agent-profile-generations strong {
-  font-size: 12px;
-}
-
-.agent-profile-generations small {
-  color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 11px;
 }
 
 /* Keep legacy class hooks from ChannelPanel harmless if referenced elsewhere. */

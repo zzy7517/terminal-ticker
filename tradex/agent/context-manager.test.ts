@@ -25,41 +25,40 @@ describe("AgentContextManager", () => {
     expect(manager.ensure("cindy").logicalSessionId).toBe(context.logicalSessionId);
   });
 
-  it("binds Runtime Session generations through the trusted agentId", () => {
+  it("binds the current Runtime Session through the trusted agentId", () => {
     const manager = createManager();
     manager.attachSession("cindy", { sessionId: "session-1", runtime: "pi" });
     expect(manager.contextForSession("session-1")?.agentId).toBe("cindy");
-    expect(manager.listSessions("cindy")).toEqual([
-      expect.objectContaining({ generation: 1, sessionId: "session-1" }),
-    ]);
+    expect(manager.get("cindy")?.activeSessionId).toBe("session-1");
+    expect(manager.get("cindy")?.activeRuntime).toBe("pi");
   });
 
-  it("rotates a physical Session generation without changing logical identity", () => {
+  it("rotates the physical Session without changing logical identity or keeping history", () => {
     const manager = createManager();
     const context = manager.ensure("cindy");
     manager.attachSession("cindy", { sessionId: "session-1", runtime: "pi" });
     manager.rotateSession("cindy", {
       sessionId: "session-2",
       runtime: "pi",
-      reason: "context-overflow",
     });
     expect(manager.get("cindy")?.logicalSessionId).toBe(context.logicalSessionId);
-    expect(manager.listSessions("cindy")).toEqual([
-      expect.objectContaining({ generation: 1, sessionId: "session-1" }),
-      expect.objectContaining({ generation: 2, sessionId: "session-2", rotationReason: "context-overflow" }),
-    ]);
+    expect(manager.get("cindy")?.activeSessionId).toBe("session-2");
+    expect(manager.contextForSession("session-1")).toBeNull();
+    expect(manager.contextForSession("session-2")?.agentId).toBe("cindy");
   });
 
-  it("indexes imported Sessions onto one Agent Context", () => {
+  it("indexes only the newest imported Session onto one Agent Context", () => {
     const manager = createManager();
     manager.indexSessions([
       { sessionId: "old", agentId: "cindy", title: "Old", runtime: "pi", createdAtMs: 1, updatedAtMs: 2 },
       { sessionId: "new", agentId: "cindy", title: "New", runtime: "claude-code", createdAtMs: 3, updatedAtMs: 4 },
     ]);
     manager.indexSessions([
-      { sessionId: "old", agentId: "cindy", title: "Old", runtime: "pi", createdAtMs: 1, updatedAtMs: 2 },
+      { sessionId: "older", agentId: "cindy", title: "Older", runtime: "pi", createdAtMs: 0, updatedAtMs: 1 },
     ]);
-    expect(manager.listSessions("cindy")).toHaveLength(2);
+    expect(manager.get("cindy")?.activeSessionId).toBe("new");
+    expect(manager.get("cindy")?.activeRuntime).toBe("claude-code");
+    expect(manager.contextForSession("old")).toBeNull();
   });
 
   it("aborts the active Runtime run by trusted agentId", () => {

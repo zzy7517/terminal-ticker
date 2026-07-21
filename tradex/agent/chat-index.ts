@@ -1,7 +1,7 @@
 /**
  * chat-index — 启动时索引，以及遗留 Session → Shared DM 导入。
  *
- * 将 Runtime Session 索引进 AgentContext generations，并用 import_key
+ * 将最新 Runtime Session 绑到 AgentContext（每 Agent 仅当前绑定），并用 import_key
  * 幂等复制遗留 Session 消息到唯一 Human–Agent DM。原始 Session 文件保留为执行归档。
  */
 import type { AppRuntime } from "../api/runtime.js";
@@ -14,7 +14,7 @@ import {
   piSessionSummary,
 } from "./runtime/pi/sessions.js";
 
-/** 启动时把每个持久化 Runtime Session 索引进 AgentContext generations。 */
+/** 启动时把每个 Agent 最新的持久化 Runtime Session 绑到 AgentContext。 */
 export async function indexPersistedAgentSessions(runtime: AppRuntime): Promise<void> {
   const listed = await listPiSessions();
   const managers = await Promise.all(listed.map((row) => openPiSession(row.id)));

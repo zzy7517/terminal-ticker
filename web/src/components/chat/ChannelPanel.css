@@ -154,8 +154,12 @@
   width: 6px;
 }
 
-.member-presence.online {
+.member-presence.working {
   background: var(--success);
+}
+
+.member-presence.idle {
+  background: var(--line-strong);
 }
 
 .member-presence.error {

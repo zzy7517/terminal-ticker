@@ -240,7 +240,7 @@ describe("Agent HTTP API", () => {
     expect(appRuntime.agentStore.get("ict")).toBeNull();
   });
 
-  it("removes the Session generation when its Session is deleted", async () => {
+  it("clears the current Session binding when its Session is deleted", async () => {
     const appRuntime = runtime();
     const routes = agentRoutes(appRuntime);
     const created = await routes.request("/api/agent/sessions", {
@@ -253,7 +253,6 @@ describe("Agent HTTP API", () => {
     const response = await routes.request(`/api/agent/sessions/${payload.session.id}`, { method: "DELETE" });
 
     expect(response.status).toBe(200);
-    expect(appRuntime.agentContextManager.listSessions("ict")).toEqual([]);
     expect(appRuntime.agentContextManager.get("ict")?.activeSessionId).toBeNull();
   });
 

@@ -4,7 +4,6 @@ import { create } from 'zustand';
 import type {
   AgentDefinition,
   AgentDirectMessage,
-  AgentDirectMessageResponse,
   AgentMessage,
   AgentModelRegistry,
   AgentSessionResponse,
@@ -12,7 +11,6 @@ import type {
   QueuedFollowUp,
 } from '../types';
 import {
-  abortAgentSession,
   AgentStreamDisconnectError,
   createAgentSession,
   deleteAgentSessionById,
@@ -60,7 +58,6 @@ interface AgentState {
   selectedAgentId: string;
   directMessageIdByAgentId: Record<string, string>;
   directMessagesByAgentId: Record<string, AgentDirectMessage[]>;
-  generationsByAgentId: Record<string, AgentDirectMessageResponse['generations']>;
   agentSession: AgentSessionResponse | null;
   agentSessionHistory: AgentSessionSummary[];
   agentSessionLoadingKey: string | null;
@@ -113,20 +110,17 @@ interface AgentState {
   runAgentAnalysis: (sessionId?: string, options?: { includeDraft?: boolean }) => Promise<void>;
   removeFollowUp: (id: string) => void;
   clearFollowUps: () => void;
-  abortAgent: () => Promise<void>;
   resumeAgentConversation: (sessionId: string) => Promise<void>;
   deleteAgentConversation: (sessionId: string) => Promise<void>;
 }
 
 let modelRegistryRequest: Promise<AgentModelRegistry> | null = null;
-const userAbortedSessions = new Set<string>();
 
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: [],
   selectedAgentId: 'default',
   directMessageIdByAgentId: {},
   directMessagesByAgentId: {},
-  generationsByAgentId: {},
   agentSession: null,
   agentSessionHistory: [],
   agentSessionLoadingKey: null,
@@ -265,7 +259,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set((s) => ({
       directMessageIdByAgentId: { ...s.directMessageIdByAgentId, [agentId]: payload.target.directMessageId },
       directMessagesByAgentId: { ...s.directMessagesByAgentId, [agentId]: messages },
-      generationsByAgentId: { ...s.generationsByAgentId, [agentId]: payload.generations ?? [] },
     }));
   },
 
@@ -308,16 +301,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           ...s.directMessagesByAgentId,
           [agentId]: chronologicalMessages(payload.messages),
         };
-        const generationsByAgentId = {
-          ...s.generationsByAgentId,
-          [agentId]: payload.generations ?? [],
-        };
         const activeAgentSessionId = s.agentSessionHistory.find((session) => session.agentId === agentId)?.id ?? null;
         return {
           ...(agentPayload ? { agents: agentPayload.agents } : {}),
           directMessageIdByAgentId,
           directMessagesByAgentId,
-          generationsByAgentId,
           ...selectionUpdate({ ...s, directMessageIdByAgentId, directMessagesByAgentId }, {
             selectedAgentId: agentId,
             activeAgentSessionId,
@@ -392,6 +380,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             ...activeFields(next),
           };
         });
+        // Bind Chat activeTarget + advance unread cursor for the preloaded DM.
+        void import('../chat/directMessageWorkspace').then(({ bindSelectedDirectMessage }) => {
+          if (!disposed) bindSelectedDirectMessage();
+        });
         const activeSessionId = get().activeAgentSessionId ?? firstSummary?.id ?? null;
         if (activeSessionId && !get().agentSessionById[activeSessionId]) {
           set({ agentSessionLoadingKey: key });
@@ -450,6 +442,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           return { pendingImagesBySessionId, draftBySessionId, ...activeFields(next) };
         });
         await get().refreshAgentDirectMessages(state.selectedAgentId);
+        const { markDirectMessageReadIfActive } = await import('../chat/directMessageWorkspace');
+        markDirectMessageReadIfActive(state.selectedAgentId);
       } catch (error) {
         console.error('Agent Direct Message send failed:', error);
       }
@@ -724,7 +718,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           if (event.type === 'agent_end') {
             set((s) => {
               const previous = s.runStateBySessionId[sessionId] ?? idleRun(sessionId);
-              const unexpectedError = event.error && !userAbortedSessions.has(sessionId) ? event.error : null;
+              const unexpectedError = event.error || null;
               if (unexpectedError) runFailed = true;
               const runStateBySessionId = replaceRunState(
                 s.runStateBySessionId,
@@ -854,26 +848,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           return { runStateBySessionId, streamingMessageBySessionId, ...activeFields(next) };
         });
         const stateAfterRun = get();
-        const wasUserAborted = userAbortedSessions.delete(finishedSessionId);
-        const outcome = wasUserAborted ? 'user-aborted' : runFailed ? 'failed' : 'completed';
+        const outcome = runFailed ? 'failed' : 'completed';
         if (shouldAutoRunFollowUps(outcome, Boolean(stateAfterRun.queuedFollowUpsBySessionId[finishedSessionId]?.length))) {
           await get().runAgentAnalysis(finishedSessionId, { includeDraft: false });
         }
       }
-    }
-  },
-
-  abortAgent: async () => {
-    const { activeAgentSessionId, runStateBySessionId } = get();
-    if (!activeAgentSessionId) return;
-    const run = runStateBySessionId[activeAgentSessionId];
-    if (run?.status !== 'running') return;
-    try {
-      userAbortedSessions.add(activeAgentSessionId);
-      await abortAgentSession(activeAgentSessionId);
-    } catch (error) {
-      userAbortedSessions.delete(activeAgentSessionId);
-      console.error('abort failed:', error);
     }
   },
 

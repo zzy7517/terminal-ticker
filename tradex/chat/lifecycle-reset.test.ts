@@ -5,10 +5,10 @@ import { applyAgentLifecycleReset } from "./runtime.js";
 describe("applyAgentLifecycleReset", () => {
   it("restart keeps the active session id", async () => {
     const notify = vi.fn();
-    const abort = vi.fn(async () => undefined);
+    const stopCurrentRun = vi.fn(async () => undefined);
     const runtime = {
       agentStore: { get: () => ({ id: "alpha", runtime: "pi" }) },
-      agentCoordinator: { abort, notify },
+      agentCoordinator: { stopCurrentRun, notify },
       agentContextManager: {
         get: () => ({ activeSessionId: "session-keep" }),
         updateStatus: vi.fn(),
@@ -16,7 +16,7 @@ describe("applyAgentLifecycleReset", () => {
     } as unknown as AppRuntime;
 
     const result = await applyAgentLifecycleReset(runtime, "alpha", "restart");
-    expect(abort).toHaveBeenCalledWith("alpha");
+    expect(stopCurrentRun).toHaveBeenCalledWith("alpha");
     expect(result).toEqual({ mode: "restart", sessionId: "session-keep" });
     expect(notify).toHaveBeenCalledWith("alpha");
   });

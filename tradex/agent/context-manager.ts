@@ -3,18 +3,19 @@
  *
  * 对应 Raft「Agent 是持久身份，不是单次 chat session」：
  * context overflow / 配置变更 / reset 可轮换 Runtime Session，但不新建用户可见 DM。
+ * 每个 Agent 只保留当前物理 Session 绑定。
  * Direct Message 身份由 MessageStore 拥有，不由本 Manager 拥有。
  */
 import {
   AgentContextStore,
   type AgentContextRecord,
-  type AgentContextSession,
+  type AgentSessionBinding,
   type ExistingAgentSession,
 } from "./context-store.js";
 import type { AgentRuntimeId } from "./runtime/types.js";
 
 /**
- * 拥有「逻辑 Agent → Runtime Session generation」身份边界。
+ * 拥有「逻辑 Agent → 当前 Runtime Session」身份边界。
  * 调用方不能在没有可信 agentId 的情况下绑定物理 Runtime Session。
  */
 export class AgentContextManager {
@@ -29,61 +30,40 @@ export class AgentContextManager {
     return this.store.get(agentId);
   }
 
-  /** 把物理 Runtime Session 绑定为该 Agent 的活跃 generation。 */
+  /** 把物理 Runtime Session 绑定为该 Agent 的当前 Session（覆盖旧绑定）。 */
   attachSession(
     agentId: string,
     input: {
       sessionId: string;
       runtime: AgentRuntimeId;
       nativeSessionId?: string | null;
-      createdAtMs?: number;
-      rotationReason?: string;
     },
-  ): AgentContextSession {
+  ): AgentSessionBinding {
     this.ensure(agentId);
     return this.store.attachSession(agentId, {
       sessionId: input.sessionId,
       runtime: input.runtime,
       nativeSessionId: input.nativeSessionId,
-      startedAtMs: input.createdAtMs,
-      rotationReason: input.rotationReason,
     });
   }
 
   /**
    * 轮换到新的物理 Runtime Session，不改变 DM 身份。
-   * 用于 overflow / 配置变更 / resume 失败 / Human session|full reset。
+   * 语义同 attachSession（覆盖当前绑定）；保留此方法便于调用方表达「轮换」意图。
    */
   rotateSession(
     agentId: string,
     input: {
       sessionId: string;
       runtime: AgentRuntimeId;
-      reason:
-        | "context-overflow"
-        | "config-change"
-        | "resume-failure"
-        | "session-reset"
-        | "full-reset";
       nativeSessionId?: string | null;
-      createdAtMs?: number;
     },
-  ): AgentContextSession {
-    return this.attachSession(agentId, {
-      sessionId: input.sessionId,
-      runtime: input.runtime,
-      nativeSessionId: input.nativeSessionId,
-      createdAtMs: input.createdAtMs,
-      rotationReason: input.reason,
-    });
+  ): AgentSessionBinding {
+    return this.attachSession(agentId, input);
   }
 
   indexSessions(sessions: ExistingAgentSession[]): void {
     this.store.indexSessions(sessions);
-  }
-
-  listSessions(agentId: string): AgentContextSession[] {
-    return this.store.listSessions(agentId);
   }
 
   contextForSession(sessionId: string): AgentContextRecord | null {
