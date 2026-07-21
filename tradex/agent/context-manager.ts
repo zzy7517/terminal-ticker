@@ -11,6 +11,7 @@ import {
   type AgentContextSession,
   type ExistingAgentSession,
 } from "./context-store.js";
+import type { AgentRuntimeId } from "./runtime/types.js";
 
 /**
  * 拥有「逻辑 Agent → Runtime Session generation」身份边界。
@@ -33,7 +34,7 @@ export class AgentContextManager {
     agentId: string,
     input: {
       sessionId: string;
-      runtime: "pi" | "claude-code";
+      runtime: AgentRuntimeId;
       nativeSessionId?: string | null;
       createdAtMs?: number;
       rotationReason?: string;
@@ -57,7 +58,7 @@ export class AgentContextManager {
     agentId: string,
     input: {
       sessionId: string;
-      runtime: "pi" | "claude-code";
+      runtime: AgentRuntimeId;
       reason:
         | "context-overflow"
         | "config-change"

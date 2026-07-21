@@ -1,13 +1,14 @@
-/** 提供 Pi 与 Claude Code Agent 的创建和编辑界面。 */
+/** 提供 Pi、Claude Code 与 Cursor CLI Agent 的创建和编辑界面。 */
 import { useEffect, useMemo, useState } from 'react';
 import { Bot, Loader2, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
-import { createAgent, deleteAgent, fetchAgentRuntimes, fetchAgents, fetchClaudeCodeModels, updateAgent } from '../../api';
-import type { AgentDefinition, AgentDefinitionInput, AgentRuntimeStatus, ClaudeCodeModelsResponse } from '../../types';
+import { createAgent, deleteAgent, fetchAgentRuntimes, fetchAgents, fetchClaudeCodeModels, fetchCursorModels, updateAgent } from '../../api';
+import type { AgentDefinition, AgentDefinitionInput, AgentRuntimeStatus, ClaudeCodeModelsResponse, CursorModelsResponse } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
 import './AgentsSettingsPanel.css';
 import './AgentsSettingsPanel.runtime.css';
 
 const EMPTY: AgentDefinitionInput = { id: '', name: '', description: '', systemPrompt: '', runtime: 'pi', provider: null, model: null, reasoningEffort: null };
+const EXTERNAL_RUNTIMES = new Set(['claude-code', 'cursor']);
 
 export function AgentsSettingsPanel() {
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
@@ -18,7 +19,9 @@ export function AgentsSettingsPanel() {
   const [message, setMessage] = useState('');
   const [runtimes, setRuntimes] = useState<AgentRuntimeStatus[]>([]);
   const [claudeCatalog, setClaudeCatalog] = useState<ClaudeCodeModelsResponse | null>(null);
+  const [cursorCatalog, setCursorCatalog] = useState<CursorModelsResponse | null>(null);
   const [fetchingClaudeModels, setFetchingClaudeModels] = useState(false);
+  const [fetchingCursorModels, setFetchingCursorModels] = useState(false);
   const registry = useAgentStore((s) => s.modelRegistry);
   const models = useMemo(() => (registry?.models ?? []).filter((model) => model.selected && model.runnable), [registry]);
 
@@ -61,7 +64,6 @@ export function AgentsSettingsPanel() {
         setAgents(payload.agents);
         select(payload.agent);
       } else {
-        // provider/model are bind-once: omit locked fields so the API rejects only real mutations.
         const { id: _id, provider, model, ...rest } = draft;
         const updates: Partial<AgentDefinitionInput> = { ...rest };
         if (!providerLocked) updates.provider = provider;
@@ -94,6 +96,7 @@ export function AgentsSettingsPanel() {
   const modelValue = draft.provider && draft.model ? `${draft.provider}:${draft.model}` : '';
   const runtimeStatus = runtimes.find((runtime) => runtime.id === draft.runtime);
   const selectedClaudeModel = claudeCatalog?.models.find((model) => model.id === draft.model) ?? null;
+  const selectedCursorModel = cursorCatalog?.models.find((model) => model.id === draft.model) ?? null;
   const claudeEfforts = selectedClaudeModel?.thinking.supportedLevels ?? ['low', 'medium', 'high', 'xhigh', 'max'];
   const loadClaudeModels = async () => {
     setFetchingClaudeModels(true);
@@ -108,14 +111,38 @@ export function AgentsSettingsPanel() {
       setFetchingClaudeModels(false);
     }
   };
+  const loadCursorModels = async () => {
+    setFetchingCursorModels(true);
+    setMessage('');
+    try {
+      const payload = await fetchCursorModels();
+      setCursorCatalog(payload);
+      setMessage(payload.error
+        ? `Cursor model discovery failed: ${payload.error}`
+        : payload.models.length ? `Loaded ${payload.models.length} Cursor model options.` : 'No known models; enter a full model ID.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFetchingCursorModels(false);
+    }
+  };
   useEffect(() => {
     if (draft.runtime !== 'claude-code' || claudeCatalog || fetchingClaudeModels) return;
     void loadClaudeModels();
   }, [draft.runtime, claudeCatalog, fetchingClaudeModels]);
+  useEffect(() => {
+    if (draft.runtime !== 'cursor' || cursorCatalog || fetchingCursorModels) return;
+    void loadCursorModels();
+  }, [draft.runtime, cursorCatalog, fetchingCursorModels]);
 
   const piModelSelectDisabled = providerLocked && modelLocked;
   const canSave = Boolean(draft.id && draft.name)
     && (draft.runtime !== 'pi' || Boolean(draft.provider && draft.model));
+  const promptLabel = draft.runtime === 'claude-code'
+    ? 'Instructions appended to Claude Code'
+    : draft.runtime === 'cursor'
+      ? 'Instructions prepended to Cursor CLI prompts'
+      : 'System prompt';
 
   return <section className="agents-settings">
     <header>
@@ -140,10 +167,20 @@ export function AgentsSettingsPanel() {
         <label>Id<input disabled={!creating} value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="market-analyst" /></label>
         <label>Name<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
         <label>Description<input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
-        <label>Runtime<select disabled={!creating && selectedId === 'default'} value={draft.runtime} onChange={(e) => {
+        <label>Runtime<select disabled={!creating} value={draft.runtime} onChange={(e) => {
           const runtime = e.target.value as AgentDefinitionInput['runtime'];
-          setDraft({ ...draft, runtime, provider: runtime === 'claude-code' ? null : draft.provider, model: null, reasoningEffort: null });
-        }}><option value="pi">Pi SDK</option><option value="claude-code">Claude Code (local CLI)</option></select></label>
+          setDraft({
+            ...draft,
+            runtime,
+            provider: EXTERNAL_RUNTIMES.has(runtime) ? null : draft.provider,
+            model: null,
+            reasoningEffort: null,
+          });
+        }}>
+          <option value="pi">Pi SDK</option>
+          <option value="claude-code">Claude Code (local CLI)</option>
+          <option value="cursor">Cursor (local CLI)</option>
+        </select></label>
         {runtimeStatus && <div className="agent-editor-message">{runtimeStatus.available ? `Available${runtimeStatus.version ? ` · ${runtimeStatus.version}` : ''}` : `Unavailable · ${runtimeStatus.error ?? 'CLI not found'}`}</div>}
         {draft.runtime === 'pi' ? <>
           <label>
@@ -165,7 +202,7 @@ export function AgentsSettingsPanel() {
             </select>
           </label>
           <label>Reasoning effort<select value={draft.reasoningEffort ?? ''} onChange={(e) => setDraft({ ...draft, reasoningEffort: e.target.value || null })}><option value="">Use global default</option>{['minimal','low','medium','high','xhigh'].map((effort) => <option key={effort}>{effort}</option>)}</select></label>
-        </> : <>
+        </> : draft.runtime === 'claude-code' ? <>
           <div className="claude-agent-model-field">
             <label>Claude model
               <select
@@ -195,9 +232,38 @@ export function AgentsSettingsPanel() {
             />
           </label>
           <label>Claude effort<select value={draft.reasoningEffort ?? ''} onChange={(e) => setDraft({ ...draft, reasoningEffort: e.target.value || null })}><option value="">Use local CLI default</option>{claudeEfforts.map((effort) => <option key={effort}>{effort}</option>)}</select></label>
+        </> : <>
+          <div className="claude-agent-model-field">
+            <label>Cursor model
+              <select
+                disabled={modelLocked}
+                value={selectedCursorModel?.id ?? ''}
+                onChange={(e) => {
+                  const selected = cursorCatalog?.models.find((model) => model.id === e.target.value);
+                  setDraft({ ...draft, model: selected?.id ?? null, reasoningEffort: null });
+                }}
+              >
+                {!modelLocked && <option value="">Use local CLI default</option>}
+                {cursorCatalog?.models.map((model) => (
+                  <option key={model.id} value={model.id}>{model.label}{model.default ? ' · recommended' : ''}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="agent-model-fetch" disabled={fetchingCursorModels || !runtimeStatus?.available || modelLocked} onClick={() => void loadCursorModels()}>
+              {fetchingCursorModels ? <Loader2 className="spin" size={14}/> : <RefreshCw size={14}/>} Fetch
+            </button>
+          </div>
+          <label>Full Cursor model ID
+            <input
+              disabled={modelLocked || Boolean(selectedCursorModel)}
+              value={selectedCursorModel ? '' : draft.model ?? ''}
+              onChange={(e) => setDraft({ ...draft, model: e.target.value || null })}
+              placeholder="Optional custom model ID"
+            />
+          </label>
         </>}
         <label className="agent-editor-prompt">
-          {draft.runtime === 'claude-code' ? 'Instructions appended to Claude Code' : 'System prompt'}
+          {promptLabel}
           <textarea
             rows={12}
             value={draft.systemPrompt ?? ''}

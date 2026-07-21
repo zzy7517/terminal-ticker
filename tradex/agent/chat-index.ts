@@ -39,7 +39,15 @@ export async function indexPersistedAgentSessions(runtime: AppRuntime): Promise<
     createdAtMs: Date.parse(String(summary.createdAt)) || Date.now(),
     updatedAtMs: Date.parse(String(summary.updatedAt)) || Date.now(),
   }));
-  runtime.agentContextManager.indexSessions([...piSessions, ...claudeSessions]);
+  const cursorSessions = runtime.cursorSessions.list().map((summary) => ({
+    sessionId: String(summary.id),
+    agentId: String(summary.agentId || "default"),
+    title: String(summary.title || "Imported Session"),
+    runtime: "cursor" as const,
+    createdAtMs: Date.parse(String(summary.createdAt)) || Date.now(),
+    updatedAtMs: Date.parse(String(summary.updatedAt)) || Date.now(),
+  }));
+  runtime.agentContextManager.indexSessions([...piSessions, ...claudeSessions, ...cursorSessions]);
 }
 
 interface ImportableSessionMessage {

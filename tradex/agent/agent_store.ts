@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isClaudeThinkingLevel } from "./runtime/claude-code/model-manifest.js";
+import type { AgentRuntimeId } from "./runtime/types.js";
 
 export const DEFAULT_AGENT_ID = "default";
 
@@ -10,7 +11,7 @@ export interface AgentDefinition {
   name: string;
   description: string;
   systemPrompt: string | null;
-  runtime: "pi" | "claude-code";
+  runtime: AgentRuntimeId;
   provider: string | null;
   model: string | null;
   reasoningEffort: string | null;
@@ -59,8 +60,8 @@ export class AgentStore {
   update(id: string, patch: Partial<Omit<AgentFileInput, "id">>): AgentDefinition {
     const current = this.get(id);
     if (!current) throw new Error(`Agent not found: ${id}`);
-    if (id === DEFAULT_AGENT_ID && patch.runtime && patch.runtime !== "pi") {
-      throw new Error("Default Agent must use the Pi runtime");
+    if (patch.runtime && patch.runtime !== current.runtime) {
+      throw new Error("Agent runtime cannot be changed after creation");
     }
     assertProviderModelImmutable(current, patch);
     const next = validateAgent({ ...current, ...patch, id });
@@ -105,8 +106,12 @@ function validateAgent(value: AgentFileInput, source = "Agent"): AgentFileInput 
   if (typeof value.name !== "string" || !value.name.trim()) throw new Error(`${source} name is required`);
   if (typeof value.description !== "string") throw new Error(`${source} description must be a string`);
   if (value.systemPrompt !== null && typeof value.systemPrompt !== "string") throw new Error(`${source} systemPrompt must be a string or null`);
-  if (value.runtime !== "pi" && value.runtime !== "claude-code") throw new Error(`${source} runtime must be pi or claude-code`);
-  if (value.runtime === "claude-code" && value.provider !== null) throw new Error(`${source} Claude Code provider must be null`);
+  if (value.runtime !== "pi" && value.runtime !== "claude-code" && value.runtime !== "cursor") {
+    throw new Error(`${source} runtime must be pi, claude-code, or cursor`);
+  }
+  if ((value.runtime === "claude-code" || value.runtime === "cursor") && value.provider !== null) {
+    throw new Error(`${source} ${value.runtime} provider must be null`);
+  }
   if (value.runtime === "claude-code" && !isClaudeThinkingLevel(value.reasoningEffort)) {
     throw new Error(`${source} Claude Code reasoningEffort is not supported`);
   }
@@ -119,7 +124,7 @@ function validateAgent(value: AgentFileInput, source = "Agent"): AgentFileInput 
     description: value.description.trim(),
     systemPrompt: value.systemPrompt,
     runtime: value.runtime,
-    provider: value.runtime === "claude-code" ? null : value.provider?.trim() || null,
+    provider: value.runtime === "pi" ? (value.provider?.trim() || null) : null,
     model: value.model?.trim() || null,
     reasoningEffort: value.reasoningEffort?.trim() || null,
   };

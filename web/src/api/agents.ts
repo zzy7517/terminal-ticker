@@ -12,6 +12,7 @@ import type {
   AgentStreamEvent,
   AgentStreamPayload,
   ClaudeCodeModelsResponse,
+  CursorModelsResponse,
   MarketState,
   ProviderProfileUpdate,
 } from '../types';
@@ -32,6 +33,12 @@ export async function fetchAgentRuntimes(): Promise<{ runtimes: AgentRuntimeStat
 export async function fetchClaudeCodeModels(): Promise<ClaudeCodeModelsResponse> {
   const response = await fetch('/api/agent/runtimes/claude-code/models');
   if (!response.ok) throw await responseError(response, 'Claude models fetch failed');
+  return response.json();
+}
+
+export async function fetchCursorModels(): Promise<CursorModelsResponse> {
+  const response = await fetch('/api/agent/runtimes/cursor/models');
+  if (!response.ok) throw await responseError(response, 'Cursor models fetch failed');
   return response.json();
 }
 

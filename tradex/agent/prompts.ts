@@ -7,7 +7,7 @@
  * classical indicators, fundamentals & macro analysis.
  */
 
-export function currentTimeInstruction(shellTool: "Bash" | "run_command"): string {
+export function currentTimeInstruction(shellTool: "Bash" | "run_command" | "shell"): string {
   return `When the current date or time is needed, use ${shellTool} to run \`date\`; do not infer it from the conversation.`;
 }
 

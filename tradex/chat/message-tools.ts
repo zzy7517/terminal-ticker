@@ -1,8 +1,8 @@
 /**
  * message-tools — Agent 面向的 Message Fabric 工具（Pi 进程内 + Claude MCP）。
  *
- * 工具只定义一次，runtimeExposure 同时覆盖两个 Runtime。write 工具使用 domain "other"，
- * 以便 Claude MCP 暴露协作写能力时不打开交易写权限（见 listToolsForClaudeMcp）。
+ * 工具只定义一次，runtimeExposure 同时覆盖 Pi / Claude / Cursor。write 工具使用 domain "other"，
+ * 以便外接 MCP 暴露协作写能力时不打开交易写权限（见 listToolsForExternalMcp）。
  *
  * Target 使用 Agent 侧字符串（#channel / dm:@handle），在此边界解析为可信 ChatTarget；
  * Channel/DM 读写经 message-fabric，避免本文件重复 kind 分支。
@@ -23,7 +23,7 @@ import {
 } from "./message-fabric.js";
 import { registerMemoryTools } from "./memory-tools.js";
 
-const BOTH = ["pi", "claude-code"] as const;
+const BOTH = ["pi", "claude-code", "cursor"] as const;
 
 function text(value: unknown): string {
   return JSON.stringify(value, null, 2);

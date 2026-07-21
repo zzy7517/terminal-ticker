@@ -1,4 +1,4 @@
-/** Pi 与 Claude Code Runtime 的能力矩阵。 */
+/** Pi、Claude Code 与 Cursor CLI Runtime 的能力矩阵。 */
 import type { RuntimeCapabilities } from "./types.js";
 
 export const PI_SDK_CAPABILITIES: RuntimeCapabilities = {
@@ -15,4 +15,12 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   resume: true,
   imageInput: true,
   toolProgress: false,
+};
+
+export const CURSOR_CLI_CAPABILITIES: RuntimeCapabilities = {
+  streaming: true,
+  abort: true,
+  resume: true,
+  imageInput: true,
+  toolProgress: true,
 };

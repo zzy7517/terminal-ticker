@@ -23,7 +23,7 @@ export interface AgentDirectMessageResponse {
   generations: Array<{
     generation: number;
     sessionId: string;
-    runtime: 'pi' | 'claude-code';
+    runtime: 'pi' | 'claude-code' | 'cursor';
     createdAtMs: number;
     rotationReason: string;
   }>;

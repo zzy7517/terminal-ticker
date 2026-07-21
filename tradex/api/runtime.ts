@@ -32,6 +32,7 @@ import type { AgentCoordinator } from "../chat/coordinator.js";
 import type { SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
 import { McpRunGrantStore } from "../mcp/server/grants.js";
 import { ClaudeSessionStore } from "../agent/runtime/claude-code/session-store.js";
+import { CursorSessionStore } from "../agent/runtime/cursor/session-store.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -62,6 +63,7 @@ export class AppRuntime {
   readonly activeAgents = new Map<string, ActiveRuntimeRun>();
   readonly mcpRunGrants = new McpRunGrantStore();
   readonly claudeSessions = new ClaudeSessionStore();
+  readonly cursorSessions = new CursorSessionStore();
   /** Loopback HTTP origin for this process (MCP URL, etc.). Set at serve time. */
   listenOrigin = "http://127.0.0.1:8765";
   private _modelRuntimeSnapshot: ModelRuntimeSnapshot;

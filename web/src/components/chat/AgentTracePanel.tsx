@@ -23,6 +23,7 @@ type ProfileTab = 'profile' | 'activity';
 
 function runtimeLabel(runtime: string | undefined): string {
   if (runtime === 'claude-code') return 'Claude Code';
+  if (runtime === 'cursor') return 'Cursor CLI';
   if (runtime === 'pi') return 'Pi SDK';
   return runtime || '—';
 }

@@ -280,7 +280,7 @@ console.log(JSON.stringify({type:"result",result:"fast",is_error:false}));
     });
     let listCalls = 0;
     const registry = {
-      listToolsForClaudeMcp() {
+      listToolsForExternalMcp() {
         listCalls += 1;
         // issue() 会先列出一次工具；第二次发生在写完 mcp 配置之后，用来模拟启动中段失败。
         if (listCalls === 1) return [];

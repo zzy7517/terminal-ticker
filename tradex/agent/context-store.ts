@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
 import { initChatEventSchema } from "../chat/events.js";
+import type { AgentRuntimeId } from "./runtime/types.js";
 
 /** 逻辑 Agent Context 一行（以 agentId 为主键）。 */
 export interface AgentContextRecord {
@@ -31,7 +32,7 @@ export interface AgentContextSession {
   agentId: string;
   generation: number;
   sessionId: string;
-  runtime: "pi" | "claude-code";
+  runtime: AgentRuntimeId;
   nativeSessionId: string | null;
   startedAtMs: number;
   endedAtMs: number | null;
@@ -43,7 +44,7 @@ export interface ExistingAgentSession {
   sessionId: string;
   agentId: string;
   title: string;
-  runtime: "pi" | "claude-code";
+  runtime: AgentRuntimeId;
   createdAtMs: number;
   updatedAtMs: number;
 }
@@ -65,7 +66,7 @@ interface SessionRow {
   agent_id: string;
   generation: number;
   session_id: string;
-  runtime: "pi" | "claude-code";
+  runtime: AgentRuntimeId;
   native_session_id: string | null;
   started_at_ms: number;
   ended_at_ms: number | null;
@@ -98,7 +99,7 @@ export class AgentContextStore extends BaseStore {
         agent_id TEXT NOT NULL REFERENCES agent_contexts(agent_id) ON DELETE CASCADE,
         generation INTEGER NOT NULL,
         session_id TEXT NOT NULL UNIQUE,
-        runtime TEXT NOT NULL CHECK (runtime IN ('pi', 'claude-code')),
+        runtime TEXT NOT NULL CHECK (runtime IN ('pi', 'claude-code', 'cursor')),
         native_session_id TEXT,
         started_at_ms INTEGER NOT NULL,
         ended_at_ms INTEGER,
@@ -108,6 +109,7 @@ export class AgentContextStore extends BaseStore {
       CREATE INDEX IF NOT EXISTS idx_agent_context_sessions_session
         ON agent_context_sessions (session_id);
     `);
+    this.migrateRuntimeConstraint(conn);
     this.migrateLegacyChats(conn);
   }
 
@@ -138,7 +140,7 @@ export class AgentContextStore extends BaseStore {
 
   attachSession(agentId: string, input: {
     sessionId: string;
-    runtime: "pi" | "claude-code";
+    runtime: AgentRuntimeId;
     nativeSessionId?: string | null;
     startedAtMs?: number;
     rotationReason?: string;
@@ -304,6 +306,36 @@ export class AgentContextStore extends BaseStore {
     return context;
   }
 
+  private migrateRuntimeConstraint(conn: Database.Database): void {
+    const row = conn.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_context_sessions'",
+    ).get() as { sql: string } | undefined;
+    if (!row?.sql || row.sql.includes("'cursor'")) return;
+    conn.transaction(() => {
+      conn.exec(`
+        CREATE TABLE agent_context_sessions_v2 (
+        agent_id TEXT NOT NULL REFERENCES agent_contexts(agent_id) ON DELETE CASCADE,
+        generation INTEGER NOT NULL,
+        session_id TEXT NOT NULL UNIQUE,
+        runtime TEXT NOT NULL CHECK (runtime IN ('pi', 'claude-code', 'cursor')),
+        native_session_id TEXT,
+        started_at_ms INTEGER NOT NULL,
+        ended_at_ms INTEGER,
+        rotation_reason TEXT NOT NULL DEFAULT 'initial',
+        PRIMARY KEY (agent_id, generation)
+      );
+      INSERT INTO agent_context_sessions_v2
+        SELECT agent_id, generation, session_id, runtime, native_session_id,
+               started_at_ms, ended_at_ms, rotation_reason
+        FROM agent_context_sessions;
+      DROP TABLE agent_context_sessions;
+      ALTER TABLE agent_context_sessions_v2 RENAME TO agent_context_sessions;
+        CREATE INDEX IF NOT EXISTS idx_agent_context_sessions_session
+          ON agent_context_sessions (session_id);
+      `);
+    })();
+  }
+
   private migrateLegacyChats(conn: Database.Database): void {
     const hasLegacy = conn.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_chats'",
@@ -338,7 +370,7 @@ export class AgentContextStore extends BaseStore {
           FROM agent_chat_sessions WHERE chat_id = ? ORDER BY generation
         `).all(chat.id) as Array<{
           session_id: string;
-          runtime: "pi" | "claude-code";
+          runtime: AgentRuntimeId;
           created_at_ms: number;
           rotation_reason: string;
         }>;

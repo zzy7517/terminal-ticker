@@ -73,7 +73,7 @@ export interface AgentSession {
   reasoningEffort: string | null;
   agentId: string;
   agentName: string;
-  runtime: 'pi' | 'claude-code';
+  runtime: 'pi' | 'claude-code' | 'cursor';
   capabilities: AgentRuntimeStatus['capabilities'];
 }
 
@@ -82,7 +82,7 @@ export interface AgentDefinition {
   name: string;
   description: string;
   systemPrompt: string | null;
-  runtime: 'pi' | 'claude-code';
+  runtime: 'pi' | 'claude-code' | 'cursor';
   provider: string | null;
   model: string | null;
   reasoningEffort: string | null;
@@ -92,7 +92,7 @@ export interface AgentDefinition {
 export type AgentDefinitionInput = Omit<AgentDefinition, 'builtIn'>;
 
 export interface AgentRuntimeStatus {
-  id: 'pi' | 'claude-code';
+  id: 'pi' | 'claude-code' | 'cursor';
   available: boolean;
   executablePath?: string;
   version: string | null;
@@ -115,6 +115,18 @@ export interface ClaudeCodeModelsResponse {
     thinking: { supportedLevels: string[]; defaultLevel: string | null };
   }>;
   supportsCustomModel: boolean;
+}
+
+export interface CursorModelsResponse {
+  models: Array<{
+    id: string;
+    label: string;
+    provider: string;
+    default?: boolean;
+  }>;
+  supportsCustomModel: boolean;
+  available?: boolean;
+  error?: string | null;
 }
 
 export interface AgentSessionRun {

@@ -1,17 +1,19 @@
 /**
- * runtime — 在现有 Pi / Claude seam 上启动一次 Message Fabric activation。
+ * runtime — 在现有 Pi / Claude / Cursor seam 上启动一次 Message Fabric activation。
  *
  * 复用 AgentContextManager 的活跃 Runtime Session（或懒创建）。
  * 不另建第三套 Agent loop。Message Tools 按 agentId 绑定到 Pi（进程内）
- * 与 Claude（经 listToolsForClaudeMcp 的 MCP grant）。
+ * 与外接 Runtime（经 listToolsForExternalMcp 的 MCP grant）。
  */
 import type { AppRuntime } from "../api/runtime.js";
 import type { InboxItem } from "./inbox-store.js";
 import { buildWakePrompt, MESSAGE_OPERATING_INSTRUCTIONS } from "./prompts.js";
 import { createMessageToolRegistry } from "./message-tools.js";
 import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
-import { ClaudeCodeRuntime } from "../agent/runtime/claude-code/runtime.js";
+import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claude-code/runtime.js";
 import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
+import { CursorCliRuntime, exposeCursorReadTools } from "../agent/runtime/cursor/runtime.js";
+import { detectCursorCli } from "../agent/runtime/cursor/discovery.js";
 import { claudeMcpUrlFromOrigin } from "../api/claude-session-stream.js";
 import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { agentConfigFromSnapshot, openSessionManager } from "../api/helpers.js";
@@ -108,7 +110,7 @@ async function runActivationOnce(
         includeFilesystem: true,
         additionalRegistries: [messageTools],
         agentId,
-      }).then((result) => result.tools);
+      }).then((result) => exposeClaudeReadTools(result.tools));
       const instructions = [
         agent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || MAIN_AGENT_PROMPT,
         currentTimeInstruction("run_command"),
@@ -132,6 +134,48 @@ async function runActivationOnce(
       });
       runtime.activeAgents.set(sessionId, run);
       const result = await run.result;
+      if (result.error) throw new Error(result.error);
+      return;
+    }
+
+    if (agent.runtime === "cursor") {
+      const availability = await detectCursorCli();
+      if (!availability.available || !availability.executablePath) {
+        throw new Error(availability.error || "Cursor CLI runtime unavailable");
+      }
+      const tools = await buildTradexToolRegistry(runtime, {
+        sessionId,
+        config: runtime.config.agent,
+        includeExternalMcp: true,
+        includeFilesystem: true,
+        additionalRegistries: [messageTools],
+        agentId,
+      }).then((result) => exposeCursorReadTools(result.tools));
+      const instructions = [
+        agent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || MAIN_AGENT_PROMPT,
+        currentTimeInstruction("shell"),
+        MESSAGE_OPERATING_INSTRUCTIONS,
+        `Private workspace: ${workspace.workspacePath}`,
+        `Private memory: ${workspace.memoryPath}`,
+      ].filter(Boolean).join("\n\n");
+      const run = await new CursorCliRuntime({
+        executablePath: availability.executablePath,
+        mcpUrl: claudeMcpUrlFromOrigin(runtime.listenOrigin),
+        grants: runtime.mcpRunGrants,
+      }).start({
+        tradexSessionId: sessionId,
+        cwd: runtime.cursorSessions.sessionDir(sessionId),
+        prompt,
+        instructions,
+        registry: tools,
+        nativeSessionId: runtime.cursorSessions.getMetadata(sessionId)?.nativeSessionId ?? undefined,
+        model: agent.model,
+      });
+      runtime.activeAgents.set(sessionId, run);
+      const result = await run.result;
+      if (result.nativeSessionId) {
+        runtime.cursorSessions.setNativeSessionId(sessionId, result.nativeSessionId);
+      }
       if (result.error) throw new Error(result.error);
       return;
     }
@@ -288,6 +332,34 @@ async function createRotatedSession(
       runtime.agentContextManager.rotateSession(agentId, {
         sessionId: metadata.id,
         runtime: "claude-code",
+        reason,
+      });
+    }
+    return metadata.id;
+  }
+  if (agent.runtime === "cursor") {
+    const metadata = runtime.cursorSessions.create({
+      title: `Activation ${agentId}`,
+      snapshot: {
+        agentId: agent.id,
+        agentName: agent.name,
+        runtime: "cursor",
+        systemPrompt: agent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || "",
+        provider: null,
+        model: agent.model,
+        reasoningEffort: agent.reasoningEffort,
+      },
+    });
+    if (reason === "activation") {
+      runtime.agentContextManager.attachSession(agentId, {
+        sessionId: metadata.id,
+        runtime: "cursor",
+        rotationReason: reason,
+      });
+    } else {
+      runtime.agentContextManager.rotateSession(agentId, {
+        sessionId: metadata.id,
+        runtime: "cursor",
         reason,
       });
     }

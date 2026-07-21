@@ -12,7 +12,7 @@ import {
   memoryWrite,
 } from "../agent/memory.js";
 
-const BOTH = ["pi", "claude-code"] as const;
+const BOTH = ["pi", "claude-code", "cursor"] as const;
 
 function text(value: unknown): string {
   return JSON.stringify(value, null, 2);

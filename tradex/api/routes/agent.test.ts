@@ -12,6 +12,7 @@ import { agentRoutes } from "./agent.js";
 import type { AppRuntime } from "../runtime.js";
 import { piSessionFileExists } from "../../agent/runtime/pi/sessions.js";
 import { ClaudeSessionStore } from "../../agent/runtime/claude-code/session-store.js";
+import { CursorSessionStore } from "../../agent/runtime/cursor/session-store.js";
 import { McpRunGrantStore } from "../../mcp/server/grants.js";
 import { promptWithAttachments } from "../claude-session-stream.js";
 
@@ -61,6 +62,7 @@ function runtime(): AppRuntime {
     lockedAgentSessions: new Set(),
     activeAgents: new Map(),
     claudeSessions: new ClaudeSessionStore(path.join(dir, "claude-sessions")),
+    cursorSessions: new CursorSessionStore(path.join(dir, "cursor-sessions")),
     mcpRunGrants: new McpRunGrantStore(),
     state: async () => ({}),
   } as unknown as AppRuntime;
@@ -283,6 +285,37 @@ describe("Agent HTTP API", () => {
       agentId: "claude-reader",
     });
     expect(appRuntime.pendingSessionManagers.size).toBe(0);
+  });
+
+  it("creates a Cursor CLI Session without adding it to the Pi provider registry", async () => {
+    const appRuntime = runtime();
+    appRuntime.agentStore.create({
+      id: "cursor-reader",
+      name: "Cursor Reader",
+      description: "Local Cursor CLI",
+      systemPrompt: "Read-only analysis",
+      runtime: "cursor",
+      provider: null,
+      model: "composer-2.5",
+      reasoningEffort: null,
+    });
+
+    const response = await agentRoutes(appRuntime).request("/api/agent/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "cursor-reader" }),
+    });
+    const payload = await response.json() as { session: Record<string, unknown> };
+
+    expect(response.status).toBe(200);
+    expect(payload.session).toMatchObject({
+      runtime: "cursor",
+      provider: null,
+      model: "composer-2.5",
+      agentId: "cursor-reader",
+    });
+    expect(appRuntime.pendingSessionManagers.size).toBe(0);
+    expect(appRuntime.cursorSessions.getMetadata(String(payload.session.id))).not.toBeNull();
   });
 
   it("does not expose removed fork, clone, or steer routes", async () => {

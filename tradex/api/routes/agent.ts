@@ -22,12 +22,15 @@ import type { AgentDefinition, AgentFileInput } from "../../agent/agent_store.js
 import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
-import { CLAUDE_CODE_CAPABILITIES, PI_SDK_CAPABILITIES } from "../../agent/runtime/capabilities.js";
+import { CLAUDE_CODE_CAPABILITIES, CURSOR_CLI_CAPABILITIES, PI_SDK_CAPABILITIES } from "../../agent/runtime/capabilities.js";
 import { detectClaudeCode } from "../../agent/runtime/claude-code/discovery.js";
 import { claudeModelCatalog } from "../../agent/runtime/claude-code/model-manifest.js";
 import { purgeClaudeProject } from "../../agent/runtime/claude-code/runtime.js";
+import { detectCursorCli } from "../../agent/runtime/cursor/discovery.js";
+import { cursorModelCatalogFallback, fetchCursorModelCatalog } from "../../agent/runtime/cursor/model-catalog.js";
 import type { AppRuntime } from "../runtime.js";
 import { streamClaudeSession, validateClaudeImages } from "../claude-session-stream.js";
+import { streamCursorSession, validateCursorImages } from "../cursor-session-stream.js";
 import { streamPiSession } from "../pi-session-stream.js";
 import {
   idleRun,
@@ -206,6 +209,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         capabilities: PI_SDK_CAPABILITIES,
       },
       { ...await detectClaudeCode(), capabilities: CLAUDE_CODE_CAPABILITIES },
+      { ...await detectCursorCli(), capabilities: CURSOR_CLI_CAPABILITIES },
     ],
   }));
 
@@ -213,6 +217,25 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     models: claudeModelCatalog(),
     supportsCustomModel: true,
   }));
+
+  app.get("/api/agent/runtimes/cursor/models", async (c) => {
+    const availability = await detectCursorCli();
+    if (!availability.available) {
+      return c.json({
+        models: cursorModelCatalogFallback(),
+        supportsCustomModel: true,
+        available: false,
+        error: availability.error,
+      });
+    }
+    const catalog = await fetchCursorModelCatalog(availability.executablePath);
+    return c.json({
+      models: catalog.models,
+      supportsCustomModel: true,
+      available: catalog.error === null,
+      error: catalog.error,
+    });
+  });
 
   /** 创建 Agent，并确保逻辑 Context + 唯一 Human–Agent DM 入口存在。 */
   app.post("/api/agents", async (c) => {
@@ -259,6 +282,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         runtime.agentContextManager.hasSessionsForAgent(candidateId)
         ||
         runtime.claudeSessions.hasPersistedSessionForAgent(candidateId)
+        || runtime.cursorSessions.hasPersistedSessionForAgent(candidateId)
         || [...runtime.pendingAgentSnapshots.values()].some((snapshot) => snapshot.agentId === candidateId)
         || listPiSessionManagersSync().some((manager) => {
           return readAgentSnapshot(manager).agentId === candidateId;
@@ -297,6 +321,17 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         snapshot,
       });
       runtime.agentContextManager.attachSession(agentId, { sessionId: metadata.id, runtime: "claude-code" });
+      return c.json({
+        ...await sessionResponse(runtime, metadata.id),
+        history: await sessionHistory(runtime),
+      });
+    }
+    if (snapshot.runtime === "cursor") {
+      const metadata = runtime.cursorSessions.create({
+        title: String(body.title || "New Agent Session"),
+        snapshot,
+      });
+      runtime.agentContextManager.attachSession(agentId, { sessionId: metadata.id, runtime: "cursor" });
       return c.json({
         ...await sessionResponse(runtime, metadata.id),
         history: await sessionHistory(runtime),
@@ -346,6 +381,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
           runtime.claudeSessions.sessionDir(sessionId),
         );
         runtime.claudeSessions.removeFiles(sessionId);
+      } else if (runtime.cursorSessions.getMetadata(sessionId)) {
+        runtime.cursorSessions.removeFiles(sessionId);
       } else {
         runtime.pendingSessionManagers.delete(sessionId);
         runtime.pendingAgentSnapshots.delete(sessionId);
@@ -403,6 +440,18 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       const imageError = validateClaudeImages(requestImages);
       if (imageError) return c.json({ detail: imageError }, 400);
       return streamClaudeSession({
+        runtime,
+        requestUrl: c.req.url,
+        sessionId,
+        message,
+        requestImages,
+      });
+    }
+    const cursorMetadata = runtime.cursorSessions.getMetadata(sessionId);
+    if (cursorMetadata) {
+      const imageError = validateCursorImages(requestImages);
+      if (imageError) return c.json({ detail: imageError }, 400);
+      return streamCursorSession({
         runtime,
         requestUrl: c.req.url,
         sessionId,
@@ -538,6 +587,7 @@ function agentHasLockedSession(runtime: AppRuntime, agentId: string): boolean {
     runtime.agentContextManager.contextForSession(sessionId)?.agentId === agentId
     || runtime.pendingAgentSnapshots.get(sessionId)?.agentId === agentId
     || runtime.claudeSessions.getMetadata(sessionId)?.snapshot.agentId === agentId
+    || runtime.cursorSessions.getMetadata(sessionId)?.snapshot.agentId === agentId
   ));
 }
 
@@ -548,6 +598,17 @@ function snapshotForAgent(agent: AgentDefinition, runtime: AppRuntime) {
       agentId: agent.id,
       agentName: agent.name,
       runtime: "claude-code" as const,
+      systemPrompt: agent.systemPrompt?.trim() || defaultConfig.systemPrompt.trim() || MAIN_AGENT_PROMPT,
+      provider: null,
+      model: agent.model,
+      reasoningEffort: agent.reasoningEffort,
+    };
+  }
+  if (agent.runtime === "cursor") {
+    return {
+      agentId: agent.id,
+      agentName: agent.name,
+      runtime: "cursor" as const,
       systemPrompt: agent.systemPrompt?.trim() || defaultConfig.systemPrompt.trim() || MAIN_AGENT_PROMPT,
       provider: null,
       model: agent.model,

@@ -9,26 +9,26 @@ describe("MCP run grants", () => {
       name: "quote",
       description: "quote",
       parameters: { type: "object", properties: {} },
-      policy: { access: "read", domain: "market", runtimeExposure: ["pi", "claude-code"] },
+      policy: { access: "read", domain: "market", runtimeExposure: ["pi", "claude-code", "cursor"] },
       execute: () => "ok",
     });
     registry.register({
       name: "message_send",
       description: "send",
       parameters: { type: "object", properties: {} },
-      policy: { access: "write", domain: "other", runtimeExposure: ["pi", "claude-code"] },
+      policy: { access: "write", domain: "other", runtimeExposure: ["pi", "claude-code", "cursor"] },
       execute: () => "ok",
     });
     registry.register({
       name: "place_order",
       description: "write",
       parameters: { type: "object", properties: {} },
-      policy: { access: "write", domain: "trading", runtimeExposure: ["pi", "claude-code"] },
+      policy: { access: "write", domain: "trading", runtimeExposure: ["pi", "claude-code", "cursor"] },
       execute: () => "no",
     });
 
     const store = new McpRunGrantStore({ now: () => 1_000 });
-    const issued = store.issue({ tradexSessionId: "s1", registry, ttlMs: 500 });
+    const issued = store.issue({ tradexSessionId: "s1", registry, ttlMs: 500, runtime: "cursor" });
     const grant = store.resolve(issued.token);
 
     expect(grant?.tradexSessionId).toBe("s1");

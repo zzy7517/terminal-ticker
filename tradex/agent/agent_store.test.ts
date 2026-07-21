@@ -95,7 +95,7 @@ describe("AgentStore", () => {
 
     expect(() => store.remove(DEFAULT_AGENT_ID, () => false)).toThrow("Default Agent cannot be removed");
     expect(() => store.remove("ict", () => true)).toThrow("Agent has persisted Sessions");
-    expect(() => store.update(DEFAULT_AGENT_ID, { runtime: "claude-code" })).toThrow("Default Agent must use the Pi runtime");
+    expect(() => store.update(DEFAULT_AGENT_ID, { runtime: "claude-code" })).toThrow("Agent runtime cannot be changed after creation");
   });
 
   it("validates Claude Code effort while allowing custom model ids", () => {
@@ -138,6 +138,24 @@ describe("AgentStore", () => {
     expect(store.update(created.id, { model: "opus" }).model).toBe("opus");
     expect(() => store.update(created.id, { model: "sonnet" })).toThrow(
       "Agent model cannot be changed after it has been set",
+    );
+  });
+
+  it("keeps an Agent runtime fixed after creation", () => {
+    const store = new AgentStore(tempAgentsDir());
+    const created = store.create({
+      id: "cursor-reader",
+      name: "Cursor Reader",
+      description: "",
+      systemPrompt: null,
+      runtime: "cursor",
+      provider: null,
+      model: "composer-2.5",
+      reasoningEffort: null,
+    });
+
+    expect(() => store.update(created.id, { runtime: "claude-code" })).toThrow(
+      "Agent runtime cannot be changed after creation",
     );
   });
 });

@@ -86,6 +86,8 @@ export function AgentSessionPanel({
     [directMessageId, directMessages],
   );
   const isClaudeAgent = selectedAgent?.runtime === 'claude-code';
+  const isCursorAgent = selectedAgent?.runtime === 'cursor';
+  const isExternalCliAgent = isClaudeAgent || isCursorAgent;
   // Agent definition is the source of truth after provider/model became create-time fixed.
   // Session/local leftovers must not override the bound Agent routing.
   const boundProvider = selectedAgent?.provider
@@ -107,7 +109,9 @@ export function AgentSessionPanel({
   ));
   const modelLabel = isClaudeAgent
     ? (boundModel || 'Local Claude default')
-    : (boundModelOption?.name || boundModel || 'No model bound');
+    : isCursorAgent
+      ? (boundModel || 'Local Cursor default')
+      : (boundModelOption?.name || boundModel || 'No model bound');
   // Path-style ids ("openrouter/anthropic/claude-…") would truncate at the
   // tail and hide the actual model; show the final segment, full id in title.
   const modelDisplayLabel = modelLabel.includes('/')
@@ -227,7 +231,7 @@ export function AgentSessionPanel({
             disabled
             title={`${modelLabel} — provider and model are fixed for this Agent`}
           >
-            {!isClaudeAgent && boundProviderOption && (
+            {!isExternalCliAgent && boundProviderOption && (
               <span className="session-model-provider-icon">
                 <ProviderIcon provider={boundProviderOption.providerId} size={14} />
               </span>

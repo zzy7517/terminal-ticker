@@ -42,6 +42,15 @@ export async function sessionResponse(runtime: AppRuntime, sessionId: string): P
         : idleRun(sessionId),
     });
   }
+  const cursor = runtime.cursorSessions.payload(sessionId);
+  if (cursor) {
+    return withChatProjection(runtime, sessionId, {
+      ...cursor,
+      run: runtime.lockedAgentSessions.has(sessionId)
+        ? { ...idleRun(sessionId), status: "running" }
+        : idleRun(sessionId),
+    });
+  }
   const mgr = await openSessionManager(sessionId, runtime);
   if (!mgr) return { session: null, messages: [], run: idleRun(sessionId) };
   return withChatProjection(runtime, sessionId, {
@@ -73,7 +82,13 @@ export async function sessionHistory(runtime: AppRuntime): Promise<Record<string
       ? { ...idleRun(String(item.id)), status: "running" }
       : idleRun(String(item.id)),
   }));
-  const allSummaries = [...piSummaries, ...claudeSummaries]
+  const cursorSummaries: Array<Record<string, unknown>> = runtime.cursorSessions.list().slice(0, 200).map((item) => ({
+    ...item,
+    run: runtime.lockedAgentSessions.has(String(item.id))
+      ? { ...idleRun(String(item.id)), status: "running" }
+      : idleRun(String(item.id)),
+  }));
+  const allSummaries = [...piSummaries, ...claudeSummaries, ...cursorSummaries]
     .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
   const projected = allSummaries.slice(0, 200).map((item) => {
     const context = runtime.agentContextManager.contextForSession(String(item.id));
