@@ -1,0 +1,143 @@
+web/src/utils/followUpQueue.test.ts
+  s_647d64b2ff1891::t_315561af1ced78 21
+tradex/api/routes/channel.ts
+  s_647d64b2ff1891::t_aab2787bcb235c 137
+web/src/stores/agentStore.ts
+  s_647d64b2ff1891::t_9de42c011e3d87 721
+  s_9b996dd3adee49::t_4f2bc46a302196 445-446
+  s_647d64b2ff1891::t_13fc2aac808495 851
+  s_9b996dd3adee49::t_058094461a07d7 383-386
+tradex/chat/coordinator.ts
+  s_647d64b2ff1891::t_5ff5f1b34fb0e0 142,144,156-166
+tradex/agent/chat-index.ts
+  s_56e8f88a01b568::t_d7ead72404aaa1 17
+  s_56e8f88a01b568::t_0bc06d0913261d 4
+web/src/components/chat/MemberPanel.tsx
+  s_647d64b2ff1891::t_d6388b52cd1dfd 14
+  s_647d64b2ff1891::t_4129f8db1c1ee8 92,101
+tradex/api/routes/agent.test.ts
+  s_56e8f88a01b568::t_4af8d8bb27114a 243
+tradex/agent/context-manager.test.ts
+  s_56e8f88a01b568::t_56102d9d21656d 28,32-33,36,45-47,50,57,59-61
+tradex/api/routes/agent.ts
+  s_647d64b2ff1891::t_3f64f6de42fb05 156
+  s_56e8f88a01b568::t_c6fe4938f73233 57
+  s_647d64b2ff1891::t_05f21510d3e683 165
+tradex/chat/message-store.ts
+  s_9b996dd3adee49::t_6f65521053d545 264-267,273
+web/src/utils/followUpQueue.ts
+  s_647d64b2ff1891::t_9c750bed2f48db 33
+web/src/chat/presenceDisplay.ts
+  s_647d64b2ff1891::t_429f681828bcac 1-20,22-23
+  s_647d64b2ff1891::t_238426fe28fc41 21
+tradex/channel/store.test.ts
+  s_9b996dd3adee49::t_38cd8f4cbd1e0c 96-106
+tradex/chat/runtime.ts
+  s_647d64b2ff1891::t_b59d85b90b87dc 252
+  s_56e8f88a01b568::t_496f004d740e89 302,325-328,344-347,356-359
+tradex/agent/context-store.ts
+  s_56e8f88a01b568::t_646122d4288ec4 2,4-5,10,26-27,30-31,57-58,62,80-85,89-90,103-106,117,120,125,129-133,136-142,145-147,152,154-159,165,168,171,173-177,182-184,188,192,194-196,199-205,249-299,325-328,330-335,338,346-347,351-357,362,372-373
+  s_5d1ccd7cc5ada3::t_ced1cdeac2dddc 88
+web/src/styles/chat/chat-shell.css
+  s_647d64b2ff1891::t_9ec70caad6f54b 370,376-379
+  s_647d64b2ff1891::t_fc6ff12d0f726a 234
+  s_647d64b2ff1891::t_03b6a88ead2d34 364,368-369
+  s_647d64b2ff1891::t_d9756aca158c4a 371
+web/src/chat/presenceDisplay.test.ts
+  s_647d64b2ff1891::t_420ab167d3f3cb 1-41
+web/src/components/chat/AgentTracePanel.css
+  s_647d64b2ff1891::t_b4b0239935d5e2 163,167,171-177
+  s_56e8f88a01b568::t_8c9014f512f3a5 228
+  s_647d64b2ff1891::t_3628f29d0b8297 178
+tradex/agent/context-manager.ts
+  s_56e8f88a01b568::t_4d96f05b347763 6,12,18,33,41,61
+  s_56e8f88a01b568::t_43a4200bb0f0b4 52,62
+web/src/components/workspace/AgentSessionPanel.tsx
+  s_647d64b2ff1891::t_7bbe18db3a161a 12,17,21
+  s_647d64b2ff1891::t_2e0c761e8317f2 212,215-219,222-223,225
+  s_647d64b2ff1891::t_d7a6bcad175948 71
+  s_647d64b2ff1891::t_9f6707539546b4 20
+  s_647d64b2ff1891::t_9969d8124a6a6f 205,211
+  s_647d64b2ff1891::t_8c30976256f3c9 290
+tradex/chat/message-store.test.ts
+  s_9b996dd3adee49::t_12e1df7fac77de 83-108
+web/src/stores/chatStore.ts
+  s_27113fb4ccafe7::t_926fd1d53fc608 129
+  s_27113fb4ccafe7::t_7ee607f27d44d6 331-332,340-343,350
+  s_9b996dd3adee49::t_fd920b88fa8e96 110-112,118-119,125-128,130-133
+  s_9b996dd3adee49::t_e05e60a10086b8 327-330,333-339,344-349,351-352
+  s_9b996dd3adee49::t_d9729b4c857b32 279
+web/src/chat/directMessageWorkspace.ts
+  s_9b996dd3adee49::t_2f22e0cfbf0ead 37-57
+  s_9b996dd3adee49::t_3ac09b4699807a 36
+web/src/components/chat/AgentTracePanel.tsx
+  s_647d64b2ff1891::t_0661fb8816299f 53
+  s_647d64b2ff1891::t_009d7694aa726a 186-190,193-194
+  s_647d64b2ff1891::t_216d6e7f26a7e2 3
+  s_647d64b2ff1891::t_577b9ac84f778e 208
+  s_647d64b2ff1891::t_35096df8829d4a 12
+  s_647d64b2ff1891::t_bf687056ec6ae7 6
+  s_56e8f88a01b568::t_af89b5285a15af 16
+tradex/chat/lifecycle-reset.test.ts
+  s_647d64b2ff1891::t_8f442fcbc56b4d 8,11,19
+web/src/components/chat/ChannelPanel.css
+  s_647d64b2ff1891::t_39b1f95dcc3e2a 157,161-162
+  s_647d64b2ff1891::t_c8387190ed0539 163-164
+web/src/chat/timeline.test.ts
+  s_27113fb4ccafe7::t_0988cc5df2ef9e 71,86,88-101
+  s_9b996dd3adee49::t_5b14fb86d6ecdb 65-70,72-85,87,102-107
+  s_9b996dd3adee49::t_6a494575494fe7 1,5
+web/src/components/workspace/AgentDirectMessageList.tsx
+  s_647d64b2ff1891::t_b0a7b642ce950d 7
+  s_647d64b2ff1891::t_6978ad4498c8c0 77,92,95
+tradex/channel/store.ts
+  s_9b996dd3adee49::t_df22244a1db711 428-431,437
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "a71efbbfdf4e908572f56910dec1c7bdf9162fcb",
+  "prompts": {},
+  "sessions": {
+    "s_27113fb4ccafe7": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "293130d8-f632-4b34-82f8-355a65c5f7c0",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_56e8f88a01b568": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a2bc8fb4-3a3c-47c8-9495-65c402c69e94",
+        "model": "default"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_5d1ccd7cc5ada3": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "97814241-dbe1-4785-a83a-9963cb71d712",
+        "model": "default"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_647d64b2ff1891": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "e2fdfa85-5a75-4b6d-8bd2-af91f6526f3d",
+        "model": "default"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_9b996dd3adee49": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "623a1c3d-d1e2-4f6f-95a1-def9e54d8e13",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
