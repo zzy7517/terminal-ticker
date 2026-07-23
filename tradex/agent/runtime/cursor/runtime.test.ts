@@ -187,7 +187,7 @@ setInterval(() => {}, 1000);
       executablePath: executable,
       mcpUrl: "http://127.0.0.1/mcp/tradex",
       grants: new McpRunGrantStore(),
-      runTimeoutMs: 1_000,
+      runTimeoutMs: 5_000,
       inactivityTimeoutMs: 2_000,
     }).start({
       tradexSessionId: "tradex-session",
@@ -203,6 +203,48 @@ setInterval(() => {}, 1000);
       nativeSessionId: "11111111-1111-4111-8111-111111111111",
       error: null,
       errorCode: null,
+    });
+  });
+
+  it("keeps an explicit abort authoritative over a late terminal result", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-cursor-runtime-"));
+    const executable = path.join(cwd, "fake-cursor.mjs");
+    await writeFile(executable, `#!/usr/bin/env node
+const session = "11111111-1111-4111-8111-111111111111";
+process.on("SIGTERM", () => {
+  console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "too late", session_id: session }));
+  setTimeout(() => process.exit(0), 10);
+});
+console.log(JSON.stringify({ type: "system", subtype: "init", session_id: session }));
+setInterval(() => {}, 1000);
+`);
+    await chmod(executable, 0o755);
+    const run = await new CursorCliRuntime({
+      executablePath: executable,
+      mcpUrl: "http://127.0.0.1/mcp/tradex",
+      grants: new McpRunGrantStore(),
+    }).start({
+      tradexSessionId: "tradex-session",
+      cwd,
+      prompt: "go",
+      instructions: "rules",
+      registry: new ToolRegistry(),
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+    });
+    const started = new Promise<void>((resolve) => {
+      run.subscribe((event) => {
+        if (event.type === "run-start") resolve();
+      });
+    });
+    await started;
+
+    run.abort();
+
+    await expect(run.result).resolves.toEqual({
+      output: "",
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+      error: "Cursor CLI run was aborted",
+      errorCode: "aborted",
     });
   });
 

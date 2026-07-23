@@ -160,6 +160,7 @@ class CursorActiveRun implements ActiveRuntimeRun {
   private delivery = Promise.resolve();
   private listenerError: Error | null = null;
   private terminationCode: "aborted" | "run_timeout" | "inactivity_timeout" | null = null;
+  private terminalResultReceived = false;
   private assistantBuffer = "";
 
   constructor(input: {
@@ -178,10 +179,9 @@ class CursorActiveRun implements ActiveRuntimeRun {
       let resultError: string | null = null;
       let resultErrorCode: string | null = null;
       let stderr = "";
-      let sawRunEnd = false;
       let inactivityTimer: NodeJS.Timeout;
       const stopFor = (code: "run_timeout" | "inactivity_timeout") => {
-        if (this.settled) return;
+        if (this.settled || this.terminalResultReceived) return;
         this.terminationCode = code;
         this.stopChild();
       };
@@ -195,7 +195,7 @@ class CursorActiveRun implements ActiveRuntimeRun {
       resetInactivityTimer();
       const lines = createInterface({ input: input.child.stdout, crlfDelay: Infinity });
       lines.on("line", (line) => {
-        if (sawRunEnd) return;
+        if (this.terminalResultReceived) return;
         resetInactivityTimer();
         for (const event of parseCursorLine(line)) {
           const projected = this.projectEvent(event);
@@ -204,7 +204,12 @@ class CursorActiveRun implements ActiveRuntimeRun {
             nativeSessionId = projected.nativeSessionId;
           }
           if (projected.type === "run-end") {
-            sawRunEnd = true;
+            // Once the caller has aborted or timed out the run, a result flushed
+            // during process shutdown is too late to replace that outcome.
+            if (this.terminationCode) continue;
+            this.terminalResultReceived = true;
+            clearTimeout(runTimer);
+            clearTimeout(inactivityTimer);
             nativeSessionId = projected.nativeSessionId ?? nativeSessionId;
             output = projected.result || output;
             if (projected.status === "error") {
@@ -214,7 +219,6 @@ class CursorActiveRun implements ActiveRuntimeRun {
             // Cursor documents result as the terminal event. Stop a worker that
             // remains alive after emitting it; its later exit code is cleanup,
             // not a new protocol outcome.
-            this.terminationCode = null;
             this.stopChild();
           }
           if (projected.type === "runtime-error") {
@@ -240,7 +244,7 @@ class CursorActiveRun implements ActiveRuntimeRun {
         clearTimeout(inactivityTimer);
         input.revoke();
         void input.cleanup();
-        if (this.terminationCode) {
+        if (this.terminationCode && !this.terminalResultReceived) {
           resultErrorCode = this.terminationCode;
           resultError ??= this.terminationCode === "aborted"
             ? "Cursor CLI run was aborted"
@@ -248,15 +252,15 @@ class CursorActiveRun implements ActiveRuntimeRun {
               ? "Cursor CLI run exceeded its time limit"
               : "Cursor CLI run became inactive and was stopped";
         }
-        if (!sawRunEnd && !resultError && code !== 0) {
+        if (!this.terminalResultReceived && !resultError && code !== 0) {
           resultError = `Cursor CLI exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}${stderr.trim() ? `: ${stderr.trim()}` : ""}`;
           resultErrorCode = this.terminationCode ?? classifyCursorError(stderr);
         }
-        if (!sawRunEnd && !resultError) {
+        if (!this.terminalResultReceived && !resultError) {
           resultError = "Cursor CLI stream ended without terminal result";
           resultErrorCode = "missing_terminal_result";
         }
-        if (!sawRunEnd) {
+        if (!this.terminalResultReceived) {
           this.emit({
             type: "run-end",
             ...(nativeSessionId ? { nativeSessionId } : {}),
@@ -290,7 +294,7 @@ class CursorActiveRun implements ActiveRuntimeRun {
   }
 
   abort(): void {
-    if (this.settled || !this.child.pid) return;
+    if (this.settled || this.terminalResultReceived || !this.child.pid) return;
     this.abortController.abort();
     this.terminationCode = "aborted";
     this.stopChild();

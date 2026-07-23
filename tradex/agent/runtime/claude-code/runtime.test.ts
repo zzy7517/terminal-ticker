@@ -225,6 +225,81 @@ console.log(JSON.stringify({type:"result",session_id:"11111111-1111-4111-8111-11
     expect(result).toMatchObject({ output: "done", nativeSessionId: "11111111-1111-4111-8111-111111111111", error: null });
   });
 
+  it("keeps the terminal result when the Claude process exits later with an error", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-claude-"));
+    const executable = path.join(cwd, "fake-claude.mjs");
+    await writeFile(executable, `#!/usr/bin/env node
+const session = "11111111-1111-4111-8111-111111111111";
+process.on("SIGTERM", () => setTimeout(() => process.exit(7), 10));
+console.log(JSON.stringify({ type: "system", subtype: "init", session_id: session }));
+console.log(JSON.stringify({ type: "result", result: "done", is_error: false, session_id: session }));
+setInterval(() => {}, 1000);
+`);
+    await chmod(executable, 0o755);
+    const run = await new ClaudeCodeRuntime({
+      executablePath: executable,
+      mcpUrl: "http://127.0.0.1/mcp/tradex",
+      grants: new McpRunGrantStore(),
+      runTimeoutMs: 5_000,
+      inactivityTimeoutMs: 2_000,
+    }).start({
+      tradexSessionId: "s1",
+      cwd,
+      prompt: "go",
+      instructions: "rules",
+      registry: new ToolRegistry(),
+    });
+
+    await expect(run.result).resolves.toMatchObject({
+      output: "done",
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+      error: null,
+      errorCode: null,
+    });
+  });
+
+  it("keeps an explicit abort authoritative over a late terminal result", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-claude-"));
+    const executable = path.join(cwd, "fake-claude.mjs");
+    await writeFile(executable, `#!/usr/bin/env node
+const session = "11111111-1111-4111-8111-111111111111";
+process.on("SIGTERM", () => {
+  console.log(JSON.stringify({ type: "result", result: "too late", is_error: false, session_id: session }));
+  setTimeout(() => process.exit(0), 10);
+});
+console.log(JSON.stringify({ type: "system", subtype: "init", session_id: session }));
+setInterval(() => {}, 1000);
+`);
+    await chmod(executable, 0o755);
+    const run = await new ClaudeCodeRuntime({
+      executablePath: executable,
+      mcpUrl: "http://127.0.0.1/mcp/tradex",
+      grants: new McpRunGrantStore(),
+    }).start({
+      tradexSessionId: "s1",
+      cwd,
+      prompt: "go",
+      instructions: "rules",
+      registry: new ToolRegistry(),
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+    });
+    const started = new Promise<void>((resolve) => {
+      run.subscribe((event) => {
+        if (event.type === "run-start") resolve();
+      });
+    });
+    await started;
+
+    run.abort();
+
+    await expect(run.result).resolves.toEqual({
+      output: "",
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+      error: "Claude Code run was aborted",
+      errorCode: "aborted",
+    });
+  });
+
   it("replays protocol events emitted before the first subscriber attaches", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-claude-"));
     const executable = path.join(cwd, "fake-claude.mjs");

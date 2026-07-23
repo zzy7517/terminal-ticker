@@ -167,6 +167,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
   private delivery = Promise.resolve();
   private listenerError: Error | null = null;
   private terminationCode: "aborted" | "run_timeout" | "inactivity_timeout" | null = null;
+  private terminalResultReceived = false;
 
   constructor(input: {
     child: ChildProcessByStdio<null, Readable, Readable>;
@@ -186,10 +187,9 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
       let resultErrorCode: string | null = null;
       let stderr = "";
       let sawPartialText = false;
-      let sawRunEnd = false;
       let inactivityTimer: NodeJS.Timeout;
       const stopFor = (code: "run_timeout" | "inactivity_timeout") => {
-        if (this.settled) return;
+        if (this.settled || this.terminalResultReceived) return;
         this.terminationCode = code;
         this.stopChild();
       };
@@ -203,7 +203,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
       resetInactivityTimer();
       const lines = createInterface({ input: input.child.stdout, crlfDelay: Infinity });
       lines.on("line", (line) => {
-        if (sawRunEnd) return;
+        if (this.terminalResultReceived) return;
         resetInactivityTimer();
         const lineType = claudeLineType(line);
         for (const event of parseClaudeLine(line)) {
@@ -211,13 +211,21 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
           if (lineType === "assistant" && sawPartialText && event.type === "message-update") continue;
           if (event.type === "run-start" && event.nativeSessionId) nativeSessionId = event.nativeSessionId;
           if (event.type === "run-end") {
-            sawRunEnd = true;
+            // A result flushed during abort/timeout shutdown cannot replace the
+            // caller-visible termination outcome.
+            if (this.terminationCode) continue;
+            this.terminalResultReceived = true;
+            clearTimeout(runTimer);
+            clearTimeout(inactivityTimer);
             nativeSessionId = event.nativeSessionId ?? nativeSessionId;
             output = event.result || output;
             if (event.status === "error") {
               resultError = event.result || "Claude Code run failed";
               resultErrorCode = classifyClaudeError(event.result);
             }
+            // Claude's result event is terminal. Process exit is cleanup only,
+            // so stop a worker that remains alive and ignore its later exit code.
+            this.stopChild();
           }
           if (event.type === "runtime-error") {
             resultError = event.message;
@@ -240,7 +248,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
         clearTimeout(inactivityTimer);
         input.revoke();
         void input.cleanup();
-        if (this.terminationCode) {
+        if (this.terminationCode && !this.terminalResultReceived) {
           resultErrorCode = this.terminationCode;
           resultError ??= this.terminationCode === "aborted"
             ? "Claude Code run was aborted"
@@ -248,15 +256,15 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
               ? "Claude Code run exceeded its time limit"
               : "Claude Code run became inactive and was stopped";
         }
-        if (!resultError && code !== 0) {
+        if (!this.terminalResultReceived && !resultError && code !== 0) {
           resultError = `Claude Code exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}${stderr.trim() ? `: ${stderr.trim()}` : ""}`;
           resultErrorCode = this.terminationCode ?? classifyClaudeError(stderr);
         }
-        if (!sawRunEnd && !resultError) {
+        if (!this.terminalResultReceived && !resultError) {
           resultError = "Claude Code stream ended without terminal result";
           resultErrorCode = "missing_terminal_result";
         }
-        if (!sawRunEnd) {
+        if (!this.terminalResultReceived) {
           this.emit({
             type: "run-end",
             ...(nativeSessionId ? { nativeSessionId } : {}),
@@ -287,7 +295,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
 
   /** 终止 Claude 进程组，并让最终结果标记为 aborted。 */
   abort(): void {
-    if (this.settled || !this.child.pid) return;
+    if (this.settled || this.terminalResultReceived || !this.child.pid) return;
     this.abortController.abort();
     this.terminationCode = "aborted";
     this.stopChild();
