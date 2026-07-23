@@ -1,0 +1,30 @@
+tradex/agent/runtime/cursor/runtime.test.ts
+  s_a45288a090160a::t_49818eec78a29c 138-175
+  s_a45288a090160a::t_4c9da1af849650 190
+  s_a45288a090160a::t_46a9da9de91646 176-189,191-208
+tradex/agent/runtime/cursor/runtime.ts
+  s_a45288a090160a::t_19a578a32816ff 198,214-218,251
+  s_a45288a090160a::t_4506065c2bcea4 255-258,263-264,273
+tradex/agent/runtime/claude-code/runtime.test.ts
+  s_a45288a090160a::t_19a578a32816ff 266
+  s_a45288a090160a::t_49818eec78a29c 246-265,267-286
+tradex/agent/runtime/claude-code/runtime.ts
+  s_a45288a090160a::t_4506065c2bcea4 255-258,263-264,272
+  s_a45288a090160a::t_19a578a32816ff 206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "e58b37942fa3f56f09f1c4b396946c14dbe5ea1e",
+  "prompts": {},
+  "sessions": {
+    "s_a45288a090160a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8ede-a141-7883-b5ee-d820e85be8de",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
