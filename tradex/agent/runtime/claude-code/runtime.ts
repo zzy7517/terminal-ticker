@@ -203,6 +203,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
       resetInactivityTimer();
       const lines = createInterface({ input: input.child.stdout, crlfDelay: Infinity });
       lines.on("line", (line) => {
+        if (sawRunEnd) return;
         resetInactivityTimer();
         const lineType = claudeLineType(line);
         for (const event of parseClaudeLine(line)) {
@@ -251,12 +252,16 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
           resultError = `Claude Code exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}${stderr.trim() ? `: ${stderr.trim()}` : ""}`;
           resultErrorCode = this.terminationCode ?? classifyClaudeError(stderr);
         }
+        if (!sawRunEnd && !resultError) {
+          resultError = "Claude Code stream ended without terminal result";
+          resultErrorCode = "missing_terminal_result";
+        }
         if (!sawRunEnd) {
           this.emit({
             type: "run-end",
             ...(nativeSessionId ? { nativeSessionId } : {}),
-            result: output,
-            status: this.terminationCode === "aborted" ? "aborted" : resultError ? "error" : "completed",
+            result: resultError ?? "",
+            status: this.terminationCode === "aborted" ? "aborted" : "error",
           });
         }
         void this.delivery.then(() => {
@@ -264,7 +269,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
             resultError = this.listenerError.message;
             resultErrorCode = "runtime_listener_failed";
           }
-          resolve({ output, nativeSessionId, error: resultError, errorCode: resultErrorCode });
+          resolve({ output: resultError ? "" : output, nativeSessionId, error: resultError, errorCode: resultErrorCode });
         });
       });
     });

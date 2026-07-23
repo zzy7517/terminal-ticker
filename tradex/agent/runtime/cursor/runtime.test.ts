@@ -135,6 +135,77 @@ console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false
     expect(result.output).toBe("haha");
   });
 
+  it("fails closed when the stream ends without a terminal result", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-cursor-runtime-"));
+    const executable = path.join(cwd, "fake-cursor.mjs");
+    await writeFile(executable, `#!/usr/bin/env node
+const session = "11111111-1111-4111-8111-111111111111";
+console.log(JSON.stringify({ type: "system", subtype: "init", session_id: session }));
+console.log(JSON.stringify({ type: "assistant", timestamp_ms: 1, message: { role: "assistant", content: [{ type: "text", text: "partial" }] } }));
+`);
+    await chmod(executable, 0o755);
+    const run = await new CursorCliRuntime({
+      executablePath: executable,
+      mcpUrl: "http://127.0.0.1/mcp/tradex",
+      grants: new McpRunGrantStore(),
+    }).start({
+      tradexSessionId: "tradex-session",
+      cwd,
+      prompt: "go",
+      instructions: "rules",
+      registry: new ToolRegistry(),
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+    });
+    const runEnds: Array<{ status: string; result: string }> = [];
+    run.subscribe((event) => {
+      if (event.type === "run-end") runEnds.push({ status: event.status, result: event.result });
+    });
+
+    await expect(run.result).resolves.toEqual({
+      output: "",
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+      error: "Cursor CLI stream ended without terminal result",
+      errorCode: "missing_terminal_result",
+    });
+    expect(runEnds).toEqual([{
+      status: "error",
+      result: "Cursor CLI stream ended without terminal result",
+    }]);
+  });
+
+  it("finishes on the terminal result even when the CLI process stays alive", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-cursor-runtime-"));
+    const executable = path.join(cwd, "fake-cursor.mjs");
+    await writeFile(executable, `#!/usr/bin/env node
+const session = "11111111-1111-4111-8111-111111111111";
+console.log(JSON.stringify({ type: "system", subtype: "init", session_id: session }));
+console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "done", session_id: session }));
+setInterval(() => {}, 1000);
+`);
+    await chmod(executable, 0o755);
+    const run = await new CursorCliRuntime({
+      executablePath: executable,
+      mcpUrl: "http://127.0.0.1/mcp/tradex",
+      grants: new McpRunGrantStore(),
+      runTimeoutMs: 1_000,
+      inactivityTimeoutMs: 2_000,
+    }).start({
+      tradexSessionId: "tradex-session",
+      cwd,
+      prompt: "go",
+      instructions: "rules",
+      registry: new ToolRegistry(),
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    await expect(run.result).resolves.toEqual({
+      output: "done",
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+      error: null,
+      errorCode: null,
+    });
+  });
+
   it("classifies auth and resume failures", () => {
     expect(classifyCursorError("Please login with API key")).toBe("auth_required");
     expect(classifyCursorError("chat session not found")).toBe("native_session_resume_failed");

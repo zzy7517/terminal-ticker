@@ -243,6 +243,47 @@ console.log(JSON.stringify({type:"result",result:"fast",is_error:false}));
     expect(events).toEqual(["run-start", "message-update", "run-end"]);
   });
 
+  it("fails closed when the stream ends without a terminal result", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-claude-"));
+    const executable = path.join(cwd, "fake-claude.mjs");
+    await writeFile(executable, `#!/usr/bin/env node
+const session = "11111111-1111-4111-8111-111111111111";
+console.log(JSON.stringify({ type: "system", subtype: "init", session_id: session }));
+console.log(JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "partial" } } }));
+`);
+    await chmod(executable, 0o755);
+    const runtime = new ClaudeCodeRuntime({
+      executablePath: executable,
+      mcpUrl: "http://127.0.0.1/mcp/tradex",
+      grants: new McpRunGrantStore(),
+    });
+    const run = await runtime.start({
+      tradexSessionId: "s1",
+      cwd,
+      prompt: "go",
+      instructions: "rules",
+      registry: new ToolRegistry(),
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+    });
+    const runEnds: Array<{ status: string; result: string }> = [];
+    run.subscribe((event) => {
+      if (event.type === "run-end") runEnds.push({ status: event.status, result: event.result });
+    });
+
+    const result = await run.result;
+
+    expect(result).toMatchObject({
+      output: "",
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+      error: "Claude Code stream ended without terminal result",
+      errorCode: "missing_terminal_result",
+    });
+    expect(runEnds).toEqual([{
+      status: "error",
+      result: "Claude Code stream ended without terminal result",
+    }]);
+  });
+
   it("stops an inactive Claude process and classifies the timeout", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-claude-"));
     const executable = path.join(cwd, "fake-claude.mjs");

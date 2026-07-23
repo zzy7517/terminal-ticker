@@ -195,6 +195,7 @@ class CursorActiveRun implements ActiveRuntimeRun {
       resetInactivityTimer();
       const lines = createInterface({ input: input.child.stdout, crlfDelay: Infinity });
       lines.on("line", (line) => {
+        if (sawRunEnd) return;
         resetInactivityTimer();
         for (const event of parseCursorLine(line)) {
           const projected = this.projectEvent(event);
@@ -210,6 +211,11 @@ class CursorActiveRun implements ActiveRuntimeRun {
               resultError = projected.result || "Cursor CLI run failed";
               resultErrorCode = classifyCursorError(projected.result);
             }
+            // Cursor documents result as the terminal event. Stop a worker that
+            // remains alive after emitting it; its later exit code is cleanup,
+            // not a new protocol outcome.
+            this.terminationCode = null;
+            this.stopChild();
           }
           if (projected.type === "runtime-error") {
             resultError = projected.message;
@@ -242,16 +248,20 @@ class CursorActiveRun implements ActiveRuntimeRun {
               ? "Cursor CLI run exceeded its time limit"
               : "Cursor CLI run became inactive and was stopped";
         }
-        if (!resultError && code !== 0) {
+        if (!sawRunEnd && !resultError && code !== 0) {
           resultError = `Cursor CLI exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}${stderr.trim() ? `: ${stderr.trim()}` : ""}`;
           resultErrorCode = this.terminationCode ?? classifyCursorError(stderr);
+        }
+        if (!sawRunEnd && !resultError) {
+          resultError = "Cursor CLI stream ended without terminal result";
+          resultErrorCode = "missing_terminal_result";
         }
         if (!sawRunEnd) {
           this.emit({
             type: "run-end",
             ...(nativeSessionId ? { nativeSessionId } : {}),
-            result: output || this.assistantBuffer,
-            status: this.terminationCode === "aborted" ? "aborted" : resultError ? "error" : "completed",
+            result: resultError ?? "",
+            status: this.terminationCode === "aborted" ? "aborted" : "error",
           });
         }
         void this.delivery.then(() => {
@@ -260,7 +270,7 @@ class CursorActiveRun implements ActiveRuntimeRun {
             resultErrorCode = "runtime_listener_failed";
           }
           resolve({
-            output: output || this.assistantBuffer,
+            output: resultError ? "" : output || this.assistantBuffer,
             nativeSessionId,
             error: resultError,
             errorCode: resultErrorCode,
