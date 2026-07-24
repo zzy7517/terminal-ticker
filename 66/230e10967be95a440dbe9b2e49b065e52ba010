@@ -1,0 +1,137 @@
+tradex/agent/runtime/claude-code/runtime.ts
+  s_a65763332f99dc::t_94bb42d6ba0236 89
+  s_a65763332f99dc::t_5c0d8dd8edfa33 77,285,337
+  s_a65763332f99dc::t_480a0e822ad7a8 8,26-27,36,49-50,71-72,80,87,114,122
+  s_68fc6c60af6125::t_dba5ec4cc85c14 37
+  s_a65763332f99dc::t_26743d09d9ed44 96,99,130
+tradex/agent/runtime/claude-code/runtime.test.ts
+  s_68fc6c60af6125::t_6d51ecef87a387 30,50
+  s_a65763332f99dc::t_564975667d077e 6,29,44
+  s_a65763332f99dc::t_38386085cb23bb 209,231-232,266-267,302,322-323,359-360,372,376,386
+  s_a65763332f99dc::t_7b4a71180c9358 80,96,188
+  s_a65763332f99dc::t_dfab50567fadc5 373-375,394-395
+tradex/api/pi-session-stream.ts
+  s_a65763332f99dc::t_3765335c9277bf 11,50,57-59
+tradex/agent/runtime/cursor/runtime.test.ts
+  s_a65763332f99dc::t_52d5afee9eb4a1 6,116-117,148-149,187-188,223-224
+tradex/api/routes/cli.test.ts
+  s_68fc6c60af6125::t_11bc913206bf71 40,71
+  s_68fc6c60af6125::t_dba5ec4cc85c14 8,21,23-29
+  s_68fc6c60af6125::t_6d51ecef87a387 70,72-82
+  s_a65763332f99dc::t_b5975e47bebdf4 2,4,9-19,30-39,41-48,50-52,55-58,60,63-67
+tradex/agent/runtime/cli-tools.ts
+  s_a65763332f99dc::t_8869158d8a34ac 175,178-179
+  s_a65763332f99dc::t_e1fbfcd3a884d0 4
+  s_a65763332f99dc::t_53bd529033ec7a 12,33,39-41,70-72,100
+  s_a65763332f99dc::t_ca1e5d3619567e 1-3,5-8,11,13,15,21-22,47,64-69,76-99,101-103,107-174,176-177,180-191
+  s_a65763332f99dc::t_f5da151f85f0be 10,73-75
+tradex/api/cursor-session-stream.ts
+  s_1c104f35f8c591::t_ab258801e55724 229
+  s_a65763332f99dc::t_eb37af85eacb25 231
+  s_a65763332f99dc::t_a7809dc3e79d17 14,58-59
+  s_1c104f35f8c591::t_ab9cb1bec16f1c 6
+tradex/agent/runtime/claude-code/protocol.ts
+  s_a65763332f99dc::t_7b4a71180c9358 106,169
+tradex/agent/runtime/cursor/runtime.ts
+  s_a65763332f99dc::t_5c0d8dd8edfa33 351
+  s_a65763332f99dc::t_26743d09d9ed44 96,99,133
+  s_a65763332f99dc::t_fc680acbb2a9b0 6,52-53,73-74,81,88,118,126
+tradex/agent/runtime/pi/runtime.ts
+  s_a65763332f99dc::t_5a6165c0be4193 25-27,37,52-78,96,141-142,186-190,203,208,215-216,218-222,231-232
+  s_a65763332f99dc::t_a6958ae1cf0cb1 40
+  s_a65763332f99dc::t_a7af2a4dd9568f 4,217
+adr/0002-runtime-neutral-tools-with-runtime-specific-transports.md
+  s_1c104f35f8c591::t_5833b38e3f88db 1,3-11,15
+tradex/api/routes/cli.ts
+  s_68fc6c60af6125::t_dba5ec4cc85c14 49
+  s_a65763332f99dc::t_e1fbfcd3a884d0 1
+  s_a65763332f99dc::t_ca1e5d3619567e 3,5,7,11,13,15-19,21-30,32-48,50
+tradex/agent/tools/registry.ts
+  s_a65763332f99dc::t_b4995c192dc5bf 177,180
+tradex/chat/prompts.ts
+  s_1c104f35f8c591::t_426e5baf6ddf79 62
+  s_1c104f35f8c591::t_4628e1b66311df 4-5,19,24-26
+tradex/chat/runtime.ts
+  s_a65763332f99dc::t_54a0ec78de1c0e 6,17,129-130,170-171
+  s_1c104f35f8c591::t_ee663b3894d983 18-23
+  s_a65763332f99dc::t_3765335c9277bf 122,217,227-229
+  s_1c104f35f8c591::t_ac17079dd16e3f 162
+  s_1c104f35f8c591::t_b79c2cfd4823fb 121
+tradex/cron/runner.ts
+  s_a65763332f99dc::t_3765335c9277bf 25,122,130-132
+tradex/chat/prompts.test.ts
+  s_1c104f35f8c591::t_914a32c6a98bc5 26,31-33
+  s_1c104f35f8c591::t_c492dbce110547 34-35
+tradex/api/app.ts
+  s_a65763332f99dc::t_0d7f4fbb2d13fb 15,37
+tradex/agent/runtime/cursor/protocol.ts
+  s_a65763332f99dc::t_7b4a71180c9358 130,199
+tradex/agent/prompts.ts
+  s_a65763332f99dc::t_3765335c9277bf 10
+  s_1c104f35f8c591::t_7dbabb7153cc84 14-19,22-32
+  s_a65763332f99dc::t_329fc882d51c39 20-21,33-34
+tradex/api/routes/agent.test.ts
+  s_a65763332f99dc::t_e58e9db47479bb 16,66
+tradex/agent/runtime/cli-tools.test.ts
+  s_a65763332f99dc::t_b5975e47bebdf4 1-5,7-8,10-13,17-19,23-53,84,86-90,92,95-96
+  s_a65763332f99dc::t_ebd19c7f3393ec 91,93-94
+  s_a65763332f99dc::t_bc10a23180fc4f 54-60,65-68,71-77,79-82
+README.md
+  s_1c104f35f8c591::t_0d661f62fb5ce6 14-15
+  s_1c104f35f8c591::t_99f536539261b1 69
+tradex/api/runtime.ts
+  s_a65763332f99dc::t_0d7f4fbb2d13fb 33,64
+  s_a65763332f99dc::t_eb37af85eacb25 67
+tradex/api/claude-session-stream.ts
+  s_a65763332f99dc::t_d68d534d0f0833 66-67,249,271-272,275,279-280
+  s_a65763332f99dc::t_eb37af85eacb25 267
+  s_1c104f35f8c591::t_2764628444ddcc 265
+  s_1c104f35f8c591::t_de94759541aca7 6
+tradex/chat/message-tools.test.ts
+  s_a65763332f99dc::t_e58e9db47479bb 58
+tradex/chat/message-tools.ts
+  s_a65763332f99dc::t_eb37af85eacb25 5
+  s_a65763332f99dc::t_e1fbfcd3a884d0 2
+agents/ict.json
+  s_15ae883d9a8ce7::t_42cde7651bf8b2 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "66230e10967be95a440dbe9b2e49b065e52ba010",
+  "prompts": {},
+  "sessions": {
+    "s_15ae883d9a8ce7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8f25-b545-7e81-8d30-80b5cace52f8",
+        "model": "unknown"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_1c104f35f8c591": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "033717da-6b12-4696-99bf-e4371d5f3178",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_68fc6c60af6125": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9445-f543-7f30-8e60-295cb47542c4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_a65763332f99dc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8f23-e6ec-70d0-80a0-02ea7ce1e2c4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
