@@ -30,7 +30,7 @@ import { UnreadStore } from "../chat/unread-store.js";
 import { ChatEventStore } from "../chat/events.js";
 import type { AgentCoordinator } from "../chat/coordinator.js";
 import type { SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
-import { McpRunGrantStore } from "../mcp/server/grants.js";
+import { CliRunGrantStore } from "../agent/runtime/cli-tools.js";
 import { ClaudeSessionStore } from "../agent/runtime/claude-code/session-store.js";
 import { CursorSessionStore } from "../agent/runtime/cursor/session-store.js";
 
@@ -61,10 +61,10 @@ export class AppRuntime {
   readonly lockedAgentSessions = new Set<string>();
   /** Active agent instances keyed by session ID for abort control. */
   readonly activeAgents = new Map<string, ActiveRuntimeRun>();
-  readonly mcpRunGrants = new McpRunGrantStore();
+  readonly cliRunGrants = new CliRunGrantStore();
   readonly claudeSessions = new ClaudeSessionStore();
   readonly cursorSessions = new CursorSessionStore();
-  /** Loopback HTTP origin for this process (MCP URL, etc.). Set at serve time. */
+  /** Loopback HTTP origin for this process (CLI gateway, etc.). Set at serve time. */
   listenOrigin = "http://127.0.0.1:8765";
   private _modelRuntimeSnapshot: ModelRuntimeSnapshot;
   private running = false;

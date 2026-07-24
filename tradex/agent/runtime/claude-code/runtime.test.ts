@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { ToolRegistry } from "../../tools/registry.js";
-import { McpRunGrantStore } from "../../../mcp/server/grants.js";
+import { CliRunGrantStore } from "../cli-tools.js";
 import {
   buildClaudeArgs,
   classifyClaudeError,
@@ -18,8 +18,6 @@ describe("Claude Code runtime protocol", () => {
     expect(buildClaudeArgs({
       prompt: "Analyze BTC",
       instructions: "Use Tradex tools.",
-      mcpConfigPath: "/tmp/tradex-mcp.json",
-      allowedMcpTools: ["get_market_context", "get_recent_news"],
     })).toEqual([
       "-p",
       "--verbose",
@@ -27,11 +25,9 @@ describe("Claude Code runtime protocol", () => {
       "--include-partial-messages",
       "--permission-mode", "dontAsk",
       "--setting-sources", "",
-      "--strict-mcp-config",
-      "--mcp-config", "/tmp/tradex-mcp.json",
       "--system-prompt", "Use Tradex tools.",
-      "--tools", "Read,Bash,mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
-      "--allowedTools", "Read,Bash,mcp__tradex__get_market_context,mcp__tradex__get_recent_news",
+      "--tools", "Read,Bash",
+      "--allowedTools", "Read,Bash(tradex:*),Bash(date)",
       "--", "Analyze BTC",
     ]);
   });
@@ -40,30 +36,24 @@ describe("Claude Code runtime protocol", () => {
     const args = buildClaudeArgs({
       prompt: "--version",
       instructions: "Rules",
-      mcpConfigPath: "/tmp/mcp.json",
-      allowedMcpTools: [],
     });
 
     expect(args.slice(-2)).toEqual(["--", "--version"]);
   });
 
-  it("keeps native Read and Bash available when no Tradex Tools are exposed through MCP", () => {
+  it("keeps native Read and the session-scoped Tradex CLI available", () => {
     const args = buildClaudeArgs({
       prompt: "Inspect attachments/image.png",
       instructions: "Read the attached image.",
-      mcpConfigPath: "/tmp/mcp.json",
-      allowedMcpTools: [],
     });
     expect(args.slice(args.indexOf("--tools"), args.indexOf("--tools") + 2)).toEqual(["--tools", "Read,Bash"]);
-    expect(args.slice(args.indexOf("--allowedTools"), args.indexOf("--allowedTools") + 2)).toEqual(["--allowedTools", "Read,Bash"]);
+    expect(args.slice(args.indexOf("--allowedTools"), args.indexOf("--allowedTools") + 2)).toEqual(["--allowedTools", "Read,Bash(tradex:*),Bash(date)"]);
   });
 
   it("adds resume, model, and effort only when explicitly configured", () => {
     const args = buildClaudeArgs({
       prompt: "Continue",
       instructions: "Rules",
-      mcpConfigPath: "/tmp/mcp.json",
-      allowedMcpTools: [],
       nativeSessionId: "11111111-1111-4111-8111-111111111111",
       model: "opus",
       effort: "high",
@@ -87,7 +77,7 @@ describe("Claude Code runtime protocol", () => {
         model: "claude-sonnet",
         content: [
           { type: "text", text: "BTC is firm." },
-          { type: "tool_use", id: "call-1", name: "mcp__tradex__get_market_context", input: { symbol: "BTC" } },
+          { type: "tool_use", id: "call-1", name: "Bash", input: { command: "tradex tool call get_market_context --json '{\"symbol\":\"BTC\"}'" } },
         ],
         usage: { input_tokens: 12, output_tokens: 4, cache_read_input_tokens: 3, cache_creation_input_tokens: 0 },
       },
@@ -103,7 +93,7 @@ describe("Claude Code runtime protocol", () => {
         },
         delta: "BTC is firm.",
       },
-      { type: "tool-start", callId: "call-1", name: "get_market_context", args: { symbol: "BTC" } },
+      { type: "tool-start", callId: "call-1", name: "Bash", args: { command: "tradex tool call get_market_context --json '{\"symbol\":\"BTC\"}'" } },
       { type: "usage", model: "claude-sonnet", input: 12, output: 4, cacheRead: 3, cacheWrite: 0 },
     ]);
 
@@ -195,7 +185,7 @@ describe("Claude Code runtime protocol", () => {
   it("classifies common Claude runtime failures", () => {
     expect(classifyClaudeError("Please run claude login")).toBe("auth_required");
     expect(classifyClaudeError("Model is not available for this account")).toBe("model_unavailable");
-    expect(classifyClaudeError("MCP connection refused")).toBe("mcp_connection_failed");
+    expect(classifyClaudeError("Tradex CLI connection refused")).toBe("cli_connection_failed");
     expect(classifyClaudeError("Permission denied")).toBe("permission_denied");
   });
 
@@ -216,7 +206,7 @@ console.log(JSON.stringify({type:"assistant",message:{role:"assistant",model:"cl
 console.log(JSON.stringify({type:"result",session_id:"11111111-1111-4111-8111-111111111111",result:"done",is_error:false}));
 `);
     await chmod(executable, 0o755);
-    const runtime = new ClaudeCodeRuntime({ executablePath: executable, mcpUrl: "http://127.0.0.1/mcp/tradex", grants: new McpRunGrantStore() });
+    const runtime = new ClaudeCodeRuntime({ executablePath: executable, cliUrl: "http://127.0.0.1/cli/tradex", grants: new CliRunGrantStore() });
     const run = await runtime.start({ tradexSessionId: "s1", cwd, prompt: "go", instructions: "rules", registry: new ToolRegistry() });
     const events: string[] = [];
     run.subscribe((event) => { events.push(event.type); });
@@ -238,8 +228,8 @@ setInterval(() => {}, 1000);
     await chmod(executable, 0o755);
     const run = await new ClaudeCodeRuntime({
       executablePath: executable,
-      mcpUrl: "http://127.0.0.1/mcp/tradex",
-      grants: new McpRunGrantStore(),
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
       runTimeoutMs: 5_000,
       inactivityTimeoutMs: 2_000,
     }).start({
@@ -273,8 +263,8 @@ setInterval(() => {}, 1000);
     await chmod(executable, 0o755);
     const run = await new ClaudeCodeRuntime({
       executablePath: executable,
-      mcpUrl: "http://127.0.0.1/mcp/tradex",
-      grants: new McpRunGrantStore(),
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
     }).start({
       tradexSessionId: "s1",
       cwd,
@@ -309,7 +299,7 @@ console.log(JSON.stringify({type:"assistant",message:{model:"claude",content:[{t
 console.log(JSON.stringify({type:"result",result:"fast",is_error:false}));
 `);
     await chmod(executable, 0o755);
-    const runtime = new ClaudeCodeRuntime({ executablePath: executable, mcpUrl: "http://127.0.0.1/mcp/tradex", grants: new McpRunGrantStore() });
+    const runtime = new ClaudeCodeRuntime({ executablePath: executable, cliUrl: "http://127.0.0.1/cli/tradex", grants: new CliRunGrantStore() });
     const run = await runtime.start({ tradexSessionId: "s1", cwd, prompt: "go", instructions: "rules", registry: new ToolRegistry() });
     await new Promise((resolve) => setTimeout(resolve, 100));
     const events: string[] = [];
@@ -329,8 +319,8 @@ console.log(JSON.stringify({ type: "stream_event", event: { type: "content_block
     await chmod(executable, 0o755);
     const runtime = new ClaudeCodeRuntime({
       executablePath: executable,
-      mcpUrl: "http://127.0.0.1/mcp/tradex",
-      grants: new McpRunGrantStore(),
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
     });
     const run = await runtime.start({
       tradexSessionId: "s1",
@@ -366,8 +356,8 @@ console.log(JSON.stringify({ type: "stream_event", event: { type: "content_block
     await chmod(executable, 0o755);
     const runtime = new ClaudeCodeRuntime({
       executablePath: executable,
-      mcpUrl: "http://127.0.0.1/mcp/tradex",
-      grants: new McpRunGrantStore(),
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
       runTimeoutMs: 2_000,
       inactivityTimeoutMs: 50,
     });
@@ -379,9 +369,11 @@ console.log(JSON.stringify({ type: "stream_event", event: { type: "content_block
     });
   });
 
-  it("revokes the MCP grant when start fails before the run begins", async () => {
-    const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-claude-"));
-    const grants = new McpRunGrantStore();
+  it("revokes the CLI grant when start fails before the run begins", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tradex-claude-"));
+    const cwd = path.join(root, "blocked");
+    await writeFile(cwd, "not a directory");
+    const grants = new CliRunGrantStore();
     const issue = grants.issue.bind(grants);
     let token = "";
     grants.issue = ((input) => {
@@ -391,26 +383,16 @@ console.log(JSON.stringify({ type: "stream_event", event: { type: "content_block
     }) as typeof grants.issue;
     const runtime = new ClaudeCodeRuntime({
       executablePath: "claude",
-      mcpUrl: "http://127.0.0.1/mcp/tradex",
+      cliUrl: "http://127.0.0.1/cli/tradex",
       grants,
     });
-    let listCalls = 0;
-    const registry = {
-      listToolsForExternalMcp() {
-        listCalls += 1;
-        // issue() 会先列出一次工具；第二次发生在写完 mcp 配置之后，用来模拟启动中段失败。
-        if (listCalls === 1) return [];
-        throw new Error("tool policy boom");
-      },
-    } as unknown as ToolRegistry;
-
     await expect(runtime.start({
       tradexSessionId: "s1",
       cwd,
       prompt: "go",
       instructions: "rules",
-      registry,
-    })).rejects.toThrow("tool policy boom");
+      registry: new ToolRegistry(),
+    })).rejects.toThrow();
 
     expect(token).not.toBe("");
     expect(grants.resolve(token)).toBeNull();

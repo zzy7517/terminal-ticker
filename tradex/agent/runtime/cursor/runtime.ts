@@ -1,13 +1,10 @@
 /** 以 headless stream-json 模式运行 Cursor Agent CLI，并输出统一 Runtime 事件。 */
 import { createInterface } from "node:readline";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import type { ToolRegistry } from "../../tools/registry.js";
-import type { McpRunGrantStore } from "../../../mcp/server/grants.js";
+import { CliRunGrantStore, prepareTradexCli } from "../cli-tools.js";
 import { CURSOR_CLI_CAPABILITIES } from "../capabilities.js";
-import { buildTradexMcpConfigFile } from "../external-mcp.js";
 import type { ActiveRuntimeRun, RuntimeEvent, RuntimeRunResult } from "../types.js";
 import { classifyCursorError, cursorLineType, parseCursorLine } from "./protocol.js";
 import { windowsTaskkillArgs } from "../claude-code/runtime.js";
@@ -29,7 +26,6 @@ export function buildCursorArgs(input: CursorArgsInput): string[] {
     "-p",
     "--force",
     "--trust",
-    "--approve-mcps",
     "--output-format", "stream-json",
     "--stream-partial-output",
     "--workspace", input.workspace,
@@ -53,8 +49,8 @@ export function composeCursorPrompt(instructions: string, prompt: string): strin
 
 export interface CursorCliRuntimeOptions {
   executablePath?: string;
-  mcpUrl: string;
-  grants: McpRunGrantStore;
+  cliUrl: string;
+  grants: CliRunGrantStore;
   grantTtlMs?: number;
   runTimeoutMs?: number;
   inactivityTimeoutMs?: number;
@@ -74,39 +70,33 @@ export class CursorCliRuntime {
   readonly id = "cursor" as const;
   readonly capabilities = CURSOR_CLI_CAPABILITIES;
   private readonly executablePath: string;
-  private readonly mcpUrl: string;
-  private readonly grants: McpRunGrantStore;
+  private readonly cliUrl: string;
+  private readonly grants: CliRunGrantStore;
   private readonly grantTtlMs: number;
   private readonly runTimeoutMs: number;
   private readonly inactivityTimeoutMs: number;
 
   constructor(options: CursorCliRuntimeOptions) {
     this.executablePath = options.executablePath ?? "cursor-agent";
-    this.mcpUrl = options.mcpUrl;
+    this.cliUrl = options.cliUrl;
     this.grants = options.grants;
     this.grantTtlMs = options.grantTtlMs ?? 60 * 60_000;
     this.runTimeoutMs = options.runTimeoutMs ?? 30 * 60_000;
     this.inactivityTimeoutMs = options.inactivityTimeoutMs ?? 5 * 60_000;
   }
 
-  /** 创建本轮 MCP grant、写入 session `.cursor/mcp.json`、启动 Cursor CLI。 */
+  /** 创建本轮 CLI grant、准备 session `tradex` command、启动 Cursor CLI。 */
   async start(input: CursorRunInput): Promise<ActiveRuntimeRun> {
-    const cursorDir = path.join(input.cwd, ".cursor");
-    await mkdir(cursorDir, { recursive: true, mode: 0o700 });
     const issued = this.grants.issue({
       tradexSessionId: input.tradexSessionId,
       registry: input.registry,
       ttlMs: this.grantTtlMs,
       runtime: "cursor",
     });
-    const mcpConfigPath = path.join(cursorDir, "mcp.json");
+    let cli: Awaited<ReturnType<typeof prepareTradexCli>> | null = null;
     let handedOff = false;
     try {
-      await writeFile(mcpConfigPath, `${JSON.stringify(buildTradexMcpConfigFile({
-        url: this.mcpUrl,
-        token: issued.token,
-      }), null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-
+      cli = await prepareTradexCli({ cwd: input.cwd, url: this.cliUrl, token: issued.token });
       let nativeSessionId = input.nativeSessionId;
       if (!nativeSessionId) {
         nativeSessionId = await createCursorChat(this.executablePath);
@@ -125,7 +115,7 @@ export class CursorCliRuntime {
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         detached: process.platform !== "win32",
-        env: sanitizedCursorEnv(process.env),
+        env: { ...sanitizedCursorEnv(process.env), ...cli.env },
       });
       const run = new CursorActiveRun({
         child,
@@ -133,14 +123,14 @@ export class CursorCliRuntime {
         runTimeoutMs: this.runTimeoutMs,
         inactivityTimeoutMs: this.inactivityTimeoutMs,
         revoke: () => this.grants.revoke(issued.token),
-        cleanup: () => rm(mcpConfigPath, { force: true }),
+        cleanup: cli.cleanup,
       });
       handedOff = true;
       return run;
     } finally {
       if (!handedOff) {
         this.grants.revoke(issued.token);
-        await rm(mcpConfigPath, { force: true });
+        await cli?.cleanup();
       }
     }
   }
@@ -358,7 +348,7 @@ class CursorActiveRun implements ActiveRuntimeRun {
 function sanitizedCursorEnv(parent: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...parent };
   for (const key of Object.keys(env)) {
-    if (/^TRADEX_MCP_TOKEN$/i.test(key)) delete env[key];
+    if (/^TRADEX_CLI_TOKEN$/i.test(key)) delete env[key];
   }
   return env;
 }

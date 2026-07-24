@@ -13,7 +13,7 @@ import type { AppRuntime } from "../runtime.js";
 import { piSessionFileExists } from "../../agent/runtime/pi/sessions.js";
 import { ClaudeSessionStore } from "../../agent/runtime/claude-code/session-store.js";
 import { CursorSessionStore } from "../../agent/runtime/cursor/session-store.js";
-import { McpRunGrantStore } from "../../mcp/server/grants.js";
+import { CliRunGrantStore } from "../../agent/runtime/cli-tools.js";
 import { promptWithAttachments } from "../claude-session-stream.js";
 
 const dirs: string[] = [];
@@ -63,7 +63,7 @@ function runtime(): AppRuntime {
     activeAgents: new Map(),
     claudeSessions: new ClaudeSessionStore(path.join(dir, "claude-sessions")),
     cursorSessions: new CursorSessionStore(path.join(dir, "cursor-sessions")),
-    mcpRunGrants: new McpRunGrantStore(),
+    cliRunGrants: new CliRunGrantStore(),
     state: async () => ({}),
   } as unknown as AppRuntime;
 }

@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { writeFile } from "node:fs/promises";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
+import { CURSOR_CLI_INSTRUCTIONS, currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { detectCursorCli } from "../agent/runtime/cursor/discovery.js";
 import { CursorCliRuntime, exposeCursorReadTools } from "../agent/runtime/cursor/runtime.js";
 import type { RuntimeEvent } from "../agent/runtime/types.js";
@@ -11,7 +11,7 @@ import { buildTradexToolRegistry } from "./agent_tools.js";
 import { sessionHistory, sessionResponse } from "./helpers.js";
 import type { AppRuntime } from "./runtime.js";
 import { streamSessionRun } from "./session-stream.js";
-import { claudeMcpUrl, validateClaudeImages, promptWithAttachments } from "./claude-session-stream.js";
+import { tradexCliUrl, validateClaudeImages, promptWithAttachments } from "./claude-session-stream.js";
 
 export interface CursorSessionStreamInput {
   runtime: AppRuntime;
@@ -55,8 +55,8 @@ export async function streamCursorSession(input: CursorSessionStreamInput): Prom
       try {
         run = await new CursorCliRuntime({
           executablePath: availability.executablePath,
-          mcpUrl: claudeMcpUrl(input.requestUrl),
-          grants: runtime.mcpRunGrants,
+          cliUrl: tradexCliUrl(input.requestUrl),
+          grants: runtime.cliRunGrants,
         }).start({
           tradexSessionId: sessionId,
           cwd: runtime.cursorSessions.sessionDir(sessionId),
@@ -226,9 +226,9 @@ function cursorInstructions(agentInstructions: string): string {
   return [
     MAIN_AGENT_PROMPT,
     ...(agentInstructions.trim() && agentInstructions.trim() !== MAIN_AGENT_PROMPT.trim() ? [agentInstructions.trim()] : []),
-    "You are running inside Tradex via Cursor Agent CLI. Use Cursor's native coding tools in this Session workspace and the explicitly allowed Tradex Tools exposed through MCP for market data.",
+    CURSOR_CLI_INSTRUCTIONS,
     currentTimeInstruction("shell"),
-    "Do not place trades, access Memory outside this workspace, configure external MCP servers, or claim those capabilities are available.",
+    "Do not place trades, access Memory outside this workspace, configure additional tool servers, or claim those capabilities are available.",
   ].join("\n\n");
 }
 

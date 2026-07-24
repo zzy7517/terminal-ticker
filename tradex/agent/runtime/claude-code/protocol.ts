@@ -103,7 +103,7 @@ export function parseClaudeLine(line: string): RuntimeEvent[] {
         events.push({
           type: "tool-start",
           callId: block.id,
-          name: stripTradexMcpPrefix(block.name),
+          name: block.name,
           args: block.input ?? {},
         });
       }
@@ -166,14 +166,10 @@ export function claudeLineType(line: string): string | null {
 export function classifyClaudeError(stderr: string): string {
   if (/auth|login|oauth|credential|token expired/i.test(stderr)) return "auth_required";
   if (/model|entitlement|not available|overloaded/i.test(stderr)) return "model_unavailable";
-  if (/mcp|connection refused|unauthorized|401/i.test(stderr)) return "mcp_connection_failed";
+  if (/tradex cli|connection refused|econnrefused/i.test(stderr)) return "cli_connection_failed";
   if (/permission|not allowed|denied/i.test(stderr)) return "permission_denied";
   if (/resume|session.*not found|conversation.*not found/i.test(stderr)) return "native_session_resume_failed";
   return "process_exit_failure";
-}
-
-function stripTradexMcpPrefix(name: string): string {
-  return name.startsWith("mcp__tradex__") ? name.slice("mcp__tradex__".length) : name;
 }
 
 function contentToText(content: unknown): string {

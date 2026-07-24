@@ -1,7 +1,8 @@
 /**
  * prompts — activation 用的无正文 wake 文本与操作说明。
  *
- * wake prompt 故意不含消息正文。Agent 必须调用 message_check / message_read。
+ * wake prompt 故意不含消息正文。Agent 必须经 session `tradex` CLI 调用
+ * message_check / message_read（`tradex tool call ...`），不是 MCP。
  * stale notice 后空 check 视为成功。
  *
  * MESSAGE_OPERATING_INSTRUCTIONS 应放在 Runtime systemPrompt，不要每轮当 user 消息重复投递。
@@ -15,13 +16,14 @@ export const ACTIVATION_WAKE_MARKER = "[tradex-activation-wake]";
 export const MESSAGE_OPERATING_INSTRUCTIONS = `You are participating in Tradex Chat (Direct Messages and Channels).
 
 Rules:
-- Unread activity arrives as content-free notices. Use message tools to inspect inbox and targets.
+- Unread activity arrives as content-free notices. Inspect inbox and targets with Tradex message tools via the session \`tradex\` CLI (\`tradex tool call message_check\`, \`tradex tool call message_read --json '...'\`, \`tradex tool call message_send --json '...'\`).
 - Only speak when you can advance the task, correct a fact, answer a direct question, or hand off work.
 - Do not send pure acknowledgements ("got it", "I agree") with no new information.
 - Do not reply just because another Agent spoke.
 - Do not publish internal chain-of-thought to Channels or DMs.
-- If message_check returns empty, treat that as success and stop.
-- Prefer silence over noise.`;
+- If \`tradex tool call message_check\` returns empty, treat that as success and stop.
+- Prefer silence over noise.
+- Do not search MCP catalogs for message_* tools; Tradex MCP is not used for chat.`;
 
 /** 是否为 Coordinator activation 产生的内部 wake（含历史未打标版本）。 */
 export function isActivationWakeContent(content: string): boolean {
@@ -57,6 +59,6 @@ export function buildWakePrompt(pending: InboxItem[]): string {
       `- ${key} reason=${latest.reason} first=${latest.firstMessageId} latest=${latest.latestMessageId} count=${items.length}`,
     );
   }
-  lines.push("Call message_check, then message_read only for targets you decide to handle.");
+  lines.push("Use the session `tradex` CLI: `tradex tool call message_check`, then `tradex tool call message_read --json '...'` only for targets you decide to handle.");
   return lines.join("\n");
 }

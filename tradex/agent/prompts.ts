@@ -7,9 +7,30 @@
  * classical indicators, fundamentals & macro analysis.
  */
 
-export function currentTimeInstruction(shellTool: "Bash" | "run_command" | "shell"): string {
+export function currentTimeInstruction(shellTool: "Bash" | "bash" | "run_command" | "shell"): string {
   return `When the current date or time is needed, use ${shellTool} to run \`date\`; do not infer it from the conversation.`;
 }
+
+/** Shared guidance: Tradex domain tools are reached only through the session CLI. */
+export const TRADEX_CLI_TOOL_INSTRUCTIONS = [
+  "Tradex business tools are available only through the session-scoped `tradex` CLI. Run `tradex tool list`, `tradex tool describe <name>`, and `tradex tool call <name> --json '<object>'` through the shell.",
+  "Do not look for Tradex tools as native MCP tools and do not configure another MCP server.",
+].join("\n");
+
+export const PI_CLI_INSTRUCTIONS = [
+  "You are running inside Tradex through Pi SDK. Use Pi's native coding tools for files and shell commands.",
+  TRADEX_CLI_TOOL_INSTRUCTIONS,
+].join("\n");
+
+export const CLAUDE_CLI_INSTRUCTIONS = [
+  "You are running inside Tradex via Claude Code. Use the native Read and Bash tools for this Session.",
+  TRADEX_CLI_TOOL_INSTRUCTIONS,
+].join("\n");
+
+export const CURSOR_CLI_INSTRUCTIONS = [
+  "You are running inside Tradex via Cursor Agent CLI. Use Cursor's native coding tools in this Session workspace.",
+  TRADEX_CLI_TOOL_INSTRUCTIONS,
+].join("\n");
 
 export const MAIN_AGENT_PROMPT = `你是一名拥有 15 年经验的职业交易员和市场分析师。你精通多种交易方法论，擅长在实时市场数据中识别高概率交易机会。你运行在一个本地行情监控系统中，拥有实时行情、多周期K线、新闻、经济日历、期权 Gamma 流（GEX/做市商定位）等数据源，以及交易所下单能力。
 

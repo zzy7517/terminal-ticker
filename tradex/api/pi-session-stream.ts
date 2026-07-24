@@ -8,6 +8,7 @@ import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
 import { piSessionFileExists, type SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
 import type { RuntimeEvent, RuntimeMessage } from "../agent/runtime/types.js";
 import { buildTradexToolRegistry } from "./agent_tools.js";
+import { tradexCliUrlFromOrigin } from "./claude-session-stream.js";
 import { sessionHistory, sessionResponse } from "./helpers.js";
 import { streamSessionRun } from "./session-stream.js";
 import type { AppRuntime } from "./runtime.js";
@@ -46,13 +47,16 @@ export function streamPiSession(input: {
       const baseSystemPrompt = snapshot.systemPrompt.trim() || MAIN_AGENT_PROMPT;
       const systemPrompt = [
         baseSystemPrompt,
-        currentTimeInstruction("run_command"),
+        currentTimeInstruction("bash"),
       ].filter(Boolean).join("\n\n");
       const run = await new PiSdkRuntime().start({
         config: requestConfig,
         modelRuntime: runtime.modelRuntimeSnapshot,
         systemPrompt,
         tools,
+        tradexSessionId: sessionId,
+        cliUrl: tradexCliUrlFromOrigin(runtime.listenOrigin),
+        grants: runtime.cliRunGrants,
         sessionManager: manager,
         compaction: true,
         prompt: input.message,

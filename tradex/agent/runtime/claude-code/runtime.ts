@@ -1,14 +1,12 @@
 /** 以 headless stream-json 模式运行 Claude，并输出统一 Runtime 事件。 */
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import type { ToolRegistry } from "../../tools/registry.js";
-import type { McpRunGrantStore } from "../../../mcp/server/grants.js";
+import { CliRunGrantStore, prepareTradexCli } from "../cli-tools.js";
 import { CLAUDE_CODE_CAPABILITIES } from "../capabilities.js";
-import { buildTradexMcpConfigFile } from "../external-mcp.js";
 import type { ActiveRuntimeRun, RuntimeEvent, RuntimeRunResult } from "../types.js";
 import { claudeLineType, classifyClaudeError, parseClaudeLine } from "./protocol.js";
 
@@ -17,8 +15,6 @@ export { classifyClaudeError, parseClaudeLine } from "./protocol.js";
 export interface ClaudeArgsInput {
   prompt: string;
   instructions: string;
-  mcpConfigPath: string;
-  allowedMcpTools: string[];
   nativeSessionId?: string;
   assignedNativeSessionId?: string;
   model?: string | null;
@@ -27,12 +23,8 @@ export interface ClaudeArgsInput {
 
 /** 生成不经过 shell 的 Claude headless argv，并按需添加 resume/model/effort。 */
 export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
-  // 所有参数都以 argv 传入，禁止拼接 shell 字符串，避免 prompt 或路径产生注入问题。
-  const mcpTools = input.allowedMcpTools.map((name) => `mcp__tradex__${name}`);
-  const nativeTools = ["Read", "Bash"];
-  const tools = [...nativeTools, ...mcpTools];
-  const allowedTools = [...nativeTools, ...mcpTools];
-  // Tradex 显式提供本轮配置，不继承可能注册 hooks 的用户或项目 settings。
+  // All arguments are passed as argv. Tradex tools are reached through the
+  // run-scoped `tradex` CLI in Bash, so Claude never loads a Tradex MCP config.
   const args = [
     "-p",
     "--verbose",
@@ -40,11 +32,9 @@ export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
     "--include-partial-messages",
     "--permission-mode", "dontAsk",
     "--setting-sources", "",
-    "--strict-mcp-config",
-    "--mcp-config", input.mcpConfigPath,
     "--system-prompt", input.instructions,
-    "--tools", tools.join(","),
-    "--allowedTools", allowedTools.join(","),
+    "--tools", "Read,Bash",
+    "--allowedTools", "Read,Bash(tradex:*),Bash(date)",
   ];
   if (input.nativeSessionId) args.push("--resume", input.nativeSessionId);
   else if (input.assignedNativeSessionId) args.push("--session-id", input.assignedNativeSessionId);
@@ -56,8 +46,8 @@ export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
 
 export interface ClaudeCodeRuntimeOptions {
   executablePath?: string;
-  mcpUrl: string;
-  grants: McpRunGrantStore;
+  cliUrl: string;
+  grants: CliRunGrantStore;
   grantTtlMs?: number;
   runTimeoutMs?: number;
   inactivityTimeoutMs?: number;
@@ -78,49 +68,39 @@ export class ClaudeCodeRuntime {
   readonly id = "claude-code" as const;
   readonly capabilities = CLAUDE_CODE_CAPABILITIES;
   private readonly executablePath: string;
-  private readonly mcpUrl: string;
-  private readonly grants: McpRunGrantStore;
+  private readonly cliUrl: string;
+  private readonly grants: CliRunGrantStore;
   private readonly grantTtlMs: number;
   private readonly runTimeoutMs: number;
   private readonly inactivityTimeoutMs: number;
 
-  /** 保存进程、MCP 授权和超时策略配置。 */
+  /** 保存进程、CLI 授权和超时策略配置。 */
   constructor(options: ClaudeCodeRuntimeOptions) {
     this.executablePath = options.executablePath ?? "claude";
-    this.mcpUrl = options.mcpUrl;
+    this.cliUrl = options.cliUrl;
     this.grants = options.grants;
     this.grantTtlMs = options.grantTtlMs ?? 60 * 60_000;
     this.runTimeoutMs = options.runTimeoutMs ?? 30 * 60_000;
     this.inactivityTimeoutMs = options.inactivityTimeoutMs ?? 5 * 60_000;
   }
 
-  /** 创建本轮 MCP grant、启动 Claude 子进程并返回活动运行句柄。 */
+  /** 创建本轮 CLI grant、启动 Claude 子进程并返回活动运行句柄。 */
   async start(input: ClaudeRunInput): Promise<ActiveRuntimeRun> {
-    // 每次 run 使用独立 MCP 配置和 token；即使是 resume，也不复用上一轮授权。
-    const runtimeDir = path.join(input.cwd, "runtime");
-    await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
+    // 每次 run 使用独立 CLI token；即使是 resume，也不复用上一轮授权。
     const issued = this.grants.issue({
       tradexSessionId: input.tradexSessionId,
       registry: input.registry,
       ttlMs: this.grantTtlMs,
       runtime: "claude-code",
     });
-    const mcpConfigPath = path.join(runtimeDir, `mcp-${randomUUID()}.json`);
+    let cli: Awaited<ReturnType<typeof prepareTradexCli>> | null = null;
     let handedOff = false;
     try {
-      await writeFile(mcpConfigPath, `${JSON.stringify(buildTradexMcpConfigFile({
-        url: this.mcpUrl,
-        token: issued.token,
-      }))}\n`, { encoding: "utf8", mode: 0o600 });
-
+      cli = await prepareTradexCli({ cwd: input.cwd, url: this.cliUrl, token: issued.token });
       const assignedNativeSessionId = input.nativeSessionId ? undefined : randomUUID();
-      // 必须与 McpRunGrantStore.issue 一致：允许协作写，禁止交易写。
-      const allowedMcpTools = input.registry.listToolsForExternalMcp("claude-code").map((tool) => tool.name);
       const args = buildClaudeArgs({
         prompt: input.prompt,
         instructions: input.instructions,
-        mcpConfigPath,
-        allowedMcpTools,
         nativeSessionId: input.nativeSessionId,
         assignedNativeSessionId,
         model: input.model,
@@ -131,7 +111,7 @@ export class ClaudeCodeRuntime {
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         detached: process.platform !== "win32",
-        env: sanitizedClaudeEnv(process.env),
+        env: { ...sanitizedClaudeEnv(process.env), ...cli.env },
       });
       const run = new ClaudeActiveRun({
         child,
@@ -139,7 +119,7 @@ export class ClaudeCodeRuntime {
         runTimeoutMs: this.runTimeoutMs,
         inactivityTimeoutMs: this.inactivityTimeoutMs,
         revoke: () => this.grants.revoke(issued.token),
-        cleanup: () => rm(mcpConfigPath, { force: true }),
+        cleanup: cli.cleanup,
       });
       handedOff = true;
       return run;
@@ -147,7 +127,7 @@ export class ClaudeCodeRuntime {
       // issue 成功后、ActiveRun 接管之前若失败，必须立刻撤销 grant 并清掉含 Bearer 的临时配置。
       if (!handedOff) {
         this.grants.revoke(issued.token);
-        await rm(mcpConfigPath, { force: true });
+        await cli?.cleanup();
       }
     }
   }
@@ -302,7 +282,7 @@ class ClaudeActiveRun implements ActiveRuntimeRun {
   }
 
   private stopChild(): void {
-    // Claude 可能继续派生 MCP/工具子进程，因此 POSIX 需要杀整个 process group。
+    // Claude may spawn shell/tool subprocesses, so POSIX must stop the process group.
     if (this.settled || !this.child.pid) return;
     if (process.platform === "win32") {
       this.stopWindowsProcessTree(false);
@@ -354,7 +334,7 @@ export function windowsTaskkillArgs(pid: number, force: boolean): string[] {
 function sanitizedClaudeEnv(parent: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...parent };
   for (const key of Object.keys(env)) {
-    if (/^TRADEX_MCP_TOKEN$/i.test(key)) delete env[key];
+    if (/^TRADEX_CLI_TOKEN$/i.test(key)) delete env[key];
   }
   return env;
 }

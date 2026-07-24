@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ToolRegistry } from "../../tools/registry.js";
-import { McpRunGrantStore } from "../../../mcp/server/grants.js";
+import { CliRunGrantStore } from "../cli-tools.js";
 import {
   buildCursorArgs,
   composeCursorPrompt,
@@ -28,7 +28,6 @@ describe("Cursor CLI runtime protocol", () => {
       "-p",
       "--force",
       "--trust",
-      "--approve-mcps",
       "--output-format", "stream-json",
       "--stream-partial-output",
       "--workspace", "/tmp/cursor-session",
@@ -114,8 +113,8 @@ console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false
     await chmod(executable, 0o755);
     const run = await new CursorCliRuntime({
       executablePath: executable,
-      mcpUrl: "http://127.0.0.1/mcp/tradex",
-      grants: new McpRunGrantStore(),
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
     }).start({
       tradexSessionId: "tradex-session",
       cwd,
@@ -146,8 +145,8 @@ console.log(JSON.stringify({ type: "assistant", timestamp_ms: 1, message: { role
     await chmod(executable, 0o755);
     const run = await new CursorCliRuntime({
       executablePath: executable,
-      mcpUrl: "http://127.0.0.1/mcp/tradex",
-      grants: new McpRunGrantStore(),
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
     }).start({
       tradexSessionId: "tradex-session",
       cwd,
@@ -185,8 +184,8 @@ setInterval(() => {}, 1000);
     await chmod(executable, 0o755);
     const run = await new CursorCliRuntime({
       executablePath: executable,
-      mcpUrl: "http://127.0.0.1/mcp/tradex",
-      grants: new McpRunGrantStore(),
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
       runTimeoutMs: 5_000,
       inactivityTimeoutMs: 2_000,
     }).start({
@@ -221,8 +220,8 @@ setInterval(() => {}, 1000);
     await chmod(executable, 0o755);
     const run = await new CursorCliRuntime({
       executablePath: executable,
-      mcpUrl: "http://127.0.0.1/mcp/tradex",
-      grants: new McpRunGrantStore(),
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
     }).start({
       tradexSessionId: "tradex-session",
       cwd,

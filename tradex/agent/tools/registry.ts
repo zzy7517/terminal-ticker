@@ -174,19 +174,14 @@ export class ToolRegistry {
   }
 
   /**
-   * 外接编码 Runtime（Claude / Cursor）单次 run 可通过 Tradex MCP 调用的工具。
+   * 外接编码 Runtime（Claude / Cursor）单次 run 可通过本地 CLI 调用的工具。
    * 包含 Message/Channel 协作 write（domain other），永不包含交易 write。
    */
-  listToolsForExternalMcp(runtime: Exclude<AgentRuntimeId, "pi">): ToolDefinition[] {
+  listToolsForExternalRuntime(runtime: Exclude<AgentRuntimeId, "pi">): ToolDefinition[] {
     return this.listToolsForRuntime(runtime, "write").filter((tool) => {
       const policy = tool.policy ?? { access: "read" as const, domain: "other" as const, runtimeExposure: ["pi"] as const };
       return !(policy.access === "write" && policy.domain === "trading");
     });
-  }
-
-  /** @deprecated 使用 listToolsForExternalMcp("claude-code") */
-  listToolsForClaudeMcp(): ToolDefinition[] {
-    return this.listToolsForExternalMcp("claude-code");
   }
 
   openaiToolSchemas(): Array<Record<string, unknown>> {

@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { writeFile } from "node:fs/promises";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
+import { CLAUDE_CLI_INSTRUCTIONS, currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
 import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claude-code/runtime.js";
 import type { RuntimeEvent } from "../agent/runtime/types.js";
@@ -63,8 +63,8 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
       try {
         run = await new ClaudeCodeRuntime({
           executablePath: availability.executablePath,
-          mcpUrl: claudeMcpUrl(input.requestUrl),
-          grants: runtime.mcpRunGrants,
+          cliUrl: tradexCliUrl(input.requestUrl),
+          grants: runtime.cliRunGrants,
         }).start({
           tradexSessionId: sessionId,
           cwd: runtime.claudeSessions.sessionDir(sessionId),
@@ -246,7 +246,7 @@ class ClaudeSessionStreamError extends Error {
   }
 }
 
-/** 构建并过滤当前 Claude Session 可以调用的 Tradex MCP 只读 Tool。 */
+/** 构建并过滤当前 Claude Session 可以调用的 Tradex CLI 只读 Tool。 */
 async function buildClaudeTools(runtime: AppRuntime, sessionId: string) {
   const { tools } = await buildTradexToolRegistry(runtime, {
     sessionId,
@@ -262,22 +262,22 @@ function claudeInstructions(agentInstructions: string): string {
   return [
     MAIN_AGENT_PROMPT,
     ...(agentInstructions.trim() && agentInstructions.trim() !== MAIN_AGENT_PROMPT.trim() ? [agentInstructions.trim()] : []),
-    "You are running inside Tradex via Claude Code. Use the native Read and Bash tools for this Session and the explicitly allowed Tradex read Tools exposed through MCP for market data.",
+    CLAUDE_CLI_INSTRUCTIONS,
     currentTimeInstruction("Bash"),
-    "Do not place trades, modify files, access Memory, configure external MCP servers, or claim those capabilities are available.",
+    "Do not place trades, modify files, configure additional tool servers, or claim those capabilities are available.",
   ].join("\n\n");
 }
 
-/** 根据当前 API 请求地址生成 loopback MCP endpoint URL。 */
-export function claudeMcpUrl(requestUrl: string): string {
+/** 根据当前 API 请求地址生成 loopback Tradex CLI endpoint URL。 */
+export function tradexCliUrl(requestUrl: string): string {
   const url = new URL(requestUrl);
   const host = url.port ? `127.0.0.1:${url.port}` : "127.0.0.1";
-  return `${url.protocol}//${host}/mcp/tradex`;
+  return `${url.protocol}//${host}/cli/tradex`;
 }
 
 /** From process listen origin (e.g. http://127.0.0.1:8765). */
-export function claudeMcpUrlFromOrigin(listenOrigin: string): string {
-  return claudeMcpUrl(listenOrigin);
+export function tradexCliUrlFromOrigin(listenOrigin: string): string {
+  return tradexCliUrl(listenOrigin);
 }
 
 const CLAUDE_IMAGE_TYPES: Record<string, string> = {

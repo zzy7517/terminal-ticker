@@ -3,7 +3,7 @@
  *
  * 复用 AgentContextManager 的活跃 Runtime Session（或懒创建）。
  * 不另建第三套 Agent loop。Message Tools 按 agentId 绑定到 Pi（进程内）
- * 与外接 Runtime（经 listToolsForExternalMcp 的 MCP grant）。
+ * 与外接 Runtime（经 session-scoped CLI grant）。
  */
 import type { AppRuntime } from "../api/runtime.js";
 import type { InboxItem } from "./inbox-store.js";
@@ -14,8 +14,13 @@ import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claud
 import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
 import { CursorCliRuntime, exposeCursorReadTools } from "../agent/runtime/cursor/runtime.js";
 import { detectCursorCli } from "../agent/runtime/cursor/discovery.js";
-import { claudeMcpUrlFromOrigin } from "../api/claude-session-stream.js";
-import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
+import { tradexCliUrlFromOrigin } from "../api/claude-session-stream.js";
+import {
+  CLAUDE_CLI_INSTRUCTIONS,
+  CURSOR_CLI_INSTRUCTIONS,
+  currentTimeInstruction,
+  MAIN_AGENT_PROMPT,
+} from "../agent/prompts.js";
 import { agentConfigFromSnapshot, openSessionManager } from "../api/helpers.js";
 import {
   AGENT_SNAPSHOT_ENTRY,
@@ -113,15 +118,16 @@ async function runActivationOnce(
       }).then((result) => exposeClaudeReadTools(result.tools));
       const instructions = [
         agent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || MAIN_AGENT_PROMPT,
-        currentTimeInstruction("run_command"),
+        CLAUDE_CLI_INSTRUCTIONS,
+        currentTimeInstruction("Bash"),
         MESSAGE_OPERATING_INSTRUCTIONS,
         `Private workspace: ${workspace.workspacePath}`,
         `Private memory: ${workspace.memoryPath}`,
       ].filter(Boolean).join("\n\n");
       const run = await new ClaudeCodeRuntime({
         executablePath: availability.executablePath,
-        mcpUrl: claudeMcpUrlFromOrigin(runtime.listenOrigin),
-        grants: runtime.mcpRunGrants,
+        cliUrl: tradexCliUrlFromOrigin(runtime.listenOrigin),
+        grants: runtime.cliRunGrants,
       }).start({
         tradexSessionId: sessionId,
         cwd: runtime.claudeSessions.sessionDir(sessionId),
@@ -153,6 +159,7 @@ async function runActivationOnce(
       }).then((result) => exposeCursorReadTools(result.tools));
       const instructions = [
         agent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || MAIN_AGENT_PROMPT,
+        CURSOR_CLI_INSTRUCTIONS,
         currentTimeInstruction("shell"),
         MESSAGE_OPERATING_INSTRUCTIONS,
         `Private workspace: ${workspace.workspacePath}`,
@@ -160,8 +167,8 @@ async function runActivationOnce(
       ].filter(Boolean).join("\n\n");
       const run = await new CursorCliRuntime({
         executablePath: availability.executablePath,
-        mcpUrl: claudeMcpUrlFromOrigin(runtime.listenOrigin),
-        grants: runtime.mcpRunGrants,
+        cliUrl: tradexCliUrlFromOrigin(runtime.listenOrigin),
+        grants: runtime.cliRunGrants,
       }).start({
         tradexSessionId: sessionId,
         cwd: runtime.cursorSessions.sessionDir(sessionId),
@@ -207,7 +214,7 @@ async function runActivationOnce(
     });
     const systemPrompt = [
       snapshot.systemPrompt.trim() || MAIN_AGENT_PROMPT,
-      currentTimeInstruction("run_command"),
+      currentTimeInstruction("bash"),
       MESSAGE_OPERATING_INSTRUCTIONS,
       `Private workspace: ${workspace.workspacePath}`,
       `Private memory: ${workspace.memoryPath}`,
@@ -217,6 +224,9 @@ async function runActivationOnce(
       modelRuntime: runtime.modelRuntimeSnapshot,
       systemPrompt,
       tools,
+      tradexSessionId: sessionId,
+      cliUrl: tradexCliUrlFromOrigin(runtime.listenOrigin),
+      grants: runtime.cliRunGrants,
       sessionManager: mgr,
       compaction: true,
       prompt,

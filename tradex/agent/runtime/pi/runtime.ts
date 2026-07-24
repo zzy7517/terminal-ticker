@@ -1,12 +1,11 @@
 /** 将现有 Pi SDK Agent loop 适配到 Runtime-neutral 接口。 */
 import {
   createAgentSession,
+  createBashTool,
   DefaultResourceLoader,
-  defineTool,
   getAgentDir,
   SessionManager as PiSessionManager,
   SettingsManager,
-  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type {
   ActiveRuntimeRun,
@@ -18,17 +17,14 @@ import { piEventToRuntimeEvents } from "./events.js";
 import type {
   AgentEvent,
   AgentMessage,
-  AgentToolResult,
   ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { AgentConfig } from "../../../config/index.js";
 import type { ModelRuntimeSnapshot } from "./models/runtime.js";
-import {
-  normalizeToolReturn,
-  type ToolDefinition as TradexToolDefinition,
-  type ToolRegistry,
-} from "../../tools/registry.js";
+import type { ToolRegistry } from "../../tools/registry.js";
+import { CliRunGrantStore, prepareTradexCli } from "../cli-tools.js";
+import { PI_CLI_INSTRUCTIONS } from "../../prompts.js";
 
 export interface ActiveAgentRun {
   abort(): void | Promise<void>;
@@ -38,10 +34,10 @@ export interface PiAgentRuntime extends ActiveAgentRun {
   messages: AgentMessage[];
   subscribe(listener: (event: AgentEvent) => void | Promise<void>): () => void;
   prompt(text: string, images?: ImageContent[]): Promise<void>;
-  dispose(): void;
+  dispose(): void | Promise<void>;
 }
 
-export type PiRuntimeRunInput = Parameters<typeof createPiAgentRuntime>[0] & {
+export type PiRuntimeRunInput = Omit<Parameters<typeof createPiAgentRuntime>[0], "cliEnv"> & {
   prompt: string;
   images?: ImageContent[];
 };
@@ -53,8 +49,33 @@ export class PiSdkRuntime {
 
   // 创建一次延迟启动且可订阅的 Pi Runtime run。
   async start(input: PiRuntimeRunInput): Promise<ActiveRuntimeRun> {
-    const agent = await createPiAgentRuntime(input);
-    return new PiActiveRuntimeRun(agent, input.prompt, input.images);
+    const issued = input.grants.issue({
+      tradexSessionId: input.tradexSessionId,
+      registry: input.tools,
+      ttlMs: input.grantTtlMs ?? 60 * 60_000,
+      runtime: "pi",
+    });
+    let cli: Awaited<ReturnType<typeof prepareTradexCli>> | null = null;
+    let handedOff = false;
+    try {
+      cli = await prepareTradexCli({
+        cwd: process.cwd(),
+        url: input.cliUrl,
+        token: issued.token,
+      });
+      const agent = await createPiAgentRuntime({ ...input, cliEnv: cli.env });
+      const run = new PiActiveRuntimeRun(agent, input.prompt, input.images, async () => {
+        input.grants.revoke(issued.token);
+        await cli?.cleanup();
+      });
+      handedOff = true;
+      return run;
+    } finally {
+      if (!handedOff) {
+        input.grants.revoke(issued.token);
+        await cli?.cleanup();
+      }
+    }
   }
 }
 
@@ -72,7 +93,7 @@ export class PiActiveRuntimeRun implements ActiveRuntimeRun {
   private turnIndex = 0;
 
   // 绑定 Pi Agent、缓存早期事件并安排 prompt 执行。
-  constructor(agent: PiAgentRuntime, prompt: string, images?: ImageContent[]) {
+  constructor(agent: PiAgentRuntime, prompt: string, images?: ImageContent[], cleanup?: () => Promise<void>) {
     let output = "";
     let error: string | null = null;
     let sawRunEnd = false;
@@ -117,7 +138,8 @@ export class PiActiveRuntimeRun implements ActiveRuntimeRun {
             await this.delivery;
             return { output, error: detail, errorCode: aborted ? "aborted" : "runtime_failure" };
           } finally {
-            try { agent.dispose(); } catch { /* cleanup must not block run settlement */ }
+            try { await agent.dispose(); } catch { /* cleanup must not block run settlement */ }
+            try { await cleanup?.(); } catch { /* cleanup must not block run settlement */ }
           }
         })().then(resolve);
       });
@@ -161,6 +183,11 @@ async function createPiAgentRuntime(input: {
   modelRuntime: ModelRuntimeSnapshot;
   systemPrompt: string;
   tools: ToolRegistry;
+  cliEnv: NodeJS.ProcessEnv;
+  tradexSessionId: string;
+  cliUrl: string;
+  grants: CliRunGrantStore;
+  grantTtlMs?: number;
   sessionManager?: PiSessionManager;
   maxTurns?: number;
   /** Enable Pi auto-compaction for persisted interactive conversations. */
@@ -173,18 +200,26 @@ async function createPiAgentRuntime(input: {
   const settingsManager = SettingsManager.inMemory({
     compaction: { enabled: input.compaction ?? false },
   });
+  const systemPrompt = [input.systemPrompt, PI_CLI_INSTRUCTIONS].filter(Boolean).join("\n\n");
   const resourceLoader = new DefaultResourceLoader({
     cwd: process.cwd(),
     agentDir: getAgentDir(),
     settingsManager,
-    systemPromptOverride: () => input.systemPrompt,
+    systemPromptOverride: () => systemPrompt,
     extensionFactories: [],
     agentsFilesOverride: () => ({ agentsFiles: [] }),
     promptsOverride: () => ({ prompts: [], diagnostics: [] }),
   });
   await resourceLoader.reload();
 
-  const customTools = input.tools.listTools().map(toPiTool);
+  // Keep Pi's coding tools native. Only the business ToolRegistry crosses the
+  // process boundary through the session-scoped `tradex` CLI invoked by bash.
+  const bashTool = createBashTool(process.cwd(), {
+    spawnHook: (context) => ({
+      ...context,
+      env: { ...context.env, ...input.cliEnv },
+    }),
+  });
   const { session } = await createAgentSession({
     cwd: process.cwd(),
     model,
@@ -193,8 +228,8 @@ async function createPiAgentRuntime(input: {
     resourceLoader,
     settingsManager,
     sessionManager: input.sessionManager ?? PiSessionManager.inMemory(),
-    tools: ["read", ...customTools.map((tool) => tool.name)],
-    customTools,
+    tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
+    customTools: [bashTool],
   });
   session.agent.toolExecution = "sequential";
   // Pi's before_provider_request extension event deliberately reports and
@@ -256,34 +291,6 @@ async function createPiAgentRuntime(input: {
       session.dispose();
     },
   };
-}
-
-function toPiTool(tool: TradexToolDefinition): ToolDefinition {
-  return defineTool({
-    name: tool.name,
-    label: tool.name,
-    description: tool.description,
-    parameters: tool.parameters as never,
-    executionMode: tool.executionMode,
-    async execute(_toolCallId, params, signal, onUpdate): Promise<AgentToolResult<unknown>> {
-      const raw = await tool.execute(
-        params as Record<string, unknown>,
-        signal,
-        (update) => {
-          onUpdate?.({
-            content: update.content,
-            details: update.details,
-          } as AgentToolResult<unknown>);
-        },
-      );
-      const normalized = normalizeToolReturn(raw);
-      return {
-        content: normalized.content,
-        details: normalized.details,
-        terminate: normalized.terminate,
-      };
-    },
-  });
 }
 
 function toThinkingLevel(value: string): ThinkingLevel {

@@ -22,6 +22,7 @@ import { buildMcpToolRegistry } from "../mcp/index.js";
 import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { jobDir } from "./store.js";
 import type { AppRuntime } from "../api/runtime.js";
+import { tradexCliUrlFromOrigin } from "../api/claude-session-stream.js";
 
 const DEFAULT_CRON_MAX_ITERATIONS = 10;
 
@@ -118,7 +119,7 @@ export async function executeCronJob(input: {
     } else {
       systemPrompt = job.systemPrompt || "";
     }
-    systemPrompt = [systemPrompt, currentTimeInstruction("run_command")].filter(Boolean).join("\n\n");
+    systemPrompt = [systemPrompt, currentTimeInstruction("bash")].filter(Boolean).join("\n\n");
     const maxIterations = job.maxIterations ?? DEFAULT_CRON_MAX_ITERATIONS;
 
     const agent = await new PiSdkRuntime().start({
@@ -126,6 +127,9 @@ export async function executeCronJob(input: {
       modelRuntime,
       systemPrompt,
       tools,
+      tradexSessionId: sessionId,
+      cliUrl: tradexCliUrlFromOrigin(runtime.listenOrigin),
+      grants: runtime.cliRunGrants,
       maxTurns: maxIterations,
       sessionManager: cronMgr,
       prompt: job.userMessage,

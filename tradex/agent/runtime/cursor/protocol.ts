@@ -127,7 +127,7 @@ export function cursorLineType(line: string): string | null {
 export function classifyCursorError(stderr: string): string {
   if (/auth|login|api.?key|unauthorized|401/i.test(stderr)) return "auth_required";
   if (/model|not available|entitlement|overloaded/i.test(stderr)) return "model_unavailable";
-  if (/mcp|connection refused|econnrefused/i.test(stderr)) return "mcp_connection_failed";
+  if (/tradex cli|connection refused|econnrefused/i.test(stderr)) return "cli_connection_failed";
   if (/permission|not allowed|denied|trust/i.test(stderr)) return "permission_denied";
   if (/resume|session.*not found|chat.*not found|conversation.*not found/i.test(stderr)) {
     return "native_session_resume_failed";
@@ -196,10 +196,7 @@ function parseFunctionArguments(value: string | Record<string, unknown> | undefi
 }
 
 function normalizeCursorToolName(rawName: string): string {
-  const withoutCallSuffix = rawName.replace(/ToolCall$/i, "");
-  if (/^mcp__tradex__/i.test(withoutCallSuffix)) return withoutCallSuffix.slice("mcp__tradex__".length);
-  if (/^tradex__/i.test(withoutCallSuffix)) return withoutCallSuffix.slice("tradex__".length);
-  return withoutCallSuffix;
+  return rawName.replace(/ToolCall$/i, "");
 }
 
 function contentToText(content: unknown): string {

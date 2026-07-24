@@ -1,8 +1,8 @@
 /**
- * message-tools — Agent 面向的 Message Fabric 工具（Pi 进程内 + Claude MCP）。
+ * message-tools — Agent 面向的 Message Fabric 工具（统一经 Tradex CLI 暴露）。
  *
  * 工具只定义一次，runtimeExposure 同时覆盖 Pi / Claude / Cursor。write 工具使用 domain "other"，
- * 以便外接 MCP 暴露协作写能力时不打开交易写权限（见 listToolsForExternalMcp）。
+ * 以便外接 Runtime 的 CLI grant 暴露协作写能力时不打开交易写权限。
  *
  * Target 使用 Agent 侧字符串（#channel / dm:@handle），在此边界解析为可信 ChatTarget；
  * Channel/DM 读写经 message-fabric，避免本文件重复 kind 分支。

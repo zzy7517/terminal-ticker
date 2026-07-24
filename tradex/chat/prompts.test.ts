@@ -23,8 +23,14 @@ describe("activation wake prompts", () => {
     const wake = buildWakePrompt(pending);
     expect(wake.startsWith(ACTIVATION_WAKE_MARKER)).toBe(true);
     expect(wake).toContain("channel:c1");
+    expect(wake).toContain("tradex tool call message_check");
     expect(wake).not.toContain("Prefer silence over noise");
     expect(isActivationWakeContent(wake)).toBe(true);
+  });
+
+  it("tells agents to use the session tradex CLI rather than MCP", () => {
+    expect(MESSAGE_OPERATING_INSTRUCTIONS).toContain("tradex tool call message_check");
+    expect(MESSAGE_OPERATING_INSTRUCTIONS).toContain("Do not search MCP catalogs");
   });
 
   it("detects legacy ops-in-user-prompt imports", () => {

@@ -12,7 +12,7 @@ import { optionsRoutes } from "./routes/options.js";
 import { proxyRoutes } from "./routes/proxy.js";
 import { channelRoutes } from "./routes/channel.js";
 import { chatEventRoutes } from "./routes/chat.js";
-import { tradexMcpRoutes } from "../mcp/server/routes.js";
+import { tradexCliRoutes } from "./routes/cli.js";
 
 export interface CreateAppOptions {
   runtime: AppRuntime;
@@ -34,7 +34,7 @@ export function createApp(options: CreateAppOptions): Hono {
   app.route("", browserRoutes(runtime));
   app.route("", optionsRoutes(runtime));
   app.route("", proxyRoutes(runtime));
-  app.route("", tradexMcpRoutes(runtime.mcpRunGrants));
+  app.route("", tradexCliRoutes(runtime.cliRunGrants));
 
   return app;
 }

@@ -55,7 +55,7 @@ describe("createMessageToolRegistry", () => {
   it("exposes reaction and around-capable message tools for both runtimes", () => {
     const { runtime } = createRuntime();
     const registry = createMessageToolRegistry(runtime, "alpha");
-    const names = registry.listToolsForClaudeMcp().map((tool) => tool.name);
+    const names = registry.listToolsForExternalRuntime("claude-code").map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining([
       "message_check",
       "message_read",
