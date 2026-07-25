@@ -1,0 +1,84 @@
+web/src/api/chat.ts
+  s_6976bb9970b8cc::t_e6122a573dc801 6,25-31,36,41-45
+tradex/chat/inbox-store.ts
+  s_6976bb9970b8cc::t_b5e676ad245ec9 44,81-82
+  s_6976bb9970b8cc::t_3578aa5436e178 43,58,89-92,110,128,130,132-137,146-147,158,172,250,253-266
+tradex/chat/dispatch.test.ts
+  s_6976bb9970b8cc::t_024b394fd6f2bb 108
+  s_6976bb9970b8cc::t_b5e676ad245ec9 8,74-107
+  s_6976bb9970b8cc::t_f6a0b7cef232a3 109
+tradex/api/runtime.ts
+  s_6976bb9970b8cc::t_3578aa5436e178 36,68
+tradex/chat/dispatch.ts
+  s_6976bb9970b8cc::t_3578aa5436e178 92,109,153,162,255,263
+web/src/stores/agentStore.ts
+  s_6976bb9970b8cc::t_673fc8361e1d51 128,482-487
+web/src/chat/skillCompletion.ts
+  s_6976bb9970b8cc::t_e6122a573dc801 1-20,22-33,42-73
+  s_6976bb9970b8cc::t_e91ed4d0811966 21
+  s_6976bb9970b8cc::t_673fc8361e1d51 34-41
+web/src/styles/chat/chat-composer.css
+  s_6976bb9970b8cc::t_411a54a53a48a6 25-33,35-64,66-103,105-125
+  s_6976bb9970b8cc::t_024b394fd6f2bb 34,65,104
+  s_6976bb9970b8cc::t_82a290dc4bc582 15
+package.json
+  s_6976bb9970b8cc::t_c6db8771afa688 41
+tradex/api/routes/agent.test.ts
+  s_6976bb9970b8cc::t_b5e676ad245ec9 18,68,168-187
+  s_f7961a791d4c17::t_6f4ef9eb791ccf 188-189
+tradex/chat/prompts.test.ts
+  s_6976bb9970b8cc::t_d8b2b9f4516a8f 6,32,45-52
+  s_6976bb9970b8cc::t_10131d114b24bb 33-44
+  s_f7961a791d4c17::t_83e08d3bb76be2 53-54
+web/src/types/agent.ts
+  s_6976bb9970b8cc::t_e6122a573dc801 94-99
+tradex/chat/prompts.ts
+  s_6976bb9970b8cc::t_d8b2b9f4516a8f 65-69
+tradex/agent/skills.ts
+  s_6976bb9970b8cc::t_c862b24ae23867 1-144
+web/src/chat/skillCompletion.test.ts
+  s_6976bb9970b8cc::t_e6122a573dc801 1-26,28,30-37,49
+  s_6976bb9970b8cc::t_673fc8361e1d51 29
+  s_6976bb9970b8cc::t_aa0b0f28367647 47
+  s_6976bb9970b8cc::t_024b394fd6f2bb 27
+  s_6976bb9970b8cc::t_e91ed4d0811966 38-46,48
+tradex/chat/runtime.ts
+  s_6976bb9970b8cc::t_d8b2b9f4516a8f 10,72
+  s_6976bb9970b8cc::t_3578aa5436e178 68,70-71
+  s_6976bb9970b8cc::t_b5e676ad245ec9 69
+web/src/components/workspace/AgentSessionPanel.tsx
+  s_6976bb9970b8cc::t_b130a8d372c57e 5,10,17,20,24-30,86-89,129-133,138-154,239-259,329-334,336-355,375-380,382,384-395,398-419,422,461
+  s_6976bb9970b8cc::t_e91ed4d0811966 85,157-168,335
+  s_6976bb9970b8cc::t_024b394fd6f2bb 381
+  s_f7961a791d4c17::t_99625b49b1e38e 155-156
+tradex/agent/skills.test.ts
+  s_6976bb9970b8cc::t_c862b24ae23867 1-50
+tradex/api/routes/agent.ts
+  s_6976bb9970b8cc::t_3578aa5436e178 55-56,96-98,104
+package-lock.json
+  s_6976bb9970b8cc::t_4eb8b079d7020a 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "efe4105dc4a6dc0ff50325c3c251aa4a4fa41438",
+  "prompts": {},
+  "sessions": {
+    "s_6976bb9970b8cc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9971-4a5c-7730-9d09-57a6fef215c6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_f7961a791d4c17": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "586dddfa-986c-4c9c-91e2-d3cacdeb7777",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
