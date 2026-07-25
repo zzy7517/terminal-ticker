@@ -3,6 +3,7 @@ import type {
   AgentDirectMessage,
   AgentDirectMessageResponse,
   AgentPresence,
+  AgentSkillSummary,
   Channel,
   ChannelHeldDraft,
   ChannelMember,
@@ -21,15 +22,27 @@ export async function fetchAgentDirectMessages(agentId: string): Promise<AgentDi
   return response.json();
 }
 
+export async function fetchAgentSkills(): Promise<AgentSkillSummary[]> {
+  const response = await fetch('/api/agent/skills');
+  if (!response.ok) throw await responseError(response, 'Agent skills fetch failed');
+  const payload = await response.json() as { skills: AgentSkillSummary[] };
+  return payload.skills;
+}
+
 export async function sendAgentDirectMessage(
   agentId: string,
   content: string,
   images?: Array<{ data: string; mimeType: string }>,
+  skillNames?: string[],
 ): Promise<{ message: AgentDirectMessage; target: { kind: 'direct-message'; directMessageId: string } }> {
   const response = await fetch(`/api/chat/agents/${encodeURIComponent(agentId)}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, images: images?.length ? images : undefined }),
+    body: JSON.stringify({
+      content,
+      images: images?.length ? images : undefined,
+      skillNames: skillNames?.length ? skillNames : undefined,
+    }),
   });
   if (!response.ok) throw await responseError(response, 'Agent Direct Message send failed');
   return response.json();

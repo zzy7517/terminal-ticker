@@ -62,3 +62,8 @@ export function buildWakePrompt(pending: InboxItem[]): string {
   lines.push("Use the session `tradex` CLI: `tradex tool call message_check`, then `tradex tool call message_read --json '...'` only for targets you decide to handle.");
   return lines.join("\n");
 }
+
+/** Prepends explicitly selected Skill instructions without exposing DM message bodies. */
+export function buildSkillAwareWakePrompt(pending: InboxItem[], skillInstructions: string): string {
+  return [skillInstructions.trim(), buildWakePrompt(pending)].filter(Boolean).join("\n\n");
+}

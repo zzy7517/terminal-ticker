@@ -12,6 +12,7 @@
   margin-inline: auto;
   max-width: 880px;
   overflow: hidden;
+  position: relative;
   transition: border-color var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
   width: 100%;
 }
@@ -19,6 +20,107 @@
 .session-compose:focus-within {
   border-color: var(--accent-ring);
   box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+.session-compose.has-skill-menu {
+  overflow: visible;
+}
+
+.skill-command-menu {
+  background: var(--panel-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  bottom: calc(100% + 8px);
+  box-shadow: var(--shadow-pop);
+  display: grid;
+  left: 0;
+  max-height: min(360px, 48vh);
+  overflow: auto;
+  padding: 5px;
+  position: absolute;
+  right: 0;
+  z-index: 30;
+}
+
+.skill-command-option {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: grid;
+  font-family: var(--ui);
+  font-size: 14px;
+  gap: 10px;
+  grid-template-columns: 18px max-content minmax(0, 1fr) 28px;
+  min-height: 42px;
+  padding: 8px 10px;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+  width: 100%;
+}
+
+.skill-command-option.active {
+  background: var(--accent-tint-strong);
+  color: var(--text-primary);
+}
+
+.skill-command-option:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent-ring);
+  outline: 0;
+}
+
+.skill-command-option:active {
+  transform: scale(0.99);
+}
+
+.skill-command-option > svg {
+  color: var(--text-muted);
+}
+
+.skill-command-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.skill-command-description {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-command-option kbd {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  justify-self: end;
+}
+
+@media (hover: hover) {
+  .skill-command-option:hover {
+    background: var(--accent-tint-strong);
+    color: var(--text-primary);
+  }
+}
+
+@media (max-width: 560px) {
+  .skill-command-option {
+    gap: 8px;
+    grid-template-columns: 18px minmax(0, 1fr) 28px;
+  }
+
+  .skill-command-description {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skill-command-option {
+    transition: none;
+  }
 }
 
 .session-compose textarea {

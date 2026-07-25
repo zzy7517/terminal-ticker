@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AgentStore } from "../agent/agent_store.js";
 import { ChannelStore } from "../channel/store.js";
 import type { AppRuntime } from "../api/runtime.js";
-import { appendChannelMessageAndNotify, resolveMentionedAgentIds } from "./dispatch.js";
+import { appendChannelMessageAndNotify, appendHumanDmAndNotify, resolveMentionedAgentIds } from "./dispatch.js";
 import { InboxStore } from "./inbox-store.js";
 import { MessageStore } from "./message-store.js";
 
@@ -70,5 +70,41 @@ describe("dispatch mentions", () => {
     expect(alpha[0]?.reason).toBe("joined-channel");
     expect(beta[0]?.reason).toBe("mention");
     expect(woken.sort()).toEqual(["alpha", "beta"]);
+  });
+
+  it("keeps Human DM content concise and unions selected skills in a pending inbox", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tradex-dispatch-"));
+    roots.push(root);
+    const dbPath = path.join(root, "chat.sqlite3");
+    const agentStore = new AgentStore(root);
+    agentStore.create({
+      id: "alpha", name: "Alpha", description: "", systemPrompt: "x", runtime: "pi",
+      provider: "openai", model: "gpt-5.4", reasoningEffort: null,
+    });
+    const runtime = {
+      agentStore,
+      channelStore: new ChannelStore(dbPath),
+      inboxStore: new InboxStore(dbPath),
+      messageStore: new MessageStore(dbPath),
+      agentCoordinator: null,
+    } as unknown as AppRuntime;
+
+    appendHumanDmAndNotify(runtime, {
+      agentId: "alpha",
+      content: "$think plan this",
+      skillNames: ["think"],
+    });
+    appendHumanDmAndNotify(runtime, {
+      agentId: "alpha",
+      content: "$codebase-design inspect it",
+      skillNames: ["codebase-design", "think"],
+    });
+
+    const pending = runtime.inboxStore.listPending("alpha");
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.skillNames).toEqual(["think", "codebase-design"]);
+    const dm = runtime.messageStore.requireHumanAgentDm("alpha");
+    expect(runtime.messageStore.listMessages({ directMessageId: dm.id }).messages.map((message) => message.content))
+      .toEqual(expect.arrayContaining(["$think plan this", "$codebase-design inspect it"]));
   });
 });

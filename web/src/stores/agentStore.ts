@@ -125,7 +125,7 @@ interface AgentState {
   updateAgentDefinition: (agentId: string, patch: Partial<AgentDefinitionInput>) => Promise<AgentDefinition>;
   /** Delete an Agent definition and refresh the agents list. */
   removeAgentDefinition: (agentId: string) => Promise<AgentDefinition[]>;
-  runAgentAnalysis: (sessionId?: string, options?: { includeDraft?: boolean }) => Promise<void>;
+  runAgentAnalysis: (sessionId?: string, options?: { includeDraft?: boolean; skillNames?: string[] }) => Promise<void>;
   removeFollowUp: (id: string) => void;
   clearFollowUps: () => void;
   resumeAgentConversation: (sessionId: string) => Promise<void>;
@@ -479,7 +479,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         return;
       }
       try {
-        await sendAgentDirectMessage(state.selectedAgentId, content, images.length ? images : undefined);
+        await sendAgentDirectMessage(
+          state.selectedAgentId,
+          content,
+          images.length ? images : undefined,
+          options?.skillNames,
+        );
         set((s) => {
           const pendingImagesBySessionId = { ...s.pendingImagesBySessionId };
           delete pendingImagesBySessionId[draftKey];

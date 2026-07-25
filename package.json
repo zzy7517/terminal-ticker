@@ -38,6 +38,7 @@
     "viem": "^2.48.11",
     "wreq-js": "^2.3.0",
     "ws": "^8.20.0",
+    "yaml": "^2.9.0",
     "zustand": "^5.0.13"
   },
   "devDependencies": {

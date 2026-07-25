@@ -7,7 +7,7 @@
  */
 import type { AppRuntime } from "../api/runtime.js";
 import type { InboxItem } from "./inbox-store.js";
-import { buildWakePrompt, MESSAGE_OPERATING_INSTRUCTIONS } from "./prompts.js";
+import { buildSkillAwareWakePrompt, MESSAGE_OPERATING_INSTRUCTIONS } from "./prompts.js";
 import { createMessageToolRegistry } from "./message-tools.js";
 import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
 import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claude-code/runtime.js";
@@ -65,8 +65,11 @@ export async function startMessageActivation(
     throw new Error("agent session already active");
   }
 
-  // ops 进 system；user prompt 只留短 wake（多条 pending 合并为一次）。
-  const prompt = buildWakePrompt(pending);
+  // Skill instructions are explicit user context; the wake remains free of DM bodies.
+  const selectedSkillNames = [...new Set(pending.flatMap((item) => item.skillNames ?? []))];
+  const resolvedSkills = runtime.skillCatalog.resolve(selectedSkillNames);
+  for (const warning of resolvedSkills.warnings) console.warn(`[skills] ${warning}`);
+  const prompt = buildSkillAwareWakePrompt(pending, resolvedSkills.instructions);
   const messageTools = createMessageToolRegistry(runtime, agentId);
   runtime.lockedAgentSessions.add(sessionId);
 

@@ -2,24 +2,32 @@
  * AgentSessionPanel — Agent Context runner：头栏 + composer。
  * DM transcript 在 DirectMessageTimeline；本面板负责发消息。
  */
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import '../../styles/chat/index.css';
 
 import {
   ArrowUp,
+  Box,
   Paperclip,
   Play,
   Square,
   X,
   Zap,
 } from 'lucide-react';
-import { pauseChatAgent, resumeChatAgent } from '../../api';
+import { fetchAgentSkills, pauseChatAgent, resumeChatAgent } from '../../api';
 import { AgentAvatar, avatarSeedSource } from '../../avatar';
 import { ProviderIcon } from '../ProviderIcon';
-import type { AgentDirectMessage } from '../../types';
+import type { AgentDirectMessage, AgentSkillSummary } from '../../types';
 import { agentPresenceView } from '../../chat/presenceDisplay';
 import { useChatPresence, usePresenceStore } from '../../chat/presenceStore';
 import { projectDirectMessageTimeline } from '../../chat/directMessageTimeline';
+import {
+  containsSkillReference,
+  insertSkillReference,
+  matchingSkills,
+  skillSlashQuery,
+  type SkillSlashQuery,
+} from '../../chat/skillCompletion';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
 import { processImageForUpload } from '../../utils/imageResize';
@@ -74,6 +82,11 @@ export function AgentSessionPanel({
   const transcriptRef = useRef<HTMLDivElement>(null);
   const transcriptScrollByTargetRef = useRef<Map<string, number>>(new Map());
   const shouldFollowTranscriptRef = useRef(true);
+  const skillMenuRef = useRef<HTMLDivElement>(null);
+  const [skillCatalog, setSkillCatalog] = useState<AgentSkillSummary[]>([]);
+  const [slashQuery, setSlashQuery] = useState<SkillSlashQuery | null>(null);
+  const [activeSkillIndex, setActiveSkillIndex] = useState(0);
+  const [selectedSkillNamesByAgent, setSelectedSkillNamesByAgent] = useState<Record<string, string[]>>({});
   const timelineKey = directMessageId;
   const messages = useMemo(
     () => projectDirectMessageTimeline(directMessageId, directMessages),
@@ -113,9 +126,45 @@ export function AgentSessionPanel({
     : modelLabel;
   const lastMessage = messages[messages.length - 1] ?? null;
   const lastMessageToolCallCount = 0;
+  const skillCandidates = useMemo(
+    () => slashQuery ? matchingSkills(skillCatalog, slashQuery.query) : [],
+    [skillCatalog, slashQuery],
+  );
+  const selectedSkillNames = selectedSkillNamesByAgent[selectedAgentId] ?? [];
 
   const canSend = !disabled && !sessionLoading && !chatActionKey
     && (!!agentPrompt.trim() || pendingImages.length > 0);
+
+  useEffect(() => {
+    let disposed = false;
+    void fetchAgentSkills()
+      .then((skills) => { if (!disposed) setSkillCatalog(skills); })
+      .catch((error) => console.error('Agent skills fetch failed:', error));
+    return () => { disposed = true; };
+  }, []);
+
+  useEffect(() => {
+    if (agentPrompt) return;
+    setSlashQuery(null);
+    setSelectedSkillNamesByAgent((current) => (
+      current[selectedAgentId]?.length
+        ? { ...current, [selectedAgentId]: [] }
+        : current
+    ));
+  }, [agentPrompt, selectedAgentId]);
+
+  useLayoutEffect(() => {
+    const menu = skillMenuRef.current;
+    const activeOption = menu?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!menu || !activeOption) return;
+    const optionTop = activeOption.offsetTop;
+    const optionBottom = optionTop + activeOption.offsetHeight;
+    if (optionTop < menu.scrollTop) {
+      menu.scrollTop = optionTop;
+    } else if (optionBottom > menu.scrollTop + menu.clientHeight) {
+      menu.scrollTop = optionBottom - menu.clientHeight;
+    }
+  }, [activeSkillIndex, skillCandidates]);
 
   useLayoutEffect(() => {
     const transcript = transcriptRef.current;
@@ -187,6 +236,27 @@ export function AgentSessionPanel({
     e.preventDefault();
   }, []);
 
+  const updateSlashQuery = useCallback((value: string, caret: number | null) => {
+    const next = skillSlashQuery(value, caret ?? value.length);
+    setSlashQuery(next);
+    setActiveSkillIndex(0);
+  }, []);
+
+  const chooseSkill = useCallback((skill: AgentSkillSummary) => {
+    if (!slashQuery) return;
+    const insertion = insertSkillReference(agentPrompt, slashQuery, skill.name);
+    setAgentPrompt(insertion.value);
+    setSelectedSkillNamesByAgent((current) => ({
+      ...current,
+      [selectedAgentId]: [...new Set([...(current[selectedAgentId] ?? []), skill.name])],
+    }));
+    setSlashQuery(null);
+    requestAnimationFrame(() => {
+      promptTextareaRef.current?.focus();
+      promptTextareaRef.current?.setSelectionRange(insertion.caret, insertion.caret);
+    });
+  }, [agentPrompt, selectedAgentId, setAgentPrompt, slashQuery]);
+
   return (
     <div className="agent-card agent-readout agent-session-card">
       <header className="dm-conversation-header">
@@ -256,7 +326,33 @@ export function AgentSessionPanel({
         streamingContent={streamingMessage ? streamingMessage.content : null}
         transcriptRef={transcriptRef}
       />
-      <div className="session-compose" onDrop={handleDrop} onDragOver={handleDragOver}>
+      <div
+        className={`session-compose${slashQuery && skillCandidates.length > 0 ? ' has-skill-menu' : ''}`}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+      >
+        {slashQuery && skillCandidates.length > 0 && (
+          <div className="skill-command-menu" id="agent-skill-menu" ref={skillMenuRef} role="listbox">
+            {skillCandidates.map((skill, index) => (
+              <button
+                aria-selected={index === activeSkillIndex}
+                className={`skill-command-option${index === activeSkillIndex ? ' active' : ''}`}
+                id={`agent-skill-option-${skill.name}`}
+                key={skill.name}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setActiveSkillIndex(index)}
+                onClick={() => chooseSkill(skill)}
+                role="option"
+                type="button"
+              >
+                <Box aria-hidden="true" size={17} strokeWidth={1.8} />
+                <span className="skill-command-name">{skill.displayName}</span>
+                <span className="skill-command-description">{skill.description}</span>
+                {index === activeSkillIndex && <kbd>↑↓</kbd>}
+              </button>
+            ))}
+          </div>
+        )}
         {pendingImages.length > 0 && (
           <div className="session-pending-images">
             {pendingImages.map((img, idx) => (
@@ -276,13 +372,54 @@ export function AgentSessionPanel({
         )}
         <textarea
           ref={promptTextareaRef}
+          aria-activedescendant={
+            slashQuery && skillCandidates[activeSkillIndex]
+              ? `agent-skill-option-${skillCandidates[activeSkillIndex].name}`
+              : undefined
+          }
+          aria-controls={slashQuery && skillCandidates.length > 0 ? 'agent-skill-menu' : undefined}
+          aria-expanded={Boolean(slashQuery && skillCandidates.length > 0)}
+          aria-haspopup="listbox"
           disabled={disabled || sessionLoading}
-          onChange={(event) => setAgentPrompt(event.target.value)}
+          onBlur={() => setSlashQuery(null)}
+          onChange={(event) => {
+            const value = event.target.value;
+            setAgentPrompt(value);
+            setSelectedSkillNamesByAgent((current) => ({
+              ...current,
+              [selectedAgentId]: (current[selectedAgentId] ?? [])
+                .filter((name) => containsSkillReference(value, name)),
+            }));
+            updateSlashQuery(value, event.target.selectionStart);
+          }}
+          onClick={(event) => updateSlashQuery(event.currentTarget.value, event.currentTarget.selectionStart)}
           onPaste={handlePaste}
           onKeyDown={(event) => {
+            if (slashQuery) {
+              if (event.key === 'ArrowDown' && skillCandidates.length > 0) {
+                event.preventDefault();
+                setActiveSkillIndex((index) => (index + 1) % skillCandidates.length);
+                return;
+              }
+              if (event.key === 'ArrowUp' && skillCandidates.length > 0) {
+                event.preventDefault();
+                setActiveSkillIndex((index) => (index - 1 + skillCandidates.length) % skillCandidates.length);
+                return;
+              }
+              if ((event.key === 'Enter' || event.key === 'Tab') && skillCandidates[activeSkillIndex]) {
+                event.preventDefault();
+                chooseSkill(skillCandidates[activeSkillIndex]);
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setSlashQuery(null);
+                return;
+              }
+            }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
-              if (canSend) void runAgentAnalysis();
+              if (canSend) void runAgentAnalysis(undefined, { skillNames: selectedSkillNames });
             }
           }}
           placeholder={
@@ -321,7 +458,7 @@ export function AgentSessionPanel({
             className="shell-button primary lg session-submit"
             type="button"
             onClick={() => {
-              void runAgentAnalysis();
+              void runAgentAnalysis(undefined, { skillNames: selectedSkillNames });
             }}
             disabled={!canSend}
           >

@@ -40,6 +40,8 @@ export interface InboxItem {
   status: InboxStatus;
   availableAtMs: number;
   createdAtMs: number;
+  /** Skill names selected for messages coalesced into this attention window. */
+  skillNames?: string[];
 }
 
 interface InboxRow {
@@ -53,6 +55,7 @@ interface InboxRow {
   status: InboxStatus;
   available_at_ms: number;
   created_at_ms: number;
+  skill_names_json: string;
 }
 
 /** per-Agent inbox 队列：合并 pending、驱动 Coordinator 唤醒。 */
@@ -75,13 +78,18 @@ export class InboxStore extends BaseStore {
         reason TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('pending', 'read', 'ignored', 'deferred')),
         available_at_ms INTEGER NOT NULL,
-        created_at_ms INTEGER NOT NULL
+        created_at_ms INTEGER NOT NULL,
+        skill_names_json TEXT NOT NULL DEFAULT '[]'
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_inbox_dedupe
         ON agent_inbox (agent_id, target_kind, target_ref, reason, first_message_id);
       CREATE INDEX IF NOT EXISTS idx_agent_inbox_pending
         ON agent_inbox (agent_id, status, available_at_ms);
     `);
+    const columns = conn.prepare("PRAGMA table_info(agent_inbox)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "skill_names_json")) {
+      conn.exec("ALTER TABLE agent_inbox ADD COLUMN skill_names_json TEXT NOT NULL DEFAULT '[]'");
+    }
   }
 
   /** 确保 schema 存在且不开启写事务；跨 store 原子写入前调用。 */
@@ -99,6 +107,7 @@ export class InboxStore extends BaseStore {
     messageId: string;
     reason: InboxReason;
     availableAtMs?: number;
+    skillNames?: string[];
   }): void {
     if (!input.agentId.trim()) throw new Error("agentId is required");
     const now = nowMs();
@@ -116,10 +125,16 @@ export class InboxStore extends BaseStore {
     ) as InboxRow | undefined;
 
     if (existing) {
+      const skillNames = mergeSkillNames(parseSkillNames(existing.skill_names_json), input.skillNames ?? []);
       conn.prepare(`
-        UPDATE agent_inbox SET latest_message_id = ?, available_at_ms = ?
+        UPDATE agent_inbox SET latest_message_id = ?, available_at_ms = ?, skill_names_json = ?
         WHERE id = ?
-      `).run(input.messageId, Math.min(existing.available_at_ms, availableAtMs), existing.id);
+      `).run(
+        input.messageId,
+        Math.min(existing.available_at_ms, availableAtMs),
+        JSON.stringify(skillNames),
+        existing.id,
+      );
       return;
     }
 
@@ -128,8 +143,8 @@ export class InboxStore extends BaseStore {
       conn.prepare(`
         INSERT INTO agent_inbox (
           id, agent_id, target_kind, target_ref, first_message_id, latest_message_id,
-          reason, status, available_at_ms, created_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          reason, status, available_at_ms, created_at_ms, skill_names_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
       `).run(
         id,
         input.agentId,
@@ -140,6 +155,7 @@ export class InboxStore extends BaseStore {
         input.reason,
         availableAtMs,
         now,
+        JSON.stringify(mergeSkillNames([], input.skillNames ?? [])),
       );
     } catch {
       // first_message_id 唯一约束冲突：视为幂等成功。
@@ -153,6 +169,7 @@ export class InboxStore extends BaseStore {
     messageId: string;
     reason: InboxReason;
     availableAtMs?: number;
+    skillNames?: string[];
   }): InboxItem {
     const conn = this.getConn();
     return conn.transaction(() => {
@@ -230,5 +247,20 @@ function inboxFromRow(row: InboxRow): InboxItem {
     status: row.status,
     availableAtMs: row.available_at_ms,
     createdAtMs: row.created_at_ms,
+    skillNames: parseSkillNames(row.skill_names_json),
   };
+}
+
+function parseSkillNames(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((name): name is string => typeof name === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function mergeSkillNames(left: string[], right: string[]): string[] {
+  return [...new Set([...left, ...right].map((name) => name.trim()).filter(Boolean))];
 }

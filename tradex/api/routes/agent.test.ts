@@ -15,6 +15,7 @@ import { ClaudeSessionStore } from "../../agent/runtime/claude-code/session-stor
 import { CursorSessionStore } from "../../agent/runtime/cursor/session-store.js";
 import { CliRunGrantStore } from "../../agent/runtime/cli-tools.js";
 import { promptWithAttachments } from "../claude-session-stream.js";
+import { AgentSkillCatalog } from "../../agent/skills.js";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
@@ -64,6 +65,7 @@ function runtime(): AppRuntime {
     claudeSessions: new ClaudeSessionStore(path.join(dir, "claude-sessions")),
     cursorSessions: new CursorSessionStore(path.join(dir, "cursor-sessions")),
     cliRunGrants: new CliRunGrantStore(),
+    skillCatalog: new AgentSkillCatalog(path.join(dir, "skills")),
     state: async () => ({}),
   } as unknown as AppRuntime;
 }
@@ -161,6 +163,28 @@ describe("Agent HTTP API", () => {
     expect(payload.messages).toEqual([
       expect.objectContaining({ content: "hello cindy", authorType: "human" }),
     ]);
+  });
+
+  it("lists invocable skills and persists selected names outside the DM body", async () => {
+    const appRuntime = runtime();
+    const skillDir = path.join(appRuntime.skillCatalog.root, "think");
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, "SKILL.md"), "---\nname: think\ndescription: Plan carefully\n---\nThink body\n");
+    const routes = agentRoutes(appRuntime);
+
+    const catalog = await routes.request("/api/agent/skills");
+    expect(await catalog.json()).toEqual({
+      skills: [{ name: "think", displayName: "Think", description: "Plan carefully" }],
+    });
+    await routes.request("/api/chat/agents/ict/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: "$think plan this", skillNames: ["think"] }),
+    });
+    expect(appRuntime.inboxStore.listPending("ict")[0]?.skillNames).toEqual(["think"]);
+    const dm = appRuntime.messageStore.requireHumanAgentDm("ict");
+    expect(appRuntime.messageStore.listMessages({ directMessageId: dm.id }).messages[0]?.content)
+      .toBe("$think plan this");
   });
 
   it("supports Human reactions on Direct Message timeline", async () => {

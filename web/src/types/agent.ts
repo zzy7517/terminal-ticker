@@ -91,6 +91,12 @@ export interface AgentDefinition {
   builtIn: boolean;
 }
 
+export interface AgentSkillSummary {
+  name: string;
+  displayName: string;
+  description: string;
+}
+
 export type AgentDefinitionInput = Omit<AgentDefinition, 'builtIn'>;
 
 /** Identity-only patch: display name, signature (description), avatar seed. */

@@ -52,6 +52,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
   app.get("/api/agents", (c) => c.json({ agents: runtime.agentStore.list() }));
 
+  app.get("/api/agent/skills", (c) => c.json({ skills: runtime.skillCatalog.list() }));
+
   // --- Shared Message Fabric：Human–Agent 唯一 DM ---------------------------
 
   /** 读取 Shared Message Store 中的 DM timeline。 */
@@ -91,11 +93,15 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       const { buildDmMessageContent, saveDmImageAttachments } = await import("../../chat/dm-attachments.js");
       const attachmentPaths = saveDmImageAttachments(agentId, images);
       const content = buildDmMessageContent(String(body.content ?? body.message ?? ""), attachmentPaths);
+      const skillNames = Array.isArray(body.skillNames)
+        ? body.skillNames.filter((name): name is string => typeof name === "string")
+        : [];
       runtime.agentContextManager.ensure(agentId);
       const { appendHumanDmAndNotify } = await import("../../chat/dispatch.js");
       const { message, directMessageId } = appendHumanDmAndNotify(runtime, {
         agentId,
         content,
+        skillNames,
       });
       return c.json({
         message,

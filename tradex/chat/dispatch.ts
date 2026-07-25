@@ -89,6 +89,7 @@ export function appendTargetMessageAndNotify(
     authorId: string;
     content: string;
     reason?: InboxReason;
+    skillNames?: string[];
   },
 ): { message: AppendedSharedMessage; target: ChatTarget; recipients: string[] } {
   runtime.inboxStore.ensureReady();
@@ -105,7 +106,7 @@ export function appendTargetMessageAndNotify(
       authorId: input.authorId,
       content: input.content,
       withinTransaction: (conn, created) => {
-        fanOutInbox(runtime, conn, recipients, target, created.id, "dm");
+        fanOutInbox(runtime, conn, recipients, target, created.id, "dm", input.skillNames);
       },
     });
     wakeRecipients(runtime, recipients);
@@ -149,6 +150,7 @@ export function appendHumanDmAndNotify(
   input: {
     agentId: string;
     content: string;
+    skillNames?: string[];
   },
 ): { message: DirectMessage; directMessageId: string; recipients: string[] } {
   const dm = runtime.messageStore.requireHumanAgentDm(input.agentId);
@@ -157,6 +159,7 @@ export function appendHumanDmAndNotify(
     authorType: "human",
     authorId: "owner",
     content: input.content,
+    skillNames: input.skillNames,
   });
   return {
     message: result.message as DirectMessage,
@@ -249,6 +252,7 @@ function fanOutInbox(
   target: ChatTarget,
   messageId: string,
   reason: InboxReason,
+  skillNames?: string[],
 ): void {
   for (const agentId of recipients) {
     runtime.inboxStore.notifyWithConn(conn, {
@@ -256,6 +260,7 @@ function fanOutInbox(
       target,
       messageId,
       reason,
+      skillNames,
     });
   }
 }

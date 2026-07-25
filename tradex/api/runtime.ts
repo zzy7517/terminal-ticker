@@ -33,6 +33,7 @@ import type { SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
 import { CliRunGrantStore } from "../agent/runtime/cli-tools.js";
 import { ClaudeSessionStore } from "../agent/runtime/claude-code/session-store.js";
 import { CursorSessionStore } from "../agent/runtime/cursor/session-store.js";
+import { AgentSkillCatalog } from "../agent/skills.js";
 
 export class AppRuntime {
   config: AppConfig;
@@ -64,6 +65,7 @@ export class AppRuntime {
   readonly cliRunGrants = new CliRunGrantStore();
   readonly claudeSessions = new ClaudeSessionStore();
   readonly cursorSessions = new CursorSessionStore();
+  readonly skillCatalog = new AgentSkillCatalog();
   /** Loopback HTTP origin for this process (CLI gateway, etc.). Set at serve time. */
   listenOrigin = "http://127.0.0.1:8765";
   private _modelRuntimeSnapshot: ModelRuntimeSnapshot;
