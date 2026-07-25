@@ -1,0 +1,35 @@
+web/src/api/origins.ts
+  s_e0a48a61a4f38b::t_98d0b52b03897f 48
+tradex/api/origin-session-runtime.test.ts
+  s_e0a48a61a4f38b::t_3177e2a8e59cfe 1-23
+tradex/api/routes/origin.ts
+  s_e0a48a61a4f38b::t_98d0b52b03897f 52,56,62-63
+  s_e0a48a61a4f38b::t_7384613a0b69ea 64-65
+web/src/components/workspace/OriginSessionPanel.tsx
+  s_e0a48a61a4f38b::t_a5a7f03fed18bb 2,5-13,16,38-43,45-57,73-110,178-200,202-208,210-223,225-246,249,262
+  s_e0a48a61a4f38b::t_69cd85524b1055 63-67
+web/src/api/agents.ts
+  s_e0a48a61a4f38b::t_98d0b52b03897f 148,154
+web/src/stores/originStore.ts
+  s_e0a48a61a4f38b::t_98d0b52b03897f 33,133,164
+tradex/api/origin-session-runtime.ts
+  s_e0a48a61a4f38b::t_3177e2a8e59cfe 4,65-66,108-114
+  s_e0a48a61a4f38b::t_98d0b52b03897f 59,78,89,101
+  s_e0a48a61a4f38b::t_6f4473d2088586 115-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "d82a253f6101b02e2d45f824a49f24dadfe8ed89",
+  "prompts": {},
+  "sessions": {
+    "s_e0a48a61a4f38b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9987-3651-7661-8685-ebdfd98e79e7",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
