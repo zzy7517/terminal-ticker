@@ -1,16 +1,21 @@
 // 编排 Pi Runtime 运行并投影为现有 Agent SSE 协议。
 import crypto from "node:crypto";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../config/index.js";
 import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
-import { piSessionFileExists } from "../agent/runtime/pi/sessions.js";
+import { piProviderName, piSessionFileExists } from "../agent/runtime/pi/sessions.js";
 import type { RuntimeEvent, RuntimeMessage } from "../agent/runtime/types.js";
 import { buildTradexToolRegistry } from "./agent_tools.js";
-import { tradexCliUrlFromOrigin } from "./claude-session-stream.js";
+import { tradexCliUrl } from "./external-cli-turn.js";
 import { sessionHistory, sessionResponse } from "./helpers.js";
-import { sendSessionUpdate, streamSessionRun, type ProjectSessionUpdate } from "./session-stream.js";
+import {
+  sendSessionUpdate,
+  streamSessionRun,
+  type ProjectSessionUpdate,
+  type SessionRunReservation,
+} from "./session-stream.js";
 import type { AppRuntime } from "./runtime.js";
 
 // 启动一次 Pi Session 消息流并返回 SSE 响应。
@@ -19,8 +24,13 @@ export function streamPiSession<Session = Record<string, unknown>, History = Rec
   sessionId: string;
   message: string;
   requestImages: ImageContent[];
+  workspace?: string;
+  reservation?: SessionRunReservation;
   manager: SessionManager;
   snapshot: { systemPrompt: string };
+  additionalSystemPrompt?: string;
+  preserveDefaultSystemPrompt?: boolean;
+  persistFailedTurn?: boolean;
   requestConfig: AgentConfig;
   projectSessionUpdate?: ProjectSessionUpdate<Session, History>;
   cleanup?: () => void | Promise<void>;
@@ -35,29 +45,45 @@ export function streamPiSession<Session = Record<string, unknown>, History = Rec
   let totalCacheRead = 0;
   let totalCacheWrite = 0;
   let initialUserMessageSeen = false;
+  let projectionAttempted = false;
+  const projectSession = async (send: (event: Record<string, unknown>) => void) => {
+    projectionAttempted = true;
+    await sendSessionUpdate({
+      send,
+      project: input.projectSessionUpdate,
+      defaultProject: async () => ({ session: await sessionResponse(runtime, sessionId), history: await sessionHistory(runtime) }),
+      state: () => runtime.state(),
+    });
+  };
   return streamSessionRun({
     runtime,
     sessionId,
+    reservation: input.reservation,
     // 准备 Pi Tool、系统提示词和本轮 Runtime 句柄。
-    async prepare() {
+    async prepare(signal) {
+      signal.throwIfAborted();
       const { tools } = await buildTradexToolRegistry(runtime, {
         sessionId,
         config: requestConfig,
         includeExternalMcp: true,
         includeFilesystem: true,
       });
-      const baseSystemPrompt = snapshot.systemPrompt.trim() || MAIN_AGENT_PROMPT;
-      const systemPrompt = [
-        baseSystemPrompt,
+      signal.throwIfAborted();
+      const configuredSystemPrompt = snapshot.systemPrompt.trim();
+      const additionalSystemPrompt = [
+        input.additionalSystemPrompt,
         currentTimeInstruction("bash"),
       ].filter(Boolean).join("\n\n");
       const run = await new PiSdkRuntime().start({
         config: requestConfig,
         modelRuntime: runtime.modelRuntimeSnapshot,
-        systemPrompt,
+        systemPrompt: configuredSystemPrompt || (input.preserveDefaultSystemPrompt ? "" : MAIN_AGENT_PROMPT),
+        additionalSystemPrompt,
+        preserveDefaultSystemPrompt: input.preserveDefaultSystemPrompt,
         tools,
+        cwd: input.workspace,
         tradexSessionId: sessionId,
-        cliUrl: tradexCliUrlFromOrigin(runtime.listenOrigin),
+        cliUrl: tradexCliUrl(runtime.listenOrigin),
         grants: runtime.cliRunGrants,
         sessionManager: manager,
         compaction: true,
@@ -127,9 +153,11 @@ export function streamPiSession<Session = Record<string, unknown>, History = Rec
         // 汇总本轮统计并发送最终 Session 状态。
         async complete(result, send) {
           finalError = result.error ?? finalError;
+          await projectSession(send);
           send({
             type: "agent_end",
             error: finalError,
+            errorCode: result.errorCode ?? null,
             totalTokens,
             promptTokens,
             sessionStats: {
@@ -142,25 +170,60 @@ export function streamPiSession<Session = Record<string, unknown>, History = Rec
               },
             },
           });
-          await sendSessionUpdate({
-            send,
-            project: input.projectSessionUpdate,
-            defaultProject: async () => ({ session: await sessionResponse(runtime, sessionId), history: await sessionHistory(runtime) }),
-            state: () => runtime.state(),
-          });
         },
         // 将运行或持久化异常投影为稳定的错误终止事件。
-        fail(error, send) {
+        async fail(error, send) {
           const detail = error instanceof Error ? error.message : String(error);
+          if (input.persistFailedTurn && input.projectSessionUpdate && !projectionAttempted) {
+            await projectSession(send);
+          }
           send({ type: "error", error: detail });
           send({ type: "agent_end", error: detail, totalTokens: 0, promptTokens: 0, sessionStats: null });
         },
-        // 清理已经落盘的临时 Pi SessionManager。
-        cleanup() {
-          if (piSessionFileExists(manager)) runtime.pendingSessionManagers.delete(sessionId);
-          return input.cleanup?.();
-        },
       };
+    },
+    onPrepareFailure: input.persistFailedTurn
+      ? async (error, send) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          const timestamp = Date.now();
+          manager.appendMessage({
+            role: "user",
+            content: [
+              ...(input.message ? [{ type: "text" as const, text: input.message }] : []),
+              ...input.requestImages,
+            ],
+            timestamp,
+          } satisfies UserMessage);
+          const failedAssistant = {
+            role: "assistant",
+            content: [],
+            api: requestConfig.apiMode,
+            provider: piProviderName(requestConfig.provider),
+            model: requestConfig.model,
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: "error",
+            errorMessage: detail,
+            timestamp,
+          } satisfies AssistantMessage;
+          manager.appendMessage(failedAssistant);
+          if (input.projectSessionUpdate && !projectionAttempted) {
+            await projectSession(send);
+          }
+          send({ type: "error", code: "runtime_failure", error: detail });
+          send({ type: "agent_end", error: detail, errorCode: "runtime_failure", totalTokens: 0, promptTokens: 0, sessionStats: null });
+        }
+      : undefined,
+    // Manager cleanup belongs to the run lifecycle even when prepare fails.
+    cleanup() {
+      if (piSessionFileExists(manager)) runtime.pendingSessionManagers.delete(sessionId);
+      return input.cleanup?.();
     },
   });
 }

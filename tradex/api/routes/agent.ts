@@ -29,8 +29,9 @@ import { purgeClaudeProject } from "../../agent/runtime/claude-code/runtime.js";
 import { detectCursorCli } from "../../agent/runtime/cursor/discovery.js";
 import { cursorModelCatalogFallback, fetchCursorModelCatalog } from "../../agent/runtime/cursor/model-catalog.js";
 import type { AppRuntime } from "../runtime.js";
-import { streamClaudeSession, validateClaudeImages } from "../claude-session-stream.js";
-import { streamCursorSession, validateCursorImages } from "../cursor-session-stream.js";
+import { streamClaudeSession } from "../claude-session-stream.js";
+import { streamCursorSession } from "../cursor-session-stream.js";
+import { validateImageInput } from "../image-input.js";
 import { streamPiSession } from "../pi-session-stream.js";
 import {
   idleRun,
@@ -418,6 +419,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     if (!message && requestImages.length === 0) {
       return c.json({ detail: "message or images is required" }, 400);
     }
+    const imageError = validateImageInput(requestImages);
+    if (imageError) return c.json({ detail: imageError }, 400);
 
     // 已知 Agent Context 时，纯文本优先写入 Shared Message Fabric。
     const context = runtime.agentContextManager.contextForSession(sessionId);
@@ -437,8 +440,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
     const claudeMetadata = runtime.claudeSessions.getMetadata(sessionId);
     if (claudeMetadata) {
-      const imageError = validateClaudeImages(requestImages);
-      if (imageError) return c.json({ detail: imageError }, 400);
       return streamClaudeSession({
         runtime,
         requestUrl: c.req.url,
@@ -449,8 +450,6 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     }
     const cursorMetadata = runtime.cursorSessions.getMetadata(sessionId);
     if (cursorMetadata) {
-      const imageError = validateCursorImages(requestImages);
-      if (imageError) return c.json({ detail: imageError }, 400);
       return streamCursorSession({
         runtime,
         requestUrl: c.req.url,

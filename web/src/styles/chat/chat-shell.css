@@ -238,67 +238,6 @@
   font-size: 10.5px;
 }
 
-.origin-conversation-identity {
-  cursor: default;
-}
-
-.origin-conversation-identity:hover {
-  background: transparent;
-}
-
-.dm-beginning.origin-beginning::before {
-  content: '◎';
-}
-
-.origin-compose-note {
-  color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  padding-left: 5px;
-}
-
-.origin-create-card {
-  display: grid;
-  gap: 8px;
-  margin: 4px 8px 10px;
-  padding: 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-raised) 86%, transparent);
-}
-
-.origin-create-card label {
-  display: grid;
-  gap: 4px;
-  color: var(--text-muted);
-  font-size: 10px;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-
-.origin-create-card input,
-.origin-create-card select,
-.origin-create-card textarea {
-  min-width: 0;
-  width: 100%;
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  background: var(--surface-base);
-  color: var(--text-primary);
-  font: inherit;
-  padding: 6px 7px;
-  text-transform: none;
-}
-
-
-.origin-session-error {
-  align-self: center;
-  color: var(--danger);
-  font-size: 12px;
-  padding: 8px 12px;
-}
-
 .direct-message-copy strong {
   font-size: 13.5px;
   font-weight: 570;

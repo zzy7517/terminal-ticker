@@ -11,15 +11,23 @@ export function stateSocketUrl(): string {
   return url.toString();
 }
 
+/** Preserves the HTTP status so state modules can distinguish rejected requests from broken streams. */
+export class HttpResponseError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = 'HttpResponseError';
+  }
+}
+
 // Builds a user-facing error while preserving structured backend detail when available.
-export async function responseError(response: Response, prefix: string): Promise<Error> {
+export async function responseError(response: Response, prefix: string): Promise<HttpResponseError> {
   try {
     const payload = await response.json();
     if (payload && typeof payload.detail === 'string') {
-      return new Error(`${prefix}: ${payload.detail}`);
+      return new HttpResponseError(response.status, `${prefix}: ${payload.detail}`);
     }
   } catch {
     // Keep the original status fallback when the body is not JSON.
   }
-  return new Error(`${prefix}: ${response.status}`);
+  return new HttpResponseError(response.status, `${prefix}: ${response.status}`);
 }

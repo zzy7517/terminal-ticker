@@ -49,6 +49,7 @@ export class PiSdkRuntime {
 
   // 创建一次延迟启动且可订阅的 Pi Runtime run。
   async start(input: PiRuntimeRunInput): Promise<ActiveRuntimeRun> {
+    const cwd = input.cwd?.trim() || process.cwd();
     const issued = input.grants.issue({
       tradexSessionId: input.tradexSessionId,
       registry: input.tools,
@@ -59,7 +60,7 @@ export class PiSdkRuntime {
     let handedOff = false;
     try {
       cli = await prepareTradexCli({
-        cwd: process.cwd(),
+        cwd,
         url: input.cliUrl,
         token: issued.token,
       });
@@ -182,10 +183,13 @@ async function createPiAgentRuntime(input: {
   config: AgentConfig;
   modelRuntime: ModelRuntimeSnapshot;
   systemPrompt: string;
+  additionalSystemPrompt?: string;
+  preserveDefaultSystemPrompt?: boolean;
   tools: ToolRegistry;
   cliEnv: NodeJS.ProcessEnv;
   tradexSessionId: string;
   cliUrl: string;
+  cwd?: string;
   grants: CliRunGrantStore;
   grantTtlMs?: number;
   sessionManager?: PiSessionManager;
@@ -196,16 +200,21 @@ async function createPiAgentRuntime(input: {
   beforeProviderRequest?: () => void;
 }): Promise<PiAgentRuntime> {
   const { model, modelRuntime } = input.modelRuntime.resolve(input.config);
+  const cwd = input.cwd?.trim() || process.cwd();
 
   const settingsManager = SettingsManager.inMemory({
     compaction: { enabled: input.compaction ?? false },
   });
-  const systemPrompt = [input.systemPrompt, PI_CLI_INSTRUCTIONS].filter(Boolean).join("\n\n");
+  const additionalSystemPrompt = [input.additionalSystemPrompt, PI_CLI_INSTRUCTIONS].filter(Boolean).join("\n\n");
+  const systemPrompt = [input.systemPrompt, additionalSystemPrompt].filter(Boolean).join("\n\n");
+  const preserveDefaultSystemPrompt = input.preserveDefaultSystemPrompt && !input.systemPrompt.trim();
   const resourceLoader = new DefaultResourceLoader({
-    cwd: process.cwd(),
+    cwd,
     agentDir: getAgentDir(),
     settingsManager,
-    systemPromptOverride: () => systemPrompt,
+    ...(preserveDefaultSystemPrompt
+      ? { appendSystemPromptOverride: (base: string[]) => [...base, additionalSystemPrompt] }
+      : { systemPromptOverride: () => systemPrompt }),
     extensionFactories: [],
     agentsFilesOverride: () => ({ agentsFiles: [] }),
     promptsOverride: () => ({ prompts: [], diagnostics: [] }),
@@ -214,14 +223,14 @@ async function createPiAgentRuntime(input: {
 
   // Keep Pi's coding tools native. Only the business ToolRegistry crosses the
   // process boundary through the session-scoped `tradex` CLI invoked by bash.
-  const bashTool = createBashTool(process.cwd(), {
+  const bashTool = createBashTool(cwd, {
     spawnHook: (context) => ({
       ...context,
       env: { ...context.env, ...input.cliEnv },
     }),
   });
   const { session } = await createAgentSession({
-    cwd: process.cwd(),
+    cwd,
     model,
     modelRuntime,
     thinkingLevel: toThinkingLevel(input.config.reasoningEffort),

@@ -32,6 +32,18 @@ describe("Claude Code runtime protocol", () => {
     ]);
   });
 
+  it("appends instructions when the native system prompt must be preserved", () => {
+    const args = buildClaudeArgs({
+      prompt: "Analyze BTC",
+      instructions: "Origin instructions",
+      preserveNativeSystemPrompt: true,
+    });
+
+    expect(args.slice(args.indexOf("--append-system-prompt"), args.indexOf("--append-system-prompt") + 2))
+      .toEqual(["--append-system-prompt", "Origin instructions"]);
+    expect(args).not.toContain("--system-prompt");
+  });
+
   it("keeps option-like prompts behind the argument separator", () => {
     const args = buildClaudeArgs({
       prompt: "--version",
@@ -433,5 +445,16 @@ writeFileSync(${JSON.stringify(output)}, JSON.stringify(process.argv.slice(2)));
     await chmod(executable, 0o755);
 
     await expect(purgeClaudeProject(executable, directory)).resolves.toBeUndefined();
+  });
+
+  it("times out and terminates a hung project purge", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "tradex-claude-purge-"));
+    const executable = path.join(directory, "fake-claude.mjs");
+    await writeFile(executable, "#!/usr/bin/env node\nsetInterval(() => {}, 1_000);\n");
+    await chmod(executable, 0o755);
+
+    await expect(purgeClaudeProject(executable, directory, 25)).rejects.toThrow(
+      "Claude project purge timed out after 25ms",
+    );
   });
 });

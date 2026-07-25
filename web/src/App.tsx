@@ -2,8 +2,8 @@ import { useEffect } from 'react';
 import { useMarketStore } from './stores/marketStore';
 import { useAgentStore } from './stores/agentStore';
 import { useUiStore } from './stores/uiStore';
-import { useOriginStore } from './stores/originStore';
 import { createLiveChatShellController } from './chat/shellController';
+import { initOriginWorkspace } from './chat/originWorkspace';
 import { AppSidebar } from './components/AppSidebar';
 
 import { orderedGroups, readRouteFromHash } from './utils';
@@ -46,7 +46,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    return useOriginStore.getState().init();
+    return initOriginWorkspace();
   }, []);
 
   useEffect(() => {

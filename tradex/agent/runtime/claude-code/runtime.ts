@@ -2,7 +2,7 @@
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { spawn, type ChildProcess, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import type { ToolRegistry } from "../../tools/registry.js";
 import { CliRunGrantStore, prepareTradexCli } from "../cli-tools.js";
@@ -12,9 +12,13 @@ import { claudeLineType, classifyClaudeError, parseClaudeLine } from "./protocol
 
 export { classifyClaudeError, parseClaudeLine } from "./protocol.js";
 
+const CLAUDE_PROJECT_PURGE_TIMEOUT_MS = 10_000;
+const CLAUDE_PROJECT_PURGE_KILL_GRACE_MS = 250;
+
 export interface ClaudeArgsInput {
   prompt: string;
   instructions: string;
+  preserveNativeSystemPrompt?: boolean;
   nativeSessionId?: string;
   assignedNativeSessionId?: string;
   model?: string | null;
@@ -32,7 +36,7 @@ export function buildClaudeArgs(input: ClaudeArgsInput): string[] {
     "--include-partial-messages",
     "--permission-mode", "dontAsk",
     "--setting-sources", "",
-    "--system-prompt", input.instructions,
+    input.preserveNativeSystemPrompt ? "--append-system-prompt" : "--system-prompt", input.instructions,
     "--tools", "Read,Bash",
     "--allowedTools", "Read,Bash(tradex:*),Bash(date)",
   ];
@@ -58,6 +62,7 @@ export interface ClaudeRunInput {
   cwd: string;
   prompt: string;
   instructions: string;
+  preserveNativeSystemPrompt?: boolean;
   registry: ToolRegistry;
   nativeSessionId?: string;
   model?: string | null;
@@ -101,6 +106,7 @@ export class ClaudeCodeRuntime {
       const args = buildClaudeArgs({
         prompt: input.prompt,
         instructions: input.instructions,
+        preserveNativeSystemPrompt: input.preserveNativeSystemPrompt,
         nativeSessionId: input.nativeSessionId,
         assignedNativeSessionId,
         model: input.model,
@@ -340,20 +346,64 @@ function sanitizedClaudeEnv(parent: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /** 在删除 Tradex 投影前，清理 Claude 原生 project 状态。项目不存在时按幂等成功处理。 */
-export async function purgeClaudeProject(executablePath: string, cwd: string): Promise<void> {
+export async function purgeClaudeProject(
+  executablePath: string,
+  cwd: string,
+  timeoutMs = CLAUDE_PROJECT_PURGE_TIMEOUT_MS,
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(executablePath, ["project", "purge", cwd, "--yes"], {
+      detached: process.platform !== "win32",
       shell: false,
       stdio: ["ignore", "ignore", "pipe"],
+      windowsHide: true,
     });
     let stderr = "";
+    let settled = false;
+    let closed = false;
+    const settle = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    };
+    const timeout = setTimeout(() => {
+      stopProcessTree(child, false);
+      const forceKill = setTimeout(() => {
+        if (!closed) stopProcessTree(child, true);
+      }, CLAUDE_PROJECT_PURGE_KILL_GRACE_MS);
+      forceKill.unref();
+      settle(() => reject(new Error(`Claude project purge timed out after ${timeoutMs}ms`)));
+    }, Math.max(1, timeoutMs));
+    timeout.unref();
     child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("utf8")).slice(-8_192); });
-    child.once("error", reject);
+    child.once("error", (error) => settle(() => reject(error)));
     child.once("close", (code) => {
-      if (code === 0 || /(?:no project state|project .* not found|nothing to purge)/i.test(stderr)) resolve();
-      else reject(new Error(`Claude project purge failed with code ${code ?? "unknown"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
+      closed = true;
+      settle(() => {
+        if (code === 0 || /(?:no project state|project .* not found|nothing to purge)/i.test(stderr)) resolve();
+        else reject(new Error(`Claude project purge failed with code ${code ?? "unknown"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
+      });
     });
   });
+}
+
+function stopProcessTree(child: ChildProcess, force: boolean): void {
+  if (!child.pid) return;
+  if (process.platform === "win32") {
+    const killer = spawn("taskkill", windowsTaskkillArgs(child.pid, force), {
+      shell: false,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    killer.once("error", () => child.kill(force ? "SIGKILL" : "SIGTERM"));
+    return;
+  }
+  try {
+    process.kill(-child.pid, force ? "SIGKILL" : "SIGTERM");
+  } catch {
+    child.kill(force ? "SIGKILL" : "SIGTERM");
+  }
 }
 
 /** 定义 Claude Code 首期可以使用的显式只读 Tradex Tool 集合。 */

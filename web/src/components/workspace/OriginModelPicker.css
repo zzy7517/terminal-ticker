@@ -1,0 +1,217 @@
+.origin-config-controls {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.origin-model-picker {
+  min-width: 0;
+  position: relative;
+}
+
+.origin-config-trigger,
+.origin-reasoning-control {
+  align-items: center;
+  background: var(--accent-tint);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  gap: 7px;
+  height: 40px;
+  max-width: 260px;
+  min-width: 0;
+  padding: 0 11px;
+  transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+
+.origin-config-trigger {
+  cursor: pointer;
+}
+
+.origin-config-trigger > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.origin-config-trigger:disabled,
+.origin-reasoning-control:has(select:disabled) {
+  cursor: not-allowed;
+  opacity: var(--ctl-disabled-opacity);
+}
+
+.origin-config-trigger:active:not(:disabled),
+.origin-model-menu-row:active:not(:disabled),
+.origin-model-menu-back:active {
+  transform: scale(0.96);
+}
+
+.origin-config-trigger:focus-visible,
+.origin-reasoning-control:focus-within,
+.origin-model-menu-row:focus-visible,
+.origin-model-menu-back:focus-visible {
+  box-shadow: 0 0 0 3px var(--control-accent-tint);
+  outline: 1px solid var(--control-accent-ring);
+}
+
+.origin-runtime-icon {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+.origin-reasoning-control {
+  position: relative;
+}
+
+.origin-reasoning-control select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  height: 100%;
+  max-width: 112px;
+  outline: 0;
+  padding: 0 15px 0 0;
+}
+
+.origin-reasoning-control > svg:last-child {
+  pointer-events: none;
+  position: absolute;
+  right: 9px;
+}
+
+.origin-model-menu {
+  background: var(--panel-elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  bottom: calc(100% + 8px);
+  box-shadow: var(--shadow-pop);
+  left: 0;
+  max-height: min(430px, 60vh);
+  overflow: hidden;
+  padding: 5px;
+  position: absolute;
+  width: min(360px, calc(100vw - 48px));
+  z-index: 80;
+}
+
+.origin-model-menu-title {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 650;
+  padding: 7px 9px 5px;
+  text-transform: uppercase;
+}
+
+.origin-model-menu-list {
+  max-height: min(360px, 52vh);
+  overflow-y: auto;
+}
+
+.origin-model-menu-row,
+.origin-model-menu-back {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--ui);
+  gap: 10px;
+  min-height: 44px;
+  padding: 7px 9px;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+  width: 100%;
+}
+
+.origin-model-menu-row.active {
+  background: var(--accent-tint-strong);
+  color: var(--text-primary);
+}
+
+.origin-model-menu-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.origin-model-menu-copy {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+
+.origin-model-menu-copy strong,
+.origin-model-menu-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.origin-model-menu-copy strong {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 590;
+}
+
+.origin-model-menu-copy small {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.origin-model-menu-back {
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  font-size: 12.5px;
+  font-weight: 620;
+  margin-bottom: 3px;
+}
+
+@media (hover: hover) {
+  .origin-config-trigger:hover:not(:disabled),
+  .origin-reasoning-control:hover,
+  .origin-model-menu-row:hover:not(:disabled),
+  .origin-model-menu-back:hover {
+    background: var(--accent-tint-strong);
+    color: var(--text-primary);
+  }
+}
+
+@media (max-width: 560px) {
+  .origin-config-controls {
+    flex: 1;
+  }
+
+  .origin-model-picker {
+    flex: 1;
+  }
+
+  .origin-config-trigger {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .origin-reasoning-control select {
+    max-width: 82px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .origin-config-trigger,
+  .origin-model-menu-row,
+  .origin-model-menu-back {
+    transition: none;
+  }
+}

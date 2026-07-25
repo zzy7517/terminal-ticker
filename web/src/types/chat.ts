@@ -37,7 +37,7 @@ export type ChatTarget =
   | { kind: 'channel'; channelId: string };
 
 /** Frontend navigation target; Origin deliberately stays outside ChatTarget. */
-export type ChatSurfaceTarget = ChatTarget | { kind: 'origin'; sessionId: string };
+export type ChatSurfaceTarget = ChatTarget | { kind: 'origin' };
 
 export interface ChannelReactionSummary {
   emoji: string;

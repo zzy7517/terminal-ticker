@@ -14,7 +14,7 @@ import { piSessionFileExists } from "../../agent/runtime/pi/sessions.js";
 import { ClaudeSessionStore } from "../../agent/runtime/claude-code/session-store.js";
 import { CursorSessionStore } from "../../agent/runtime/cursor/session-store.js";
 import { CliRunGrantStore } from "../../agent/runtime/cli-tools.js";
-import { promptWithAttachments } from "../claude-session-stream.js";
+import { promptWithAttachments } from "../external-cli-turn.js";
 import { AgentSkillCatalog } from "../../agent/skills.js";
 
 const dirs: string[] = [];
@@ -364,6 +364,49 @@ describe("Agent HTTP API", () => {
       });
       expect(response.status).toBe(404);
     }
+  });
+
+  it.each([
+    {
+      name: "malformed base64",
+      images: [{ data: "A", mimeType: "image/png" }],
+      detail: "image data must be valid base64",
+    },
+    {
+      name: "more than ten images",
+      images: Array.from({ length: 11 }, () => ({ data: "YQ==", mimeType: "image/png" })),
+      detail: "at most 10 images are allowed",
+    },
+    {
+      name: "an oversized cumulative payload",
+      images: Array.from({ length: 2 }, () => ({
+        data: Buffer.alloc(13 * 1024 * 1024).toString("base64"),
+        mimeType: "image/png",
+      })),
+      detail: "images must be at most 25 MB in total",
+    },
+  ])("applies the shared image contract to Pi Agent runs: $name", async ({ images, detail }) => {
+    const appRuntime = runtime();
+    const routes = agentRoutes(appRuntime);
+    const created = await routes.request("/api/agent/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "ict" }),
+    });
+    const payload = await created.json() as { session: { id: string } };
+
+    const response = await routes.request(`/api/agent/sessions/${payload.session.id}/messages/stream`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        message: "inspect",
+        images,
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ detail });
+    expect(appRuntime.lockedAgentSessions.has(payload.session.id)).toBe(false);
   });
 
   it("streams a Claude Code run, persists its projection, and resumes by native id", async () => {
