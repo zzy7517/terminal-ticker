@@ -3,7 +3,7 @@
  *
  * 生产适配器接 live Zustand；测试可注入 fake ports。
  */
-import type { ChatTarget } from '../types';
+import type { ChatSurfaceTarget } from '../types';
 import { useChatStore } from '../stores/chatStore';
 import { openDirectMessageEntry } from './directMessageWorkspace';
 
@@ -13,7 +13,7 @@ export interface ChatShellPorts {
   selectChannel: (channelId: string) => Promise<void>;
   openDirectMessageEntry: (agentId: string) => Promise<void>;
   sendChannelMessage: (content: string) => Promise<void>;
-  getActiveTarget: () => ChatTarget | null;
+  getActiveTarget: () => ChatSurfaceTarget | null;
 }
 
 /** 用 ports 组装薄控制器，便于单测。 */

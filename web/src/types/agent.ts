@@ -61,20 +61,61 @@ export interface AgentMessageMetadata {
   [key: string]: unknown;
 }
 
-export interface AgentSession {
+export type AgentRuntimeId = 'pi' | 'claude-code' | 'cursor';
+
+export interface RuntimeSession {
   id: string;
   title: string;
   provider: string | null;
   model: string;
   createdAt: string;
   updatedAt: string;
+  reasoningEffort: string | null;
+  runtime: AgentRuntimeId;
+  capabilities: AgentRuntimeStatus['capabilities'];
+}
+
+export interface AgentSession extends RuntimeSession {
   active: boolean;
   apiMode: string | null;
-  reasoningEffort: string | null;
   agentId: string;
   agentName: string;
-  runtime: 'pi' | 'claude-code' | 'cursor';
-  capabilities: AgentRuntimeStatus['capabilities'];
+}
+
+export interface OriginSession extends RuntimeSession {
+  owner: { kind: 'origin' };
+  workspace: string;
+  systemPrompt: string;
+}
+
+export interface CreateOriginInput {
+  title?: string;
+  runtime?: AgentRuntimeId;
+  provider?: string;
+  model?: string;
+  reasoningEffort?: string;
+  systemPrompt?: string;
+  workspace?: string;
+}
+
+export interface OriginSessionSummary extends OriginSession {
+  messageCount: number;
+  preview: string;
+  run?: AgentSessionRun;
+}
+
+export interface OriginSessionResponse {
+  session: OriginSession | null;
+  messages: AgentMessage[];
+  run?: AgentSessionRun;
+}
+
+export interface OriginSessionHistoryResponse {
+  sessions: OriginSessionSummary[];
+}
+
+export interface OriginSessionMutationResponse extends OriginSessionResponse {
+  history: OriginSessionHistoryResponse;
 }
 
 export interface AgentDefinition {
@@ -195,7 +236,13 @@ export interface AgentSessionMutationResponse {
   state: MarketState;
 }
 
-export type AgentStreamPayload =
+type RuntimeSessionUpdate<SessionResponse, HistoryResponse, State> = {
+  type: 'session_update';
+  session: SessionResponse;
+  history: HistoryResponse;
+} & (State extends undefined ? { state?: undefined } : { state: State });
+
+export type RuntimeSessionStreamPayload<SessionResponse, HistoryResponse, State = undefined> =
   | { type: 'agent_start' }
   | { type: 'turn_start'; iteration: number }
   | { type: 'turn_end'; iteration: number }
@@ -204,14 +251,19 @@ export type AgentStreamPayload =
   | { type: 'tool_execution_end'; toolCall: AgentToolCall; toolResult: LoopToolResult }
   | { type: 'agent_end'; error: string | null }
   | { type: 'error'; error: string }
-  | { type: 'session_update'; session: AgentSessionResponse; history: AgentSessionHistoryResponse; state: MarketState };
+  | RuntimeSessionUpdate<SessionResponse, HistoryResponse, State>;
 
-export interface AgentStreamEvent {
+export type AgentStreamPayload = RuntimeSessionStreamPayload<AgentSessionResponse, AgentSessionHistoryResponse, MarketState>;
+
+export type RuntimeSessionStreamEvent<SessionResponse, HistoryResponse, State = undefined> = {
   sessionId: string;
   runId: string;
   seq: number;
-  event: AgentStreamPayload;
-}
+  event: RuntimeSessionStreamPayload<SessionResponse, HistoryResponse, State>;
+};
+
+export type AgentStreamEvent = RuntimeSessionStreamEvent<AgentSessionResponse, AgentSessionHistoryResponse, MarketState>;
+export type OriginStreamEvent = RuntimeSessionStreamEvent<OriginSessionResponse, OriginSessionHistoryResponse>;
 
 export interface AgentModelOption {
   slug: string;
@@ -252,6 +304,7 @@ export interface AgentModelRegistryModel {
   name: string;
   api: string;
   reasoning: boolean;
+  supportedReasoningEfforts: string[];
   input: string[];
   contextWindow: number;
   maxTokens: number;

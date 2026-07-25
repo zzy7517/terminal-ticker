@@ -11,6 +11,8 @@ import type {
   AgentSessionResponse,
   AgentStreamEvent,
   AgentStreamPayload,
+  RuntimeSessionStreamEvent,
+  RuntimeSessionStreamPayload,
   ClaudeCodeModelsResponse,
   CursorModelsResponse,
   MarketState,
@@ -129,12 +131,29 @@ export async function streamAgentMessage(
   options: { afterSeq?: number; images?: ImageAttachment[] } | undefined,
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<void> {
+  return streamRuntimeSessionMessage(
+    `/api/agent/sessions/${encodeURIComponent(key)}/messages/stream`,
+    key,
+    message,
+    options,
+    onEvent,
+  );
+}
+
+/** Shared SSE transport for identity-bound Agent Sessions and Origins. */
+export async function streamRuntimeSessionMessage<SessionResponse, HistoryResponse, State = undefined>(
+  endpoint: string,
+  key: string,
+  message: string,
+  options: { afterSeq?: number; images?: ImageAttachment[] } | undefined,
+  onEvent: (event: RuntimeSessionStreamEvent<SessionResponse, HistoryResponse, State>) => void,
+): Promise<void> {
   const body: Record<string, unknown> = { message };
   if (typeof options?.afterSeq === 'number') body.afterSeq = options.afterSeq;
   if (options?.images && options.images.length > 0) body.images = options.images;
   let response: Response;
   try {
-    response = await fetch(`/api/agent/sessions/${encodeURIComponent(key)}/messages/stream`, {
+    response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -149,7 +168,7 @@ export async function streamAgentMessage(
     throw new Error('agent stream failed: response body is empty');
   }
   const parseEvent = (data: string) => {
-    const parsed = JSON.parse(data) as AgentStreamEvent | AgentStreamPayload;
+    const parsed = JSON.parse(data) as RuntimeSessionStreamEvent<SessionResponse, HistoryResponse, State> | RuntimeSessionStreamPayload<SessionResponse, HistoryResponse, State>;
     if (
       parsed &&
       typeof parsed === 'object' &&
@@ -172,14 +191,14 @@ export async function streamAgentMessage(
         sessionId: key,
         runId: '',
         seq: 0,
-        event: parsed as AgentStreamPayload,
+        event: parsed as RuntimeSessionStreamPayload<SessionResponse, HistoryResponse, State>,
       };
     }
     return {
       sessionId: key,
       runId: '',
       seq: 0,
-      event: { type: 'error', error: 'Malformed agent stream event.' } satisfies AgentStreamPayload,
+      event: { type: 'error', error: 'Malformed agent stream event.' } satisfies RuntimeSessionStreamPayload<SessionResponse, HistoryResponse, State>,
     };
   };
   const reader = response.body.getReader();

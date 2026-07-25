@@ -12,6 +12,7 @@ import { useUiStore } from '../../stores/uiStore';
 import { WatchlistSidebar } from './WatchlistSidebar';
 import { AgentDirectMessageList } from './AgentDirectMessageList';
 import { AgentSessionPanel } from './AgentSessionPanel';
+import { OriginSessionPanel } from './OriginSessionPanel';
 import { NewsPanel } from './NewsPanel';
 import { PositionsPanel } from './PositionsPanel';
 import { CronPanel } from './CronPanel';
@@ -68,6 +69,8 @@ export function WorkspaceView() {
               <AgentDirectMessageList />
               {activeTarget?.kind === 'channel' ? (
                 <ChannelPanel />
+              ) : activeTarget?.kind === 'origin' ? (
+                <div className="agent-chat-main"><OriginSessionPanel /></div>
               ) : (
                 <div className={`agent-chat-main${agentProfileOpen ? ' with-trace' : ''}`}>
                   <AgentSessionPanel

@@ -11,6 +11,7 @@ import { createLiveChatShellController } from '../../chat/shellController';
 import { channelTarget, directMessageTarget, unreadCountForTarget } from '../../chat/timeline';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
+import { OriginSidebarSection } from './OriginSidebarSection';
 
 const chatShell = createLiveChatShellController();
 
@@ -97,6 +98,7 @@ export function AgentDirectMessageList() {
           </button>
         );
       })}
+      <OriginSidebarSection />
     </aside>
   );
 }

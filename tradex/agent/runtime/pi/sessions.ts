@@ -113,11 +113,12 @@ export function listPiSessionManagersSync(sessionDir = piSessionsDir()): Session
 export async function openPiSession(
   sessionId: string,
   sessionDir = piSessionsDir(),
+  cwdOverride?: string,
 ): Promise<SessionManager | null> {
   const info = (await listPiSessions(sessionDir)).find((item) => item.id === sessionId);
   if (!info) return null;
   assertPathInside(info.path, sessionDir);
-  return SessionManager.open(info.path, sessionDir, process.cwd());
+  return SessionManager.open(info.path, sessionDir, cwdOverride);
 }
 
 export async function deletePiSession(

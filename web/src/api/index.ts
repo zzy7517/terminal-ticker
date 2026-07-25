@@ -10,4 +10,5 @@ export * from './chat';
 export * from './cron';
 export * from './market';
 export * from './mcp';
+export * from './origins';
 export * from './settings';

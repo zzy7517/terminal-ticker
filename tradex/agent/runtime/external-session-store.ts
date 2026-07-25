@@ -4,14 +4,18 @@ import path from "node:path";
 import crypto from "node:crypto";
 import type { ExternalAgentRuntimeId, RuntimeCapabilities } from "./types.js";
 
-export interface ExternalAgentSnapshot<Runtime extends ExternalAgentRuntimeId> {
-  agentId: string;
-  agentName: string;
+export interface ExternalSessionSnapshot<Runtime extends ExternalAgentRuntimeId> {
   runtime: Runtime;
   systemPrompt: string;
   provider: null;
   model: string | null;
   reasoningEffort: string | null;
+}
+
+export interface ExternalAgentSnapshot<Runtime extends ExternalAgentRuntimeId>
+  extends ExternalSessionSnapshot<Runtime> {
+  agentId: string;
+  agentName: string;
 }
 
 export interface ExternalProjectedMessage {
@@ -50,7 +54,7 @@ interface ExternalSessionStoreOptions<Runtime extends ExternalAgentRuntimeId> {
 
 export class ExternalSessionStore<
   Runtime extends ExternalAgentRuntimeId,
-  Snapshot extends ExternalAgentSnapshot<Runtime>,
+  Snapshot extends ExternalSessionSnapshot<Runtime>,
 > {
   readonly root: string;
   private readonly runtime: Runtime;
@@ -180,8 +184,12 @@ export class ExternalSessionStore<
         updatedAt: metadata.updatedAt,
         active: true,
         apiMode: null,
-        agentId: metadata.snapshot.agentId,
-        agentName: metadata.snapshot.agentName,
+        ...("agentId" in metadata.snapshot && typeof metadata.snapshot.agentId === "string"
+          ? {
+              agentId: metadata.snapshot.agentId,
+              agentName: "agentName" in metadata.snapshot ? metadata.snapshot.agentName : metadata.snapshot.agentId,
+            }
+          : {}),
         lastRun: metadata.lastRun,
       },
       messages,
@@ -211,7 +219,10 @@ export class ExternalSessionStore<
   hasPersistedSessionForAgent(agentId: string): boolean {
     if (!fs.existsSync(this.root)) return false;
     return fs.readdirSync(this.root).some((id) => {
-      try { return this.getMetadata(id)?.snapshot.agentId === agentId; } catch { return false; }
+      try {
+        const snapshot = this.getMetadata(id)?.snapshot;
+        return !!snapshot && "agentId" in snapshot && snapshot.agentId === agentId;
+      } catch { return false; }
     });
   }
 
@@ -255,3 +266,8 @@ export class ExternalSessionStore<
     return { ...metadata, lastRun: metadata.lastRun ?? null };
   }
 }
+
+export type ExternalSessionStorePort<Runtime extends ExternalAgentRuntimeId> = Pick<
+  ExternalSessionStore<Runtime, ExternalSessionSnapshot<Runtime>>,
+  "getMetadata" | "sessionDir" | "beginRun" | "endRun" | "appendMessage" | "setNativeSessionId"
+>;

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useMarketStore } from './stores/marketStore';
 import { useAgentStore } from './stores/agentStore';
 import { useUiStore } from './stores/uiStore';
+import { useOriginStore } from './stores/originStore';
 import { createLiveChatShellController } from './chat/shellController';
 import { AppSidebar } from './components/AppSidebar';
 
@@ -42,6 +43,10 @@ export default function App() {
   // Initialize agent sessions on mount.
   useEffect(() => {
     return useAgentStore.getState().initSessions();
+  }, []);
+
+  useEffect(() => {
+    return useOriginStore.getState().init();
   }, []);
 
   useEffect(() => {

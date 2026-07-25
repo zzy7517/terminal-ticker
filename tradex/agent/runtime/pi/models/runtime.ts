@@ -12,7 +12,7 @@
  */
 
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { InMemoryCredentialStore, type Model } from "@earendil-works/pi-ai";
+import { InMemoryCredentialStore, type Model, type ThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentConfig, CustomModelDefinition, ProviderProfile } from "../../../../config/index.js";
 import {
   ANTHROPIC_PROVIDER,
@@ -35,6 +35,7 @@ const RUNNABLE_APIS = new Set([
   "openai-codex-responses",
   "anthropic-messages",
 ]);
+const THINKING_LEVELS: ThinkingLevel[] = ["minimal", "low", "medium", "high", "xhigh", "max"];
 
 /** 单次 LLM 调用拿到的句柄：Pi Model + 共享的模型运行时。 */
 export interface ModelRuntimeAccess {
@@ -64,6 +65,7 @@ export interface ModelRegistryModelDTO {
   name: string;
   api: string;
   reasoning: boolean;
+  supportedReasoningEfforts: ThinkingLevel[];
   input: string[];
   contextWindow: number;
   maxTokens: number;
@@ -206,6 +208,9 @@ export class ModelRuntimeSnapshot {
       name: model.name,
       api: String(model.api),
       reasoning: model.reasoning,
+      supportedReasoningEfforts: model.reasoning
+        ? THINKING_LEVELS.filter((level) => model.thinkingLevelMap?.[level] !== null)
+        : [],
       input: [...model.input],
       contextWindow: model.contextWindow,
       maxTokens: model.maxTokens,

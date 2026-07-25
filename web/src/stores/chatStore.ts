@@ -14,7 +14,7 @@ import {
   sendChannelMessage,
   setChannelReaction,
 } from '../api';
-import type { Channel, ChannelMessage, ChatTarget, ChatUnreadEntry } from '../types';
+import type { Channel, ChannelMessage, ChatSurfaceTarget, ChatTarget, ChatUnreadEntry } from '../types';
 import { agentIdForDirectMessage, recoverDirectMessageTarget } from '../chat/directMessageWorkspace';
 import { chronologicalMessages } from '../chat/timeline';
 import { useAgentStore } from './agentStore';
@@ -22,7 +22,7 @@ import { useAgentStore } from './agentStore';
 /** Chat 壳 Zustand 状态：Channel / 未读 / 活动目标。 */
 interface ChatState {
   channels: Channel[];
-  activeTarget: ChatTarget | null;
+  activeTarget: ChatSurfaceTarget | null;
   messagesByChannelId: Record<string, ChannelMessage[]>;
   nextBeforeSeqByChannelId: Record<string, number | null>;
   unread: ChatUnreadEntry[];
@@ -34,6 +34,8 @@ interface ChatState {
   error: string | null;
   initChat: () => () => void;
   selectDirectMessage: (directMessageId: string) => void;
+  selectOrigin: (sessionId: string) => void;
+  leaveOrigin: () => void;
   selectChannel: (channelId: string) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   createChannel: (name: string) => Promise<void>;
@@ -179,6 +181,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       );
     }
   },
+
+  selectOrigin: (sessionId) => set({
+    activeTarget: { kind: 'origin', sessionId },
+    agentProfileOpen: false,
+  }),
+
+  leaveOrigin: () => set((state) => ({
+    activeTarget: state.activeTarget?.kind === 'origin' ? null : state.activeTarget,
+  })),
 
   selectChannel: async (channelId) => {
     set({ activeTarget: { kind: 'channel', channelId }, agentProfileOpen: false, loading: true, error: null });
@@ -327,7 +338,7 @@ function delay(ms: number): Promise<void> {
 
 /** SSE 恢复后：若用户正看着该 target，推进已读游标。 */
 export async function markActiveTargetReadAfterRecovery(input: {
-  activeTarget: ChatTarget | null;
+  activeTarget: ChatSurfaceTarget | null;
   /** 本次恢复实际拉取的 Channel；与 activeTarget 不一致时不得推进已读。 */
   recoveredChannelId: string | null;
   channelTimeline: ChannelMessage[] | null;
@@ -336,6 +347,7 @@ export async function markActiveTargetReadAfterRecovery(input: {
 }): Promise<void> {
   const active = input.activeTarget;
   if (!active) return;
+  if (active.kind === 'origin') return;
   if (active.kind === 'channel') {
     // Recovery may outlive a target switch; never apply channel A's timeline to channel B.
     if (!input.recoveredChannelId || active.channelId !== input.recoveredChannelId) return;

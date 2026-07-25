@@ -5,23 +5,25 @@ import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../config/index.js";
 import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
-import { piSessionFileExists, type SessionAgentSnapshot } from "../agent/runtime/pi/sessions.js";
+import { piSessionFileExists } from "../agent/runtime/pi/sessions.js";
 import type { RuntimeEvent, RuntimeMessage } from "../agent/runtime/types.js";
 import { buildTradexToolRegistry } from "./agent_tools.js";
 import { tradexCliUrlFromOrigin } from "./claude-session-stream.js";
 import { sessionHistory, sessionResponse } from "./helpers.js";
-import { streamSessionRun } from "./session-stream.js";
+import { sendSessionUpdate, streamSessionRun, type ProjectSessionUpdate } from "./session-stream.js";
 import type { AppRuntime } from "./runtime.js";
 
 // 启动一次 Pi Session 消息流并返回 SSE 响应。
-export function streamPiSession(input: {
+export function streamPiSession<Session = Record<string, unknown>, History = Record<string, unknown>>(input: {
   runtime: AppRuntime;
   sessionId: string;
   message: string;
   requestImages: ImageContent[];
   manager: SessionManager;
-  snapshot: SessionAgentSnapshot;
+  snapshot: { systemPrompt: string };
   requestConfig: AgentConfig;
+  projectSessionUpdate?: ProjectSessionUpdate<Session, History>;
+  cleanup?: () => void | Promise<void>;
 }): Response {
   const { runtime, sessionId, manager, snapshot, requestConfig } = input;
   let assistantClientId = "";
@@ -140,11 +142,11 @@ export function streamPiSession(input: {
               },
             },
           });
-          send({
-            type: "session_update",
-            session: await sessionResponse(runtime, sessionId),
-            history: await sessionHistory(runtime),
-            state: await runtime.state(),
+          await sendSessionUpdate({
+            send,
+            project: input.projectSessionUpdate,
+            defaultProject: async () => ({ session: await sessionResponse(runtime, sessionId), history: await sessionHistory(runtime) }),
+            state: () => runtime.state(),
           });
         },
         // 将运行或持久化异常投影为稳定的错误终止事件。
@@ -156,6 +158,7 @@ export function streamPiSession(input: {
         // 清理已经落盘的临时 Pi SessionManager。
         cleanup() {
           if (piSessionFileExists(manager)) runtime.pendingSessionManagers.delete(sessionId);
+          return input.cleanup?.();
         },
       };
     },

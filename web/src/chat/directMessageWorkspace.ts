@@ -40,7 +40,7 @@ export async function openDirectMessageEntry(agentId: string): Promise<void> {
 export function bindSelectedDirectMessage(): void {
   const agentState = useAgentStore.getState();
   const chatState = useChatStore.getState();
-  if (chatState.activeTarget?.kind === 'channel') return;
+  if (chatState.activeTarget && chatState.activeTarget.kind !== 'direct-message') return;
   const directMessageId = agentState.directMessageIdByAgentId[agentState.selectedAgentId];
   if (!directMessageId) return;
   chatState.selectDirectMessage(directMessageId);

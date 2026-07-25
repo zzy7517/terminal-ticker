@@ -6,6 +6,29 @@ import type { AppRuntime } from "./runtime.js";
 
 export type SessionStreamSend = (event: Record<string, unknown>) => void;
 
+export interface SessionUpdateProjection<Session, History> {
+  session: Session;
+  history: History;
+}
+
+export type ProjectSessionUpdate<Session, History> = () => Promise<SessionUpdateProjection<Session, History>>;
+
+/** Send the final projection without leaking Agent-only market state into Origin events. */
+export async function sendSessionUpdate<Session, History, DefaultSession, DefaultHistory, State>(input: {
+  send: SessionStreamSend;
+  project?: ProjectSessionUpdate<Session, History>;
+  defaultProject: ProjectSessionUpdate<DefaultSession, DefaultHistory>;
+  state: () => Promise<State>;
+}): Promise<void> {
+  const projection = input.project ? await input.project() : await input.defaultProject();
+  input.send({
+    type: "session_update",
+    session: projection.session,
+    history: projection.history,
+    ...(input.project ? {} : { state: await input.state() }),
+  });
+}
+
 export interface SessionRunBinding {
   run: ActiveRuntimeRun;
   // 消费并投影单个统一 Runtime 事件。

@@ -36,6 +36,9 @@ export type ChatTarget =
   | { kind: 'direct-message'; directMessageId: string }
   | { kind: 'channel'; channelId: string };
 
+/** Frontend navigation target; Origin deliberately stays outside ChatTarget. */
+export type ChatSurfaceTarget = ChatTarget | { kind: 'origin'; sessionId: string };
+
 export interface ChannelReactionSummary {
   emoji: string;
   count: number;

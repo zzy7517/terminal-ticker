@@ -6,19 +6,24 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import { CURSOR_CLI_INSTRUCTIONS, currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { detectCursorCli } from "../agent/runtime/cursor/discovery.js";
 import { CursorCliRuntime, exposeCursorReadTools } from "../agent/runtime/cursor/runtime.js";
+import type { ExternalSessionStorePort } from "../agent/runtime/external-session-store.js";
 import type { RuntimeEvent } from "../agent/runtime/types.js";
 import { buildTradexToolRegistry } from "./agent_tools.js";
 import { sessionHistory, sessionResponse } from "./helpers.js";
 import type { AppRuntime } from "./runtime.js";
-import { streamSessionRun } from "./session-stream.js";
+import { sendSessionUpdate, streamSessionRun, type ProjectSessionUpdate } from "./session-stream.js";
 import { tradexCliUrl, validateClaudeImages, promptWithAttachments } from "./claude-session-stream.js";
 
-export interface CursorSessionStreamInput {
+export interface CursorSessionStreamInput<Session, History> {
   runtime: AppRuntime;
   requestUrl: string;
   sessionId: string;
   message: string;
   requestImages: ImageContent[];
+  sessionStore?: ExternalSessionStorePort<"cursor">;
+  workspace?: string;
+  baseSystemPrompt?: string;
+  projectSessionUpdate?: ProjectSessionUpdate<Session, History>;
 }
 
 interface ToolCallProjection {
@@ -28,9 +33,12 @@ interface ToolCallProjection {
 }
 
 /** 校验 Session 后启动 Cursor CLI，并把运行事件映射为现有 SSE 协议。 */
-export async function streamCursorSession(input: CursorSessionStreamInput): Promise<Response> {
+export async function streamCursorSession<Session = Record<string, unknown>, History = Record<string, unknown>>(
+  input: CursorSessionStreamInput<Session, History>,
+): Promise<Response> {
   const { runtime, sessionId, requestImages } = input;
-  const metadata = runtime.cursorSessions.getMetadata(sessionId);
+  const sessionStore = input.sessionStore ?? runtime.cursorSessions;
+  const metadata = sessionStore.getMetadata(sessionId);
   if (!metadata) return Response.json({ detail: "agent session not found" }, { status: 404 });
   let prompt = input.message;
 
@@ -47,8 +55,8 @@ export async function streamCursorSession(input: CursorSessionStreamInput): Prom
     runtime,
     sessionId,
     async prepare() {
-      const attachmentPaths = await saveCursorAttachments(runtime, sessionId, requestImages);
-      prompt = promptWithAttachments(prompt, attachmentPaths);
+      const attachmentPaths = await saveCursorAttachments(sessionStore, sessionId, requestImages);
+      prompt = promptWithAttachments(prompt, attachmentPaths, Boolean(input.workspace));
       const availability = await requireCursorCli();
       const tools = await buildCursorTools(runtime, sessionId);
       let run;
@@ -59,15 +67,15 @@ export async function streamCursorSession(input: CursorSessionStreamInput): Prom
           grants: runtime.cliRunGrants,
         }).start({
           tradexSessionId: sessionId,
-          cwd: runtime.cursorSessions.sessionDir(sessionId),
+          cwd: input.workspace ?? sessionStore.sessionDir(sessionId),
           prompt,
-          instructions: cursorInstructions(metadata.snapshot.systemPrompt),
+          instructions: cursorInstructions(metadata.snapshot.systemPrompt, input.baseSystemPrompt),
           registry: tools,
-          nativeSessionId: runtime.cursorSessions.getMetadata(sessionId)?.nativeSessionId ?? undefined,
+          nativeSessionId: sessionStore.getMetadata(sessionId)?.nativeSessionId ?? undefined,
           model: metadata.snapshot.model,
         });
-        runtime.cursorSessions.beginRun(sessionId);
-        runtime.cursorSessions.appendMessage(sessionId, {
+        sessionStore.beginRun(sessionId);
+        sessionStore.appendMessage(sessionId, {
           role: "user",
           content: input.message,
           metadata: attachmentMetadata(requestImages, attachmentPaths),
@@ -75,18 +83,18 @@ export async function streamCursorSession(input: CursorSessionStreamInput): Prom
       } catch (error) {
         await run?.abort();
         await run?.result;
-        runtime.cursorSessions.endRun(sessionId, {
+        sessionStore.endRun(sessionId, {
           status: "error",
           error: error instanceof Error ? error.message : String(error),
         });
         throw error;
       }
-      if (run.nativeSessionId) runtime.cursorSessions.setNativeSessionId(sessionId, run.nativeSessionId);
+      if (run.nativeSessionId) sessionStore.setNativeSessionId(sessionId, run.nativeSessionId);
       return {
         run,
         onEvent(event: RuntimeEvent, send: (event: Record<string, unknown>) => void) {
           if (event.type === "run-start" && event.nativeSessionId) {
-            runtime.cursorSessions.setNativeSessionId(sessionId, event.nativeSessionId);
+            sessionStore.setNativeSessionId(sessionId, event.nativeSessionId);
           } else if (event.type === "message-update" && event.message.role === "assistant") {
             if (!assistantStarted) {
               assistantStarted = true;
@@ -108,7 +116,7 @@ export async function streamCursorSession(input: CursorSessionStreamInput): Prom
               .filter((item): item is Extract<typeof item, { type: "text" }> => item.type === "text")
               .map((item) => item.text)
               .join("");
-            runtime.cursorSessions.appendMessage(sessionId, {
+            sessionStore.appendMessage(sessionId, {
               role: "toolResult",
               content: output,
               metadata: { toolCallId: event.callId, toolName: toolCall.name, error: event.isError },
@@ -129,14 +137,14 @@ export async function streamCursorSession(input: CursorSessionStreamInput): Prom
         async complete(result, send) {
           runError = result.error;
           runErrorCode = result.errorCode ?? null;
-          runtime.cursorSessions.endRun(sessionId, {
+          sessionStore.endRun(sessionId, {
             status: runErrorCode === "aborted" ? "cancelled" : runError ? "error" : "completed",
             error: runError,
           });
-          if (result.nativeSessionId) runtime.cursorSessions.setNativeSessionId(sessionId, result.nativeSessionId);
+          if (result.nativeSessionId) sessionStore.setNativeSessionId(sessionId, result.nativeSessionId);
           if (!assistantText && result.output) assistantText = result.output;
 
-          const persisted = runtime.cursorSessions.appendMessage(sessionId, {
+          const persisted = sessionStore.appendMessage(sessionId, {
             role: "assistant",
             content: assistantText,
             error: runError,
@@ -166,19 +174,19 @@ export async function streamCursorSession(input: CursorSessionStreamInput): Prom
             promptTokens: 0,
             sessionStats: null,
           });
-          send({
-            type: "session_update",
-            session: await sessionResponse(runtime, sessionId),
-            history: await sessionHistory(runtime),
-            state: await runtime.state(),
+          await sendSessionUpdate({
+            send,
+            project: input.projectSessionUpdate,
+            defaultProject: async () => ({ session: await sessionResponse(runtime, sessionId), history: await sessionHistory(runtime) }),
+            state: () => runtime.state(),
           });
         },
         fail(error, send) {
           if (error instanceof CursorSessionStreamError) runErrorCode = error.code;
           runError = error instanceof Error ? error.message : String(error);
-          runtime.cursorSessions.endRun(sessionId, { status: "error", error: runError });
+          sessionStore.endRun(sessionId, { status: "error", error: runError });
           if (!assistantPersisted) {
-            runtime.cursorSessions.appendMessage(sessionId, {
+            sessionStore.appendMessage(sessionId, {
               role: "assistant",
               content: assistantText,
               error: runError,
@@ -222,10 +230,10 @@ async function buildCursorTools(runtime: AppRuntime, sessionId: string) {
   return exposeCursorReadTools(tools);
 }
 
-function cursorInstructions(agentInstructions: string): string {
+function cursorInstructions(agentInstructions: string, baseSystemPrompt = MAIN_AGENT_PROMPT): string {
   return [
-    MAIN_AGENT_PROMPT,
-    ...(agentInstructions.trim() && agentInstructions.trim() !== MAIN_AGENT_PROMPT.trim() ? [agentInstructions.trim()] : []),
+    baseSystemPrompt,
+    ...(agentInstructions.trim() && agentInstructions.trim() !== baseSystemPrompt.trim() ? [agentInstructions.trim()] : []),
     CURSOR_CLI_INSTRUCTIONS,
     currentTimeInstruction("shell"),
     "Do not place trades, access Memory outside this workspace, configure additional tool servers, or claim those capabilities are available.",
@@ -239,8 +247,12 @@ const CURSOR_IMAGE_TYPES: Record<string, string> = {
   "image/webp": "webp",
 };
 
-async function saveCursorAttachments(runtime: AppRuntime, sessionId: string, images: ImageContent[]): Promise<string[]> {
-  const directory = path.join(runtime.cursorSessions.sessionDir(sessionId), "attachments");
+async function saveCursorAttachments(
+  sessionStore: { sessionDir(id: string): string },
+  sessionId: string,
+  images: ImageContent[],
+): Promise<string[]> {
+  const directory = path.join(sessionStore.sessionDir(sessionId), "attachments");
   return Promise.all(images.map(async (image) => {
     const file = path.join(directory, `${crypto.randomUUID()}.${CURSOR_IMAGE_TYPES[image.mimeType] ?? "bin"}`);
     await writeFile(file, Buffer.from(image.data, "base64"), { mode: 0o600 });

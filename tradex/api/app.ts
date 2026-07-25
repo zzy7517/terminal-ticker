@@ -13,6 +13,7 @@ import { proxyRoutes } from "./routes/proxy.js";
 import { channelRoutes } from "./routes/channel.js";
 import { chatEventRoutes } from "./routes/chat.js";
 import { tradexCliRoutes } from "./routes/cli.js";
+import { originRoutes } from "./routes/origin.js";
 
 export interface CreateAppOptions {
   runtime: AppRuntime;
@@ -24,6 +25,7 @@ export function createApp(options: CreateAppOptions): Hono {
 
   app.route("", marketRoutes(runtime));
   app.route("", agentRoutes(runtime));
+  app.route("", originRoutes(runtime));
   app.route("", channelRoutes(runtime));
   app.route("", chatEventRoutes(runtime));
   app.route("", newsRoutes(runtime));

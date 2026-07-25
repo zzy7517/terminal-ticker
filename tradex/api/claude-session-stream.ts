@@ -6,18 +6,23 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import { CLAUDE_CLI_INSTRUCTIONS, currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
 import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claude-code/runtime.js";
+import type { ExternalSessionStorePort } from "../agent/runtime/external-session-store.js";
 import type { RuntimeEvent } from "../agent/runtime/types.js";
 import { buildTradexToolRegistry } from "./agent_tools.js";
 import { sessionHistory, sessionResponse } from "./helpers.js";
 import type { AppRuntime } from "./runtime.js";
-import { streamSessionRun } from "./session-stream.js";
+import { sendSessionUpdate, streamSessionRun, type ProjectSessionUpdate } from "./session-stream.js";
 
-export interface ClaudeSessionStreamInput {
+export interface ClaudeSessionStreamInput<Session, History> {
   runtime: AppRuntime;
   requestUrl: string;
   sessionId: string;
   message: string;
   requestImages: ImageContent[];
+  sessionStore?: ExternalSessionStorePort<"claude-code">;
+  workspace?: string;
+  baseSystemPrompt?: string;
+  projectSessionUpdate?: ProjectSessionUpdate<Session, History>;
 }
 
 interface ToolCallProjection {
@@ -34,9 +39,12 @@ interface UsageProjection {
 }
 
 /** 校验 Session 后启动 Claude，并把运行事件映射为现有 SSE 协议。 */
-export async function streamClaudeSession(input: ClaudeSessionStreamInput): Promise<Response> {
+export async function streamClaudeSession<Session = Record<string, unknown>, History = Record<string, unknown>>(
+  input: ClaudeSessionStreamInput<Session, History>,
+): Promise<Response> {
   const { runtime, sessionId, requestImages } = input;
-  const metadata = runtime.claudeSessions.getMetadata(sessionId);
+  const sessionStore = input.sessionStore ?? runtime.claudeSessions;
+  const metadata = sessionStore.getMetadata(sessionId);
   if (!metadata) return Response.json({ detail: "agent session not found" }, { status: 404 });
   let prompt = input.message;
 
@@ -55,8 +63,8 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
     sessionId,
     // 准备附件、Claude CLI、Tool 注册表和本轮 Runtime 句柄。
     async prepare() {
-      const attachmentPaths = await saveClaudeAttachments(runtime, sessionId, requestImages);
-      prompt = promptWithAttachments(prompt, attachmentPaths);
+      const attachmentPaths = await saveClaudeAttachments(sessionStore, sessionId, requestImages);
+      prompt = promptWithAttachments(prompt, attachmentPaths, Boolean(input.workspace));
       const availability = await requireClaudeCode();
       const tools = await buildClaudeTools(runtime, sessionId);
       let run;
@@ -67,16 +75,16 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
           grants: runtime.cliRunGrants,
         }).start({
           tradexSessionId: sessionId,
-          cwd: runtime.claudeSessions.sessionDir(sessionId),
+          cwd: input.workspace ?? sessionStore.sessionDir(sessionId),
           prompt,
-          instructions: claudeInstructions(metadata.snapshot.systemPrompt),
+          instructions: claudeInstructions(metadata.snapshot.systemPrompt, input.baseSystemPrompt),
           registry: tools,
-          nativeSessionId: runtime.claudeSessions.getMetadata(sessionId)?.nativeSessionId ?? undefined,
+          nativeSessionId: sessionStore.getMetadata(sessionId)?.nativeSessionId ?? undefined,
           model: metadata.snapshot.model,
           effort: metadata.snapshot.reasoningEffort,
         });
-        runtime.claudeSessions.beginRun(sessionId);
-        runtime.claudeSessions.appendMessage(sessionId, {
+        sessionStore.beginRun(sessionId);
+        sessionStore.appendMessage(sessionId, {
           role: "user",
           content: input.message,
           metadata: attachmentMetadata(requestImages, attachmentPaths),
@@ -84,16 +92,16 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
       } catch (error) {
         await run?.abort();
         await run?.result;
-        runtime.claudeSessions.endRun(sessionId, { status: "error", error: error instanceof Error ? error.message : String(error) });
+        sessionStore.endRun(sessionId, { status: "error", error: error instanceof Error ? error.message : String(error) });
         throw error;
       }
-      if (run.nativeSessionId) runtime.claudeSessions.setNativeSessionId(sessionId, run.nativeSessionId);
+      if (run.nativeSessionId) sessionStore.setNativeSessionId(sessionId, run.nativeSessionId);
       return {
         run,
         // 将统一 Runtime 事件持久化并投影为前端 SSE 事件。
         onEvent(event: RuntimeEvent, send: (event: Record<string, unknown>) => void) {
           if (event.type === "run-start" && event.nativeSessionId) {
-            runtime.claudeSessions.setNativeSessionId(sessionId, event.nativeSessionId);
+            sessionStore.setNativeSessionId(sessionId, event.nativeSessionId);
           } else if (event.type === "message-update" && event.message.role === "assistant") {
             if (!assistantStarted) {
               assistantStarted = true;
@@ -115,7 +123,7 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
               .filter((item): item is Extract<typeof item, { type: "text" }> => item.type === "text")
               .map((item) => item.text)
               .join("");
-            runtime.claudeSessions.appendMessage(sessionId, {
+            sessionStore.appendMessage(sessionId, {
               role: "toolResult",
               content: output,
               metadata: { toolCallId: event.callId, toolName: toolCall.name, error: event.isError },
@@ -143,15 +151,15 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
         async complete(result, send) {
           runError = result.error;
           runErrorCode = result.errorCode ?? null;
-          runtime.claudeSessions.endRun(sessionId, {
+          sessionStore.endRun(sessionId, {
           status: runErrorCode === "aborted" ? "cancelled" : runError ? "error" : "completed",
           error: runError,
         });
-        if (result.nativeSessionId) runtime.claudeSessions.setNativeSessionId(sessionId, result.nativeSessionId);
+        if (result.nativeSessionId) sessionStore.setNativeSessionId(sessionId, result.nativeSessionId);
         if (!assistantText && result.output) assistantText = result.output;
 
         const totalTokens = totalUsage(usage);
-        const persisted = runtime.claudeSessions.appendMessage(sessionId, {
+        const persisted = sessionStore.appendMessage(sessionId, {
           role: "assistant",
           content: assistantText,
           error: runError,
@@ -186,20 +194,20 @@ export async function streamClaudeSession(input: ClaudeSessionStreamInput): Prom
           promptTokens: usage.input,
           sessionStats: { tokens: { ...usage, total: totalTokens } },
         });
-          send({
-          type: "session_update",
-          session: await sessionResponse(runtime, sessionId),
-          history: await sessionHistory(runtime),
-          state: await runtime.state(),
-        });
+          await sendSessionUpdate({
+            send,
+            project: input.projectSessionUpdate,
+            defaultProject: async () => ({ session: await sessionResponse(runtime, sessionId), history: await sessionHistory(runtime) }),
+            state: () => runtime.state(),
+          });
         },
         // 记录未结算异常，并避免重复持久化 assistant 消息。
         fail(error, send) {
           if (error instanceof ClaudeSessionStreamError) runErrorCode = error.code;
           runError = error instanceof Error ? error.message : String(error);
-          runtime.claudeSessions.endRun(sessionId, { status: "error", error: runError });
+          sessionStore.endRun(sessionId, { status: "error", error: runError });
           if (!assistantPersisted) {
-            runtime.claudeSessions.appendMessage(sessionId, {
+            sessionStore.appendMessage(sessionId, {
               role: "assistant",
               content: assistantText,
               error: runError,
@@ -258,10 +266,10 @@ async function buildClaudeTools(runtime: AppRuntime, sessionId: string) {
 }
 
 /** 组合 Tradex 主提示词、Agent instructions 和 Claude 能力边界。 */
-function claudeInstructions(agentInstructions: string): string {
+function claudeInstructions(agentInstructions: string, baseSystemPrompt = MAIN_AGENT_PROMPT): string {
   return [
-    MAIN_AGENT_PROMPT,
-    ...(agentInstructions.trim() && agentInstructions.trim() !== MAIN_AGENT_PROMPT.trim() ? [agentInstructions.trim()] : []),
+    baseSystemPrompt,
+    ...(agentInstructions.trim() && agentInstructions.trim() !== baseSystemPrompt.trim() ? [agentInstructions.trim()] : []),
     CLAUDE_CLI_INSTRUCTIONS,
     currentTimeInstruction("Bash"),
     "Do not place trades, modify files, configure additional tool servers, or claim those capabilities are available.",
@@ -288,8 +296,12 @@ const CLAUDE_IMAGE_TYPES: Record<string, string> = {
 };
 
 /** 将图片保存到当前 Session 的隔离 attachments 目录并返回后端文件路径。 */
-async function saveClaudeAttachments(runtime: AppRuntime, sessionId: string, images: ImageContent[]): Promise<string[]> {
-  const directory = path.join(runtime.claudeSessions.sessionDir(sessionId), "attachments");
+async function saveClaudeAttachments(
+  sessionStore: { sessionDir(id: string): string },
+  sessionId: string,
+  images: ImageContent[],
+): Promise<string[]> {
+  const directory = path.join(sessionStore.sessionDir(sessionId), "attachments");
   return Promise.all(images.map(async (image) => {
     const file = path.join(directory, `${crypto.randomUUID()}.${CLAUDE_IMAGE_TYPES[image.mimeType]}`);
     await writeFile(file, Buffer.from(image.data, "base64"), { mode: 0o600 });
@@ -298,12 +310,14 @@ async function saveClaudeAttachments(runtime: AppRuntime, sessionId: string, ima
 }
 
 /** 把相对 Session cwd 的附件路径加入 prompt，供 Claude 使用原生 Read 读取。 */
-export function promptWithAttachments(prompt: string, attachmentPaths: string[]): string {
+export function promptWithAttachments(prompt: string, attachmentPaths: string[], absolutePaths = false): string {
   if (attachmentPaths.length === 0) return prompt;
   return [
     prompt,
-    "Attached images are available at these paths relative to the current working directory. Use the Read tool to inspect them:",
-    ...attachmentPaths.map((file) => `- attachments/${path.basename(file)}`),
+    absolutePaths
+      ? "Attached images are available at these absolute paths. Use the Read tool to inspect them:"
+      : "Attached images are available at these paths relative to the current working directory. Use the Read tool to inspect them:",
+    ...attachmentPaths.map((file) => `- ${absolutePaths ? file : `attachments/${path.basename(file)}`}`),
   ].filter(Boolean).join("\n\n");
 }
 
