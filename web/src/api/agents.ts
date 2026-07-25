@@ -145,12 +145,13 @@ export async function streamRuntimeSessionMessage<SessionResponse, HistoryRespon
   endpoint: string,
   key: string,
   message: string,
-  options: { afterSeq?: number; images?: ImageAttachment[] } | undefined,
+  options: { afterSeq?: number; images?: ImageAttachment[]; skillNames?: string[] } | undefined,
   onEvent: (event: RuntimeSessionStreamEvent<SessionResponse, HistoryResponse, State>) => void,
 ): Promise<void> {
   const body: Record<string, unknown> = { message };
   if (typeof options?.afterSeq === 'number') body.afterSeq = options.afterSeq;
   if (options?.images && options.images.length > 0) body.images = options.images;
+  if (options?.skillNames && options.skillNames.length > 0) body.skillNames = options.skillNames;
   let response: Response;
   try {
     response = await fetch(endpoint, {

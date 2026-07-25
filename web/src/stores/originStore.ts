@@ -30,7 +30,7 @@ interface OriginState {
   remove: (sessionId: string) => Promise<void>;
   stop: (sessionId: string) => Promise<void>;
   setDraft: (value: string) => void;
-  send: () => Promise<void>;
+  send: (skillNames?: string[]) => Promise<void>;
 }
 
 let optimisticId = 0;
@@ -130,7 +130,7 @@ export const useOriginStore = create<OriginState>((set, get) => ({
     return { draftById: { ...state.draftById, [sessionId]: value } };
   }),
 
-  send: async () => {
+  send: async (skillNames = []) => {
     const initial = get();
     const sessionId = initial.activeOriginId;
     if (!sessionId || initial.runningIds.has(sessionId)) return;
@@ -161,7 +161,7 @@ export const useOriginStore = create<OriginState>((set, get) => ({
       };
     });
     try {
-      await streamOriginMessage(sessionId, prompt, undefined, (envelope) => {
+      await streamOriginMessage(sessionId, prompt, { skillNames }, (envelope) => {
         const event = envelope.event;
         if (event.type === 'message_update') {
           set((state) => ({

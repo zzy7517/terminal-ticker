@@ -45,7 +45,7 @@ export async function stopOrigin(sessionId: string): Promise<void> {
 export async function streamOriginMessage(
   sessionId: string,
   message: string,
-  options: { images?: ImageAttachment[] } | undefined,
+  options: { images?: ImageAttachment[]; skillNames?: string[] } | undefined,
   onEvent: (event: OriginStreamEvent) => void,
 ): Promise<void> {
   return streamRuntimeSessionMessage<OriginSessionResponse, OriginSessionHistoryResponse>(

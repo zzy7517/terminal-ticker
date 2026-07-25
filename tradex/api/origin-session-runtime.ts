@@ -1,6 +1,7 @@
 /** Origin lifecycle orchestration: ownership, runtime dispatch, and projection. */
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { OriginRuntimeId } from "../origin/session-store.js";
+import type { AgentSkillCatalog } from "../agent/skills.js";
 import { agentConfigFromSnapshot } from "./helpers.js";
 import { streamClaudeSession, validateClaudeImages } from "./claude-session-stream.js";
 import { streamCursorSession, validateCursorImages } from "./cursor-session-stream.js";
@@ -55,11 +56,14 @@ export async function streamOriginSession(input: {
   sessionId: string;
   message: string;
   images: ImageContent[];
+  skillNames: string[];
 }): Promise<Response> {
   const { runtime, sessionId, message } = input;
   const metadata = runtime.originSessions.getMetadata(sessionId);
   if (!metadata) return Response.json({ detail: "Origin not found" }, { status: 404 });
   const snapshot = metadata.snapshot;
+  const skillInstructions = resolveOriginSkillInstructions(runtime.skillCatalog, input.skillNames);
+  const baseSystemPrompt = [originSystemPrompt(), skillInstructions].filter(Boolean).join("\n\n");
   const projectSessionUpdate = async () => ({
     session: await runtime.originSessions.response(sessionId),
     history: await runtime.originSessions.history(runtime.lockedAgentSessions),
@@ -71,7 +75,7 @@ export async function streamOriginSession(input: {
       runtime, requestUrl: input.requestUrl, sessionId, message, requestImages: input.images,
       sessionStore: runtime.originSessions.claudeSessions,
       workspace: metadata.workspace,
-      baseSystemPrompt: originSystemPrompt(),
+      baseSystemPrompt,
       projectSessionUpdate,
     });
   }
@@ -82,7 +86,7 @@ export async function streamOriginSession(input: {
       runtime, requestUrl: input.requestUrl, sessionId, message, requestImages: input.images,
       sessionStore: runtime.originSessions.cursorSessions,
       workspace: metadata.workspace,
-      baseSystemPrompt: originSystemPrompt(),
+      baseSystemPrompt,
       projectSessionUpdate,
     });
   }
@@ -94,11 +98,20 @@ export async function streamOriginSession(input: {
     || requestConfig.reasoningEffort;
   return streamPiSession({
     runtime, sessionId, message, requestImages: input.images, manager,
-    snapshot: { systemPrompt: [originSystemPrompt(), snapshot.systemPrompt.trim()].filter(Boolean).join("\n\n") },
+    snapshot: { systemPrompt: [baseSystemPrompt, snapshot.systemPrompt.trim()].filter(Boolean).join("\n\n") },
     requestConfig,
     projectSessionUpdate,
     cleanup: () => runtime.originSessions.release(manager),
   });
+}
+
+export function resolveOriginSkillInstructions(
+  catalog: Pick<AgentSkillCatalog, "resolve">,
+  skillNames: string[],
+): string {
+  const resolved = catalog.resolve(skillNames);
+  for (const warning of resolved.warnings) console.warn(`[skills] ${warning}`);
+  return resolved.instructions;
 }
 
 function runtimeValue(value: unknown): OriginRuntimeId {

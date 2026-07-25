@@ -1,11 +1,19 @@
 /** OriginSessionPanel — direct Runtime timeline without Agent identity or Chat fabric. */
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, Atom, Loader2, Square, Trash2 } from 'lucide-react';
+import { ArrowUp, Atom, Box, Loader2, Square, Trash2 } from 'lucide-react';
+import { fetchAgentSkills } from '../../api';
+import {
+  containsSkillReference,
+  insertSkillReference,
+  matchingSkills,
+  skillSlashQuery,
+  type SkillSlashQuery,
+} from '../../chat/skillCompletion';
 import { deleteOriginEntry } from '../../chat/originWorkspace';
 import { useOriginStore } from '../../stores/originStore';
-import type { AgentMessage } from '../../types';
+import type { AgentMessage, AgentSkillSummary } from '../../types';
 
 export function OriginSessionPanel() {
   const activeOriginId = useOriginStore((state) => state.activeOriginId);
@@ -27,16 +35,78 @@ export function OriginSessionPanel() {
   const loading = useOriginStore((state) => state.loading);
   const error = useOriginStore((state) => state.error);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const skillMenuRef = useRef<HTMLDivElement>(null);
+  const [skillCatalog, setSkillCatalog] = useState<AgentSkillSummary[]>([]);
+  const [slashQuery, setSlashQuery] = useState<SkillSlashQuery | null>(null);
+  const [activeSkillIndex, setActiveSkillIndex] = useState(0);
+  const [selectedSkillsByOrigin, setSelectedSkillsByOrigin] = useState<Record<string, string[]>>({});
   const messages = useMemo(() => session?.messages ?? [], [session?.messages]);
+  const skillCandidates = useMemo(
+    () => slashQuery ? matchingSkills(skillCatalog, slashQuery.query) : [],
+    [skillCatalog, slashQuery],
+  );
+  const selectedSkillNames = activeOriginId ? selectedSkillsByOrigin[activeOriginId] ?? [] : [];
+
+  useEffect(() => {
+    let disposed = false;
+    void fetchAgentSkills()
+      .then((skills) => { if (!disposed) setSkillCatalog(skills); })
+      .catch((loadError) => console.error('Origin skills fetch failed:', loadError));
+    return () => { disposed = true; };
+  }, []);
 
   useEffect(() => {
     if (activeOriginId && !session && !loading) void useOriginStore.getState().select(activeOriginId);
   }, [activeOriginId, loading, session]);
 
+  useEffect(() => {
+    setSlashQuery(null);
+    setActiveSkillIndex(0);
+  }, [activeOriginId]);
+
   useLayoutEffect(() => {
     const transcript = transcriptRef.current;
     if (transcript) transcript.scrollTop = transcript.scrollHeight;
   }, [messages.length, streaming]);
+
+  useEffect(() => {
+    if (draft || !activeOriginId) return;
+    setSlashQuery(null);
+    setSelectedSkillsByOrigin((current) => (
+      current[activeOriginId]?.length ? { ...current, [activeOriginId]: [] } : current
+    ));
+  }, [activeOriginId, draft]);
+
+  useLayoutEffect(() => {
+    const menu = skillMenuRef.current;
+    const activeOption = menu?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!menu || !activeOption) return;
+    if (activeOption.offsetTop < menu.scrollTop) menu.scrollTop = activeOption.offsetTop;
+    else if (activeOption.offsetTop + activeOption.offsetHeight > menu.scrollTop + menu.clientHeight) {
+      menu.scrollTop = activeOption.offsetTop + activeOption.offsetHeight - menu.clientHeight;
+    }
+  }, [activeSkillIndex, skillCandidates]);
+
+  const updateSlashQuery = useCallback((value: string, caret: number | null) => {
+    setSlashQuery(skillSlashQuery(value, caret ?? value.length));
+    setActiveSkillIndex(0);
+  }, []);
+
+  const chooseSkill = useCallback((skill: AgentSkillSummary) => {
+    if (!slashQuery || !activeOriginId) return;
+    const insertion = insertSkillReference(draft, slashQuery, skill.name);
+    useOriginStore.getState().setDraft(insertion.value);
+    setSelectedSkillsByOrigin((current) => ({
+      ...current,
+      [activeOriginId]: [...new Set([...(current[activeOriginId] ?? []), skill.name])],
+    }));
+    setSlashQuery(null);
+    requestAnimationFrame(() => {
+      promptRef.current?.focus();
+      promptRef.current?.setSelectionRange(insertion.caret, insertion.caret);
+    });
+  }, [activeOriginId, draft, slashQuery]);
 
   if (!activeOriginId) return null;
   const projected = session?.session ?? summary;
@@ -105,14 +175,78 @@ export function OriginSessionPanel() {
         {error ? <div className="origin-session-error">{error}</div> : null}
       </div>
 
-      <div className="session-compose">
+      <div className={`session-compose${slashQuery && skillCandidates.length > 0 ? ' has-skill-menu' : ''}`}>
+        {slashQuery && skillCandidates.length > 0 ? (
+          <div className="skill-command-menu" id="origin-skill-menu" ref={skillMenuRef} role="listbox">
+            {skillCandidates.map((skill, index) => (
+              <button
+                aria-selected={index === activeSkillIndex}
+                className={`skill-command-option${index === activeSkillIndex ? ' active' : ''}`}
+                id={`origin-skill-option-${skill.name}`}
+                key={skill.name}
+                onClick={() => chooseSkill(skill)}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setActiveSkillIndex(index)}
+                role="option"
+                type="button"
+              >
+                <Box aria-hidden="true" size={17} strokeWidth={1.8} />
+                <span className="skill-command-name">{skill.displayName}</span>
+                <span className="skill-command-description">{skill.description}</span>
+                {index === activeSkillIndex ? <kbd>↑↓</kbd> : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <textarea
+          ref={promptRef}
+          aria-activedescendant={slashQuery && skillCandidates[activeSkillIndex]
+            ? `origin-skill-option-${skillCandidates[activeSkillIndex].name}`
+            : undefined}
+          aria-controls={slashQuery && skillCandidates.length > 0 ? 'origin-skill-menu' : undefined}
+          aria-expanded={Boolean(slashQuery && skillCandidates.length > 0)}
+          aria-haspopup="listbox"
           disabled={loading || running}
-          onChange={(event) => useOriginStore.getState().setDraft(event.target.value)}
+          onBlur={() => setSlashQuery(null)}
+          onChange={(event) => {
+            const value = event.target.value;
+            useOriginStore.getState().setDraft(value);
+            if (activeOriginId) {
+              setSelectedSkillsByOrigin((current) => ({
+                ...current,
+                [activeOriginId]: (current[activeOriginId] ?? [])
+                  .filter((name) => containsSkillReference(value, name)),
+              }));
+            }
+            updateSlashQuery(value, event.target.selectionStart);
+          }}
+          onClick={(event) => updateSlashQuery(event.currentTarget.value, event.currentTarget.selectionStart)}
           onKeyDown={(event) => {
+            if (slashQuery) {
+              if (event.key === 'ArrowDown' && skillCandidates.length > 0) {
+                event.preventDefault();
+                setActiveSkillIndex((index) => (index + 1) % skillCandidates.length);
+                return;
+              }
+              if (event.key === 'ArrowUp' && skillCandidates.length > 0) {
+                event.preventDefault();
+                setActiveSkillIndex((index) => (index - 1 + skillCandidates.length) % skillCandidates.length);
+                return;
+              }
+              if ((event.key === 'Enter' || event.key === 'Tab') && skillCandidates[activeSkillIndex]) {
+                event.preventDefault();
+                chooseSkill(skillCandidates[activeSkillIndex]);
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setSlashQuery(null);
+                return;
+              }
+            }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
-              if (draft.trim()) void useOriginStore.getState().send();
+              if (draft.trim()) void useOriginStore.getState().send(selectedSkillNames);
             }
           }}
           placeholder={running ? 'Origin is running…' : 'Message this Origin directly'}
@@ -125,7 +259,7 @@ export function OriginSessionPanel() {
             aria-label="Send message"
             className="shell-button primary lg session-submit"
             disabled={!draft.trim() || loading || running}
-            onClick={() => void useOriginStore.getState().send()}
+            onClick={() => void useOriginStore.getState().send(selectedSkillNames)}
             type="button"
           >
             <ArrowUp size={16} /><span className="session-submit-label">Send</span>

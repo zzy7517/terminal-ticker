@@ -49,13 +49,18 @@ export function originRoutes(runtime: AppRuntime): Hono {
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
     const message = stringValue(body.message);
     const requestImages = parseImages(body.images);
+    const skillNames = parseSkillNames(body.skillNames);
     if (!message && requestImages.length === 0) {
       return c.json({ detail: "message or images is required" }, 400);
     }
-    return streamOriginSession({ runtime, requestUrl: c.req.url, sessionId, message, images: requestImages });
+    return streamOriginSession({ runtime, requestUrl: c.req.url, sessionId, message, images: requestImages, skillNames });
   });
 
   return app;
+}
+
+function parseSkillNames(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((name): name is string => typeof name === "string") : [];
 }
 
 function stringValue(value: unknown): string {
