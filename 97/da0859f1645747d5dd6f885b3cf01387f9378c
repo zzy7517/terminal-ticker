@@ -1,0 +1,69 @@
+web/src/components/workspace/OriginSidebarSection.tsx
+  s_70435e536c41fa::t_63e7bc2af6657b 1-2
+  s_70435e536c41fa::t_95aeb29a3ada7d 39
+web/src/components/chat/ChannelComposer.tsx
+  s_70435e536c41fa::t_761593264bac86 38-57,59,68,71-84
+  s_70435e536c41fa::t_603c633ec4ade0 4
+web/src/components/workspace/OriginComposer.tsx
+  s_70435e536c41fa::t_0d22ef8de45764 208,212-213
+  s_70435e536c41fa::t_5be806a7bdb18c 134-136
+  s_70435e536c41fa::t_eee14053d44ad5 144,146,150
+  s_70435e536c41fa::t_d557c3aed44eb0 164
+  s_70435e536c41fa::t_0ba1a83dc30cb7 235
+  s_70435e536c41fa::t_0eb35540f3e27e 251
+  s_70435e536c41fa::t_b442bf8a246c47 116,121,125
+  s_70435e536c41fa::t_05ed58a541dc13 222,225
+web/src/styles/chat/chat-composer.css
+  s_70435e536c41fa::t_2f7dc94c42a2b6 2-3
+web/src/avatar/AgentAvatar.css
+  s_70435e536c41fa::t_0f47961bf9aaaf 19-23
+web/src/styles/composer.css
+  s_70435e536c41fa::t_a0c520255c97eb 1-156,161-339
+  s_70435e536c41fa::t_9884ee3d132e0d 157-160
+web/src/components/workspace/OriginSessionPanel.css
+  s_70435e536c41fa::t_86dcd337955a9f 262
+  s_70435e536c41fa::t_460353929e3f22 25,27-30,34-38,40-43,49,51,56,58-61,64-71,74,76-79,82-91,94-95,98-101
+  s_70435e536c41fa::t_b479f8205793c7 104-106,108,110-111
+  s_70435e536c41fa::t_f8e6d12cc2f1f5 299-302
+  s_70435e536c41fa::t_69e2f571b6a286 329,334,337-338,341-343,346-348
+  s_70435e536c41fa::t_2f7f4b2ac7abe3 368
+web/src/components/workspace/OriginSessionPanel.tsx
+  s_70435e536c41fa::t_347153b834dcf0 70-75,79-96
+  s_70435e536c41fa::t_35b2f74906e470 114
+  s_70435e536c41fa::t_9901e4a7a618a0 156-158
+  s_70435e536c41fa::t_7403962c8db7c6 21-27
+  s_70435e536c41fa::t_ad998e686df38f 5-6
+  s_70435e536c41fa::t_a68844beae04f9 69
+  s_70435e536c41fa::t_08cecc543a8fbe 205-208
+web/src/avatar/avatar.ts
+  s_70435e536c41fa::t_3b289015150d37 56-66
+web/src/avatar/AgentAvatar.tsx
+  s_70435e536c41fa::t_d6a1663c34c688 16-17
+  s_70435e536c41fa::t_d03cba3c4face0 134-154
+  s_70435e536c41fa::t_515b94aacf2620 48-54,61-64,67-76,93,112
+  s_70435e536c41fa::t_f13ac6d846aafb 133
+web/src/avatar/index.ts
+  s_70435e536c41fa::t_74cb6e79d362d3 5,11,15-16
+web/src/components/workspace/AgentSessionPanel.tsx
+  s_70435e536c41fa::t_b70de78f434f58 329
+  s_70435e536c41fa::t_f02cd17d46e7ec 330-337,339-346,349-352,354-420,422,424,427-435,437-473
+  s_70435e536c41fa::t_5818870187c1af 474
+web/src/main.tsx
+  s_70435e536c41fa::t_dfed72cc2f917a 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "97da0859f1645747d5dd6f885b3cf01387f9378c",
+  "prompts": {},
+  "sessions": {
+    "s_70435e536c41fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "74c4624e-01ca-4807-96e1-bf84368351f0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
