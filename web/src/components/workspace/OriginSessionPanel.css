@@ -290,7 +290,149 @@
   outline-offset: -1px;
 }
 
+/* ── Tool calls — one headline row each, grouped when consecutive ─── */
+.origin-tool-group {
+  background: var(--canvas-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  width: min(100%, 820px);
+}
+
+.origin-tool-row + .origin-tool-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.origin-tool-head {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 10px;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-out);
+  width: 100%;
+}
+
+.origin-tool-head:disabled {
+  cursor: default;
+}
+
+.origin-tool-head:focus-visible {
+  outline: 1px solid var(--accent-ring);
+  outline-offset: -1px;
+}
+
+.origin-tool-status,
+.origin-tool-icon,
+.origin-tool-chevron {
+  flex: 0 0 auto;
+}
+
+.origin-tool-status {
+  align-items: center;
+  color: var(--text-muted);
+  display: inline-flex;
+}
+
+.origin-tool-row--ok .origin-tool-status {
+  color: var(--success);
+}
+
+.origin-tool-row--error .origin-tool-status {
+  color: var(--danger);
+}
+
+.origin-tool-icon {
+  color: var(--text-muted);
+}
+
+.origin-tool-label {
+  color: var(--text-primary);
+  flex: 0 0 auto;
+  font-weight: 620;
+}
+
+.origin-tool-summary {
+  color: var(--text-muted);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.origin-tool-detail {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  margin-left: auto;
+}
+
+.origin-tool-chevron {
+  color: var(--text-muted);
+  margin-left: 2px;
+  transition: transform var(--dur-2) var(--ease-out);
+}
+
+.origin-tool-chevron.open {
+  transform: rotate(90deg);
+}
+
+.origin-tool-body {
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+.origin-tool-section small {
+  color: var(--text-muted);
+  display: block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.origin-tool-section pre {
+  background: var(--canvas);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 4px 0 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.origin-tool-section.error pre {
+  border-left: 2px solid var(--danger);
+}
+
+.origin-tool-truncated {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
 @media (hover: hover) {
+  .origin-tool-head:hover:not(:disabled) {
+    background: var(--accent-tint);
+  }
+
   .origin-icon-button:hover:not(:disabled) {
     background: var(--accent-tint-strong);
     color: var(--text-primary);

@@ -6,6 +6,7 @@ import { Loader2, Trash2 } from 'lucide-react';
 import { OriginAvatar } from '../../avatar';
 import { deleteOriginEntry } from '../../chat/originWorkspace';
 import { originRuntimeLabel } from '../../chat/originCatalog';
+import { buildOriginTimeline, type OriginToolActivity } from '../../chat/originTimeline';
 import { useOriginStore } from '../../stores/originStore';
 import type {
   AgentMessage,
@@ -14,7 +15,10 @@ import type {
   OriginSessionSummary,
 } from '../../types';
 import { OriginComposer } from './OriginComposer';
+import { OriginToolCallRow } from './OriginToolCallRow';
 import './OriginSessionPanel.css';
+
+const EMPTY_ACTIVITY: OriginToolActivity[] = [];
 
 const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
@@ -37,6 +41,9 @@ export function OriginSessionPanel() {
   ));
   const streaming = useOriginStore((state) => (
     sessionId ? state.streamingById[sessionId] : undefined
+  ));
+  const toolActivity = useOriginStore((state) => (
+    sessionId ? state.toolActivityById[sessionId] ?? EMPTY_ACTIVITY : EMPTY_ACTIVITY
   ));
   const running = useOriginStore((state) => (
     sessionId ? state.runningIds.has(sessionId) : false
@@ -109,7 +116,9 @@ export function OriginSessionPanel() {
             messages={messages}
             onPreviewImage={setPreviewImage}
             streaming={streaming}
+            toolActivity={toolActivity}
             transcriptRef={transcriptRef}
+            workspace={session?.session?.workspace ?? null}
           />
           <div className="composer-dock origin-session-dock">
             <OriginComposer />
@@ -185,14 +194,22 @@ function OriginTimeline({
   messages,
   onPreviewImage,
   streaming,
+  toolActivity,
   transcriptRef,
+  workspace,
 }: {
   loading: boolean;
   messages: AgentMessage[];
   onPreviewImage(image: ImageAttachment): void;
   streaming: string | undefined;
+  toolActivity: OriginToolActivity[];
   transcriptRef: React.RefObject<HTMLDivElement | null>;
+  workspace: string | null;
 }) {
+  const items = useMemo(
+    () => buildOriginTimeline({ messages, activity: toolActivity, workspace }),
+    [messages, toolActivity, workspace],
+  );
   return (
     <div className="session-transcript origin-session-timeline" ref={transcriptRef}>
       {loading ? (
@@ -207,9 +224,13 @@ function OriginTimeline({
           <span>No messages yet</span>
         </div>
       ) : null}
-      {messages.map((message) => (
-        <OriginMessageRow key={message.id} message={message} onPreviewImage={onPreviewImage} />
-      ))}
+      {items.map((item) => (item.kind === 'message' ? (
+        <OriginMessageRow key={item.key} message={item.message} onPreviewImage={onPreviewImage} />
+      ) : (
+        <div className="origin-tool-group" key={item.key}>
+          {item.calls.map(({ key, ...call }) => <OriginToolCallRow call={call} key={key} />)}
+        </div>
+      )))}
       {streaming !== undefined ? (
         <div className="session-message assistant streaming">
           <div className="session-message-head"><span>Origin</span><Loader2 className="spin" size={12} /></div>

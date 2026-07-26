@@ -680,6 +680,47 @@ describe('Origin store persisted Session composer', () => {
     });
   });
 
+  it('projects live tool calls while the run streams and drops them when it ends', async () => {
+    const seen: Array<{ callId: string; output: string | null }> = [];
+    const streamOriginMessage = vi.fn(async (
+      _sessionId: string,
+      _message: string,
+      _options: unknown,
+      onEvent: (event: OriginStreamEvent) => void,
+    ) => {
+      const toolCall = { id: 'call-1', name: 'shell', arguments: { command: 'pwd' } };
+      onEvent({
+        sessionId: 'origin-1', runId: 'run-1', seq: 1,
+        event: { type: 'tool_execution_start', toolCall },
+      });
+      seen.push(...store.getState().toolActivityById['origin-1']);
+      onEvent({
+        sessionId: 'origin-1', runId: 'run-1', seq: 2,
+        event: {
+          type: 'tool_execution_end',
+          toolCall: { id: 'call-1', name: 'shell', arguments: {} },
+          toolResult: { callId: 'call-1', name: 'shell', output: '/tmp/session', error: false },
+        },
+      });
+      seen.push(...store.getState().toolActivityById['origin-1']);
+    });
+    const store = createOriginStore({ preferences: preferences(), streamOriginMessage });
+    store.setState({
+      selection: { kind: 'session', sessionId: 'origin-1' },
+      sessionById: { 'origin-1': sessionResponse('origin-1') },
+    });
+    store.getState().setMessage('what is the working directory');
+
+    await store.getState().send();
+
+    // The end event carries no arguments, so the ones seen at start must survive.
+    expect(seen).toEqual([
+      { callId: 'call-1', name: 'shell', arguments: { command: 'pwd' }, output: null, isError: false },
+      { callId: 'call-1', name: 'shell', arguments: { command: 'pwd' }, output: '/tmp/session', isError: false },
+    ]);
+    expect(store.getState().toolActivityById['origin-1']).toBeUndefined();
+  });
+
   it('rolls back a cross-tab 409 and reconciles the authoritative run', async () => {
     const refresh = deferred<void>();
     const fetchOriginRun = vi.fn(async () => ({

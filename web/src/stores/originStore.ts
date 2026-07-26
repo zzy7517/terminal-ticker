@@ -24,6 +24,7 @@ import type {
   StartOriginStreamResult,
 } from '../types';
 import { transitionOriginConfig } from '../chat/originCatalog';
+import type { OriginToolActivity } from '../chat/originTimeline';
 import { limitOriginImages } from '../chat/originImages';
 import { HttpResponseError } from '../api/http';
 import { canonicalizeAvailableOriginConfig } from './origin/catalog';
@@ -52,6 +53,8 @@ export interface OriginState {
   selection: OriginSelection | null;
   composerBySessionId: Record<string, OriginComposerDraft>;
   streamingById: Record<string, string>;
+  /** Tool calls seen on the live stream, until the run persists them. */
+  toolActivityById: Record<string, OriginToolActivity[]>;
   runBySessionId: Record<string, AgentSessionRun>;
   /** Compatibility projection for existing views; derived from runBySessionId. */
   runningIds: Set<string>;
@@ -144,6 +147,7 @@ export function createOriginStore(overrides: Partial<OriginStoreDependencies> = 
     selection: null,
     composerBySessionId: {},
     streamingById: {},
+    toolActivityById: {},
     runBySessionId: {},
     runningIds: new Set(),
     loading: false,
@@ -566,6 +570,28 @@ function applyStreamEvent(
         streamingById,
       });
     }
+    if (event.type === 'tool_execution_start') {
+      return projectRun(state, run, {
+        toolActivityById: withToolActivity(state, sessionId, {
+          callId: event.toolCall.id,
+          name: event.toolCall.name,
+          arguments: event.toolCall.arguments ?? {},
+          output: null,
+          isError: false,
+        }),
+      });
+    }
+    if (event.type === 'tool_execution_end') {
+      return projectRun(state, run, {
+        toolActivityById: withToolActivity(state, sessionId, {
+          callId: event.toolResult.callId || event.toolCall.id,
+          name: event.toolResult.name || event.toolCall.name,
+          arguments: event.toolCall.arguments ?? {},
+          output: event.toolResult.output ?? '',
+          isError: event.toolResult.error,
+        }),
+      });
+    }
     if (event.type === 'session_update') {
       const runBySessionId = mergeHistoryRuns(
         state.runBySessionId,
@@ -585,6 +611,25 @@ function applyStreamEvent(
       ? { error: visibleError }
       : {});
   });
+}
+
+/** Upserts one live tool call, keeping the arguments recorded when it started. */
+function withToolActivity(
+  state: OriginState,
+  sessionId: string,
+  entry: OriginToolActivity,
+): Record<string, OriginToolActivity[]> {
+  const entries = state.toolActivityById[sessionId] ?? [];
+  const known = entries.some((candidate) => candidate.callId === entry.callId);
+  const next = known
+    ? entries.map((candidate) => (candidate.callId === entry.callId
+      ? {
+        ...entry,
+        arguments: Object.keys(entry.arguments).length > 0 ? entry.arguments : candidate.arguments,
+      }
+      : candidate))
+    : [...entries, entry];
+  return { ...state.toolActivityById, [sessionId]: next };
 }
 
 function updateActiveComposer(
@@ -628,16 +673,19 @@ function removeSessionState(
   const sessionById = { ...state.sessionById };
   const composerBySessionId = { ...state.composerBySessionId };
   const streamingById = { ...state.streamingById };
+  const toolActivityById = { ...state.toolActivityById };
   const runBySessionId = mergeHistoryRuns(state.runBySessionId, origins, protectedRuns);
   delete sessionById[sessionId];
   delete composerBySessionId[sessionId];
   delete streamingById[sessionId];
+  delete toolActivityById[sessionId];
   delete runBySessionId[sessionId];
   return projectRuns(state, runBySessionId, {
     origins,
     sessionById,
     composerBySessionId,
     streamingById,
+    toolActivityById,
     selection: state.selection?.kind === 'session' && state.selection.sessionId === sessionId
       ? null
       : state.selection,
@@ -927,11 +975,14 @@ function finishRun(
     runOwners.bySessionId.delete(sessionId);
     const streamingById = { ...state.streamingById };
     delete streamingById[sessionId];
+    // The run has persisted its tool calls; the live projection is no longer needed.
+    const toolActivityById = { ...state.toolActivityById };
+    delete toolActivityById[sessionId];
     const previous = state.runBySessionId[sessionId] ?? idleRun(sessionId);
     const run = previous.status === 'running'
       ? { ...previous, status: 'idle' as const }
       : previous;
-    return projectRun(state, run, { streamingById });
+    return projectRun(state, run, { streamingById, toolActivityById });
   });
 }
 
