@@ -1,0 +1,33 @@
+web/src/components/settings/AgentsSettingsPanel.tsx
+  s_8ded26632ff52f::t_d0373e1a7f7515 4
+agents/default.json
+  s_13d2e2ec025545::t_25c97ac590ab43 5
+agents/ict.json
+  s_13d2e2ec025545::t_b8ae1264be18b9 5
+agents/price-action.json
+  s_13d2e2ec025545::t_be120d65b16c92 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "d3c358db0d07edd7e3053c1a7357e405eff4de3d",
+  "prompts": {},
+  "sessions": {
+    "s_13d2e2ec025545": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cce38297-dbf3-43ae-8cef-b395eae3ce9f",
+        "model": "unknown"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_8ded26632ff52f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65aa8d1a-3219-4e88-8892-8598342d34d0",
+        "model": "claude-opus-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
