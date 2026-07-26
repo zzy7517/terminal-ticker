@@ -17,6 +17,13 @@ import {
   normalizeSymbolForSource,
 } from "./index.js";
 import type { OptionsConfig } from "../options/domain.js";
+import { DEFAULT_JIN10_URL } from "../jin10/types.js";
+import { persistSecret } from "./secrets.js";
+
+/** Vault variable name for a provider's API key, e.g. "AGENT_OPENAI_API_KEY". */
+function providerSecretVar(provider: string): string {
+  return `AGENT_${provider.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`;
+}
 
 function tomlString(value: string): string {
   return `"${value
@@ -403,9 +410,11 @@ export async function updateAgentConfigInWatchlist(watchlistPath: string, config
     lines.push(`api = ${tomlString(profile.api)}`);
     if (profile.displayName) lines.push(`display_name = ${tomlString(profile.displayName)}`);
     lines.push(`requires_auth = ${profile.requiresAuth ? "true" : "false"}`);
-    // Only the original source value may be persisted. apiKey can contain an
-    // expanded environment secret and must never be used as a serialization fallback.
-    if (profile.apiKeyRaw) lines.push(`api_key = ${tomlString(profile.apiKeyRaw)}`);
+    // Secrets never reach the TOML: a "${VAR}" raw round-trips as-is, while a
+    // plaintext key (e.g. pasted into the UI) is interned into the vault and
+    // only the reference is written.
+    const apiKeyValue = persistSecret(profile.apiKeyRaw, profile.apiKey, providerSecretVar(name));
+    if (apiKeyValue) lines.push(`api_key = ${tomlString(apiKeyValue)}`);
     if (profile.baseUrl) lines.push(`base_url = ${tomlString(profile.baseUrl)}`);
     lines.push(`models = [${profile.models.map(tomlString).join(", ")}]`);
     if (profile.modelEfforts.length > 0) {
@@ -461,7 +470,9 @@ export async function updateJin10ConfigInWatchlist(watchlistPath: string, config
   const lines = [
     "[jin10]",
     `enabled = ${config.enabled ? "true" : "false"}`,
-    `token = ${tomlString(config.token)}`,
+    // Only persisted when overridden, so installs track the default endpoint.
+    ...(config.url && config.url !== DEFAULT_JIN10_URL ? [`url = ${tomlString(config.url)}`] : []),
+    `token = ${tomlString(persistSecret(config.tokenRaw, config.token, "JIN10_TOKEN"))}`,
     `flash_enabled = ${config.flashEnabled ? "true" : "false"}`,
     `flash_poll_interval_seconds = ${config.flashPollIntervalSeconds}`,
     `calendar_enabled = ${config.calendarEnabled ? "true" : "false"}`,
@@ -474,6 +485,33 @@ export async function updateJin10ConfigInWatchlist(watchlistPath: string, config
   return replaceTable(watchlistPath, "jin10", lines);
 }
 
+export async function updateMacroConfigInWatchlist(
+  watchlistPath: string,
+  config: import("../macro/domain.js").MacroConfig,
+): Promise<boolean> {
+  const lines = [
+    "[macro]",
+    `enabled = ${config.enabled ? "true" : "false"}`,
+    `fred_api_key = ${tomlString(persistSecret(config.fredApiKeyRaw, config.fredApiKey, "FRED_API_KEY"))}`,
+    `backfill_years = ${config.backfillYears}`,
+    `fred_poll_interval_seconds = ${config.fredPollIntervalSeconds}`,
+    `calendar_enabled = ${config.calendarEnabled ? "true" : "false"}`,
+    `calendar_poll_interval_seconds = ${config.calendarPollIntervalSeconds}`,
+    `crypto_enabled = ${config.cryptoEnabled ? "true" : "false"}`,
+    `crypto_poll_interval_seconds = ${config.cryptoPollIntervalSeconds}`,
+    `quotes_enabled = ${config.quotesEnabled ? "true" : "false"}`,
+    `quotes_poll_interval_seconds = ${config.quotesPollIntervalSeconds}`,
+    `twelve_data_api_key = ${tomlString(persistSecret(config.twelveDataApiKeyRaw, config.twelveDataApiKey, "TWELVE_DATA_API_KEY"))}`,
+    "",
+    "[macro.event_window]",
+    `min_impact = ${tomlString(config.eventWindow.minImpact)}`,
+    `before_minutes = ${config.eventWindow.beforeMinutes}`,
+    `after_minutes = ${config.eventWindow.afterMinutes}`,
+    `block_trades = ${config.eventWindow.blockTrades ? "true" : "false"}`,
+  ];
+  return replaceTable(watchlistPath, "macro", lines);
+}
+
 export async function updateProxyConfigInWatchlist(watchlistPath: string, config: ProxyConfig): Promise<boolean> {
   const lines = [
     "[proxy]",
@@ -482,7 +520,7 @@ export async function updateProxyConfigInWatchlist(watchlistPath: string, config
     `host = ${tomlString(config.host)}`,
     `port = ${config.port}`,
     `username = ${tomlString(config.username)}`,
-    `password = ${tomlString(config.password)}`,
+    `password = ${tomlString(persistSecret(config.passwordRaw, config.password, "PROXY_PASSWORD"))}`,
   ];
   return replaceTable(watchlistPath, "proxy", lines);
 }
@@ -499,11 +537,12 @@ export async function updateOptionsConfigInWatchlist(watchlistPath: string, conf
     `dividend_yield = ${config.dividendYield}`,
   ];
   if (config.tradier) {
-    lines.push("", "[options.tradier]", `api_key = ${tomlString(config.tradier.apiKey)}`, `base_url = ${tomlString(config.tradier.baseUrl)}`);
+    const tradierKey = persistSecret(config.tradier.apiKeyRaw, config.tradier.apiKey, "TRADIER_API_KEY");
+    lines.push("", "[options.tradier]", `api_key = ${tomlString(tradierKey)}`, `base_url = ${tomlString(config.tradier.baseUrl)}`);
   }
   if (config.marketdata && config.marketdata.apiKey) {
-    // Prefer the raw "${ENV}" reference so we never write a resolved secret to disk.
-    const mdKey = config.marketdata.apiKeyRaw || config.marketdata.apiKey;
+    // Vault-backed: a "${VAR}" raw round-trips, a plaintext key is interned.
+    const mdKey = persistSecret(config.marketdata.apiKeyRaw, config.marketdata.apiKey, "MARKETDATA_API_KEY");
     lines.push("", "[options.marketdata]", `api_key = ${tomlString(mdKey)}`, `base_url = ${tomlString(config.marketdata.baseUrl)}`);
     if (config.marketdata.strikeLimit != null) lines.push(`strike_limit = ${config.marketdata.strikeLimit}`);
     if (config.marketdata.dte != null) lines.push(`dte = ${config.marketdata.dte}`);

@@ -141,6 +141,8 @@ export interface OptionsConfig {
   dividendYield: number;
   tradier?: {
     apiKey: string;
+    /** Raw TOML value (e.g. "${TRADIER_API_KEY}") preserved for round-trip writes. */
+    apiKeyRaw?: string;
     baseUrl: string;
   };
   /** Optional fallback source (MarketData.app) used when the primary fails. */

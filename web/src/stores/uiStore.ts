@@ -10,6 +10,7 @@ export type WorkspaceViewId =
   | 'calendar'
   | 'positions'
   | 'options'
+  | 'macro'
   | 'cron';
 
 export type Theme = 'light' | 'dark';

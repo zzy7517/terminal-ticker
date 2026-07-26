@@ -2,6 +2,7 @@ import {
   Activity,
   CalendarDays,
   Clock,
+  Globe,
   LineChart,
   MessageSquare,
   Newspaper,
@@ -29,6 +30,7 @@ export function AppSidebar() {
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
   const optionsState = (state as any)?.options?.snapshots;
   const optionsAvailable = Boolean(optionsState && Object.keys(optionsState).length > 0);
+  const macroAvailable = Boolean((state as any)?.config?.macro?.enabled);
   const items: NavItem[] = [
     { id: 'agent', label: 'Chat', icon: MessageSquare },
     { id: 'market', label: 'Market', icon: LineChart },
@@ -36,6 +38,7 @@ export function AppSidebar() {
     { id: 'calendar', label: 'Calendar', icon: CalendarDays, available: jin10Available },
     { id: 'positions', label: 'Positions', icon: WalletCards },
     { id: 'options', label: 'Options', icon: Activity, available: optionsAvailable },
+    { id: 'macro', label: 'Macro', icon: Globe, available: macroAvailable },
     { id: 'cron', label: 'Cron', icon: Clock },
   ];
 

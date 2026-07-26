@@ -155,6 +155,16 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       } : undefined,
       deribit: config.options.deribit,
     },
+    macro: {
+      enabled: config.macro.enabled,
+      // Keys are reported as configured/not, never echoed back.
+      fredKeyConfigured: Boolean(config.macro.fredApiKey),
+      twelveDataKeyConfigured: Boolean(config.macro.twelveDataApiKey),
+      calendarEnabled: config.macro.calendarEnabled,
+      cryptoEnabled: config.macro.cryptoEnabled,
+      quotesEnabled: config.macro.quotesEnabled,
+      eventWindow: config.macro.eventWindow,
+    },
     proxy: {
       enabled: config.proxy.enabled,
       type: config.proxy.type,

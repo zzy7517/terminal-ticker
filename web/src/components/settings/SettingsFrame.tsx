@@ -12,6 +12,7 @@ import {
   Palette,
   Search,
   Settings,
+  CalendarClock,
 } from 'lucide-react';
 import type { SettingsSection } from '../../constants';
 import './SettingsFrame.css';
@@ -43,6 +44,7 @@ export function SettingsFrame({
       items: [
         { id: 'watchlist' as const, label: 'Watchlist', icon: CircleDot },
         { id: 'news' as const, label: 'News', icon: Newspaper },
+        { id: 'jin10' as const, label: 'Jin10', icon: CalendarClock },
         { id: 'options' as const, label: 'Options', icon: Activity },
       ],
     },

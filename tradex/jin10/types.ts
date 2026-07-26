@@ -47,8 +47,13 @@ export interface Jin10Quote {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
+/** Default endpoint for Jin10's hosted MCP server. */
+export const DEFAULT_JIN10_URL = "https://mcp.jin10.com/mcp";
+
 export interface Jin10Config {
   enabled: boolean;
+  /** Jin10 MCP endpoint. Defaults to {@link DEFAULT_JIN10_URL}. */
+  url: string;
   token: string;
   flashEnabled: boolean;
   flashPollIntervalSeconds: number;

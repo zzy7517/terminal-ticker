@@ -5,6 +5,7 @@ export { AgentContextSettingsPanel } from './AgentContextSettingsPanel';
 export { AppearanceSettingsPanel } from './AppearanceSettingsPanel';
 export { AgentsSettingsPanel } from './AgentsSettingsPanel';
 export { NewsSettingsPanel } from './NewsSettingsPanel';
+export { Jin10SettingsPanel } from './Jin10SettingsPanel';
 export { CronSettingsPanel } from './CronSettingsPanel';
 export { McpSettingsPanel } from './McpSettingsPanel';
 export { BrowserSettingsPanel } from './BrowserSettingsPanel';

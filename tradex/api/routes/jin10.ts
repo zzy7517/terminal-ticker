@@ -43,12 +43,8 @@ export function jin10Routes(runtime: AppRuntime): Hono {
   // Returns [{code, name}] pairs from jin10 MCP resource.
   app.get("/api/jin10/available-codes", async (c) => {
     try {
-      if (!runtime.mcpManager) return c.json({ codes: [] });
-      const status = runtime.mcpManager.getStatus("jin10");
-      if (status !== "connected") {
-        try { await runtime.mcpManager.connect("jin10"); } catch { return c.json({ codes: [] }); }
-      }
-      const result = await runtime.mcpManager.readResource("jin10", "quote://codes");
+      if (!runtime.jin10Service.available) return c.json({ codes: [] });
+      const result = await runtime.jin10Service.readResource("quote://codes");
       const textParts = (result.contents as Array<{ type?: string; text?: string }>)
         .filter((content) => content.text)
         .map((content) => content.text!);
@@ -79,7 +75,10 @@ export function jin10Routes(runtime: AppRuntime): Hono {
       const next = {
         ...current,
         ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
-        ...(typeof body.token === "string" ? { token: body.token } : {}),
+        // A new token replaces both the resolved value and the raw form, so the
+        // stale "${JIN10_TOKEN}" reference cannot shadow it on save; the store
+        // interns the literal into the secrets vault before touching the TOML.
+        ...(typeof body.token === "string" ? { token: body.token.trim(), tokenRaw: body.token.trim() } : {}),
         ...(typeof body.flash_enabled === "boolean" ? { flashEnabled: body.flash_enabled } : {}),
         ...(typeof body.calendar_enabled === "boolean" ? { calendarEnabled: body.calendar_enabled } : {}),
         ...(typeof body.quotes_enabled === "boolean" ? { quotesEnabled: body.quotes_enabled } : {}),

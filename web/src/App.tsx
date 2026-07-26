@@ -16,6 +16,7 @@ import {
   AppearanceSettingsPanel,
   NewsSettingsPanel,
   CronSettingsPanel,
+  Jin10SettingsPanel,
   McpSettingsPanel,
   BrowserSettingsPanel,
   ProxySettingsPanel,
@@ -95,6 +96,8 @@ export default function App() {
           <AgentContextSettingsPanel />
         ) : route.section === 'news' ? (
           <NewsSettingsPanel />
+        ) : route.section === 'jin10' ? (
+          <Jin10SettingsPanel />
         ) : route.section === 'cron' ? (
           <CronSettingsPanel />
         ) : route.section === 'mcp' ? (

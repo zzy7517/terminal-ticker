@@ -15,6 +15,8 @@ import {
   normalizeProvider,
   normalizeReasoningEffort,
 } from "./agent_models.js";
+import { DEFAULT_JIN10_URL } from "../jin10/types.js";
+import { lookupSecret, secretsFilePath } from "./secrets.js";
 
 export const BITGET_SOURCE = "bitget";
 export const HYPERLIQUID_SOURCE = "hyperliquid";
@@ -178,7 +180,11 @@ export interface McpAppConfig {
 
 export interface Jin10Config {
   enabled: boolean;
+  /** Jin10 MCP endpoint. Defaults to the hosted server; override for a proxy or mock. */
+  url: string;
   token: string;
+  /** Original TOML value (may be `${VAR}`); persisted on save so the secret stays in the vault. */
+  tokenRaw: string;
   flashEnabled: boolean;
   flashPollIntervalSeconds: number;
   calendarEnabled: boolean;
@@ -219,6 +225,8 @@ export interface ProxyConfig {
   username: string;
   /** Optional basic-auth password. */
   password: string;
+  /** Original TOML value of `password` (may be `${VAR}`); persisted on save. */
+  passwordRaw: string;
 }
 
 export interface AppConfig {
@@ -236,6 +244,7 @@ export interface AppConfig {
   channels: ChannelsConfig;
   proxy: ProxyConfig;
   options: import("../options/domain.js").OptionsConfig;
+  macro: import("../macro/domain.js").MacroConfig;
 }
 
 export function expandUserPath(inputPath: string): string {
@@ -483,19 +492,32 @@ function coerceFloat(rawValue: unknown, fieldName: string, defaultValue: number)
   return value;
 }
 
-// Expands ${VAR} / $VAR references against process.env. Unset variables expand
-// to an empty string (with a warning) so a missing secret fails loudly rather
-// than leaking a literal "${VAR}" to a provider.
+// Expands ${VAR} / $VAR references against the secrets vault first, then
+// process.env. Unset variables expand to an empty string (with a warning) so a
+// missing secret fails loudly rather than leaking a literal "${VAR}" to a
+// provider.
 function expandEnvRefs(value: string, field: string): string {
   return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, braced, bare) => {
     const name = braced ?? bare;
-    const resolved = process.env[name];
-    if (resolved === undefined || resolved === "") {
-      console.warn(`[config] env var "${name}" referenced by ${field} is not set`);
+    const resolved = lookupSecret(name);
+    if (resolved === undefined) {
+      console.warn(
+        `[config] secret "${name}" referenced by ${field} is set neither in ${secretsFilePath()} nor in the environment`,
+      );
       return "";
     }
     return resolved;
   });
+}
+
+/**
+ * Parse one secret-bearing config field into its resolved value plus the
+ * original TOML string. Serializers persist the raw form, so "${VAR}"
+ * references round-trip instead of leaking the expanded secret to disk.
+ */
+function parseSecretField(rawValue: unknown, field: string): { value: string; raw: string } {
+  const raw = typeof rawValue === "string" ? rawValue.trim() : "";
+  return { raw, value: raw ? expandEnvRefs(raw, field) : "" };
 }
 
 function parseProviderSecretRaw(raw: Record<string, unknown>, field: string): string {
@@ -776,9 +798,12 @@ export function parseJin10Config(rawJin10Value: unknown): Jin10Config {
   const quotesCodes = Array.isArray(raw.quotes_codes)
     ? raw.quotes_codes.map((c: unknown) => String(c).trim().toUpperCase()).filter(Boolean)
     : DEFAULT_JIN10_QUOTE_CODES;
+  const token = parseSecretField(raw.token, "jin10.token");
   return {
     enabled: normalizeBool(raw.enabled, "jin10.enabled", true),
-    token: typeof raw.token === "string" ? raw.token.trim() : "",
+    url: typeof raw.url === "string" && raw.url.trim() ? raw.url.trim() : DEFAULT_JIN10_URL,
+    token: token.value,
+    tokenRaw: token.raw,
     flashEnabled: normalizeBool(raw.flash_enabled, "jin10.flash_enabled", true),
     flashPollIntervalSeconds: coerceMinInt(raw.flash_poll_interval_seconds, "jin10.flash_poll_interval_seconds", 60, 10),
     calendarEnabled: normalizeBool(raw.calendar_enabled, "jin10.calendar_enabled", true),
@@ -787,6 +812,58 @@ export function parseJin10Config(rawJin10Value: unknown): Jin10Config {
     quotesPollIntervalSeconds: coerceMinInt(raw.quotes_poll_interval_seconds, "jin10.quotes_poll_interval_seconds", 30, 10),
     quotesCodes,
     agentAnalysis: normalizeBool(raw.agent_analysis, "jin10.agent_analysis", false),
+  };
+}
+
+export function parseMacroConfig(
+  rawMacroValue: unknown,
+): import("../macro/domain.js").MacroConfig {
+  const raw = asRecord(rawMacroValue ?? {}, "macro");
+  const window = asRecord(raw.event_window ?? {}, "macro.event_window");
+  const rawImpact = typeof window.min_impact === "string" ? window.min_impact.trim().toLowerCase() : "high";
+  const minImpact = rawImpact === "low" || rawImpact === "medium" ? rawImpact : "high";
+  const fredKey = parseSecretField(raw.fred_api_key, "macro.fred_api_key");
+  const twelveDataKey = parseSecretField(raw.twelve_data_api_key, "macro.twelve_data_api_key");
+  return {
+    enabled: normalizeBool(raw.enabled, "macro.enabled", false),
+    fredApiKey: fredKey.value,
+    fredApiKeyRaw: fredKey.raw,
+    backfillYears: coerceMinInt(raw.backfill_years, "macro.backfill_years", 2, 1),
+    fredPollIntervalSeconds: coerceMinInt(
+      raw.fred_poll_interval_seconds,
+      "macro.fred_poll_interval_seconds",
+      6 * 60 * 60,
+      600,
+    ),
+    twelveDataApiKey: twelveDataKey.value,
+    twelveDataApiKeyRaw: twelveDataKey.raw,
+    calendarEnabled: normalizeBool(raw.calendar_enabled, "macro.calendar_enabled", true),
+    calendarPollIntervalSeconds: coerceMinInt(
+      raw.calendar_poll_interval_seconds,
+      "macro.calendar_poll_interval_seconds",
+      300,
+      60,
+    ),
+    cryptoEnabled: normalizeBool(raw.crypto_enabled, "macro.crypto_enabled", true),
+    cryptoPollIntervalSeconds: coerceMinInt(
+      raw.crypto_poll_interval_seconds,
+      "macro.crypto_poll_interval_seconds",
+      300,
+      60,
+    ),
+    quotesEnabled: normalizeBool(raw.quotes_enabled, "macro.quotes_enabled", true),
+    quotesPollIntervalSeconds: coerceMinInt(
+      raw.quotes_poll_interval_seconds,
+      "macro.quotes_poll_interval_seconds",
+      6 * 60 * 60,
+      600,
+    ),
+    eventWindow: {
+      minImpact,
+      beforeMinutes: coerceMinInt(window.before_minutes, "macro.event_window.before_minutes", 15, 0),
+      afterMinutes: coerceMinInt(window.after_minutes, "macro.event_window.after_minutes", 15, 0),
+      blockTrades: normalizeBool(window.block_trades, "macro.event_window.block_trades", true),
+    },
   };
 }
 
@@ -834,13 +911,15 @@ function parseProxyPort(rawValue: unknown): number {
 export function parseProxyConfig(rawProxyValue: unknown): ProxyConfig {
   const raw = asRecord(rawProxyValue, "proxy");
   const asStr = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+  const password = parseSecretField(raw.password, "proxy.password");
   return {
     enabled: normalizeBool(raw.enabled, "proxy.enabled", false),
     type: parseProxyType(raw.type),
     host: asStr(raw.host),
     port: parseProxyPort(raw.port),
     username: typeof raw.username === "string" ? raw.username : "",
-    password: typeof raw.password === "string" ? raw.password : "",
+    password: password.value,
+    passwordRaw: password.raw,
   };
 }
 
@@ -870,7 +949,8 @@ export function parseOptionsConfig(rawOptionsValue: unknown): import("../options
     riskFreeRate: coerceFloat(raw.risk_free_rate, "options.risk_free_rate", 0.0363),
     dividendYield: coerceFloat(raw.dividend_yield, "options.dividend_yield", 0.015),
     tradier: rawTradier.api_key ? {
-      apiKey: String(rawTradier.api_key),
+      apiKey: expandEnvRefs(String(rawTradier.api_key), "options.tradier.api_key"),
+      apiKeyRaw: String(rawTradier.api_key),
       baseUrl: typeof rawTradier.base_url === "string" ? rawTradier.base_url : "https://sandbox.tradier.com/v1",
     } : undefined,
     marketdata: mdKey ? {
@@ -916,6 +996,7 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
     channels: parseChannelsConfig(data.channels),
     proxy: parseProxyConfig(data.proxy),
     options: parseOptionsConfig(data.options),
+    macro: parseMacroConfig(data.macro),
 
     sourcePath,
   };
@@ -924,7 +1005,37 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
 export async function loadConfig(configPath: string): Promise<AppConfig> {
   const sourcePath = path.resolve(expandUserPath(configPath));
   const text = await readFile(sourcePath, "utf8");
-  return parseConfig(parseToml(text) as Record<string, unknown>, sourcePath);
+  const config = parseConfig(parseToml(text) as Record<string, unknown>, sourcePath);
+  warnPlaintextSecrets(config, sourcePath);
+  return config;
+}
+
+/**
+ * Flag secrets stored as literals in the config file. Any save through the
+ * settings API migrates them into the vault automatically (see
+ * config/secrets.ts); the warning covers installs that never touch the UI.
+ */
+function warnPlaintextSecrets(config: AppConfig, sourcePath: string): void {
+  const plaintext = (raw: string | undefined): boolean => Boolean(raw && raw.trim() && !raw.includes("${"));
+  const fields: Array<[string, string | undefined]> = [
+    ["jin10.token", config.jin10.tokenRaw],
+    ["macro.fred_api_key", config.macro.fredApiKeyRaw],
+    ["macro.twelve_data_api_key", config.macro.twelveDataApiKeyRaw],
+    ["proxy.password", config.proxy.passwordRaw],
+    ["options.tradier.api_key", config.options.tradier?.apiKeyRaw],
+    ["options.marketdata.api_key", config.options.marketdata?.apiKeyRaw],
+    ...Object.entries(config.agent.providerProfiles).map(
+      ([name, profile]): [string, string | undefined] => [`agent.providers.${name}.api_key`, profile.apiKeyRaw],
+    ),
+  ];
+  const leaked = fields.filter(([, raw]) => plaintext(raw)).map(([field]) => field);
+  if (leaked.length > 0) {
+    console.warn(
+      `[config] ${sourcePath} 中以下字段是明文密钥：${leaked.join("、")}。` +
+        `通过设置界面重新保存即可自动迁移到 ${secretsFilePath()}，` +
+        "或手动将值移入该文件并把配置改为 ${VAR} 引用。",
+    );
+  }
 }
 
 export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: string[]): AppConfig {
@@ -949,6 +1060,7 @@ export function buildRuntimeConfig(fileConfig: AppConfig | null, cliSymbols?: st
       channels: parseChannelsConfig({}),
       proxy: parseProxyConfig({}),
       options: parseOptionsConfig(undefined),
+      macro: parseMacroConfig(undefined),
 
       sourcePath: null,
     } satisfies AppConfig);

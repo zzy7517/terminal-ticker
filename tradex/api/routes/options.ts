@@ -215,10 +215,17 @@ export function optionsRoutes(runtime: AppRuntime): Hono {
         strikeRangePercent: typeof body.strikeRangePercent === "number" ? body.strikeRangePercent : current.strikeRangePercent,
         riskFreeRate: current.riskFreeRate,
         dividendYield: current.dividendYield,
-        tradier: body.tradier && typeof body.tradier === "object" ? {
-          apiKey: typeof (body.tradier as any).apiKey === "string" ? (body.tradier as any).apiKey : (current.tradier?.apiKey ?? ""),
-          baseUrl: typeof (body.tradier as any).baseUrl === "string" ? (body.tradier as any).baseUrl : (current.tradier?.baseUrl ?? "https://sandbox.tradier.com/v1"),
-        } : current.tradier,
+        tradier: body.tradier && typeof body.tradier === "object" ? (() => {
+          const tr = body.tradier as any;
+          // A new key replaces both the resolved value and the raw form; the
+          // watchlist store interns literals into the secrets vault on save.
+          const hasNewKey = typeof tr.apiKey === "string" && tr.apiKey.length > 0;
+          return {
+            apiKey: hasNewKey ? tr.apiKey : (current.tradier?.apiKey ?? ""),
+            apiKeyRaw: hasNewKey ? tr.apiKey : current.tradier?.apiKeyRaw,
+            baseUrl: typeof tr.baseUrl === "string" ? tr.baseUrl : (current.tradier?.baseUrl ?? "https://sandbox.tradier.com/v1"),
+          };
+        })() : current.tradier,
         marketdata: body.marketdata && typeof body.marketdata === "object"
           ? (() => {
               const md = body.marketdata as any;

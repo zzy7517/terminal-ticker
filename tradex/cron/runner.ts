@@ -15,6 +15,7 @@ import { buildNewsTools } from "../agent/tools/news.js";
 import { buildWebTools } from "../agent/tools/web.js";
 import { buildTradingTools } from "../agent/tools/trading.js";
 import { buildOptionsTools } from "../agent/tools/options.js";
+import { buildMacroTools } from "../agent/tools/macro.js";
 import { buildBrowserTools } from "../agent/tools/browser.js";
 import { createFilesystemRegistry } from "../agent/tools/filesystem.js";
 import { mergeRegistries, type ToolRegistry } from "../agent/tools/registry.js";
@@ -83,6 +84,7 @@ export async function executeCronJob(input: {
         tradingConfig: runtime.config.trading,
         resolveSessionId: () => sessionId,
         captureSnapshot: null,
+        checkEntryGate: () => runtime.macroService.checkEntryGate(),
       }),
     );
   }
@@ -95,6 +97,11 @@ export async function executeCronJob(input: {
   // Add options/GEX tools if enabled
   if (runtime.optionsService) {
     registries.push(buildOptionsTools(runtime));
+  }
+
+  // Add macro environment tools if the macro layer is enabled
+  if (runtime.macroService.available) {
+    registries.push(buildMacroTools(runtime.macroService));
   }
 
   // Add MCP tools if available

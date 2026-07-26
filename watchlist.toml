@@ -86,14 +86,45 @@ retry_max_seconds = 300
 
 [jin10]
 enabled = true
-token = "sk-3pXjs_Qr2RnkAMoaBI2a17ZPAwS0cQv5Qb2Tcfy5IJQ"
+token = "${JIN10_TOKEN}"
 flash_enabled = true
 flash_poll_interval_seconds = 60
 calendar_enabled = true
 calendar_poll_interval_seconds = 300
 quotes_enabled = true
-quotes_poll_interval_seconds = 30
+quotes_poll_interval_seconds = 600
 quotes_codes = ["XAUUSD", "XAGUSD", "USOIL", "EURUSD", "USDJPY", "USDCNH", "N225", "NGAS", "UKOILX", "DJI", "SPX"]
+agent_analysis = false
+[macro]
+enabled = true
+fred_api_key = "76cb1968c035e8c4b181a290932f8927"
+backfill_years = 2
+fred_poll_interval_seconds = 21600   # 6h; FRED updates daily at most
+calendar_enabled = true
+calendar_poll_interval_seconds = 300
+
+# Deribit DVOL + Binance 持仓结构。两者都免费无需鉴权。
+crypto_enabled = true
+crypto_poll_interval_seconds = 300
+
+# ICE DXY + 现货金银，即 FRED 不覆盖的那几个。配了 twelve_data_api_key 走正规
+# 授权源（免费档 800/天）；留空只会回落 Yahoo 非官方端点，实测部分地区即使带
+# crumb 也会 403/429，届时这三个序列会是空的。
+# VIX、汇率、WTI、天然气都已走 FRED，不依赖本项；DXY 另有 FRED 的 DTWEXBGS
+# （series id: dxy_broad）作日频兜底。
+quotes_enabled = true
+quotes_poll_interval_seconds = 21600
+twelve_data_api_key = "336b82ad42814600b1c3de5135906bbb"
+
+# Trading silence around high-impact releases (CPI / NFP / FOMC).
+# min_impact: high | medium | low  — Jin10's 4-5 stars map to "high".
+# block_trades = false 只上报窗口、不拦截开仓；平仓永不受限。
+[macro.event_window]
+min_impact = "high"
+before_minutes = 15
+after_minutes = 15
+block_trades = true
+
 [browser]
 enabled = true
 # socket_path = "/tmp/open-browser-use/example.sock"  # optional, auto-discovers by default

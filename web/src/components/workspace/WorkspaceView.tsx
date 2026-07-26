@@ -1,6 +1,7 @@
 import {
   CalendarDays,
   Clock,
+  Globe,
   LineChart,
   Newspaper,
   WalletCards,
@@ -18,6 +19,7 @@ import { PositionsPanel } from './PositionsPanel';
 import { CronPanel } from './CronPanel';
 import { CalendarPanel } from './CalendarPanel';
 import { OptionsPanel } from './OptionsPanel';
+import { MacroPanel } from './MacroPanel';
 import { useChatStore } from '../../stores/chatStore';
 import { ChannelPanel } from '../chat/ChannelPanel';
 import { AgentTracePanel } from '../chat/AgentTracePanel';
@@ -45,6 +47,7 @@ export function WorkspaceView() {
                 : activeTab === 'news' ? <Newspaper size={17} />
                 : activeTab === 'calendar' ? <CalendarDays size={17} />
                 : activeTab === 'cron' ? <Clock size={17} />
+                : activeTab === 'macro' ? <Globe size={17} />
                 : <WalletCards size={17} />}
             </span>
             <div>
@@ -106,6 +109,7 @@ export function WorkspaceView() {
 
           {activeTab === 'positions' && <PositionsPanel />}
           {activeTab === 'options' && <OptionsPanel />}
+          {activeTab === 'macro' && <MacroPanel />}
           {activeTab === 'cron' && <CronPanel />}
         </section>
       </section>

@@ -19,6 +19,7 @@ import { McpClientManager, loadMcpConfig } from "../mcp/index.js";
 import { Jin10Service } from "../jin10/index.js";
 import { BrowserManager } from "../browser/index.js";
 import { OptionsService } from "../options/service.js";
+import { MacroService } from "../macro/service.js";
 import { applyProxyConfig } from "../runtime/proxy.js";
 import { AgentStore } from "../agent/agent_store.js";
 import { AgentContextManager } from "../agent/context-manager.js";
@@ -49,6 +50,7 @@ export class AppRuntime {
   jin10Service: Jin10Service;
   readonly browserManager: BrowserManager;
   optionsService: OptionsService | null;
+  macroService: MacroService;
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   readonly pendingAgentSnapshots = new Map<string, SessionAgentSnapshot>();
   readonly agentStore: AgentStore;
@@ -98,36 +100,15 @@ export class AppRuntime {
     // Wire MCP client manager
     if (config.mcp.enabled) {
       const mcpConfig = loadMcpConfig(config.mcp.configPath);
-      // Ensure jin10 server exists if jin10 is enabled; inject token from toml config
-      if (config.jin10.enabled && config.jin10.token) {
-        if (!mcpConfig.mcpServers.jin10) {
-          mcpConfig.mcpServers.jin10 = {
-            url: "https://mcp.jin10.com/mcp",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${config.jin10.token}`,
-            },
-          };
-        } else {
-          // Update token in existing jin10 server headers
-          const jin10Server = mcpConfig.mcpServers.jin10;
-          jin10Server.headers = {
-            ...(jin10Server.headers ?? {}),
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${config.jin10.token}`,
-          };
-        }
-      }
       const hasServers = Object.keys(mcpConfig.mcpServers).length > 0;
       this.mcpManager = hasServers ? new McpClientManager(mcpConfig) : null;
     } else {
       this.mcpManager = null;
     }
 
-    // Wire Jin10 service (uses MCP bridge)
+    // Wire Jin10 service — owns its own MCP connection, independent of [mcp]
     this.jin10Service = new Jin10Service({
       config: config.jin10,
-      mcpManager: this.mcpManager,
       newsStore: this.newsService.store,
     });
 
@@ -138,6 +119,13 @@ export class AppRuntime {
     this.optionsService = config.options.enabled
       ? new OptionsService(config.options)
       : null;
+
+    // Wire macro data layer. Takes the Jin10 service as a calendar provider but
+    // stays usable without it (FRED series are independent).
+    this.macroService = new MacroService({
+      config: config.macro,
+      jin10Service: this.jin10Service,
+    });
 
     this.cronJobStore = new CronJobStore();
     this.cronScheduler = new CronScheduler(this, this.cronJobStore);
@@ -173,6 +161,7 @@ export class AppRuntime {
     await this.controller.stop();
     await this.newsService.stop();
     await this.jin10Service.stop();
+    await this.macroService.stop();
     this.config = config;
     this._modelRuntimeSnapshot = nextModelRuntime;
     // Re-apply the outbound proxy before rebuilding subsystems so new feeds
@@ -184,7 +173,6 @@ export class AppRuntime {
     this.newsService = new NewsService({ config: config.news });
     this.jin10Service = new Jin10Service({
       config: config.jin10,
-      mcpManager: this.mcpManager,
       newsStore: this.newsService.store,
     });
     // Rebuild the optional subsystem so toggling it via the config API takes
@@ -197,11 +185,17 @@ export class AppRuntime {
     this.unreadStore.close();
     this.chatEventStore.close();
     this.optionsService = config.options.enabled ? new OptionsService(config.options) : null;
+    this.macroService.close();
+    this.macroService = new MacroService({
+      config: config.macro,
+      jin10Service: this.jin10Service,
+    });
     if (shouldRestart) {
       this.controller.start();
       await this.newsService.start();
       await this.jin10Service.start();
       this.optionsService?.start();
+      await this.macroService.start();
     }
     this.cronScheduler.reload();
   }
@@ -233,6 +227,8 @@ export class AppRuntime {
     this.mcpManager?.start();
     await this.jin10Service.start();
     this.optionsService?.start();
+    // Started after Jin10 so the calendar provider can reuse a warm connection.
+    await this.macroService.start();
   }
 
   // Gracefully stops all background tasks; called on process shutdown or before reload.
@@ -246,6 +242,8 @@ export class AppRuntime {
     await this.cronScheduler.stop();
     await this.mcpManager?.shutdown();
     await this.optionsService?.close();
+    await this.macroService.stop();
+    this.macroService.close();
   }
 
   // Drains pending controller events, fetches live exchange positions/orders,

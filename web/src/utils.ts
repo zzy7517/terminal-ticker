@@ -11,6 +11,7 @@ import {
   CRON_HASH,
   MCP_HASH,
   NEWS_HASH,
+  JIN10_HASH,
   OPTIONS_HASH,
   PROVIDERS_HASH,
   PROXY_HASH,
@@ -44,6 +45,9 @@ export function readRouteFromHash(): AppRoute {
   if (window.location.hash.startsWith(AGENT_CONTEXT_HASH)) {
     return { view: 'settings', section: 'agent-context' };
   }
+  if (window.location.hash.startsWith(JIN10_HASH)) {
+    return { view: 'settings', section: 'jin10' };
+  }
   if (window.location.hash.startsWith(NEWS_HASH)) {
     return { view: 'settings', section: 'news' };
   }
@@ -69,6 +73,8 @@ export function navigateToRoute(route: AppRoute) {
         ? AGENT_CONTEXT_HASH
         : route.section === 'news'
         ? NEWS_HASH
+        : route.section === 'jin10'
+        ? JIN10_HASH
         : route.section === 'watchlist'
           ? WATCHLIST_HASH
           : route.section === 'mcp'

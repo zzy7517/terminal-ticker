@@ -1,21 +1,21 @@
 /**
  * Jin10 Service.
  *
- * Manages flash/calendar/quotes polling via MCP bridge.
- * Uses the existing McpClientManager to call jin10 tools.
+ * Manages flash/calendar/quotes polling. Jin10 is configured as a data source
+ * (`[jin10]` in the watchlist TOML) and owns its own MCP connection via
+ * {@link Jin10Client}, independent of `.mcp.json` and the `[mcp]` toggle.
  */
-import type { McpClientManager } from "../mcp/index.js";
 import type { NewsStore } from "../news/store.js";
+import type { McpResourceReadResult } from "../mcp/types.js";
 import type { Jin10CalendarEvent, Jin10Config, Jin10Quote, Jin10Status } from "./types.js";
+import { Jin10Client } from "./client.js";
 import { parseFlashResponse, flashToNewsItems } from "./flash.js";
 import { parseCalendarResponse } from "./calendar.js";
 import { parseQuoteResponse } from "./quotes.js";
 
-const JIN10_SERVER = "jin10";
-
 export class Jin10Service {
   readonly config: Jin10Config;
-  private mcpManager: McpClientManager | null;
+  private client: Jin10Client | null;
   private newsStore: NewsStore | null;
 
   // State
@@ -37,42 +37,35 @@ export class Jin10Service {
 
   constructor(input: {
     config: Jin10Config;
-    mcpManager: McpClientManager | null;
     newsStore: NewsStore | null;
   }) {
     this.config = input.config;
-    this.mcpManager = input.mcpManager;
     this.newsStore = input.newsStore;
+    this.client = input.config.enabled && input.config.token
+      ? new Jin10Client({ url: input.config.url, token: input.config.token })
+      : null;
   }
 
   /**
-   * Check if jin10 server is configured in MCP.
+   * Whether Jin10 is usable — enabled with a token. Depends only on the
+   * `[jin10]` config block, not on `.mcp.json` or the global `[mcp]` toggle.
    */
   get available(): boolean {
-    return !!this.mcpManager && this.mcpManager.getServerNames().includes(JIN10_SERVER);
+    return this.client !== null;
   }
 
   /**
-   * Check if connected to the jin10 MCP server.
+   * Whether a live connection to the Jin10 MCP server is currently held.
    */
   get connected(): boolean {
-    if (!this.mcpManager) return false;
-    return this.mcpManager.getStatus(JIN10_SERVER) === "connected";
+    return this.client?.connected ?? false;
   }
 
   /**
    * Start all enabled pollers.
    */
   async start(): Promise<void> {
-    if (!this.config.enabled || !this.available) return;
-
-    // Try to connect first
-    try {
-      await this.mcpManager!.connect(JIN10_SERVER);
-    } catch (error) {
-      console.warn("[jin10] Failed to connect:", error instanceof Error ? error.message : error);
-      return;
-    }
+    if (!this.available) return;
 
     if (this.config.flashEnabled) {
       void this.fetchFlash();
@@ -106,6 +99,15 @@ export class Jin10Service {
     if (this.flashTimer) { clearInterval(this.flashTimer); this.flashTimer = null; }
     if (this.calendarTimer) { clearInterval(this.calendarTimer); this.calendarTimer = null; }
     if (this.quotesTimer) { clearInterval(this.quotesTimer); this.quotesTimer = null; }
+    await this.client?.close();
+  }
+
+  /**
+   * Read a Jin10 MCP resource (e.g. `quote://codes`).
+   */
+  async readResource(uri: string): Promise<McpResourceReadResult> {
+    if (!this.client) throw new Error("Jin10 is not configured");
+    return this.client.readResource(uri);
   }
 
   /**
@@ -242,7 +244,7 @@ export class Jin10Service {
   }
 
   private async callTool(name: string, args: Record<string, unknown>): Promise<string> {
-    if (!this.mcpManager) throw new Error("MCP manager not available");
-    return this.mcpManager.callTool(JIN10_SERVER, name, args);
+    if (!this.client) throw new Error("Jin10 is not configured");
+    return this.client.callTool(name, args);
   }
 }

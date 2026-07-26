@@ -16,13 +16,11 @@ const PROJECT_CONFIG_NAME = ".mcp.json";
  * NOTE: Only free, unmetered servers belong here. Rate-limited / paid servers
  * must be opt-in via `.mcp.json`, otherwise eager connection on every agent
  * turn / cron run spams the logs once the daily limit is hit.
+ *
+ * Jin10 used to live here; it is now a first-class data source that owns its
+ * own connection (`tradex/jin10/client.ts`), configured under `[jin10]`.
  */
-const BUILTIN_SERVERS: Record<string, McpServerEntry> = {
-  jin10: {
-    url: "https://mcp.jin10.com/mcp",
-    headers: { "Content-Type": "application/json" },
-  },
-};
+const BUILTIN_SERVERS: Record<string, McpServerEntry> = {};
 
 export function loadMcpConfig(configPath?: string | null): McpConfig {
   const paths = configPath

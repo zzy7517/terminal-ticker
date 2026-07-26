@@ -12,6 +12,14 @@ export function buildTradingTools(input: {
   tradingConfig?: TradingConfig | null;
   resolveSessionId?: () => string | null;
   captureSnapshot?: ((instrumentKey: string) => number | null) | null;
+  /**
+   * Macro release-silence gate, consulted before opening a position. Injected
+   * as a callback rather than taking a MacroService so this module stays
+   * independent of the macro layer. Absent means no gating.
+   *
+   * Only entries are gated; exits stay open (see MACRO_DATA_DESIGN.md 决策 4).
+   */
+  checkEntryGate?: (() => { blocked: boolean; reason: string | null }) | null;
 }): ToolRegistry {
   const registry = new ToolRegistry();
   const router = input.exchangeRouter;
@@ -65,7 +73,8 @@ export function buildTradingTools(input: {
       name: "open_exchange_trade",
       description:
         "在交易所提交开仓订单并记录到本地交易表。开仓必须同时设置 take_profit_price 和 stop_loss_price。" +
-        "direction 为 long 或 short。reasoning 记录开仓理由。",
+        "direction 为 long 或 short。reasoning 记录开仓理由。" +
+        "若当前处于高影响宏观数据发布的静默窗口，本工具会直接拒绝开仓；可先用 get_macro_event_window 查询。",
       parameters: {
         type: "object",
         properties: {
@@ -82,6 +91,10 @@ export function buildTradingTools(input: {
       },
       execute: async (args) => {
         if (!router) return jsonOutput({ error: "exchange router unavailable" });
+        const gate = input.checkEntryGate?.();
+        if (gate?.blocked) {
+          return jsonOutput({ error: gate.reason ?? "开仓被宏观事件窗口拦截", blockedBy: "macro_event_window" });
+        }
         const instrumentKey = String(args.instrument_key);
         const directionStr = String(args.direction || "long").toLowerCase();
         if (directionStr !== "long" && directionStr !== "short") return jsonOutput({ error: `invalid direction: ${directionStr}` });

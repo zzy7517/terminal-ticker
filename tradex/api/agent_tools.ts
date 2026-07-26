@@ -3,6 +3,7 @@ import type { AgentConfig } from "../config/index.js";
 import { buildBrowserTools } from "../agent/tools/browser.js";
 import { createFilesystemRegistry } from "../agent/tools/filesystem.js";
 import { buildJin10Tools } from "../agent/tools/jin10.js";
+import { buildMacroTools } from "../agent/tools/macro.js";
 import { buildMarketTools } from "../agent/tools/market.js";
 import { buildNewsTools } from "../agent/tools/news.js";
 import { buildOptionsTools } from "../agent/tools/options.js";
@@ -47,11 +48,13 @@ export async function buildTradexToolRegistry(runtime: AppRuntime, options: Trad
       exchangeRouter: runtime.exchangeRouter,
       tradingConfig: runtime.config.trading,
       resolveSessionId: () => options.sessionId,
+      checkEntryGate: () => runtime.macroService.checkEntryGate(),
     }),
     buildJin10Tools(runtime.jin10Service),
     buildWebTools(),
     ...(runtime.config.browser.enabled ? [buildBrowserTools(runtime.browserManager)] : []),
     ...(runtime.optionsService ? [buildOptionsTools(runtime)] : []),
+    ...(runtime.macroService.available ? [buildMacroTools(runtime.macroService)] : []),
     ...(options.includeFilesystem ? [createFilesystemRegistry()] : []),
     ...(mcpRegistry ? [mcpRegistry] : []),
     ...(messageRegistry ? [messageRegistry] : []),

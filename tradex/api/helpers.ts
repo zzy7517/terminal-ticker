@@ -346,7 +346,10 @@ export function mergeProxyConfig(config: ProxyConfig, body: Record<string, unkno
     host: typeof body.host === "string" ? body.host.trim() : config.host,
     port,
     username: typeof body.username === "string" ? body.username : config.username,
+    // A new password replaces both the resolved value and the raw form; the
+    // watchlist store interns literals into the secrets vault on save.
     password: body.clearPassword === true ? "" : typeof body.password === "string" && body.password ? body.password : config.password,
+    passwordRaw: body.clearPassword === true ? "" : typeof body.password === "string" && body.password ? body.password : config.passwordRaw,
   };
 }
 
