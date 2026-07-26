@@ -26,7 +26,7 @@ function loadTheme(): Theme {
 }
 
 function applyTheme(theme: Theme): void {
-  document.documentElement.dataset.theme = theme;
+  if (typeof document !== 'undefined') document.documentElement.dataset.theme = theme;
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {}

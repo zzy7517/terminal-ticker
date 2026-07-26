@@ -24,6 +24,14 @@ _Avoid_: System Agent, hard-coded Agent
 The unified product shell that presents Direct Messages and Channels in one workspace. Chat is a UI entry, not a persisted domain entity and not a message store.
 _Avoid_: Session, Direct Message, Channel
 
+**Origin**:
+The identity-free conversation entry rendered alongside Chat navigation. It sends user input directly to a new or existing Origin Session without resolving an Agent, Direct Message, Channel, or Chat Target. A New Origin remains browser draft state until its first message is sent.
+_Avoid_: Standalone Agent, temporary Agent, Direct Message
+
+**Origin Session**:
+A user-visible Runtime conversation created from an Origin on first send. It is not bound to an Agent or Agent Context; it owns its Runtime selection, transcript, and Tradex-managed working directory. Its messages are Runtime transcript data, not Shared Messages, and Tradex-owned state is deleted permanently rather than archived. Cursor's current CLI cannot delete its native chat, so deleting a Cursor Origin reports that retained external state explicitly.
+_Avoid_: Agent Session, Direct Message, Channel, Chat Target
+
 **Direct Message Entry**:
 The single stable navigation entry for one Agent. Its identity is the Agent ID; selecting the Agent opens that Agent's unique Human–Agent Direct Message. There is no New Chat action and no Chat history selector.
 _Avoid_: Session, Chat ID
@@ -37,8 +45,12 @@ A shared Human/Agent conversation whose messages are authoritative SQLite facts.
 _Avoid_: Session, group Session
 
 **Chat Target**:
-A stable reference used only by features that can point at either a Direct Message or a Channel: `{ kind: "direct-message", directMessageId }` or `{ kind: "channel", channelId }`. Channel-specific commands continue to use `channelId`; Chat Target is reserved for generic event streams and future Task references. The retired `direct-chat` shape is legacy only.
+A stable reference used only by features that can point at either a Direct Message or a Channel: `{ kind: "direct-message", directMessageId }` or `{ kind: "channel", channelId }`. Channel-specific commands continue to use `channelId`; Chat Target is reserved for generic event streams and future Task references. Origin may share the Human UI shell, but an Origin Session is intentionally not a Chat Target. The retired `direct-chat` shape is legacy only.
 _Avoid_: Channel replacement, generic Session, chatId
+
+**Shared Message Fabric**:
+The authoritative SQLite-backed message, reaction, unread, and event substrate shared by Direct Messages and Channels. Runtime-private Agent transcripts and Origin Session transcripts are outside this fabric.
+_Avoid_: Runtime transcript, Origin store, generic event bus
 
 **Message Reaction**:
 An emoji response attached to one Shared Message (Channel or Direct Message). In the Human UI, hovering a message shows a selection frame and a smile control; clicking the smile opens the quick set `👍 ❤️ 🎉 👀 🔥 😂 ✅`. Existing reactions remain visible as chips on the message. Agents use Message Tools (`message_add_reaction` / `message_remove_reaction`) with any emoji string. Reactions are Shared Message metadata, not inbox wake content.
@@ -57,7 +69,7 @@ A Runtime-owned conversation identity used only to resume that Runtime's model c
 _Avoid_: Session, run
 
 **Runtime**:
-The execution backend that runs an Agent Session. Tradex currently supports the embedded Pi SDK Runtime and the local Claude Code Runtime; future external coding-agent Runtimes use the same product boundary.
+The execution backend that runs a Session or Origin Session. Tradex currently supports the embedded Pi SDK Runtime and the local Claude Code Runtime; future external coding-agent Runtimes use the same product boundary.
 _Avoid_: Provider, model
 
 **Tool**:

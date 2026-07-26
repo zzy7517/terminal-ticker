@@ -34,7 +34,7 @@ interface ChatState {
   error: string | null;
   initChat: () => () => void;
   selectDirectMessage: (directMessageId: string) => void;
-  selectOrigin: (sessionId: string) => void;
+  selectOrigin: () => void;
   leaveOrigin: () => void;
   selectChannel: (channelId: string) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
@@ -182,8 +182,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  selectOrigin: (sessionId) => set({
-    activeTarget: { kind: 'origin', sessionId },
+  selectOrigin: () => set({
+    activeTarget: { kind: 'origin' },
     agentProfileOpen: false,
   }),
 

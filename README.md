@@ -12,6 +12,7 @@ tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bit
 - **行情工作区**：前端展示 watchlist、实时价格摘要、Agent、新闻、经济日历和持仓面板。
 - **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Hyperliquid 主网标的，也可以直接编辑 `watchlist.toml`。金十数据标的可在 mcp配置里直接添加。
 - **Agent 分析**：支持 Codex Responses provider、Anthropic Messages provider，以及 OpenAI Chat Completions provider（可指向任意 OpenAI 兼容端点）。Agent 可以读取行情、裸 K / 带指标 K 线、路透社新闻、金十快讯、期权 GEX / 做市商定位、本地记忆和交易记录。Pi / Claude / Cursor 等 Runtime 通过同一条 session-scoped `tradex` CLI 调用业务工具；也支持 skills 与外部数据源集成。
+- **Origin 会话**：无需创建固定 Agent 身份，消息直接发送给 Pi、Claude Code 或 Cursor Runtime。New Origin 在第一次发送消息前只保留为浏览器草稿；首次发送时才创建持久化会话及随机工作目录，并固定本次会话使用的 provider、model 和 reasoning 配置。
 - **外部 MCP 数据源**：通过 `.mcp.json` 配置上游 MCP server（如 jin10）。Tradex 作为客户端连接后，把可用工具并入业务 `ToolRegistry`，再经 `tradex` CLI 暴露给 Agent。前端 Settings 可视化管理这些外部连接。Tradex 自身不再作为 Agent 侧 MCP server。
 - **会话持久化**：Agent session 会写成本地 JSONL，并用 SQLite 建索引；前端可以恢复、重置或删除历史会话。
 - **交易执行**：配置层允许时，Agent 可以向 Hyperliquid 主网或 Bitget 提交订单；关闭时 Agent 只会给出开单建议。
@@ -48,12 +49,12 @@ http://127.0.0.1:5173
 
 ## Web UI
 
-界面采用 Bloomberg Terminal 风格：纯黑背景、全等宽字体（JetBrains Mono）、零圆角、荧光橙 accent、1px 网格边框、高信息密度。没有 light/dark 切换——始终是终端模式。
+界面采用高信息密度的工作台布局，并支持 light / dark 主题。排版以 Geist 为主、Geist Mono 用于行情和代码类数据；颜色、层级、圆角、控件和阴影统一由设计 token 管理。整体保留交易工具的克制与扫描效率，同时使用清晰的表面层级、适度圆角和轻量阴影；Origin 复用同一套视觉语言，而不是独立的零圆角终端皮肤。
 
 主界面分几块：
 
 - **Watchlist**：左侧标的列表、分组、拖拽排序、价格和涨跌幅。支持 Jin10 实时报价标的。
-- **Agent**：创建、运行、切换和恢复历史 session。支持多模型切换和 effort 调节。
+- **Chat**：使用固定 Agent 身份的 Direct Message、多人 Channel，以及不绑定身份的 Origin Session。Origin 支持创建、切换和永久删除 Tradex 持有的会话数据，并可选择 Runtime、provider、model 和 reasoning effort；Cursor CLI 暂不提供原生 chat 删除能力，删除响应会明确标记这部分外部状态仍被保留。
 - **Positions**：查看实时持仓、交易记录、fills、history、lessons，并撤销交易所挂单。
 - **News**：Reuters 新闻、Jin10 快讯。
 - **Calendar**：经济日历（来自 Jin10），按时间排列重要经济事件和数据发布。
@@ -68,6 +69,7 @@ http://127.0.0.1:5173
 - `watchlist.toml`：watchlist、display、agent、news、cache、trading、jin10、options、browser 配置。
 - `.mcp.json`：外部上游 MCP server 配置（jin10 等数据源）；不是 Tradex 对外暴露的 Agent MCP endpoint。
 - `~/.cache/tradex/agent_sessions/`：Agent session JSONL 消息历史。
+- `~/.cache/tradex/origin_sessions/`：Origin Session 的元数据、各 Runtime 会话记录和 Tradex 管理的随机工作目录。
 - `~/.cache/tradex/session_index.sqlite3`：Agent session 索引。
 - `~/.cache/tradex/cron.sqlite3`：定时任务配置。
 - `~/.cache/tradex/cron_sessions/`：定时任务运行记录。

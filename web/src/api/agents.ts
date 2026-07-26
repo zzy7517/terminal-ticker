@@ -11,6 +11,7 @@ import type {
   AgentSessionResponse,
   AgentStreamEvent,
   AgentStreamPayload,
+  ImageAttachment,
   RuntimeSessionStreamEvent,
   RuntimeSessionStreamPayload,
   ClaudeCodeModelsResponse,
@@ -18,6 +19,7 @@ import type {
   MarketState,
   ProviderProfileUpdate,
 } from '../types';
+export type { ImageAttachment } from '../types';
 import { responseError } from './http';
 
 export async function fetchAgents(): Promise<{ agents: AgentDefinition[] }> {
@@ -111,11 +113,6 @@ export async function deleteAgentSessionById(sessionId: string): Promise<AgentSe
   return response.json();
 }
 
-export interface ImageAttachment {
-  data: string;      // base64
-  mimeType: string;  // image/png, image/jpeg, etc.
-}
-
 // 标识未收到终止帧的网络或 SSE 传输中断。
 export class AgentStreamDisconnectError extends Error {
   // 构造可与后端业务错误区分的 Agent 流断线错误。
@@ -165,6 +162,15 @@ export async function streamRuntimeSessionMessage<SessionResponse, HistoryRespon
   if (!response.ok) {
     throw await responseError(response, 'agent stream failed');
   }
+  return consumeRuntimeSessionStream(response, key, onEvent);
+}
+
+/** Consumes an accepted Runtime Session SSE response using its canonical Session id. */
+export async function consumeRuntimeSessionStream<SessionResponse, HistoryResponse, State = undefined>(
+  response: Response,
+  key: string,
+  onEvent: (event: RuntimeSessionStreamEvent<SessionResponse, HistoryResponse, State>) => void,
+): Promise<void> {
   if (!response.body) {
     throw new Error('agent stream failed: response body is empty');
   }

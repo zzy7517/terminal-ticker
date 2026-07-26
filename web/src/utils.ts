@@ -23,6 +23,7 @@ import {
 } from './api';
 
 export function readRouteFromHash(): AppRoute {
+  if (typeof window === 'undefined') return { view: 'workspace' };
   if (window.location.hash.startsWith(AGENTS_HASH)) return { view: 'settings', section: 'agents' };
   if (window.location.hash.startsWith(APPEARANCE_HASH)) return { view: 'settings', section: 'appearance' };
   if (window.location.hash.startsWith(PROXY_HASH)) {

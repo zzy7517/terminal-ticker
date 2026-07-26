@@ -22,7 +22,7 @@ import { buildMcpToolRegistry } from "../mcp/index.js";
 import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { jobDir } from "./store.js";
 import type { AppRuntime } from "../api/runtime.js";
-import { tradexCliUrlFromOrigin } from "../api/claude-session-stream.js";
+import { tradexCliUrl } from "../api/external-cli-turn.js";
 
 const DEFAULT_CRON_MAX_ITERATIONS = 10;
 
@@ -128,7 +128,7 @@ export async function executeCronJob(input: {
       systemPrompt,
       tools,
       tradexSessionId: sessionId,
-      cliUrl: tradexCliUrlFromOrigin(runtime.listenOrigin),
+      cliUrl: tradexCliUrl(runtime.listenOrigin),
       grants: runtime.cliRunGrants,
       maxTurns: maxIterations,
       sessionManager: cronMgr,

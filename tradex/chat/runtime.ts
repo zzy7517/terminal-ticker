@@ -14,7 +14,7 @@ import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claud
 import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
 import { CursorCliRuntime, exposeCursorReadTools } from "../agent/runtime/cursor/runtime.js";
 import { detectCursorCli } from "../agent/runtime/cursor/discovery.js";
-import { tradexCliUrlFromOrigin } from "../api/claude-session-stream.js";
+import { tradexCliUrl } from "../api/external-cli-turn.js";
 import {
   CLAUDE_CLI_INSTRUCTIONS,
   CURSOR_CLI_INSTRUCTIONS,
@@ -129,7 +129,7 @@ async function runActivationOnce(
       ].filter(Boolean).join("\n\n");
       const run = await new ClaudeCodeRuntime({
         executablePath: availability.executablePath,
-        cliUrl: tradexCliUrlFromOrigin(runtime.listenOrigin),
+        cliUrl: tradexCliUrl(runtime.listenOrigin),
         grants: runtime.cliRunGrants,
       }).start({
         tradexSessionId: sessionId,
@@ -170,7 +170,7 @@ async function runActivationOnce(
       ].filter(Boolean).join("\n\n");
       const run = await new CursorCliRuntime({
         executablePath: availability.executablePath,
-        cliUrl: tradexCliUrlFromOrigin(runtime.listenOrigin),
+        cliUrl: tradexCliUrl(runtime.listenOrigin),
         grants: runtime.cliRunGrants,
       }).start({
         tradexSessionId: sessionId,
@@ -228,7 +228,7 @@ async function runActivationOnce(
       systemPrompt,
       tools,
       tradexSessionId: sessionId,
-      cliUrl: tradexCliUrlFromOrigin(runtime.listenOrigin),
+      cliUrl: tradexCliUrl(runtime.listenOrigin),
       grants: runtime.cliRunGrants,
       sessionManager: mgr,
       compaction: true,

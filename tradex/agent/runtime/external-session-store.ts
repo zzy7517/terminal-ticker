@@ -2,7 +2,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import {
+  appendRegularFileSync,
+  readRegularFileSync,
+  replaceRegularFileSync,
+} from "../../fs/regular-file.js";
 import type { ExternalAgentRuntimeId, RuntimeCapabilities } from "./types.js";
+
+const MAX_METADATA_BYTES = 1024 * 1024;
+const MAX_TRANSCRIPT_BYTES = 256 * 1024 * 1024;
+const MAX_PROJECTED_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_PROJECTED_ATTACHMENT_RESPONSE_BYTES = 32 * 1024 * 1024;
 
 export interface ExternalSessionSnapshot<Runtime extends ExternalAgentRuntimeId> {
   runtime: Runtime;
@@ -83,18 +93,34 @@ export class ExternalSessionStore<
       snapshot: input.snapshot,
       lastRun: null,
     };
-    fs.mkdirSync(this.sessionDir(id), { recursive: true, mode: 0o700 });
-    for (const directory of ["attachments", ...this.extraDirectories]) {
-      fs.mkdirSync(path.join(this.sessionDir(id), directory), { recursive: true, mode: 0o700 });
+    let sessionCreated = false;
+    try {
+      const sessionDirectory = this.createSessionDirectory(id);
+      sessionCreated = true;
+      for (const directory of new Set(["attachments", ...this.extraDirectories])) {
+        if (!directory || path.basename(directory) !== directory) {
+          throw new Error(`invalid ${this.runtimeLabel} Session directory`);
+        }
+        fs.mkdirSync(path.join(sessionDirectory, directory), { mode: 0o700 });
+      }
+      this.writeMetadata(metadata);
+      return metadata;
+    } catch (error) {
+      if (sessionCreated) {
+        try { fs.rmSync(this.sessionDir(id), { recursive: true, force: true }); } catch { /* fail closed */ }
+      }
+      throw error;
     }
-    this.writeMetadata(metadata);
-    return metadata;
   }
 
   getMetadata(id: string): ExternalSessionMetadata<Snapshot> | null {
-    const file = path.join(this.sessionDir(id), "metadata.json");
-    if (!fs.existsSync(file)) return null;
-    return this.validateMetadata(JSON.parse(fs.readFileSync(file, "utf8")) as unknown);
+    try {
+      const file = path.join(this.sessionDir(id), "metadata.json");
+      const value = JSON.parse(readRegularFileSync(file, MAX_METADATA_BYTES).toString("utf8")) as unknown;
+      return this.validateMetadata(value, id);
+    } catch {
+      return null;
+    }
   }
 
   setNativeSessionId(id: string, nativeSessionId: string): void {
@@ -141,10 +167,10 @@ export class ExternalSessionStore<
       metadata: input.metadata ?? null,
       error: input.error ?? null,
     };
-    fs.appendFileSync(path.join(this.sessionDir(id), "session.jsonl"), `${JSON.stringify(message)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
+    appendRegularFileSync(
+      path.join(this.sessionDir(id), "session.jsonl"),
+      `${JSON.stringify(message)}\n`,
+    );
     metadata.updatedAt = message.createdAt;
     if (input.role === "user" && metadata.title === "New Agent Session") {
       metadata.title = input.content.slice(0, 60) || metadata.title;
@@ -154,14 +180,29 @@ export class ExternalSessionStore<
   }
 
   messages(id: string): ExternalProjectedMessage[] {
-    const file = path.join(this.sessionDir(id), "session.jsonl");
-    if (!fs.existsSync(file)) return [];
-    return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).flatMap((line) => {
+    let content: string;
+    try {
+      content = readRegularFileSync(
+        path.join(this.sessionDir(id), "session.jsonl"),
+        MAX_TRANSCRIPT_BYTES,
+      ).toString("utf8");
+    } catch {
+      return [];
+    }
+    return content.split("\n").filter(Boolean).flatMap((line) => {
       try { return [JSON.parse(line) as ExternalProjectedMessage]; } catch { return []; }
     });
   }
 
-  payload(id: string): {
+  /** Writes one attachment only inside this Session's verified attachment directory. */
+  writeAttachment(id: string, extension: string, data: Buffer): string {
+    if (!/^[a-z0-9]{1,10}$/i.test(extension)) throw new Error("invalid attachment extension");
+    const file = path.join(this.attachmentsDirectory(id), `${crypto.randomUUID()}.${extension}`);
+    fs.writeFileSync(file, data, { flag: "wx", mode: 0o600 });
+    return file;
+  }
+
+  payload(id: string, options: { hydrateAttachments?: boolean } = {}): {
     session: Record<string, unknown>;
     messages: ExternalProjectedMessage[];
     contextUsage: null;
@@ -169,7 +210,12 @@ export class ExternalSessionStore<
   } | null {
     const metadata = this.getMetadata(id);
     if (!metadata) return null;
-    const messages = this.messages(id);
+    const messages = options.hydrateAttachments === false
+      ? this.messages(id)
+      : (() => {
+          const budget = { remainingBytes: MAX_PROJECTED_ATTACHMENT_RESPONSE_BYTES };
+          return this.messages(id).map((message) => this.hydrateAttachmentData(id, message, budget));
+        })();
     return {
       session: {
         id,
@@ -202,7 +248,7 @@ export class ExternalSessionStore<
     if (!fs.existsSync(this.root)) return [];
     return fs.readdirSync(this.root).flatMap((id) => {
       try {
-        const payload = this.payload(id);
+        const payload = this.payload(id, { hydrateAttachments: false });
         if (!payload) return [];
         const first = payload.messages.find((message) => message.role === "user");
         return [{
@@ -231,10 +277,34 @@ export class ExternalSessionStore<
   }
 
   sessionDir(id: string): string {
+    const target = this.sessionPath(id);
+    if (!isRealChildDirectory(this.root, target)) {
+      throw new Error(`invalid ${this.runtimeLabel} Session directory`);
+    }
+    return target;
+  }
+
+  private sessionPath(id: string): string {
     this.assertSessionId(id);
     const target = path.resolve(this.root, id);
     if (path.dirname(target) !== this.root) throw new Error(`invalid ${this.runtimeLabel} Session path`);
     return target;
+  }
+
+  private createSessionDirectory(id: string): string {
+    fs.mkdirSync(this.root, { recursive: true, mode: 0o700 });
+    if (!isRealDirectory(this.root)) throw new Error(`invalid ${this.runtimeLabel} Session root`);
+    fs.mkdirSync(this.sessionPath(id), { mode: 0o700 });
+    return this.sessionDir(id);
+  }
+
+  private attachmentsDirectory(id: string): string {
+    const sessionDirectory = this.sessionDir(id);
+    const attachments = path.join(sessionDirectory, "attachments");
+    if (!isRealChildDirectory(sessionDirectory, attachments)) {
+      throw new Error(`invalid ${this.runtimeLabel} attachment directory`);
+    }
+    return attachments;
   }
 
   private requireMetadata(id: string): ExternalSessionMetadata<Snapshot> {
@@ -245,9 +315,64 @@ export class ExternalSessionStore<
 
   private writeMetadata(metadata: ExternalSessionMetadata<Snapshot>): void {
     const file = path.join(this.sessionDir(metadata.id), "metadata.json");
-    const temp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(temp, `${JSON.stringify(metadata, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temp, file);
+    replaceRegularFileSync(file, `${JSON.stringify(metadata, null, 2)}\n`);
+  }
+
+  /** Rehydrates UI image data from this Session's own non-symlink attachment files. */
+  private hydrateAttachmentData(
+    id: string,
+    message: ExternalProjectedMessage,
+    budget: { remainingBytes: number },
+  ): ExternalProjectedMessage {
+    const images = message.metadata?.images;
+    if (!Array.isArray(images)) return message;
+    let changed = false;
+    const hydrated = images.map((image) => {
+      if (!image || typeof image !== "object" || Array.isArray(image)) return image;
+      const record = image as Record<string, unknown>;
+      if (typeof record.data === "string" || typeof record.filename !== "string") return image;
+      const result = this.readAttachment(id, record.filename, budget.remainingBytes);
+      if (result === null) return image;
+      changed = true;
+      if (result.kind === "omitted") {
+        return {
+          ...record,
+          dataOmitted: true,
+          dataOmittedReason: "response_attachment_budget_exceeded",
+        };
+      }
+      budget.remainingBytes -= result.bytes;
+      return { ...record, data: result.data };
+    });
+    return changed
+      ? { ...message, metadata: { ...message.metadata, images: hydrated } }
+      : message;
+  }
+
+  private readAttachment(
+    id: string,
+    filename: string,
+    remainingBytes: number,
+  ): { kind: "hydrated"; data: string; bytes: number } | { kind: "omitted" } | null {
+    if (!filename || path.basename(filename) !== filename) return null;
+    let descriptor: number | null = null;
+    try {
+      const attachmentsRoot = this.attachmentsDirectory(id);
+      const file = path.resolve(attachmentsRoot, filename);
+      if (path.dirname(file) !== attachmentsRoot) return null;
+      descriptor = fs.openSync(
+        file,
+        fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
+      );
+      const stat = fs.fstatSync(descriptor);
+      if (!stat.isFile() || stat.size > MAX_PROJECTED_ATTACHMENT_BYTES) return null;
+      if (stat.size > remainingBytes) return { kind: "omitted" };
+      return { kind: "hydrated", data: fs.readFileSync(descriptor).toString("base64"), bytes: stat.size };
+    } catch {
+      return null;
+    } finally {
+      if (descriptor !== null) fs.closeSync(descriptor);
+    }
   }
 
   private assertSessionId(id: string): void {
@@ -256,11 +381,11 @@ export class ExternalSessionStore<
     }
   }
 
-  private validateMetadata(value: unknown): ExternalSessionMetadata<Snapshot> {
+  private validateMetadata(value: unknown, expectedId: string): ExternalSessionMetadata<Snapshot> {
     if (!value || typeof value !== "object") throw new Error(`invalid ${this.runtimeLabel} Session metadata`);
     const metadata = value as ExternalSessionMetadata<Snapshot>;
     this.assertSessionId(metadata.id);
-    if (metadata.version !== 1 || metadata.snapshot?.runtime !== this.runtime) {
+    if (metadata.id !== expectedId || metadata.version !== 1 || metadata.snapshot?.runtime !== this.runtime) {
       throw new Error(`unsupported ${this.runtimeLabel} Session metadata`);
     }
     return { ...metadata, lastRun: metadata.lastRun ?? null };
@@ -269,5 +394,24 @@ export class ExternalSessionStore<
 
 export type ExternalSessionStorePort<Runtime extends ExternalAgentRuntimeId> = Pick<
   ExternalSessionStore<Runtime, ExternalSessionSnapshot<Runtime>>,
-  "getMetadata" | "sessionDir" | "beginRun" | "endRun" | "appendMessage" | "setNativeSessionId"
+  "getMetadata" | "sessionDir" | "beginRun" | "endRun" | "appendMessage" | "setNativeSessionId" | "writeAttachment"
 >;
+
+function isRealDirectory(directory: string): boolean {
+  try {
+    const stat = fs.lstatSync(directory);
+    return stat.isDirectory() && !stat.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function isRealChildDirectory(parent: string, candidate: string): boolean {
+  if (path.dirname(path.resolve(candidate)) !== path.resolve(parent)
+    || !isRealDirectory(parent) || !isRealDirectory(candidate)) return false;
+  try {
+    return path.dirname(fs.realpathSync(candidate)) === fs.realpathSync(parent);
+  } catch {
+    return false;
+  }
+}

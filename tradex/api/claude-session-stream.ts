@@ -1,17 +1,17 @@
 /** 编排 Claude Session 消息、Runtime 事件、持久化投影和 SSE 输出。 */
-import crypto from "node:crypto";
-import path from "node:path";
-import { writeFile } from "node:fs/promises";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { CLAUDE_CLI_INSTRUCTIONS, currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
 import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claude-code/runtime.js";
 import type { ExternalSessionStorePort } from "../agent/runtime/external-session-store.js";
-import type { RuntimeEvent } from "../agent/runtime/types.js";
 import { buildTradexToolRegistry } from "./agent_tools.js";
-import { sessionHistory, sessionResponse } from "./helpers.js";
+import {
+  createExternalCliTurn,
+  tradexCliUrl,
+} from "./external-cli-turn.js";
+import { validateImageInput } from "./image-input.js";
 import type { AppRuntime } from "./runtime.js";
-import { sendSessionUpdate, streamSessionRun, type ProjectSessionUpdate } from "./session-stream.js";
+import { SessionRunError, streamSessionRun, type ProjectSessionUpdate } from "./session-stream.js";
 
 export interface ClaudeSessionStreamInput<Session, History> {
   runtime: AppRuntime;
@@ -22,216 +22,83 @@ export interface ClaudeSessionStreamInput<Session, History> {
   sessionStore?: ExternalSessionStorePort<"claude-code">;
   workspace?: string;
   baseSystemPrompt?: string;
+  appendSystemPrompt?: string;
+  preserveNativeSystemPrompt?: boolean;
+  persistFailedTurn?: boolean;
   projectSessionUpdate?: ProjectSessionUpdate<Session, History>;
-}
-
-interface ToolCallProjection {
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
-}
-
-interface UsageProjection {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
 }
 
 /** 校验 Session 后启动 Claude，并把运行事件映射为现有 SSE 协议。 */
 export async function streamClaudeSession<Session = Record<string, unknown>, History = Record<string, unknown>>(
   input: ClaudeSessionStreamInput<Session, History>,
 ): Promise<Response> {
-  const { runtime, sessionId, requestImages } = input;
+  const { runtime, sessionId } = input;
   const sessionStore = input.sessionStore ?? runtime.claudeSessions;
   const metadata = sessionStore.getMetadata(sessionId);
   if (!metadata) return Response.json({ detail: "agent session not found" }, { status: 404 });
-  let prompt = input.message;
-
-  const assistantClientId = `assistant:${crypto.randomUUID()}`;
-  let assistantStarted = false;
-  let assistantText = "";
-  let runError: string | null = null;
-  let runErrorCode: string | null = null;
-  let assistantPersisted = false;
-  let model = metadata.snapshot.model;
-  const usage: UsageProjection = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  const toolCalls = new Map<string, ToolCallProjection>();
+  const turn = createExternalCliTurn({
+    runtime,
+    sessionId,
+    message: input.message,
+    requestImages: input.requestImages,
+    sessionStore,
+    workspace: input.workspace,
+    model: metadata.snapshot.model,
+    usage: "reported",
+    persistFailedTurn: input.persistFailedTurn,
+    projectSessionUpdate: input.projectSessionUpdate,
+    errorCode: (error) => error instanceof SessionRunError
+      ? error.code
+      : error instanceof ClaudeSessionStreamError ? error.code : null,
+  });
 
   return streamSessionRun({
     runtime,
     sessionId,
     // 准备附件、Claude CLI、Tool 注册表和本轮 Runtime 句柄。
-    async prepare() {
-      const attachmentPaths = await saveClaudeAttachments(sessionStore, sessionId, requestImages);
-      prompt = promptWithAttachments(prompt, attachmentPaths, Boolean(input.workspace));
+    async prepare(signal) {
+      signal.throwIfAborted();
       const availability = await requireClaudeCode();
+      signal.throwIfAborted();
       const tools = await buildClaudeTools(runtime, sessionId);
-      let run;
-      try {
-        run = await new ClaudeCodeRuntime({
+      signal.throwIfAborted();
+      const run = await turn.prepare(async ({ prompt, cwd, nativeSessionId }) => {
+        return new ClaudeCodeRuntime({
           executablePath: availability.executablePath,
           cliUrl: tradexCliUrl(input.requestUrl),
           grants: runtime.cliRunGrants,
         }).start({
           tradexSessionId: sessionId,
-          cwd: input.workspace ?? sessionStore.sessionDir(sessionId),
+          cwd,
           prompt,
-          instructions: claudeInstructions(metadata.snapshot.systemPrompt, input.baseSystemPrompt),
+          instructions: claudeInstructions(
+            metadata.snapshot.systemPrompt,
+            input.baseSystemPrompt,
+            input.appendSystemPrompt,
+          ),
+          preserveNativeSystemPrompt: input.preserveNativeSystemPrompt,
           registry: tools,
-          nativeSessionId: sessionStore.getMetadata(sessionId)?.nativeSessionId ?? undefined,
+          nativeSessionId,
           model: metadata.snapshot.model,
           effort: metadata.snapshot.reasoningEffort,
         });
-        sessionStore.beginRun(sessionId);
-        sessionStore.appendMessage(sessionId, {
-          role: "user",
-          content: input.message,
-          metadata: attachmentMetadata(requestImages, attachmentPaths),
-        });
-      } catch (error) {
-        await run?.abort();
-        await run?.result;
-        sessionStore.endRun(sessionId, { status: "error", error: error instanceof Error ? error.message : String(error) });
-        throw error;
-      }
-      if (run.nativeSessionId) sessionStore.setNativeSessionId(sessionId, run.nativeSessionId);
+      });
       return {
         run,
-        // 将统一 Runtime 事件持久化并投影为前端 SSE 事件。
-        onEvent(event: RuntimeEvent, send: (event: Record<string, unknown>) => void) {
-          if (event.type === "run-start" && event.nativeSessionId) {
-            sessionStore.setNativeSessionId(sessionId, event.nativeSessionId);
-          } else if (event.type === "message-update" && event.message.role === "assistant") {
-            if (!assistantStarted) {
-              assistantStarted = true;
-              send({ type: "message_start", message: claudeMessageDto(sessionId, assistantClientId) });
-            }
-            assistantText += event.delta;
-            send({
-              type: "message_update",
-              message: { clientId: assistantClientId, role: "assistant", content: "", metadata: null, error: null },
-              delta: event.delta,
-            });
-          } else if (event.type === "tool-start") {
-            const toolCall = { id: event.callId, name: event.name, arguments: event.args };
-            toolCalls.set(event.callId, toolCall);
-            send({ type: "tool_execution_start", toolCall });
-          } else if (event.type === "tool-result") {
-            const toolCall = toolCalls.get(event.callId) ?? { id: event.callId, name: "unknown", arguments: {} };
-            const output = event.result.content
-              .filter((item): item is Extract<typeof item, { type: "text" }> => item.type === "text")
-              .map((item) => item.text)
-              .join("");
-            sessionStore.appendMessage(sessionId, {
-              role: "toolResult",
-              content: output,
-              metadata: { toolCallId: event.callId, toolName: toolCall.name, error: event.isError },
-              error: event.isError ? output : null,
-            });
-            send({
-              type: "tool_execution_end",
-              toolCall,
-              toolResult: {
-                callId: event.callId,
-                name: toolCall.name,
-                output: output.slice(0, 2_000),
-                error: event.isError,
-              },
-            });
-          } else if (event.type === "usage") {
-            model = event.model;
-            usage.input += event.input;
-            usage.output += event.output;
-            usage.cacheRead += event.cacheRead;
-            usage.cacheWrite += event.cacheWrite;
-          }
-        },
-        // 结算 Claude run、持久化 assistant 消息并发送最终状态。
-        async complete(result, send) {
-          runError = result.error;
-          runErrorCode = result.errorCode ?? null;
-          sessionStore.endRun(sessionId, {
-          status: runErrorCode === "aborted" ? "cancelled" : runError ? "error" : "completed",
-          error: runError,
-        });
-        if (result.nativeSessionId) sessionStore.setNativeSessionId(sessionId, result.nativeSessionId);
-        if (!assistantText && result.output) assistantText = result.output;
-
-        const totalTokens = totalUsage(usage);
-        const persisted = sessionStore.appendMessage(sessionId, {
-          role: "assistant",
-          content: assistantText,
-          error: runError,
-          metadata: {
-            errorCode: runErrorCode,
-            model,
-            promptTokens: usage.input,
-            completionTokens: usage.output,
-            cacheRead: usage.cacheRead,
-            cacheWrite: usage.cacheWrite,
-            totalTokens,
-            toolCalls: [...toolCalls.values()],
-          },
-        });
-        assistantPersisted = true;
-        if (!assistantStarted) {
-          send({ type: "message_start", message: claudeMessageDto(sessionId, assistantClientId) });
-          if (assistantText) {
-            send({
-              type: "message_update",
-              message: { clientId: assistantClientId, role: "assistant", content: "", metadata: null, error: null },
-              delta: assistantText,
-            });
-          }
-        }
-        send({ type: "message_end", message: { ...persisted, id: assistantClientId, clientId: assistantClientId } });
-        send({
-          type: "agent_end",
-          error: runError,
-          errorCode: runErrorCode,
-          totalTokens,
-          promptTokens: usage.input,
-          sessionStats: { tokens: { ...usage, total: totalTokens } },
-        });
-          await sendSessionUpdate({
-            send,
-            project: input.projectSessionUpdate,
-            defaultProject: async () => ({ session: await sessionResponse(runtime, sessionId), history: await sessionHistory(runtime) }),
-            state: () => runtime.state(),
-          });
-        },
-        // 记录未结算异常，并避免重复持久化 assistant 消息。
-        fail(error, send) {
-          if (error instanceof ClaudeSessionStreamError) runErrorCode = error.code;
-          runError = error instanceof Error ? error.message : String(error);
-          sessionStore.endRun(sessionId, { status: "error", error: runError });
-          if (!assistantPersisted) {
-            sessionStore.appendMessage(sessionId, {
-              role: "assistant",
-              content: assistantText,
-              error: runError,
-              metadata: { errorCode: runErrorCode, toolCalls: [...toolCalls.values()] },
-            });
-            assistantPersisted = true;
-          }
-          send({ type: "error", code: runErrorCode ?? "runtime_failure", error: runError });
-          send({ type: "agent_end", error: runError, errorCode: runErrorCode, totalTokens: 0, promptTokens: 0, sessionStats: null });
-        },
+        onEvent: turn.onEvent,
+        complete: turn.complete,
+        fail: turn.fail,
       };
     },
+    onPrepareFailure: input.persistFailedTurn
+      ? turn.onPrepareFailure
+      : undefined,
   });
 }
 
 /** 校验 Claude 图片附件的数量、格式、base64 内容和大小。 */
 export function validateClaudeImages(images: ImageContent[]): string | null {
-  if (images.length > 10) return "at most 10 images are allowed";
-  for (const image of images) {
-    if (!CLAUDE_IMAGE_TYPES[image.mimeType]) return `unsupported image type: ${image.mimeType}`;
-    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(image.data)) return "image data must be valid base64";
-    if (Buffer.byteLength(image.data, "base64") > 20 * 1024 * 1024) return "each image must be at most 20 MB";
-  }
-  return null;
+  return validateImageInput(images);
 }
 
 /** 在真正启动 run 前重新探测 Claude CLI，避免使用过期可用性状态。 */
@@ -266,87 +133,17 @@ async function buildClaudeTools(runtime: AppRuntime, sessionId: string) {
 }
 
 /** 组合 Tradex 主提示词、Agent instructions 和 Claude 能力边界。 */
-function claudeInstructions(agentInstructions: string, baseSystemPrompt = MAIN_AGENT_PROMPT): string {
+function claudeInstructions(
+  agentInstructions: string,
+  baseSystemPrompt = MAIN_AGENT_PROMPT,
+  appendSystemPrompt = "",
+): string {
   return [
     baseSystemPrompt,
     ...(agentInstructions.trim() && agentInstructions.trim() !== baseSystemPrompt.trim() ? [agentInstructions.trim()] : []),
+    appendSystemPrompt.trim(),
     CLAUDE_CLI_INSTRUCTIONS,
     currentTimeInstruction("Bash"),
     "Do not place trades, modify files, configure additional tool servers, or claim those capabilities are available.",
   ].join("\n\n");
-}
-
-/** 根据当前 API 请求地址生成 loopback Tradex CLI endpoint URL。 */
-export function tradexCliUrl(requestUrl: string): string {
-  const url = new URL(requestUrl);
-  const host = url.port ? `127.0.0.1:${url.port}` : "127.0.0.1";
-  return `${url.protocol}//${host}/cli/tradex`;
-}
-
-/** From process listen origin (e.g. http://127.0.0.1:8765). */
-export function tradexCliUrlFromOrigin(listenOrigin: string): string {
-  return tradexCliUrl(listenOrigin);
-}
-
-const CLAUDE_IMAGE_TYPES: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/gif": "gif",
-  "image/webp": "webp",
-};
-
-/** 将图片保存到当前 Session 的隔离 attachments 目录并返回后端文件路径。 */
-async function saveClaudeAttachments(
-  sessionStore: { sessionDir(id: string): string },
-  sessionId: string,
-  images: ImageContent[],
-): Promise<string[]> {
-  const directory = path.join(sessionStore.sessionDir(sessionId), "attachments");
-  return Promise.all(images.map(async (image) => {
-    const file = path.join(directory, `${crypto.randomUUID()}.${CLAUDE_IMAGE_TYPES[image.mimeType]}`);
-    await writeFile(file, Buffer.from(image.data, "base64"), { mode: 0o600 });
-    return file;
-  }));
-}
-
-/** 把相对 Session cwd 的附件路径加入 prompt，供 Claude 使用原生 Read 读取。 */
-export function promptWithAttachments(prompt: string, attachmentPaths: string[], absolutePaths = false): string {
-  if (attachmentPaths.length === 0) return prompt;
-  return [
-    prompt,
-    absolutePaths
-      ? "Attached images are available at these absolute paths. Use the Read tool to inspect them:"
-      : "Attached images are available at these paths relative to the current working directory. Use the Read tool to inspect them:",
-    ...attachmentPaths.map((file) => `- ${absolutePaths ? file : `attachments/${path.basename(file)}`}`),
-  ].filter(Boolean).join("\n\n");
-}
-
-/** 生成不包含原始路径的图片 metadata，供 UI 历史展示。 */
-function attachmentMetadata(images: ImageContent[], attachmentPaths: string[]): Record<string, unknown> | null {
-  if (attachmentPaths.length === 0) return null;
-  return {
-    images: images.map((image, index) => ({
-      mimeType: image.mimeType,
-      filename: path.basename(attachmentPaths[index]),
-    })),
-  };
-}
-
-/** 创建与现有聊天 UI 兼容的 Claude assistant message DTO。 */
-function claudeMessageDto(sessionId: string, clientId: string): Record<string, unknown> {
-  return {
-    id: clientId,
-    clientId,
-    sessionId,
-    role: "assistant",
-    content: "",
-    createdAt: new Date().toISOString(),
-    metadata: { toolCalls: [] },
-    error: null,
-  };
-}
-
-/** 汇总本轮 Claude 的输入、输出和缓存 token 数。 */
-function totalUsage(usage: UsageProjection): number {
-  return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 }

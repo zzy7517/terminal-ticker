@@ -88,15 +88,43 @@ export interface OriginSession extends RuntimeSession {
   systemPrompt: string;
 }
 
-export interface CreateOriginInput {
-  title?: string;
-  runtime?: AgentRuntimeId;
-  provider?: string;
-  model?: string;
-  reasoningEffort?: string;
-  systemPrompt?: string;
-  workspace?: string;
+export interface ImageAttachment {
+  data: string;
+  mimeType: string;
 }
+
+/** Immutable runtime selection captured when a draft becomes an Origin Session. */
+export interface OriginDraftConfig {
+  runtime: AgentRuntimeId;
+  provider: string | null;
+  model: string | null;
+  reasoningEffort: string | null;
+}
+
+export interface OriginDraft {
+  materializationId: string;
+  config: OriginDraftConfig;
+  message: string;
+  images: ImageAttachment[];
+  skillNames: string[];
+  phase: 'editing' | 'starting';
+}
+
+export type OriginSelection =
+  | { kind: 'draft'; draft: OriginDraft }
+  | { kind: 'session'; sessionId: string };
+
+export interface StartOriginInput {
+  materializationId: string;
+  config: OriginDraftConfig;
+  message: string;
+  images?: ImageAttachment[];
+  skillNames?: string[];
+}
+
+export type StartOriginStreamResult =
+  | { kind: 'streamed' }
+  | { kind: 'already-materialized'; sessionId: string };
 
 export interface OriginSessionSummary extends OriginSession {
   messageCount: number;
@@ -112,10 +140,6 @@ export interface OriginSessionResponse {
 
 export interface OriginSessionHistoryResponse {
   sessions: OriginSessionSummary[];
-}
-
-export interface OriginSessionMutationResponse extends OriginSessionResponse {
-  history: OriginSessionHistoryResponse;
 }
 
 export interface AgentDefinition {
@@ -249,7 +273,7 @@ export type RuntimeSessionStreamPayload<SessionResponse, HistoryResponse, State 
   | { type: 'message_start' | 'message_update' | 'message_end'; message: Partial<AgentMessage> & { clientId?: string; role: AgentMessage['role']; content: string; metadata?: AgentMessageMetadata | null; error?: string | null }; delta?: string }
   | { type: 'tool_execution_start'; toolCall: AgentToolCall }
   | { type: 'tool_execution_end'; toolCall: AgentToolCall; toolResult: LoopToolResult }
-  | { type: 'agent_end'; error: string | null }
+  | { type: 'agent_end'; error: string | null; errorCode?: string | null }
   | { type: 'error'; error: string }
   | RuntimeSessionUpdate<SessionResponse, HistoryResponse, State>;
 
