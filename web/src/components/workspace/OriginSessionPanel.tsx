@@ -188,7 +188,7 @@ function OriginTimeline({
   );
 }
 
-function OriginMessageRow({
+export function OriginMessageRow({
   message,
   onPreviewImage,
 }: {
@@ -196,9 +196,9 @@ function OriginMessageRow({
   onPreviewImage(image: ImageAttachment): void;
 }) {
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Origin' : 'Tool';
-  const content = message.error || message.content;
+  const content = message.content;
   const images = messageImages(message);
-  if (!content && images.length === 0 && message.role === 'toolResult') return null;
+  if (!content && !message.error && images.length === 0 && message.role === 'toolResult') return null;
   return (
     <div className={`session-message ${message.role}`}>
       <div className="session-message-head">
@@ -209,6 +209,9 @@ function OriginMessageRow({
         <div className="session-message-text markdown-body">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
+      ) : null}
+      {message.error ? (
+        <div className="origin-message-error" role="note">{message.error}</div>
       ) : null}
       {images.length > 0 ? (
         <div className="session-message-images">

@@ -134,6 +134,78 @@ console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false
     expect(result.output).toBe("haha");
   });
 
+  it("completes with partial output when Cursor closes its writable iterable", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-cursor-runtime-"));
+    const executable = path.join(cwd, "fake-cursor.mjs");
+    await writeFile(executable, `#!/usr/bin/env node
+const session = "11111111-1111-4111-8111-111111111111";
+console.log(JSON.stringify({ type: "system", subtype: "init", session_id: session }));
+console.log(JSON.stringify({ type: "assistant", timestamp_ms: 1, message: { role: "assistant", content: [{ type: "text", text: "partial" }] } }));
+console.error("RetriableError: WritableIterable is closed");
+process.exitCode = 1;
+`);
+    await chmod(executable, 0o755);
+    const run = await new CursorCliRuntime({
+      executablePath: executable,
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
+    }).start({
+      tradexSessionId: "tradex-session",
+      cwd,
+      prompt: "go",
+      instructions: "rules",
+      registry: new ToolRegistry(),
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+    });
+    const runEnds: Array<{ status: string; result: string }> = [];
+    run.subscribe((event) => {
+      if (event.type === "run-end") runEnds.push({ status: event.status, result: event.result });
+    });
+
+    await expect(run.result).resolves.toEqual({
+      output: "partial",
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+      error: null,
+      errorCode: null,
+    });
+    expect(runEnds).toEqual([{
+      status: "completed",
+      result: "partial",
+    }]);
+  });
+
+  it("fails when Cursor closes its writable iterable without meaningful assistant output", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-cursor-runtime-"));
+    const executable = path.join(cwd, "fake-cursor.mjs");
+    await writeFile(executable, `#!/usr/bin/env node
+const session = "11111111-1111-4111-8111-111111111111";
+console.log(JSON.stringify({ type: "system", subtype: "init", session_id: session }));
+console.log(JSON.stringify({ type: "assistant", timestamp_ms: 1, message: { role: "assistant", content: [{ type: "text", text: "   " }] } }));
+console.error("RetriableError: WritableIterable is closed");
+process.exitCode = 1;
+`);
+    await chmod(executable, 0o755);
+    const run = await new CursorCliRuntime({
+      executablePath: executable,
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
+    }).start({
+      tradexSessionId: "tradex-session",
+      cwd,
+      prompt: "go",
+      instructions: "rules",
+      registry: new ToolRegistry(),
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    await expect(run.result).resolves.toEqual({
+      output: "",
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+      error: "Cursor CLI exited with code 1: RetriableError: WritableIterable is closed",
+      errorCode: "process_exit_failure",
+    });
+  });
+
   it("fails closed when the stream ends without a terminal result", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-cursor-runtime-"));
     const executable = path.join(cwd, "fake-cursor.mjs");

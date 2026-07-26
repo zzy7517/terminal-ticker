@@ -11,6 +11,8 @@ import { windowsTaskkillArgs } from "../claude-code/runtime.js";
 
 export { classifyCursorError, parseCursorLine } from "./protocol.js";
 
+const CURSOR_WRITABLE_ITERABLE_CLOSED = "RetriableError: WritableIterable is closed";
+
 export interface CursorArgsInput {
   prompt: string;
   instructions: string;
@@ -234,6 +236,24 @@ class CursorActiveRun implements ActiveRuntimeRun {
         clearTimeout(inactivityTimer);
         input.revoke();
         void input.cleanup();
+        // Cursor can finish useful output, then fail while tearing down its stream.
+        // Accept only that exact failure; every other missing terminal result stays an error.
+        const completedWithPartialOutput = !this.terminalResultReceived
+          && !this.terminationCode
+          && !resultError
+          && code === 1
+          && signal === null
+          && this.assistantBuffer.trim().length > 0
+          && stderr.trim() === CURSOR_WRITABLE_ITERABLE_CLOSED;
+        if (completedWithPartialOutput) {
+          output = this.assistantBuffer;
+          this.emit({
+            type: "run-end",
+            ...(nativeSessionId ? { nativeSessionId } : {}),
+            result: output,
+            status: "completed",
+          });
+        }
         if (this.terminationCode && !this.terminalResultReceived) {
           resultErrorCode = this.terminationCode;
           resultError ??= this.terminationCode === "aborted"
@@ -242,15 +262,15 @@ class CursorActiveRun implements ActiveRuntimeRun {
               ? "Cursor CLI run exceeded its time limit"
               : "Cursor CLI run became inactive and was stopped";
         }
-        if (!this.terminalResultReceived && !resultError && code !== 0) {
+        if (!this.terminalResultReceived && !completedWithPartialOutput && !resultError && code !== 0) {
           resultError = `Cursor CLI exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}${stderr.trim() ? `: ${stderr.trim()}` : ""}`;
           resultErrorCode = this.terminationCode ?? classifyCursorError(stderr);
         }
-        if (!this.terminalResultReceived && !resultError) {
+        if (!this.terminalResultReceived && !completedWithPartialOutput && !resultError) {
           resultError = "Cursor CLI stream ended without terminal result";
           resultErrorCode = "missing_terminal_result";
         }
-        if (!this.terminalResultReceived) {
+        if (!this.terminalResultReceived && !completedWithPartialOutput) {
           this.emit({
             type: "run-end",
             ...(nativeSessionId ? { nativeSessionId } : {}),

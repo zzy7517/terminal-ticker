@@ -291,6 +291,16 @@
   width: auto;
 }
 
+.origin-message-error {
+  border-left: 2px solid var(--danger);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 9px;
+  overflow-wrap: anywhere;
+  padding: 2px 0 2px 9px;
+}
+
 .origin-timeline-status {
   align-items: center;
   color: var(--text-muted);
