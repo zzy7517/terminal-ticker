@@ -1,7 +1,7 @@
 /** 提供 Pi、Claude Code 与 Cursor CLI Agent 的创建和编辑界面。 */
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
-import { AgentAvatar, AvatarRerollButton } from '../../avatar';
+import { AvatarRerollButton } from '../../avatar';
 import { fetchAgentRuntimes, fetchClaudeCodeModels, fetchCursorModels } from '../../api';
 import type { AgentDefinition, AgentDefinitionInput, AgentRuntimeStatus, ClaudeCodeModelsResponse, CursorModelsResponse } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
@@ -225,9 +225,6 @@ export function AgentsSettingsPanel() {
         </button>
         {agents.map((agent) => (
           <div key={agent.id} className={`agent-list-row ${selectedId === agent.id && !creating ? 'active' : ''}`}>
-            <span className="agent-list-avatar" aria-hidden="true">
-              <AgentAvatar agent={agent} size="xs" />
-            </span>
             <button className="agent-list-select" type="button" onClick={() => select(agent)}>
               <span><strong>{agent.name}</strong><small>{agent.description}</small></span>
             </button>

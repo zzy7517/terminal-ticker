@@ -2,7 +2,7 @@
   "id": "default",
   "name": "Default Agent",
   "description": "Tradex built-in trading and market analysis Agent",
-  "avatarSeed": "6f6a85a02f2149d180f0c65fc60b0e6a",
+  "avatarSeed": "5c5d0c62f70c4e93a1a822b2939dab86",
   "systemPrompt": null,
   "runtime": "cursor",
   "provider": null,

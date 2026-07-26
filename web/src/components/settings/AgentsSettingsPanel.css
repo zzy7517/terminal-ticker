@@ -69,7 +69,6 @@
   color: var(--text-primary);
 }
 
-.agent-list-row .agent-list-avatar,
 .agent-editor-avatar {
   border-radius: 8px;
 }
