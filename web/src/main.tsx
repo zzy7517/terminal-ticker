@@ -4,6 +4,7 @@ import App from './App';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/controls.css';
+import './styles/composer.css';
 import './styles/surfaces.css';
 import './styles/jin10.css';
 

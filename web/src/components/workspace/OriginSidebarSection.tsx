@@ -1,4 +1,5 @@
-import { Atom, Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
+import { OriginAvatar } from '../../avatar';
 import { openNewOriginEntry, openOriginEntry } from '../../chat/originWorkspace';
 import { useChatStore } from '../../stores/chatStore';
 import { useOriginStore } from '../../stores/originStore';
@@ -35,7 +36,7 @@ export function OriginSidebarSection() {
         onClick={() => void openOriginEntry(origin.id)}
         type="button"
       >
-        <Atom aria-hidden="true" size={14} />
+        <OriginAvatar seed={origin.id} size="md" />
         <span className="origin-sidebar-copy">
           <strong>{origin.title || 'Origin'}</strong>
           <small>{origin.preview === '(no messages)' ? 'Ready' : origin.preview}</small>

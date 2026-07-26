@@ -1,0 +1,339 @@
+/* ═══════════════════════════════════════════════════════════════════
+   COMPOSER — the one input surface
+   Single continuous card · no nesting · the whole shell takes focus.
+   Shared by Channel, Agent DM and Origin. Each caller supplies only
+   its own slot content (mention picker, skill menu, model picker);
+   the geometry, focus behaviour and action keys live here.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Dock — the strip a composer sits in at the foot of a column ──── */
+.composer-dock {
+  background: var(--panel);
+  border-top: 1px solid var(--line-hairline);
+  display: grid;
+  flex-shrink: 0;
+  gap: 8px;
+  justify-items: center;
+  padding: 10px 14px 14px;
+}
+
+.composer-dock > * {
+  max-width: var(--composer-max, 860px);
+  width: 100%;
+}
+
+/* ── Card ─────────────────────────────────────────────────────────── */
+.composer {
+  background: var(--panel-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow: visible;
+  padding: 10px 10px 8px;
+  position: relative;
+  transition: var(--ctl-transition);
+  width: 100%;
+}
+
+.composer:focus-within {
+  border-color: var(--accent-ring);
+  box-shadow: var(--shadow-soft), 0 0 0 3px var(--accent-tint);
+}
+
+/* ── Input ────────────────────────────────────────────────────────── */
+.composer-input {
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  font-family: var(--ui);
+  font-size: 14.5px;
+  line-height: 1.55;
+  min-height: 56px;
+  outline: 0;
+  overflow-y: auto;
+  padding: 4px 6px;
+  resize: none;
+  width: 100%;
+}
+
+.composer--tall .composer-input {
+  min-height: 124px;
+}
+
+.composer-input::placeholder {
+  color: var(--text-muted);
+}
+
+.composer-input:disabled {
+  cursor: not-allowed;
+  opacity: var(--ctl-disabled-opacity);
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────── */
+.composer-bar {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.composer-bar-lead {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.composer-bar-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* ── Action keys — one geometry for attach, send and stop ─────────── */
+.composer-action {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  transition: var(--ctl-transition);
+  width: 34px;
+}
+
+.composer-action:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-ring);
+  outline: 0;
+}
+
+.composer-action:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.composer-action:disabled {
+  cursor: not-allowed;
+  opacity: var(--ctl-disabled-opacity);
+}
+
+.composer-action.is-primary {
+  background: var(--control-accent);
+  color: var(--control-accent-contrast);
+}
+
+.composer-action.is-danger {
+  background: var(--danger-tint-strong);
+  color: var(--danger);
+}
+
+@media (hover: hover) {
+  .composer-action:hover:not(:disabled) {
+    background: var(--accent-tint-strong);
+    color: var(--text-primary);
+  }
+
+  .composer-action.is-primary:hover:not(:disabled) {
+    background: var(--control-accent-hover);
+    color: var(--control-accent-contrast);
+  }
+
+  .composer-action.is-danger:hover:not(:disabled) {
+    background: var(--danger-tint-strong);
+    color: var(--danger);
+  }
+}
+
+.composer-file-input {
+  display: none;
+}
+
+/* ── Attachments ──────────────────────────────────────────────────── */
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 2px 6px 6px;
+}
+
+.composer-thumb {
+  animation: pop-in var(--dur-2) var(--ease-spring) both;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  height: 48px;
+  overflow: hidden;
+  position: relative;
+  width: 48px;
+}
+
+.composer-thumb img {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.composer-thumb-remove {
+  align-items: center;
+  background: rgba(5, 5, 5, 0.72);
+  border: 0;
+  border-radius: 0 0 0 6px;
+  color: #fafafa;
+  cursor: pointer;
+  display: flex;
+  height: 20px;
+  justify-content: center;
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+  width: 20px;
+}
+
+.composer-thumb:hover .composer-thumb-remove,
+.composer-thumb-remove:focus-visible {
+  opacity: 1;
+}
+
+/* ── Popover — mention picker, skill menu ─────────────────────────── */
+.composer-menu {
+  background: var(--panel-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  bottom: calc(100% + 8px);
+  box-shadow: var(--shadow-pop);
+  display: grid;
+  left: 0;
+  max-height: min(360px, 48vh);
+  overflow: auto;
+  padding: 4px;
+  position: absolute;
+  right: 0;
+  z-index: 30;
+}
+
+.composer-menu-option {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: grid;
+  font-family: var(--ui);
+  font-size: 13.5px;
+  gap: 9px;
+  grid-template-columns: 16px max-content minmax(0, 1fr) 24px;
+  min-height: 38px;
+  padding: 7px 9px;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+  width: 100%;
+}
+
+.composer-menu-option.active {
+  background: var(--accent-tint-strong);
+  color: var(--text-primary);
+}
+
+.composer-menu-option:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent-ring);
+  outline: 0;
+}
+
+.composer-menu-option > svg {
+  color: var(--text-muted);
+}
+
+.composer-menu-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.composer-menu-name.mono {
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.composer-menu-description {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-menu-option kbd {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  justify-self: end;
+}
+
+@media (hover: hover) {
+  .composer-menu-option:hover {
+    background: var(--accent-tint-strong);
+    color: var(--text-primary);
+  }
+}
+
+/* ── Compact ──────────────────────────────────────────────────────── */
+@media (max-width: 620px) {
+  .composer-dock {
+    padding: 8px 10px 10px;
+  }
+
+  .composer {
+    border-radius: var(--radius-lg);
+    padding: 8px 8px 6px;
+  }
+
+  .composer--tall .composer-input {
+    min-height: 104px;
+  }
+
+  .composer-bar {
+    flex-wrap: wrap;
+  }
+
+  .composer-bar-lead {
+    order: 1;
+    width: 100%;
+  }
+
+  .composer-bar-actions {
+    order: 2;
+  }
+}
+
+@media (max-width: 560px) {
+  .composer-menu-option {
+    grid-template-columns: 16px minmax(0, 1fr) 24px;
+  }
+
+  .composer-menu-description {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer,
+  .composer-action,
+  .composer-menu-option,
+  .composer-thumb,
+  .composer-thumb-remove {
+    animation: none;
+    transition: none;
+  }
+}

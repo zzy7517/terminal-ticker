@@ -113,16 +113,16 @@ export function OriginComposer() {
 
   return (
     <div
-      className={`origin-composer${draft ? ' origin-composer--draft' : ''}${skillMenuOpen ? ' has-skill-menu' : ''}`}
+      className={`composer${draft ? ' composer--tall' : ''}`}
       onDragOver={(event) => event.preventDefault()}
       onDrop={handleDrop}
     >
       {skillMenuOpen ? (
-        <div className="skill-command-menu origin-skill-menu" id="origin-skill-menu" ref={skillMenuRef} role="listbox">
+        <div className="composer-menu" id="origin-skill-menu" ref={skillMenuRef} role="listbox">
           {skillCandidates.map((skill, index) => (
             <button
               aria-selected={index === activeSkillIndex}
-              className={`skill-command-option${index === activeSkillIndex ? ' active' : ''}`}
+              className={`composer-menu-option${index === activeSkillIndex ? ' active' : ''}`}
               id={`origin-skill-option-${skill.name}`}
               key={skill.name}
               onClick={() => chooseSkill(skill)}
@@ -131,9 +131,9 @@ export function OriginComposer() {
               role="option"
               type="button"
             >
-              <Box aria-hidden="true" size={17} strokeWidth={1.8} />
-              <span className="skill-command-name">{skill.displayName}</span>
-              <span className="skill-command-description">{skill.description}</span>
+              <Box aria-hidden="true" size={15} strokeWidth={1.8} />
+              <span className="composer-menu-name">{skill.displayName}</span>
+              <span className="composer-menu-description">{skill.description}</span>
               {index === activeSkillIndex ? <kbd>↑↓</kbd> : null}
             </button>
           ))}
@@ -141,13 +141,13 @@ export function OriginComposer() {
       ) : null}
 
       {images.length > 0 ? (
-        <div className="session-pending-images origin-pending-images">
+        <div className="composer-attachments">
           {images.map((image, index) => (
-            <div className="pending-image-thumb" key={`${image.mimeType}:${index}`}>
+            <div className="composer-thumb" key={`${image.mimeType}:${index}`}>
               <img alt={`Attachment ${index + 1}`} src={`data:${image.mimeType};base64,${image.data}`} />
               <button
                 aria-label={`Remove attachment ${index + 1}`}
-                className="pending-image-remove"
+                className="composer-thumb-remove"
                 disabled={disabled}
                 onClick={() => composerIntent.removeImage(index)}
                 title="Remove image"
@@ -161,6 +161,7 @@ export function OriginComposer() {
       ) : null}
 
       <textarea
+        className="composer-input"
         aria-activedescendant={skillMenuOpen && skillCandidates[activeSkillIndex]
           ? `origin-skill-option-${skillCandidates[activeSkillIndex].name}`
           : undefined}
@@ -204,12 +205,12 @@ export function OriginComposer() {
         onPaste={handlePaste}
         placeholder={running ? 'Origin is running' : images.length > 0 ? 'Add a note, or send the image' : 'Message Origin'}
         ref={promptRef}
-        rows={draft ? 5 : 3}
+        rows={draft ? 5 : 2}
         value={message}
       />
 
-      <div className="origin-composer-toolbar">
-        <div className="origin-composer-config">
+      <div className="composer-bar">
+        <div className="composer-bar-lead">
           {draft ? (
             <OriginModelPicker
               config={draft.config}
@@ -218,10 +219,10 @@ export function OriginComposer() {
             />
           ) : null}
         </div>
-        <div className="origin-composer-commands">
+        <div className="composer-bar-actions">
           <button
             aria-label="Attach image"
-            className="origin-icon-button"
+            className="composer-action"
             disabled={disabled}
             onClick={() => fileInputRef.current?.click()}
             title="Attach image, or paste and drop"
@@ -231,7 +232,7 @@ export function OriginComposer() {
           </button>
           <button
             aria-label={running ? 'Stop Origin' : 'Send message'}
-            className={`origin-icon-button origin-primary-action${running ? ' is-running' : ''}`}
+            className={`composer-action ${running ? 'is-danger' : 'is-primary'}`}
             disabled={running ? !sessionId : !canSend}
             onClick={running && sessionId
               ? () => void useOriginStore.getState().stop(sessionId)
@@ -247,7 +248,7 @@ export function OriginComposer() {
       <input
         accept="image/png,image/jpeg,image/webp,image/gif"
         aria-hidden="true"
-        className="origin-file-input"
+        className="composer-file-input"
         multiple
         onChange={(event) => {
           if (event.target.files) void handleImageFiles(event.target.files);

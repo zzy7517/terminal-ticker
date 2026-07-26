@@ -1,7 +1,7 @@
 /**
  * ChannelComposer — Channel 输入框（含 @Agent 自动补全）。
  */
-import { Loader2, Send } from 'lucide-react';
+import { ArrowUp, AtSign, Loader2 } from 'lucide-react';
 import { useAgentStore } from '../../stores/agentStore';
 
 /** Channel 的消息输入区。 */
@@ -35,18 +35,28 @@ export function ChannelComposer({
   }
 
   return (
-    <div className="channel-composer-shell">
-      {suggestions.length ? (
-        <div className="channel-mention-picker">
-          {suggestions.map((agent) => (
-            <button key={agent.id} onClick={() => mention(agent.id)} type="button">
-              <strong>@{agent.id}</strong><span>{agent.name}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-      <div className="session-compose">
+    <div className="composer-dock">
+      <div className="composer">
+        {suggestions.length ? (
+          <div className="composer-menu" role="listbox">
+            {suggestions.map((agent) => (
+              <button
+                className="composer-menu-option"
+                key={agent.id}
+                onClick={() => mention(agent.id)}
+                onMouseDown={(event) => event.preventDefault()}
+                role="option"
+                type="button"
+              >
+                <AtSign aria-hidden="true" size={15} strokeWidth={1.8} />
+                <span className="composer-menu-name mono">{agent.id}</span>
+                <span className="composer-menu-description">{agent.name}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <textarea
+          className="composer-input"
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !suggestions.length) {
@@ -55,20 +65,23 @@ export function ChannelComposer({
             }
           }}
           placeholder={placeholder}
-          rows={3}
+          rows={2}
           value={draft}
         />
-        <div className="session-compose-actions">
-          <button
-            aria-label={label}
-            className="shell-button primary lg session-submit"
-            disabled={!draft.trim() || sending}
-            onClick={() => void submit()}
-            type="button"
-          >
-            {sending ? <Loader2 className="spin" size={16} /> : <Send size={16} />}
-            <span className="session-submit-label">{label}</span>
-          </button>
+        <div className="composer-bar">
+          <div className="composer-bar-lead" />
+          <div className="composer-bar-actions">
+            <button
+              aria-label={label}
+              className="composer-action is-primary"
+              disabled={!draft.trim() || sending}
+              onClick={() => void submit()}
+              title={label}
+              type="button"
+            >
+              {sending ? <Loader2 className="spin" size={16} /> : <ArrowUp size={17} />}
+            </button>
+          </div>
         </div>
       </div>
     </div>

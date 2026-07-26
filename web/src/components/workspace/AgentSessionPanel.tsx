@@ -326,147 +326,152 @@ export function AgentSessionPanel({
         streamingContent={streamingMessage ? streamingMessage.content : null}
         transcriptRef={transcriptRef}
       />
-      <div
-        className={`session-compose${slashQuery && skillCandidates.length > 0 ? ' has-skill-menu' : ''}`}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-      >
-        {slashQuery && skillCandidates.length > 0 && (
-          <div className="skill-command-menu" id="agent-skill-menu" ref={skillMenuRef} role="listbox">
-            {skillCandidates.map((skill, index) => (
-              <button
-                aria-selected={index === activeSkillIndex}
-                className={`skill-command-option${index === activeSkillIndex ? ' active' : ''}`}
-                id={`agent-skill-option-${skill.name}`}
-                key={skill.name}
-                onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => setActiveSkillIndex(index)}
-                onClick={() => chooseSkill(skill)}
-                role="option"
-                type="button"
-              >
-                <Box aria-hidden="true" size={17} strokeWidth={1.8} />
-                <span className="skill-command-name">{skill.displayName}</span>
-                <span className="skill-command-description">{skill.description}</span>
-                {index === activeSkillIndex && <kbd>↑↓</kbd>}
-              </button>
-            ))}
-          </div>
-        )}
-        {pendingImages.length > 0 && (
-          <div className="session-pending-images">
-            {pendingImages.map((img, idx) => (
-              <div key={idx} className="pending-image-thumb">
-                <img src={`data:${img.mimeType};base64,${img.data}`} alt={`Attachment ${idx + 1}`} />
+      <div className="composer-dock">
+        <div
+          className="composer"
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+        >
+          {slashQuery && skillCandidates.length > 0 && (
+            <div className="composer-menu" id="agent-skill-menu" ref={skillMenuRef} role="listbox">
+              {skillCandidates.map((skill, index) => (
                 <button
+                  aria-selected={index === activeSkillIndex}
+                  className={`composer-menu-option${index === activeSkillIndex ? ' active' : ''}`}
+                  id={`agent-skill-option-${skill.name}`}
+                  key={skill.name}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setActiveSkillIndex(index)}
+                  onClick={() => chooseSkill(skill)}
+                  role="option"
                   type="button"
-                  className="pending-image-remove"
-                  onClick={() => removePendingImage(idx)}
-                  title="Remove image"
                 >
-                  <X size={12} />
+                  <Box aria-hidden="true" size={15} strokeWidth={1.8} />
+                  <span className="composer-menu-name">{skill.displayName}</span>
+                  <span className="composer-menu-description">{skill.description}</span>
+                  {index === activeSkillIndex && <kbd>↑↓</kbd>}
                 </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <textarea
-          ref={promptTextareaRef}
-          aria-activedescendant={
-            slashQuery && skillCandidates[activeSkillIndex]
-              ? `agent-skill-option-${skillCandidates[activeSkillIndex].name}`
-              : undefined
-          }
-          aria-controls={slashQuery && skillCandidates.length > 0 ? 'agent-skill-menu' : undefined}
-          aria-expanded={Boolean(slashQuery && skillCandidates.length > 0)}
-          aria-haspopup="listbox"
-          disabled={disabled || sessionLoading}
-          onBlur={() => setSlashQuery(null)}
-          onChange={(event) => {
-            const value = event.target.value;
-            setAgentPrompt(value);
-            setSelectedSkillNamesByAgent((current) => ({
-              ...current,
-              [selectedAgentId]: (current[selectedAgentId] ?? [])
-                .filter((name) => containsSkillReference(value, name)),
-            }));
-            updateSlashQuery(value, event.target.selectionStart);
-          }}
-          onClick={(event) => updateSlashQuery(event.currentTarget.value, event.currentTarget.selectionStart)}
-          onPaste={handlePaste}
-          onKeyDown={(event) => {
-            if (slashQuery) {
-              if (event.key === 'ArrowDown' && skillCandidates.length > 0) {
-                event.preventDefault();
-                setActiveSkillIndex((index) => (index + 1) % skillCandidates.length);
-                return;
-              }
-              if (event.key === 'ArrowUp' && skillCandidates.length > 0) {
-                event.preventDefault();
-                setActiveSkillIndex((index) => (index - 1 + skillCandidates.length) % skillCandidates.length);
-                return;
-              }
-              if ((event.key === 'Enter' || event.key === 'Tab') && skillCandidates[activeSkillIndex]) {
-                event.preventDefault();
-                chooseSkill(skillCandidates[activeSkillIndex]);
-                return;
-              }
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                setSlashQuery(null);
-                return;
-              }
+              ))}
+            </div>
+          )}
+          {pendingImages.length > 0 && (
+            <div className="composer-attachments">
+              {pendingImages.map((img, idx) => (
+                <div key={idx} className="composer-thumb">
+                  <img src={`data:${img.mimeType};base64,${img.data}`} alt={`Attachment ${idx + 1}`} />
+                  <button
+                    type="button"
+                    className="composer-thumb-remove"
+                    onClick={() => removePendingImage(idx)}
+                    title="Remove image"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <textarea
+            className="composer-input"
+            ref={promptTextareaRef}
+            aria-activedescendant={
+              slashQuery && skillCandidates[activeSkillIndex]
+                ? `agent-skill-option-${skillCandidates[activeSkillIndex].name}`
+                : undefined
             }
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              if (canSend) void runAgentAnalysis(undefined, { skillNames: selectedSkillNames });
-            }
-          }}
-          placeholder={
-            busy
-              ? 'Queue a follow-up while the Agent is working.'
-              : pendingImages.length > 0
-                ? `Add a note for @${agentDisplayName}, or send the image alone.`
-                : `Message @${agentDisplayName}`
-          }
-          rows={3}
-          value={agentPrompt}
-        />
-        <div className="session-compose-actions">
-          <button
-            className="shell-button sm"
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
+            aria-controls={slashQuery && skillCandidates.length > 0 ? 'agent-skill-menu' : undefined}
+            aria-expanded={Boolean(slashQuery && skillCandidates.length > 0)}
+            aria-haspopup="listbox"
             disabled={disabled || sessionLoading}
-            title="Attach image (or paste/drop)"
-          >
-            <Paperclip size={14} />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            multiple
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              if (e.target.files) void handleImageFiles(e.target.files);
-              e.target.value = '';
+            onBlur={() => setSlashQuery(null)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setAgentPrompt(value);
+              setSelectedSkillNamesByAgent((current) => ({
+                ...current,
+                [selectedAgentId]: (current[selectedAgentId] ?? [])
+                  .filter((name) => containsSkillReference(value, name)),
+              }));
+              updateSlashQuery(value, event.target.selectionStart);
             }}
+            onClick={(event) => updateSlashQuery(event.currentTarget.value, event.currentTarget.selectionStart)}
+            onPaste={handlePaste}
+            onKeyDown={(event) => {
+              if (slashQuery) {
+                if (event.key === 'ArrowDown' && skillCandidates.length > 0) {
+                  event.preventDefault();
+                  setActiveSkillIndex((index) => (index + 1) % skillCandidates.length);
+                  return;
+                }
+                if (event.key === 'ArrowUp' && skillCandidates.length > 0) {
+                  event.preventDefault();
+                  setActiveSkillIndex((index) => (index - 1 + skillCandidates.length) % skillCandidates.length);
+                  return;
+                }
+                if ((event.key === 'Enter' || event.key === 'Tab') && skillCandidates[activeSkillIndex]) {
+                  event.preventDefault();
+                  chooseSkill(skillCandidates[activeSkillIndex]);
+                  return;
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setSlashQuery(null);
+                  return;
+                }
+              }
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                if (canSend) void runAgentAnalysis(undefined, { skillNames: selectedSkillNames });
+              }
+            }}
+            placeholder={
+              busy
+                ? 'Queue a follow-up while the Agent is working.'
+                : pendingImages.length > 0
+                  ? `Add a note for @${agentDisplayName}, or send the image alone.`
+                  : `Message @${agentDisplayName}`
+            }
+            rows={2}
+            value={agentPrompt}
           />
-          <button
-            aria-label={busy ? 'Queue Follow-up' : 'Send message'}
-            className="shell-button primary lg session-submit"
-            type="button"
-            onClick={() => {
-              void runAgentAnalysis(undefined, { skillNames: selectedSkillNames });
-            }}
-            disabled={!canSend}
-          >
-            {busy ? <Zap size={16} /> : <ArrowUp size={16} />}
-            <span className="session-submit-label">
-              {busy ? 'Queue' : 'Send'}
-            </span>
-          </button>
+          <div className="composer-bar">
+            <div className="composer-bar-lead" />
+            <div className="composer-bar-actions">
+              <button
+                aria-label="Attach image"
+                className="composer-action"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={disabled || sessionLoading}
+                title="Attach image, or paste and drop"
+              >
+                <Paperclip size={17} />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                multiple
+                className="composer-file-input"
+                onChange={(e) => {
+                  if (e.target.files) void handleImageFiles(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                aria-label={busy ? 'Queue follow-up' : 'Send message'}
+                className="composer-action is-primary"
+                type="button"
+                onClick={() => {
+                  void runAgentAnalysis(undefined, { skillNames: selectedSkillNames });
+                }}
+                title={busy ? 'Queue follow-up' : 'Send message'}
+                disabled={!canSend}
+              >
+                {busy ? <Zap size={16} /> : <ArrowUp size={17} />}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -2,7 +2,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Atom, Loader2, Trash2 } from 'lucide-react';
+import { Loader2, Trash2 } from 'lucide-react';
+import { OriginAvatar } from '../../avatar';
 import { deleteOriginEntry } from '../../chat/originWorkspace';
 import { originRuntimeLabel } from '../../chat/originCatalog';
 import { useOriginStore } from '../../stores/originStore';
@@ -16,6 +17,13 @@ import { OriginComposer } from './OriginComposer';
 import './OriginSessionPanel.css';
 
 const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+/** Openers that show what an Origin is good for without pretending to be smart. */
+const DRAFT_SUGGESTIONS = [
+  'Summarise today’s news for my watchlist',
+  'Review my open positions and flag the risky ones',
+  'Sketch a momentum rule for BTC and backtest it',
+];
 
 export function OriginSessionPanel() {
   const selection = useOriginStore((state) => state.selection);
@@ -58,11 +66,34 @@ export function OriginSessionPanel() {
         <main className="origin-draft-stage">
           <div className="origin-draft-content">
             <div className="origin-draft-heading">
-              <span className="origin-draft-mark" aria-hidden="true"><Atom size={23} /></span>
-              <h1>New Origin</h1>
+              <span className="origin-draft-mark" aria-hidden="true"><OriginAvatar size="xl" /></span>
+              <h1>What should Origin work on?</h1>
+              <p>
+                Every Origin is a throwaway agent: no memory, no identity, its own
+                working directory. Nothing carries over from your Agents or from
+                earlier Origins.
+              </p>
             </div>
             <OriginComposer />
             {error ? <div className="origin-inline-error" role="alert">{error}</div> : null}
+            <div className="origin-draft-suggestions">
+              <span className="origin-draft-suggestions-label">Try</span>
+              {DRAFT_SUGGESTIONS.map((suggestion) => (
+                <button
+                  className="origin-suggestion"
+                  key={suggestion}
+                  onClick={() => {
+                    useOriginStore.getState().setMessage(suggestion);
+                    requestAnimationFrame(() => {
+                      document.querySelector<HTMLTextAreaElement>('.origin-draft-content .composer-input')?.focus();
+                    });
+                  }}
+                  type="button"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         </main>
       ) : sessionId ? (
@@ -80,7 +111,7 @@ export function OriginSessionPanel() {
             streaming={streaming}
             transcriptRef={transcriptRef}
           />
-          <div className="origin-session-dock">
+          <div className="composer-dock origin-session-dock">
             <OriginComposer />
             {error ? <div className="origin-inline-error" role="alert">{error}</div> : null}
           </div>
@@ -122,7 +153,9 @@ function OriginHeader({
   return (
     <header className="origin-session-header">
       <div className="origin-session-identity">
-        <span className="origin-session-avatar" aria-hidden="true"><Atom size={18} /></span>
+        <span className="origin-session-avatar" aria-hidden="true">
+          <OriginAvatar seed={projected?.id} size="lg" />
+        </span>
         <span className="origin-session-copy">
           <strong>{projected?.title || 'Origin'}</strong>
           <small className={running ? 'working' : ''}>
@@ -169,7 +202,10 @@ function OriginTimeline({
         </div>
       ) : null}
       {!loading && messages.length === 0 && streaming === undefined ? (
-        <div className="origin-timeline-status"><Atom size={22} /><span>Origin</span></div>
+        <div className="origin-timeline-status">
+          <OriginAvatar size="lg" />
+          <span>No messages yet</span>
+        </div>
       ) : null}
       {messages.map((message) => (
         <OriginMessageRow key={message.id} message={message} onPreviewImage={onPreviewImage} />

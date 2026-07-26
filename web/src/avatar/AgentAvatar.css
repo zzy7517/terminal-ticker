@@ -16,6 +16,11 @@
   background: var(--accent-tint);
 }
 
+/* Origins read as a generated artefact, not a portrait: softer box, no crop. */
+.agent-avatar--origin {
+  border-radius: var(--radius-md);
+}
+
 .agent-avatar--pokemon img {
   height: 100%;
   /* Official artwork is high-res illustration — smooth downscale looks better than pixelated. */

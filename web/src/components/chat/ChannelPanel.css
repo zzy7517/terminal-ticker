@@ -338,69 +338,6 @@
   padding: 6px 14px;
 }
 
-.channel-composer-shell {
-  position: relative;
-}
-
-.agent-tab-layout .channel-composer-shell .session-compose {
-  border: 0;
-  border-radius: 0;
-  border-top: 1px solid var(--line-soft);
-  flex-shrink: 0;
-  margin: 0;
-  max-width: none;
-  padding: 12px 14px;
-  width: 100%;
-}
-
-/* ── Mention picker ───────────────────────────────────────────────── */
-.channel-mention-picker {
-  animation: pop-in var(--dur-2) var(--ease-out) both;
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  backdrop-filter: blur(20px) saturate(1.4);
-  background: color-mix(in srgb, var(--panel-elevated) 84%, transparent);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  bottom: 100%;
-  box-shadow: var(--shadow-inner-edge), var(--shadow-md);
-  display: grid;
-  left: 14px;
-  margin-bottom: 6px;
-  min-width: 240px;
-  overflow: hidden;
-  position: absolute;
-  transform-origin: bottom left;
-  z-index: 5;
-}
-
-.channel-mention-picker button {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  color: var(--text-primary);
-  cursor: pointer;
-  display: flex;
-  gap: 8px;
-  padding: 7px 10px;
-  text-align: left;
-  transition: background-color var(--dur-1) var(--ease-out);
-}
-
-.channel-mention-picker button:hover {
-  background: var(--accent-tint);
-}
-
-.channel-mention-picker strong {
-  color: var(--control-accent);
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.channel-mention-picker span {
-  color: var(--text-muted);
-}
-
 /* ── Channel message avatars (Agent only) ─────────────────────────── */
 .session-message.channel-message.agent {
   align-items: flex-start;

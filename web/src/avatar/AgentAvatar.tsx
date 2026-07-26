@@ -13,6 +13,8 @@ import {
   effectiveAvatarSeed,
   pokemonIdFromSeed,
   pokemonSpriteUrl,
+  ORIGIN_CONCEPT_SEED,
+  ORIGIN_POKEMON_ID,
   type AvatarSeedSource,
   type AvatarSize,
   type AvatarStyle,
@@ -43,16 +45,35 @@ export type AvatarRerollButtonProps = {
   title?: string;
 };
 
+export type OriginAvatarProps = {
+  /** Origin session id. Omit on a draft to get the Origin concept mark. */
+  seed?: string | null;
+  size?: AvatarSize;
+  className?: string;
+};
+
 type AvatarFaceProps = {
   agent: AvatarSeedSource;
   size: AvatarSize;
   theme: PaletteTheme;
   avatarStyle: AvatarStyle;
   className?: string;
+  /** Origin override: faceless pixel grid instead of a beam portrait. */
+  boringVariant?: 'beam' | 'pixel';
+  /** Origin override: pin one species instead of hashing the seed. */
+  pokemonId?: number;
 };
 
-/** Internal renderer — Chat and Appearance both adapt into this seam. */
-function AvatarFace({ agent, size, theme, avatarStyle, className }: AvatarFaceProps) {
+/** Internal renderer — Chat, Origin and Appearance all adapt into this seam. */
+function AvatarFace({
+  agent,
+  size,
+  theme,
+  avatarStyle,
+  className,
+  boringVariant = 'beam',
+  pokemonId,
+}: AvatarFaceProps) {
   const seed = effectiveAvatarSeed(agent);
   const px = avatarSizePx(size);
   const rootClass = className ? `agent-avatar ${className}` : 'agent-avatar';
@@ -69,7 +90,7 @@ function AvatarFace({ agent, size, theme, avatarStyle, className }: AvatarFacePr
           decoding="async"
           draggable={false}
           height={px}
-          src={pokemonSpriteUrl(pokemonIdFromSeed(seed))}
+          src={pokemonSpriteUrl(pokemonId ?? pokemonIdFromSeed(seed))}
           width={px}
         />
       </span>
@@ -88,7 +109,7 @@ function AvatarFace({ agent, size, theme, avatarStyle, className }: AvatarFacePr
         name={seed}
         size={px}
         square
-        variant="beam"
+        variant={boringVariant}
       />
     </span>
   );
@@ -103,6 +124,28 @@ export function AgentAvatar({ agent, size = 'md', className }: AgentAvatarProps)
       agent={agent}
       avatarStyle={avatarStyle}
       className={className}
+      size={size}
+      theme={theme}
+    />
+  );
+}
+
+/**
+ * Origin face: same pipeline and same UI-pref switch as an Agent, rendered so
+ * it reads as identity-free. Pixel grids vary per session; Pikachu does not,
+ * because a per-seed species would just look like another Agent.
+ */
+export function OriginAvatar({ seed, size = 'md', className }: OriginAvatarProps) {
+  const theme = useUiStore((state) => state.theme);
+  const avatarStyle = useUiStore((state) => state.avatarStyle);
+  const classes = className ? `agent-avatar--origin ${className}` : 'agent-avatar--origin';
+  return (
+    <AvatarFace
+      agent={{ id: seed || ORIGIN_CONCEPT_SEED }}
+      avatarStyle={avatarStyle}
+      boringVariant="pixel"
+      className={classes}
+      pokemonId={ORIGIN_POKEMON_ID}
       size={size}
       theme={theme}
     />

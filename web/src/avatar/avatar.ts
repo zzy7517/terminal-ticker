@@ -53,6 +53,17 @@ export function avatarSizePx(size: AvatarSize = 'md'): number {
 /** Gen 1 National Dex coverage for PokeAPI official artwork. */
 export const POKEMON_SPRITE_COUNT = 151;
 
+/**
+ * Origins share the Agent avatar pipeline but must not read as an identity.
+ * Under `beam` they render as a pixel grid (procedural, faceless) seeded per
+ * session; under `pokemon` a random species would be indistinguishable from an
+ * Agent, so every Origin pins the same one instead.
+ */
+export const ORIGIN_POKEMON_ID = 25;
+
+/** Stable seed for the Origin concept itself, before a session exists. */
+export const ORIGIN_CONCEPT_SEED = 'origin';
+
 /** Official artwork renders (high-res); downscales cleanly at chip size. */
 const POKEMON_SPRITE_BASE =
   'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork';
