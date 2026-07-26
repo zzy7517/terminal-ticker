@@ -1,0 +1,257 @@
+web/src/components/settings/Jin10SettingsPanel.css
+  s_040824439a2693::t_29b25a09f52942 1-55
+web/src/constants.ts
+  s_040824439a2693::t_c0f65ee1fee294 26
+  s_040824439a2693::t_219130f5da74df 18
+tradex/macro/store.ts
+  s_040824439a2693::t_3e89a1f111199b 1-380
+tradex/macro/domain.ts
+  s_040824439a2693::t_e02c834be29496 209-213
+  s_040824439a2693::t_450964ff12e235 1-22,31-143,153-172,175-178,192-208,214-215
+  s_d9a0da4dc65df2::t_5daa699d62ac20 144-152
+  s_d9a0da4dc65df2::t_8cef21d4d3ddf3 23-30
+  s_02204389171056::t_9ca4e57a563ea8 173-174
+  s_040824439a2693::t_a140b28e0e2f10 179-183,186-191
+  s_02204389171056::t_d3e3506884c3f2 184-185
+tradex/macro/calendar.test.ts
+  s_040824439a2693::t_3e9f21e1adab40 1-11,18-145
+  s_d9a0da4dc65df2::t_4f6b5ace887d6b 12-17
+tradex/macro/providers/deribit_dvol.ts
+  s_040824439a2693::t_6e2aa012ed557e 1-97
+tradex/config/index.ts
+  s_02204389171056::t_2ca18188c69ccb 186-187
+  s_02204389171056::t_d5fde6e80f03b9 952-953
+  s_02204389171056::t_236d4f4e319117 19
+  s_02204389171056::t_e15a9351e2d477 825-826,829-830
+  s_040824439a2693::t_a7767bd07cd987 247
+  s_040824439a2693::t_830712a613687d 18
+  s_d9a0da4dc65df2::t_8c5c4abd50cafa 865
+  s_040824439a2693::t_8da20f1ee843f0 183-184
+  s_02204389171056::t_15fa809cf0a3f2 801,805-806
+  s_02204389171056::t_1d20fe0284da91 838-839
+  s_02204389171056::t_9f1406a24152a4 495-498,502-506,513-520
+  s_02204389171056::t_5e849c9dfbe8e9 914,921-922
+  s_040824439a2693::t_6b1e35ca9d735c 999,1063
+  s_040824439a2693::t_dfbf29b8c02669 818-824,827-828,831-837,840-845,860-864,866-869
+  s_02204389171056::t_7c77f66b026f67 521,1008-1038
+  s_040824439a2693::t_2352393b21a6f4 846-859
+  s_02204389171056::t_3957e11fb04393 228-229
+  s_040824439a2693::t_5c198f4488ed0b 804
+  s_0b683b32bb8dff::t_a8d0dd9da93a90 522
+web/src/stores/uiStore.ts
+  s_d9a0da4dc65df2::t_2f8b66e0f44d24 13
+tradex/options/domain.ts
+  s_02204389171056::t_8a3b4da4d29798 144-145
+tradex/macro/providers/crypto.test.ts
+  s_d9a0da4dc65df2::t_5e7c6cd6467986 5,142,150,160,166,172,178-179
+  s_040824439a2693::t_a61daf2e7509ed 1-4,6-110,119-141,143-149,151-159,161-165,167-171,173-177,180-181
+  s_d9a0da4dc65df2::t_964445f2250eef 111-118
+web/src/components/settings/McpSettingsPanel.tsx
+  s_040824439a2693::t_8387fae799f285 616
+  s_040824439a2693::t_d4f4567af3d1da 46,112
+tradex/macro/service.test.ts
+  s_040824439a2693::t_bb9fcc30f0a727 1-126,165-178
+  s_d9a0da4dc65df2::t_e0f9fa94353e1a 127-164
+tradex/macro/snapshot.test.ts
+  s_040824439a2693::t_e13dd719792ab4 1-121
+tradex/mcp/config.ts
+  s_040824439a2693::t_c55676b1a871d1 19-21,23
+tradex/api/helpers.ts
+  s_02204389171056::t_ece884d636403e 349-350,352
+tradex/api/routes/options.ts
+  s_02204389171056::t_4337eec6109c60 218-228
+tradex/macro/providers/fred.ts
+  s_040824439a2693::t_5b8af29ea7d061 1-130
+tradex/agent/tools/macro.ts
+  s_d9a0da4dc65df2::t_e2e61ecc833416 20-28
+  s_d9a0da4dc65df2::t_04e8cac4871b6a 1-19,29-275
+tradex/db.ts
+  s_02204389171056::t_d7c4932104cfe1 8-33,35-61
+tradex/macro/snapshot.ts
+  s_040824439a2693::t_adb1f89283d32d 1-140
+secrets.toml.example
+  s_02204389171056::t_9986837f8816ba 1-38
+tradex/jin10/client.ts
+  s_040824439a2693::t_01b6ddd8bb093b 17
+  s_040824439a2693::t_53be6a9e4db83b 1-16,18-143
+web/src/components/settings/Jin10SettingsPanel.tsx
+  s_040824439a2693::t_8ffd468edcff8f 1-251
+tradex/macro/calendar.ts
+  s_040824439a2693::t_e04917b35de3cc 1-117
+tradex/macro/service.ts
+  s_040824439a2693::t_9862b8eeefe722 97-100
+  s_040824439a2693::t_1686929c6dbddf 20-26,29-32
+  s_040824439a2693::t_564f5c89a5366c 1-19,27-28,33-47,51-54,57-60,68,70-78,82-96,101-118,135-139,142-179,280-320,322-331,338,348-349,355-356,361-362,364-373,401-424,426-428,430-433
+  s_040824439a2693::t_80cdc1b60765eb 321
+  s_040824439a2693::t_dc45a7fd248acd 332-337,339-347,350-354,363
+  s_d9a0da4dc65df2::t_4e7d0d3a8d9924 374-400
+  s_040824439a2693::t_0a427fcdb6d4ac 48-50,55-56
+  s_040824439a2693::t_26de0a61fe193d 425,429
+  s_040824439a2693::t_2aada3715c7cb7 119-134,140-141
+  s_d9a0da4dc65df2::t_c2da12a9c8f151 357-360
+  s_040824439a2693::t_da2f0ab665a199 61-67,69
+  s_040824439a2693::t_a85271bc875ffd 180-279
+  s_040824439a2693::t_d7a41a27d033f1 79-81
+watchlist.toml
+  s_d9a0da4dc65df2::t_76dbf8d921998f 110-114,121,126
+  s_040824439a2693::t_7646961ef458cc 106-109,115-116,118
+  s_02204389171056::t_f6cbfb61039764 89
+  s_040824439a2693::t_4e0c2587ad61f1 95
+  s_040824439a2693::t_8b756ba71d59f9 98,101-105,119-120,122-125,127
+  s_d9a0da4dc65df2::t_f35f5b1e84738c 99
+  s_040824439a2693::t_0654401110be26 97
+  s_040824439a2693::t_abb05cbff0de9c 117
+tradex/api/serializers.ts
+  s_d9a0da4dc65df2::t_325d810977b4d0 158-167
+tradex/macro/registry.ts
+  s_040824439a2693::t_67dcf3f8fd8d43 12-13
+  s_040824439a2693::t_251dde93003173 215-281,291-292,295-300,321-325,327-332
+  s_d9a0da4dc65df2::t_a0992c2045a3bc 108-142
+  s_040824439a2693::t_da121252c20208 1-11,14-107,143-176,187-188,203-214,326,333-342
+  s_d9a0da4dc65df2::t_9612c25a08d6bc 282-290,293-294,301-308,310-318,320
+  s_d9a0da4dc65df2::t_e5ff34e6ac20e6 309
+  s_d9a0da4dc65df2::t_108d4f50dde701 177-186,189-202
+  s_d9a0da4dc65df2::t_3bf28aed3581f8 319
+tradex/api/runtime.ts
+  s_040824439a2693::t_2740c460e8457d 230-231
+  s_040824439a2693::t_65ad5fccf879fd 123-129
+  s_040824439a2693::t_204aeb6fd96df7 109
+  s_040824439a2693::t_0d9ee80833fddf 164
+  s_040824439a2693::t_328791d014999f 188-192,198
+  s_040824439a2693::t_c780380cfdbf86 245-246
+  s_040824439a2693::t_f3a31ba7fc7f47 22,53
+tradex/jin10/types.ts
+  s_040824439a2693::t_f309fc0dc62043 50-52,55-56
+web/src/components/workspace/MacroPanel.tsx
+  s_d9a0da4dc65df2::t_263ba8816e8463 1-317
+tradex/api/routes/macro.ts
+  s_d9a0da4dc65df2::t_6e8b568554c9af 1-134,140-141,144-145,148-171
+  s_02204389171056::t_34b25b1309e1a0 135-139,142-143,146-147
+web/src/api/index.ts
+  s_d9a0da4dc65df2::t_f854ba9df36aa7 6
+  s_d9a0da4dc65df2::t_75d43afadb3940 11
+tradex/config/secrets.ts
+  s_02204389171056::t_9592afe17e4e78 35
+  s_02204389171056::t_dfc082ca30e936 7
+  s_02204389171056::t_fe86b11ff79ca1 26
+  s_02204389171056::t_a468b6b94537dc 1-6,8-25,27-34,36-139
+tradex/api/routes/jin10.ts
+  s_02204389171056::t_c57d357d3d84b0 78-81
+  s_040824439a2693::t_4095fd99330505 46-47
+tradex/macro/store.test.ts
+  s_040824439a2693::t_7d2a812b9222b2 1-186
+tradex/cron/runner.ts
+  s_d9a0da4dc65df2::t_6c2978cfccb7dc 18
+  s_d9a0da4dc65df2::t_1f5362d332e398 87
+  s_d9a0da4dc65df2::t_86aa0b177d2eaf 102-106
+tradex/macro/providers/quotes.ts
+  s_d9a0da4dc65df2::t_c44eb3c0d6c6ab 33-37
+  s_040824439a2693::t_887b6eafad97e7 163
+  s_040824439a2693::t_e0fe66467f9a98 1,4,6-8,13,17-32,38-40,47-162,164-183
+  s_d9a0da4dc65df2::t_fa97e5f8811084 9-12
+  s_d9a0da4dc65df2::t_9e06f6e46873df 2-3,5,14-16
+  s_d9a0da4dc65df2::t_9d08661c635de8 41-46
+  s_040824439a2693::t_6d39cde0b21eee 184-195
+tradex/macro/providers/jin10_calendar.ts
+  s_040824439a2693::t_f762b4585103dc 1-87
+tradex/jin10/service.ts
+  s_040824439a2693::t_6a302885dfc17c 44-46,50-51,54,58,61
+  s_040824439a2693::t_74b0253e0ef683 102-110
+  s_040824439a2693::t_edb557568525b7 4-6,9,11,18
+  s_040824439a2693::t_a0307b7b99c86a 247-248
+  s_040824439a2693::t_deca5ce7c3dcff 68
+tradex/macro/providers/fred.test.ts
+  s_040824439a2693::t_0a36305c1d7981 1-11,13-65,67-76,78-115
+  s_040824439a2693::t_943175a2b6e573 66,77
+  s_040824439a2693::t_9e728cddbdcecf 12
+tradex/api/agent_tools.ts
+  s_d9a0da4dc65df2::t_6a537f6f747db2 57
+  s_d9a0da4dc65df2::t_4131c1f1117e26 6
+  s_d9a0da4dc65df2::t_e3621fa815752b 51
+web/src/components/workspace/WorkspaceView.tsx
+  s_d9a0da4dc65df2::t_d2ea8422a1f8ed 4
+  s_d9a0da4dc65df2::t_2102333bf0c222 112
+  s_d9a0da4dc65df2::t_2d49c83c084b0e 50
+  s_d9a0da4dc65df2::t_b8579da3b6a84a 22
+web/src/utils.ts
+  s_040824439a2693::t_f9051817edde12 14
+  s_040824439a2693::t_2be2a37d38c74f 48-50
+  s_040824439a2693::t_f8358a48479d69 76-77
+web/src/api/macro.ts
+  s_d9a0da4dc65df2::t_9972da05408927 1-126
+web/src/components/settings/SettingsFrame.tsx
+  s_040824439a2693::t_545fc4e867c959 15
+  s_040824439a2693::t_3095e45e41c155 47
+tradex/api/app.ts
+  s_d9a0da4dc65df2::t_393274cffc2844 39
+web/src/components/settings/index.ts
+  s_040824439a2693::t_ee738d90015f52 8
+tradex/config/watchlist_store.ts
+  s_02204389171056::t_66fc3d642f285e 523
+  s_02204389171056::t_3b58b67c4d8033 540-541,544-545
+  s_02204389171056::t_d9be5db7efd487 21-26
+  s_02204389171056::t_f397e831cd38db 475
+  s_02204389171056::t_8e24a9fa3e35a9 413-417
+  s_02204389171056::t_18c92767987bc8 495
+  s_d9a0da4dc65df2::t_2e3217fc902f8e 488-494,496-503,505-514
+  s_02204389171056::t_4ab013af818ca7 504
+  s_040824439a2693::t_b981e1dd020744 20
+  s_040824439a2693::t_0df81e307ba07b 473-474
+tradex/macro/providers/binance_futures.ts
+  s_040824439a2693::t_918f69c46e1702 1-110
+tradex/config/secrets.test.ts
+  s_02204389171056::t_5f9039f3e37ea3 1-144
+web/src/components/workspace/MacroPanel.css
+  s_d9a0da4dc65df2::t_d52ec6065af9a6 1-324
+web/src/App.tsx
+  s_040824439a2693::t_716c0f3c2a8276 19
+  s_040824439a2693::t_1d7957b7a45e0c 99-100
+web/src/components/AppSidebar.tsx
+  s_d9a0da4dc65df2::t_d3ba6e3c17c4bb 5
+  s_d9a0da4dc65df2::t_4327a78352964b 33
+  s_d9a0da4dc65df2::t_34a0583a78c705 41
+tradex/agent/tools/trading.ts
+  s_d9a0da4dc65df2::t_4ba594ea0b1fab 94-97
+  s_d9a0da4dc65df2::t_68f41f15e31149 15-22
+  s_d9a0da4dc65df2::t_5264276a3b676a 76-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "d58cd37de6e9a8b79c119f04581302fc4df0a2f3",
+  "prompts": {},
+  "sessions": {
+    "s_02204389171056": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9bb66469-0bbd-46ab-8bbb-5032cd864021",
+        "model": "claude-fable-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_040824439a2693": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6492eb82-7f13-40e8-8398-397d3eaab7c4",
+        "model": "claude-opus-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_0b683b32bb8dff": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8f078ad-45b6-4492-9fbb-ff8a3dd086e8",
+        "model": "claude-fable-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_d9a0da4dc65df2": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "fdf1da68-20f2-4b32-9d61-54e5c26adc2f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
