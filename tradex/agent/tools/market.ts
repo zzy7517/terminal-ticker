@@ -2,7 +2,7 @@ import { QuoteState } from "../../domain/quotes.js";
 import { calculateTechnicalIndicators } from "../../domain/indicators.js";
 import type { CandleContextMode } from "../../config/index.js";
 import { ToolRegistry, jsonOutput } from "./registry.js";
-import { shortCandle } from "./market_context.js";
+import { shortCandle } from "./market-context.js";
 
 const INTERVAL_ALIASES: Record<string, string> = {
   "1h": "1H",

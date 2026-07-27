@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { updateJin10ConfigInWatchlist } from "../../config/watchlist_store.js";
+import { updateJin10ConfigInWatchlist } from "../../config/watchlist-store.js";
 import type { AppRuntime } from "../runtime.js";
 import { requireConfigPath, reloadAndState } from "../helpers.js";
 

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { fetch as browserFetch } from "wreq-js";
-import { ExchangeOrder, ExchangePosition, OrderResult, orderResult } from "./exchange_models.js";
+import { ExchangeOrder, ExchangePosition, OrderResult, orderResult } from "./exchange-models.js";
 
 export const BITGET_API_BASE = "https://api.bitget.com";
 export const BITGET_DEMO_FILL_SOURCE = "bitget-demo";

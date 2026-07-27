@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AgentStore } from "../../agent/agent_store.js";
+import { AgentStore } from "../../agent/agent-store.js";
 import { AgentContextStore } from "../../agent/context-store.js";
 import { AgentContextManager } from "../../agent/context-manager.js";
 import { MessageStore } from "../../chat/message-store.js";

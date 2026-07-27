@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { updateProxyConfigInWatchlist } from "../../config/watchlist_store.js";
+import { updateProxyConfigInWatchlist } from "../../config/watchlist-store.js";
 import { testProxyConfig } from "../../runtime/proxy.js";
 import type { AppRuntime } from "../runtime.js";
 import { mergeProxyConfig, requireConfigPath, reloadAndState } from "../helpers.js";

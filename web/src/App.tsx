@@ -6,7 +6,8 @@ import { createLiveChatShellController } from './chat/shellController';
 import { initOriginWorkspace } from './chat/originWorkspace';
 import { AppSidebar } from './components/AppSidebar';
 
-import { orderedGroups, readRouteFromHash } from './utils';
+import { orderedGroups } from './utils/marketDisplay';
+import { readRouteFromHash } from './utils/routeHash';
 import { WorkspaceView } from './components/workspace';
 import {
   SettingsFrame,

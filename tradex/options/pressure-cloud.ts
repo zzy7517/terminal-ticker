@@ -18,8 +18,8 @@ import type {
   HedgeImpulsePoint,
   ImpulseExtremum,
   ZeroCrossing,
-} from "./hedge_impulse.js";
-import type { RegimeParams } from "./iv_surface.js";
+} from "./hedge-impulse.js";
+import type { RegimeParams } from "./iv-surface.js";
 
 // ============================================================================
 // Types

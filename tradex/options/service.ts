@@ -6,13 +6,13 @@
  */
 
 import type { GexSnapshot, OptionChain, OptionsConfig, UnusualActivity } from "./domain.js";
-import { GexCalculator } from "./gex_calculator.js";
+import { GexCalculator } from "./gex-calculator.js";
 import { DeribitProvider } from "./providers/deribit.js";
 import { createProvider, resolveProviderForSymbol, type OptionsDataProvider } from "./providers/index.js";
 import { OptionsStore } from "./store.js";
-import { buildIVSurface, deriveRegimeParams, deriveSpotVolCoupling } from "./iv_surface.js";
-import { computeHedgeImpulseCurve } from "./hedge_impulse.js";
-import { computePressureCloud } from "./pressure_cloud.js";
+import { buildIVSurface, deriveRegimeParams, deriveSpotVolCoupling } from "./iv-surface.js";
+import { computeHedgeImpulseCurve } from "./hedge-impulse.js";
+import { computePressureCloud } from "./pressure-cloud.js";
 import { calculateFullExposure } from "./exposure.js";
 import { expiryCloseMs } from "./expiry.js";
 

@@ -106,3 +106,27 @@ export interface ProxyTestResult {
   latencyMs?: number;
   error?: string;
 }
+
+export interface OptionsConfigUpdate {
+  enabled?: boolean;
+  provider?: 'yfinance' | 'tradier' | 'deribit' | 'marketdata';
+  symbols?: string[];
+  pollIntervalSeconds?: number;
+  strikeRangePercent?: number;
+  tradier?: { apiKey?: string; baseUrl?: string };
+  marketdata?: { apiKey?: string; baseUrl?: string; strikeLimit?: number | null; dte?: number | null; callsPerMinute?: number | null };
+  deribit?: { enabled?: boolean; currencies?: string[] };
+}
+
+export interface BrowserStatus {
+  enabled: boolean;
+  connected: boolean;
+  socketPath: string | null;
+  error: string | null;
+}
+
+export interface BrowserPingResult {
+  ok: boolean;
+  info?: unknown;
+  error?: string;
+}

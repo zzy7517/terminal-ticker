@@ -1,11 +1,16 @@
 /** 工作台配置客户端：News、Options、Browser、Proxy 与 Jin10。 */
 import type {
+  BrowserPingResult,
+  BrowserStatus,
   MarketState,
   NewsConfigUpdate,
+  OptionsConfigUpdate,
   ProxyConfigUpdate,
   ProxyTestResult,
 } from '../types';
 import { responseError } from './http';
+
+export type { BrowserPingResult, BrowserStatus, OptionsConfigUpdate } from '../types';
 
 // Saves news-module settings (enabled flag, polling, etc.) and returns the updated state.
 export async function saveNewsConfig(config: NewsConfigUpdate): Promise<MarketState> {
@@ -22,17 +27,6 @@ export async function saveNewsConfig(config: NewsConfigUpdate): Promise<MarketSt
 }
 
 // Saves options/GEX configuration and returns the updated runtime state.
-export interface OptionsConfigUpdate {
-  enabled?: boolean;
-  provider?: 'yfinance' | 'tradier' | 'deribit' | 'marketdata';
-  symbols?: string[];
-  pollIntervalSeconds?: number;
-  strikeRangePercent?: number;
-  tradier?: { apiKey?: string; baseUrl?: string };
-  marketdata?: { apiKey?: string; baseUrl?: string; strikeLimit?: number | null; dte?: number | null; callsPerMinute?: number | null };
-  deribit?: { enabled?: boolean; currencies?: string[] };
-}
-
 export async function saveOptionsConfig(config: OptionsConfigUpdate): Promise<MarketState> {
   const response = await fetch('/api/options/config', {
     method: 'POST',
@@ -47,19 +41,6 @@ export async function saveOptionsConfig(config: OptionsConfigUpdate): Promise<Ma
 }
 
 // ─── Browser (Open Browser Use) ─────────────────────────────────────────────
-
-export interface BrowserStatus {
-  enabled: boolean;
-  connected: boolean;
-  socketPath: string | null;
-  error: string | null;
-}
-
-export interface BrowserPingResult {
-  ok: boolean;
-  info?: unknown;
-  error?: string;
-}
 
 export async function fetchBrowserStatus(): Promise<BrowserStatus> {
   const response = await fetch('/api/browser/status');

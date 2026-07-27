@@ -7,7 +7,7 @@ import {
 } from '../../chat/skillCompletion';
 import type { OriginState } from '../../stores/originStore';
 import type { ImageAttachment } from '../../types';
-import { MAX_ORIGIN_IMAGES } from '../../chat/originImages';
+import { MAX_ORIGIN_IMAGES } from '../../utils/originImages';
 
 interface ActiveOriginComposer {
   images: ImageAttachment[];

@@ -4,9 +4,9 @@
  * Pure types and interfaces. No I/O.
  */
 
-import type { IVSurface, RegimeParams } from "./iv_surface.js";
-import type { HedgeImpulseCurve } from "./hedge_impulse.js";
-import type { PressureCloud } from "./pressure_cloud.js";
+import type { IVSurface, RegimeParams } from "./iv-surface.js";
+import type { HedgeImpulseCurve } from "./hedge-impulse.js";
+import type { PressureCloud } from "./pressure-cloud.js";
 import type { ExposurePerExpiry } from "./exposure.js";
 
 // ============================================================================

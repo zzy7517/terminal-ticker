@@ -25,7 +25,11 @@ export interface QuoteSeriesSpec {
   seriesId: string;
   /** Yahoo ticker, e.g. "^VIX". */
   yahooSymbol: string;
-  /** Twelve Data ticker, e.g. "VIX". */
+  /**
+   * Twelve Data ticker, e.g. "XAU/USD". Empty means this series is Yahoo-only —
+   * Twelve Data has no ICE DXY listing (their `DXY` rejects as invalid; bare
+   * `DX` is an unrelated NYSE REIT).
+   */
   twelveDataSymbol: string;
 }
 
@@ -37,7 +41,8 @@ export interface QuoteSeriesSpec {
  * sync with `QUOTES_SERIES` in registry.ts; `quotes.test.ts` asserts that.
  */
 export const QUOTE_SERIES: QuoteSeriesSpec[] = [
-  { seriesId: "dxy", yahooSymbol: "DX-Y.NYB", twelveDataSymbol: "DXY" },
+  // ICE DXY lives on Yahoo only; see twelveDataSymbol note above.
+  { seriesId: "dxy", yahooSymbol: "DX-Y.NYB", twelveDataSymbol: "" },
   // Yahoo has no spot metal tickers (`XAUUSD=X` 404s), so the fallback uses the
   // COMEX front-month futures. Twelve Data does carry true spot, hence the
   // mismatched pair: front-month basis versus spot is a fraction of a percent
@@ -87,7 +92,7 @@ export class IndexQuotesProvider {
    * real-time in the revision sense, so `vintageTs` is null.
    */
   async fetchQuotes(spec: QuoteSeriesSpec, days: number): Promise<MacroPoint[]> {
-    if (this.twelveDataKey) {
+    if (this.twelveDataKey && spec.twelveDataSymbol) {
       return this.fetchFromTwelveData(spec, days);
     }
     return this.fetchFromYahoo(spec, days);

@@ -1,5 +1,5 @@
 /**
- * llm_client.ts — 轻量级 LLM 聊天客户端接口。
+ * llm-client.ts — 轻量级 LLM 聊天客户端接口。
  *
  * 供只需要单次、非流式感知、非 agentic 调用的代码路径使用
  * （例如非 agentic 的模型调用）。与核心 Agent 共用同一套类型化的

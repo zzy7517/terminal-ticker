@@ -4,7 +4,7 @@ import './WatchlistSidebar.css';
 import { useMarketStore, useGroups } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
 import { GROUP_LABELS } from '../../constants';
-import { changeClass } from '../../utils';
+import { changeClass } from '../../utils/marketDisplay';
 import { saveJin10Config, fetchJin10AvailableCodes, reorderWatchlist, removeWatchlistInstrument } from '../../api';
 import type { Instrument, Quote } from '../../types';
 

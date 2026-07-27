@@ -1,6 +1,6 @@
 import { ExchangeClient, HttpTransport, InfoClient } from "@nktkas/hyperliquid";
 import { privateKeyToAccount } from "viem/accounts";
-import { ExchangeOrder, ExchangePosition } from "./exchange_models.js";
+import { ExchangeOrder, ExchangePosition } from "./exchange-models.js";
 
 export const HYPERLIQUID_API_BASE = "https://api.hyperliquid.xyz";
 export const HYPERLIQUID_FILL_SOURCE = "hyperliquid";

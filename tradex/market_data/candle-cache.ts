@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import { CacheConfig } from "../config/index.js";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
-import { Candle } from "../domain/price_action.js";
+import { Candle } from "../domain/price-action.js";
 
 export const DEFAULT_CACHE_FILENAME = "candles.sqlite3";
 const INTERVAL_SECONDS: Record<string, number> = {

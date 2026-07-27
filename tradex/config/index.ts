@@ -14,9 +14,12 @@ import {
   normalizeModel,
   normalizeProvider,
   normalizeReasoningEffort,
-} from "./agent_models.js";
+} from "./agent-models.js";
 import { DEFAULT_JIN10_URL } from "../jin10/types.js";
-import { lookupSecret, secretsFilePath } from "./secrets.js";
+import { parseMacroConfig } from "../macro/config.js";
+import { parseOptionsConfig } from "../options/config.js";
+import { asRecord, coerceFloat, coerceInt, coerceMinInt, expandEnvRefs, normalizeBool, parseSecretField } from "./parsing.js";
+import { secretsFilePath } from "./secrets.js";
 
 export const BITGET_SOURCE = "bitget";
 export const HYPERLIQUID_SOURCE = "hyperliquid";
@@ -299,12 +302,6 @@ function providerProfilesDefault(): Record<string, ProviderProfile> {
   };
 }
 
-function asRecord(value: unknown, field: string): Record<string, unknown> {
-  if (value === null || value === undefined) return {};
-  if (typeof value !== "object" || Array.isArray(value)) throw new Error(`${field} must be a table`);
-  return value as Record<string, unknown>;
-}
-
 function normalizeSource(rawValue: unknown): string {
   if (rawValue === null || rawValue === undefined) return BITGET_SOURCE;
   if (typeof rawValue !== "string") throw new Error("source must be a string");
@@ -341,17 +338,6 @@ function normalizeGroup(rawValue: unknown, source: string): string {
   const group = rawValue.trim().toLowerCase().replace(/[- ]/g, "_");
   if (!group) return defaultGroup(source);
   return GROUP_ALIASES[group] ?? group;
-}
-
-function normalizeBool(rawValue: unknown, fieldName: string, defaultValue: boolean): boolean {
-  if (rawValue === null || rawValue === undefined) return defaultValue;
-  if (typeof rawValue === "boolean") return rawValue;
-  if (typeof rawValue === "string") {
-    const normalized = rawValue.trim().toLowerCase();
-    if (["1", "true", "yes", "on"].includes(normalized)) return true;
-    if (["0", "false", "no", "off"].includes(normalized)) return false;
-  }
-  throw new Error(`${fieldName} must be a boolean`);
 }
 
 function normalizeAnalysisInterval(rawValue: unknown): string {
@@ -459,65 +445,6 @@ function normalizeInstruments(symbols: unknown[]): InstrumentConfig[] {
   }
   if (normalized.length === 0) throw new Error("at least one symbol is required");
   return normalized;
-}
-
-function coerceInt(rawValue: unknown, fieldName: string, defaultValue: number): number {
-  if (rawValue === null || rawValue === undefined) return defaultValue;
-  let value: number;
-  if (typeof rawValue === "string") {
-    const trimmed = rawValue.trim();
-    if (!/^[+-]?\d+$/.test(trimmed)) throw new Error(`${fieldName} must be an integer`);
-    value = Number.parseInt(trimmed, 10);
-  } else if (typeof rawValue === "number") {
-    if (!Number.isInteger(rawValue)) throw new Error(`${fieldName} must be an integer`);
-    value = rawValue;
-  } else {
-    throw new Error(`${fieldName} must be an integer`);
-  }
-  if (value <= 0) throw new Error(`${fieldName} must be positive`);
-  return value;
-}
-
-function coerceMinInt(rawValue: unknown, fieldName: string, defaultValue: number, minimum: number): number {
-  const value = coerceInt(rawValue, fieldName, defaultValue);
-  if (value < minimum) throw new Error(`${fieldName} must be at least ${minimum}`);
-  return value;
-}
-
-function coerceFloat(rawValue: unknown, fieldName: string, defaultValue: number): number {
-  if (rawValue === null || rawValue === undefined) return defaultValue;
-  const value = Number(rawValue);
-  if (!Number.isFinite(value)) throw new Error(`${fieldName} must be a number`);
-  if (value <= 0) throw new Error(`${fieldName} must be positive`);
-  return value;
-}
-
-// Expands ${VAR} / $VAR references against the secrets vault first, then
-// process.env. Unset variables expand to an empty string (with a warning) so a
-// missing secret fails loudly rather than leaking a literal "${VAR}" to a
-// provider.
-function expandEnvRefs(value: string, field: string): string {
-  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, braced, bare) => {
-    const name = braced ?? bare;
-    const resolved = lookupSecret(name);
-    if (resolved === undefined) {
-      console.warn(
-        `[config] secret "${name}" referenced by ${field} is set neither in ${secretsFilePath()} nor in the environment`,
-      );
-      return "";
-    }
-    return resolved;
-  });
-}
-
-/**
- * Parse one secret-bearing config field into its resolved value plus the
- * original TOML string. Serializers persist the raw form, so "${VAR}"
- * references round-trip instead of leaking the expanded secret to disk.
- */
-function parseSecretField(rawValue: unknown, field: string): { value: string; raw: string } {
-  const raw = typeof rawValue === "string" ? rawValue.trim() : "";
-  return { raw, value: raw ? expandEnvRefs(raw, field) : "" };
 }
 
 function parseProviderSecretRaw(raw: Record<string, unknown>, field: string): string {
@@ -815,58 +742,6 @@ export function parseJin10Config(rawJin10Value: unknown): Jin10Config {
   };
 }
 
-export function parseMacroConfig(
-  rawMacroValue: unknown,
-): import("../macro/domain.js").MacroConfig {
-  const raw = asRecord(rawMacroValue ?? {}, "macro");
-  const window = asRecord(raw.event_window ?? {}, "macro.event_window");
-  const rawImpact = typeof window.min_impact === "string" ? window.min_impact.trim().toLowerCase() : "high";
-  const minImpact = rawImpact === "low" || rawImpact === "medium" ? rawImpact : "high";
-  const fredKey = parseSecretField(raw.fred_api_key, "macro.fred_api_key");
-  const twelveDataKey = parseSecretField(raw.twelve_data_api_key, "macro.twelve_data_api_key");
-  return {
-    enabled: normalizeBool(raw.enabled, "macro.enabled", false),
-    fredApiKey: fredKey.value,
-    fredApiKeyRaw: fredKey.raw,
-    backfillYears: coerceMinInt(raw.backfill_years, "macro.backfill_years", 2, 1),
-    fredPollIntervalSeconds: coerceMinInt(
-      raw.fred_poll_interval_seconds,
-      "macro.fred_poll_interval_seconds",
-      6 * 60 * 60,
-      600,
-    ),
-    twelveDataApiKey: twelveDataKey.value,
-    twelveDataApiKeyRaw: twelveDataKey.raw,
-    calendarEnabled: normalizeBool(raw.calendar_enabled, "macro.calendar_enabled", true),
-    calendarPollIntervalSeconds: coerceMinInt(
-      raw.calendar_poll_interval_seconds,
-      "macro.calendar_poll_interval_seconds",
-      300,
-      60,
-    ),
-    cryptoEnabled: normalizeBool(raw.crypto_enabled, "macro.crypto_enabled", true),
-    cryptoPollIntervalSeconds: coerceMinInt(
-      raw.crypto_poll_interval_seconds,
-      "macro.crypto_poll_interval_seconds",
-      300,
-      60,
-    ),
-    quotesEnabled: normalizeBool(raw.quotes_enabled, "macro.quotes_enabled", true),
-    quotesPollIntervalSeconds: coerceMinInt(
-      raw.quotes_poll_interval_seconds,
-      "macro.quotes_poll_interval_seconds",
-      6 * 60 * 60,
-      600,
-    ),
-    eventWindow: {
-      minImpact,
-      beforeMinutes: coerceMinInt(window.before_minutes, "macro.event_window.before_minutes", 15, 0),
-      afterMinutes: coerceMinInt(window.after_minutes, "macro.event_window.after_minutes", 15, 0),
-      blockTrades: normalizeBool(window.block_trades, "macro.event_window.block_trades", true),
-    },
-  };
-}
-
 export function parseBrowserConfig(rawBrowserValue: unknown): BrowserConfig {
   const raw = asRecord(rawBrowserValue, "browser");
   const socketPath = typeof raw.socket_path === "string" && raw.socket_path.trim() ? raw.socket_path.trim() : null;
@@ -920,56 +795,6 @@ export function parseProxyConfig(rawProxyValue: unknown): ProxyConfig {
     username: typeof raw.username === "string" ? raw.username : "",
     password: password.value,
     passwordRaw: password.raw,
-  };
-}
-
-export function parseOptionsConfig(rawOptionsValue: unknown): import("../options/domain.js").OptionsConfig {
-  const DEFAULT: import("../options/domain.js").OptionsConfig = {
-    enabled: false, provider: "yfinance", symbols: ["SPY", "QQQ"],
-    pollIntervalSeconds: 60, strikeRangePercent: 0.15,
-    riskFreeRate: 0.0363, dividendYield: 0.015,
-    deribit: { enabled: false, currencies: ["BTC", "ETH"] },
-    alerts: { minOiChange: 1000, minVolumeOiRatio: 3.0, minPremium: 100_000 },
-  };
-  if (!rawOptionsValue || typeof rawOptionsValue !== "object") return DEFAULT;
-  const raw = rawOptionsValue as Record<string, unknown>;
-  const rawAlerts = asRecord(raw.alerts, "options.alerts");
-  const rawDeribit = asRecord(raw.deribit, "options.deribit");
-  const rawTradier = asRecord(raw.tradier, "options.tradier");
-  const rawMarketData = asRecord(raw.marketdata, "options.marketdata");
-  // Allow ${VAR} env references for the fallback key, like provider secrets.
-  const mdKeyRaw = typeof rawMarketData.api_key === "string" ? rawMarketData.api_key.trim() : "";
-  const mdKey = mdKeyRaw ? expandEnvRefs(mdKeyRaw, "options.marketdata.api_key") : "";
-  return {
-    enabled: normalizeBool(raw.enabled, "options.enabled", false),
-    provider: (typeof raw.provider === "string" ? raw.provider : "yfinance") as any,
-    symbols: Array.isArray(raw.symbols) ? raw.symbols.map(String) : ["SPY", "QQQ"],
-    pollIntervalSeconds: coerceInt(raw.poll_interval_seconds, "options.poll_interval_seconds", 60),
-    strikeRangePercent: coerceFloat(raw.strike_range_percent, "options.strike_range_percent", 0.15),
-    riskFreeRate: coerceFloat(raw.risk_free_rate, "options.risk_free_rate", 0.0363),
-    dividendYield: coerceFloat(raw.dividend_yield, "options.dividend_yield", 0.015),
-    tradier: rawTradier.api_key ? {
-      apiKey: expandEnvRefs(String(rawTradier.api_key), "options.tradier.api_key"),
-      apiKeyRaw: String(rawTradier.api_key),
-      baseUrl: typeof rawTradier.base_url === "string" ? rawTradier.base_url : "https://sandbox.tradier.com/v1",
-    } : undefined,
-    marketdata: mdKey ? {
-      apiKey: mdKey,
-      apiKeyRaw: mdKeyRaw,
-      baseUrl: typeof rawMarketData.base_url === "string" ? rawMarketData.base_url : "https://api.marketdata.app/v1",
-      strikeLimit: rawMarketData.strike_limit != null ? coerceInt(rawMarketData.strike_limit, "options.marketdata.strike_limit", 80) : undefined,
-      dte: rawMarketData.dte != null ? coerceInt(rawMarketData.dte, "options.marketdata.dte", 7) : undefined,
-      callsPerMinute: rawMarketData.calls_per_minute != null ? coerceInt(rawMarketData.calls_per_minute, "options.marketdata.calls_per_minute", 30) : undefined,
-    } : undefined,
-    deribit: {
-      enabled: normalizeBool(rawDeribit.enabled, "options.deribit.enabled", false),
-      currencies: Array.isArray(rawDeribit.currencies) ? rawDeribit.currencies.map(String) : ["BTC", "ETH"],
-    },
-    alerts: {
-      minOiChange: coerceInt(rawAlerts.min_oi_change, "options.alerts.min_oi_change", 1000),
-      minVolumeOiRatio: coerceFloat(rawAlerts.min_volume_oi_ratio, "options.alerts.min_volume_oi_ratio", 3.0),
-      minPremium: coerceInt(rawAlerts.min_premium, "options.alerts.min_premium", 100_000),
-    },
   };
 }
 

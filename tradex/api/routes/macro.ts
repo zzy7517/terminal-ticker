@@ -16,7 +16,7 @@
  */
 
 import { Hono } from "hono";
-import { updateMacroConfigInWatchlist } from "../../config/watchlist_store.js";
+import { updateMacroConfigInWatchlist } from "../../config/watchlist-store.js";
 import type { MacroConfig, MacroEventImpact } from "../../macro/domain.js";
 import { MACRO_SERIES, findSeries } from "../../macro/registry.js";
 import type { AppRuntime } from "../runtime.js";

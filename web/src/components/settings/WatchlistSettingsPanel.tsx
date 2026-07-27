@@ -4,7 +4,7 @@ import type { Instrument, InstrumentCatalogItem, InstrumentSearchResult } from '
 import type { SearchSource } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
 import { removeWatchlistInstrument } from '../../api';
-import { addInstrumentBySource, sourceName } from '../../utils';
+import { addInstrumentBySource, sourceName } from '../../utils/marketDisplay';
 import './WatchlistSettingsPanel.css';
 
 const SOURCE_LABEL: Record<SearchSource, string> = {

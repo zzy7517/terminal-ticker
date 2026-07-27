@@ -1,7 +1,7 @@
 import { fetch as browserFetch } from "wreq-js";
 import { websocket as browserWebSocket } from "wreq-js";
 import { BITGET_SOURCE, InstrumentConfig } from "../config/index.js";
-import { Candle } from "../domain/price_action.js";
+import { Candle } from "../domain/price-action.js";
 
 export const BITGET_API_BASE = "https://api.bitget.com";
 export const BITGET_WS_PUBLIC = "wss://ws.bitget.com/v2/ws/public";

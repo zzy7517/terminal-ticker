@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MacroService } from "./service.js";
 import { MacroStore } from "./store.js";
-import { parseMacroConfig } from "../config/index.js";
+import { parseMacroConfig } from "./config.js";
 import type { MacroEvent } from "./domain.js";
 
 const dirs: string[] = [];

@@ -1,5 +1,5 @@
 import { AppConfig } from "../config/index.js";
-import { mergeCandles } from "../domain/price_action.js";
+import { mergeCandles } from "../domain/price-action.js";
 import { QuoteState } from "../domain/quotes.js";
 import { MarketInstrument } from "../market_data/router.js";
 import { FeedEvent, FeedWorker } from "./feed.js";

@@ -2,14 +2,14 @@
 import { AppConfig } from "../config/index.js";
 import { NewsService } from "../news/service.js";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
-import { ExchangeRouter } from "../trading/exchange_router.js";
+import { ExchangeRouter } from "../trading/exchange-router.js";
 import { TradeStore } from "../trading/store.js";
 import { TradeStatus } from "../trading/models.js";
 import { TickerController } from "../runtime/controller.js";
 import { resolveInstruments, MarketInstrument } from "../market_data/router.js";
 import { serializeState } from "./serializers.js";
 import { CronScheduler } from "../cron/scheduler.js";
-import { CronJobStore } from "../cron/job_store.js";
+import { CronJobStore } from "../cron/job-store.js";
 import type { ActiveRuntimeRun } from "../agent/runtime/types.js";
 import {
   buildModelRuntimeSnapshot,
@@ -21,7 +21,7 @@ import { BrowserManager } from "../browser/index.js";
 import { OptionsService } from "../options/service.js";
 import { MacroService } from "../macro/service.js";
 import { applyProxyConfig } from "../runtime/proxy.js";
-import { AgentStore } from "../agent/agent_store.js";
+import { AgentStore } from "../agent/agent-store.js";
 import { AgentContextManager } from "../agent/context-manager.js";
 import { indexPersistedAgentSessions, importLegacySessionMessages } from "../agent/chat-index.js";
 import { ChannelStore } from "../channel/store.js";

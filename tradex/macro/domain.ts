@@ -177,8 +177,9 @@ export interface MacroConfig {
   /** Poll cadence for the daily FRED sweep. */
   fredPollIntervalSeconds: number;
   /**
-   * Twelve Data API key for DXY / VIX. Empty falls back to Yahoo Finance's
-   * unofficial endpoint, which needs no key but can change without notice.
+   * Twelve Data API key for spot metals (gold/silver). Empty falls back to
+   * Yahoo Finance's unofficial endpoint. ICE DXY always uses Yahoo — Twelve
+   * Data has no listing for it.
    */
   twelveDataApiKey: string;
   /** Original TOML value of `twelveDataApiKey`; see {@link fredApiKeyRaw}. */

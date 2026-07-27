@@ -25,9 +25,9 @@ import {
   perpSymbol,
 } from "./registry.js";
 import { FredProvider } from "./providers/fred.js";
-import { Jin10CalendarProvider } from "./providers/jin10_calendar.js";
-import { DeribitDvolProvider } from "./providers/deribit_dvol.js";
-import { BinanceFuturesProvider } from "./providers/binance_futures.js";
+import { Jin10CalendarProvider } from "./providers/jin10-calendar.js";
+import { DeribitDvolProvider } from "./providers/deribit-dvol.js";
+import { BinanceFuturesProvider } from "./providers/binance-futures.js";
 import { IndexQuotesProvider, QUOTE_SERIES } from "./providers/quotes.js";
 import { computeDerived, computeSeriesStats, type MacroSnapshot } from "./snapshot.js";
 import { MacroStore } from "./store.js";

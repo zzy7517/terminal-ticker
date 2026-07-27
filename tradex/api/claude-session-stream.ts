@@ -4,7 +4,7 @@ import { CLAUDE_CLI_INSTRUCTIONS, currentTimeInstruction, MAIN_AGENT_PROMPT } fr
 import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
 import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claude-code/runtime.js";
 import type { ExternalSessionStorePort } from "../agent/runtime/external-session-store.js";
-import { buildTradexToolRegistry } from "./agent_tools.js";
+import { buildTradexToolRegistry } from "./agent-tools.js";
 import {
   createExternalCliTurn,
   tradexCliUrl,

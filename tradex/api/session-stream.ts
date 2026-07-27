@@ -1,7 +1,7 @@
 // 为所有 Agent Runtime 提供统一的 Session SSE 生命周期编排。
 import crypto from "node:crypto";
 import type { ActiveRuntimeRun, RuntimeEvent, RuntimeRunResult } from "../agent/runtime/types.js";
-import { AgentSseWriter } from "./agent_sse.js";
+import { AgentSseWriter } from "./agent-sse.js";
 import type { AppRuntime } from "./runtime.js";
 
 export type SessionStreamSend = (event: Record<string, unknown>) => void;

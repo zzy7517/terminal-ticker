@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DeribitDvolProvider } from "./deribit_dvol.js";
-import { BinanceFuturesProvider } from "./binance_futures.js";
+import { DeribitDvolProvider } from "./deribit-dvol.js";
+import { BinanceFuturesProvider } from "./binance-futures.js";
 import { IndexQuotesProvider, QUOTE_SERIES } from "./quotes.js";
 import { QUOTES_SERIES } from "../registry.js";
 
@@ -109,6 +109,7 @@ describe("BinanceFuturesProvider", () => {
 
 describe("IndexQuotesProvider", () => {
   const dxy = QUOTE_SERIES.find((s) => s.seriesId === "dxy")!;
+  const gold = QUOTE_SERIES.find((s) => s.seriesId === "gold")!;
 
   it("covers exactly the series registered to the quotes source", () => {
     // Two lists (symbol mapping here, metadata in the registry) must agree or a
@@ -127,6 +128,22 @@ describe("IndexQuotesProvider", () => {
     const provider = new IndexQuotesProvider("k");
     expect(provider.name).toBe("twelvedata");
     expect(provider.licensed).toBe(true);
+  });
+
+  it("keeps DXY on Yahoo even when a Twelve Data key is configured", async () => {
+    // Twelve Data has no ICE DXY; an empty twelveDataSymbol must not hit their API.
+    const spy = stubFetch({
+      chart: {
+        result: [{
+          timestamp: [1784924101],
+          indicators: { quote: [{ close: [104.25] }] },
+        }],
+      },
+    });
+    const [point] = await new IndexQuotesProvider("k").fetchQuotes(dxy, 30);
+    expect(point!.value).toBe(104.25);
+    expect(String(spy.mock.calls[0]?.[0])).toContain("DX-Y.NYB");
+    expect(String(spy.mock.calls[0]?.[0])).not.toContain("twelvedata");
   });
 
   it("strips float32 artifacts from Yahoo closes", async () => {
@@ -169,13 +186,13 @@ describe("IndexQuotesProvider", () => {
 
   it("surfaces a Twelve Data error returned with HTTP 200", async () => {
     stubFetch({ status: "error", message: "You have exceeded your API credits" });
-    await expect(new IndexQuotesProvider("k").fetchQuotes(dxy, 30))
+    await expect(new IndexQuotesProvider("k").fetchQuotes(gold, 30))
       .rejects.toThrow(/exceeded your API credits/);
   });
 
   it("parses Twelve Data time series rows", async () => {
     stubFetch({ values: [{ datetime: "2026-02-12", close: "18.58" }] });
-    const [point] = await new IndexQuotesProvider("k").fetchQuotes(dxy, 30);
-    expect(point).toEqual({ seriesId: "dxy", ts: Date.UTC(2026, 1, 12), value: 18.58, vintageTs: null });
+    const [point] = await new IndexQuotesProvider("k").fetchQuotes(gold, 30);
+    expect(point).toEqual({ seriesId: "gold", ts: Date.UTC(2026, 1, 12), value: 18.58, vintageTs: null });
   });
 });

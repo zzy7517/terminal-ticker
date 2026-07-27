@@ -18,8 +18,8 @@ import {
   piProviderName,
   piSessionPayload,
 } from "../../agent/runtime/pi/sessions.js";
-import type { AgentDefinition, AgentFileInput } from "../../agent/agent_store.js";
-import { updateAgentConfigInWatchlist } from "../../config/watchlist_store.js";
+import type { AgentDefinition, AgentFileInput } from "../../agent/agent-store.js";
+import { updateAgentConfigInWatchlist } from "../../config/watchlist-store.js";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { MAIN_AGENT_PROMPT } from "../../agent/prompts.js";
 import { CLAUDE_CODE_CAPABILITIES, CURSOR_CLI_CAPABILITIES, PI_SDK_CAPABILITIES } from "../../agent/runtime/capabilities.js";

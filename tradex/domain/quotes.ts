@@ -1,4 +1,4 @@
-import { Candle } from "./price_action.js";
+import { Candle } from "./price-action.js";
 
 function toFloat(rawValue: unknown): number | null {
   if (rawValue === null || rawValue === undefined || rawValue === "") return null;

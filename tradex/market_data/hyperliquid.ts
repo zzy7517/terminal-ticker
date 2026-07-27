@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import { HYPERLIQUID_SOURCE, InstrumentConfig } from "../config/index.js";
-import { Candle } from "../domain/price_action.js";
+import { Candle } from "../domain/price-action.js";
 
 export const HYPERLIQUID_API_BASE = "https://api.hyperliquid.xyz";
 export const HYPERLIQUID_WS_PUBLIC = "wss://api.hyperliquid.xyz/ws";

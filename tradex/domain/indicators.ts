@@ -1,4 +1,4 @@
-import { Candle } from "./price_action.js";
+import { Candle } from "./price-action.js";
 
 export interface MacdValue {
   macd: number;

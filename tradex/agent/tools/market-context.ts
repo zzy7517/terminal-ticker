@@ -1,4 +1,4 @@
-import { Candle } from "../../domain/price_action.js";
+import { Candle } from "../../domain/price-action.js";
 
 export function shortCandle(candle: Candle): Record<string, unknown> {
   return {

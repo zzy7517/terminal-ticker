@@ -7,7 +7,7 @@ import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
 import { piProviderName, piSessionFileExists } from "../agent/runtime/pi/sessions.js";
 import type { RuntimeEvent, RuntimeMessage } from "../agent/runtime/types.js";
-import { buildTradexToolRegistry } from "./agent_tools.js";
+import { buildTradexToolRegistry } from "./agent-tools.js";
 import { tradexCliUrl } from "./external-cli-turn.js";
 import { sessionHistory, sessionResponse } from "./helpers.js";
 import {

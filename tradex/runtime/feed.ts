@@ -1,7 +1,7 @@
 import { AppConfig } from "../config/index.js";
-import { Candle } from "../domain/price_action.js";
+import { Candle } from "../domain/price-action.js";
 import { BitgetInstrument, BitgetPublicWebSocket, fetchCandles as fetchBitgetCandles, fetchSnapshotPayloads } from "../market_data/bitget.js";
-import { CandleCache, cachedFetchCandles, retentionSecondsForWindow } from "../market_data/candle_cache.js";
+import { CandleCache, cachedFetchCandles, retentionSecondsForWindow } from "../market_data/candle-cache.js";
 import { HyperliquidAllMidsWebSocket, HyperliquidInstrument, fetchCandles as fetchHyperliquidCandles, fetchSnapshotPayloads as fetchHyperliquidSnapshotPayloads } from "../market_data/hyperliquid.js";
 import { MarketInstrument } from "../market_data/router.js";
 

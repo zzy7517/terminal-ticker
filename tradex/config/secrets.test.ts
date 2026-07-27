@@ -11,7 +11,7 @@ import {
   storeSecret,
 } from "./secrets.js";
 import { loadConfig } from "./index.js";
-import { updateJin10ConfigInWatchlist } from "./watchlist_store.js";
+import { updateJin10ConfigInWatchlist } from "./watchlist-store.js";
 
 let tmpDir: string;
 

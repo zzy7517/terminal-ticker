@@ -11,13 +11,13 @@ import {
   ANTHROPIC_PROVIDER,
   CODEX_PROVIDER,
 } from "./constants.js";
-import type { LLMChatClient, ChatResponse } from "../../../llm_client.js";
+import type { LLMChatClient, ChatResponse } from "../../../llm-client.js";
 import type { AgentModel } from "./resolve.js";
 import { resolveAgentModelFromConfig } from "./resolve.js";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { TextContent } from "@earendil-works/pi-ai";
 import type { ModelRuntimeSnapshot } from "./runtime.js";
-import { fetchProviderModelCatalog } from "./model_fetch.js";
+import { fetchProviderModelCatalog } from "./model-fetch.js";
 
 /**
  * AgentModelRegistry — 把 config 解析成 AgentModel，

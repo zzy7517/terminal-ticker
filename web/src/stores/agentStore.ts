@@ -4,7 +4,6 @@ import { create } from 'zustand';
 import type {
   AgentDefinition,
   AgentDefinitionInput,
-  AgentDirectMessage,
   AgentIdentityPatch,
   AgentMessage,
   AgentModelRegistry,
@@ -24,7 +23,6 @@ import {
   fetchAgentSession,
   fetchAgentSessions,
   sendAgentDirectMessage,
-  setDirectMessageReaction,
   streamAgentMessage,
   updateAgent,
   type ImageAttachment,
@@ -32,6 +30,7 @@ import {
 import { randomAvatarSeed } from '../avatar';
 import { useMarketStore } from './marketStore';
 import { mergeFollowUps, shouldAutoRunFollowUps, validateFollowUpImages } from '../utils/followUpQueue';
+import { createDirectMessagesSlice, type DirectMessagesSlice } from './agent/directMessages';
 import {
   loadPersistedModels,
   loadPersistedProvider,
@@ -59,11 +58,9 @@ import {
 const initialProvider = loadPersistedProvider();
 const initialModels = loadPersistedModels();
 
-interface AgentState {
+export interface AgentState extends DirectMessagesSlice {
   agents: AgentDefinition[];
   selectedAgentId: string;
-  directMessageIdByAgentId: Record<string, string>;
-  directMessagesByAgentId: Record<string, AgentDirectMessage[]>;
   agentSession: AgentSessionResponse | null;
   agentSessionHistory: AgentSessionSummary[];
   agentSessionLoadingKey: string | null;
@@ -110,8 +107,6 @@ interface AgentState {
 
   initSessions: () => () => void;
   refreshModelRegistry: () => Promise<void>;
-  refreshAgentDirectMessages: (agentId: string) => Promise<void>;
-  toggleDirectMessageReaction: (agentId: string, messageId: string, emoji: string) => Promise<void>;
   selectAgent: (agentId: string) => Promise<void>;
   /** Refresh the agents list from the Agent definition store. */
   refreshAgents: () => Promise<AgentDefinition[]>;
@@ -135,10 +130,9 @@ interface AgentState {
 let modelRegistryRequest: Promise<AgentModelRegistry> | null = null;
 
 export const useAgentStore = create<AgentState>((set, get) => ({
+  ...createDirectMessagesSlice(set, get),
   agents: [],
   selectedAgentId: 'default',
-  directMessageIdByAgentId: {},
-  directMessagesByAgentId: {},
   agentSession: null,
   agentSessionHistory: [],
   agentSessionLoadingKey: null,
@@ -264,39 +258,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       console.error('model registry refresh failed:', error);
     } finally {
       set({ modelRegistryLoading: false });
-    }
-  },
-
-  refreshAgentDirectMessages: async (agentId) => {
-    const payload = await fetchAgentDirectMessages(agentId);
-    // API returns newest-first (dm_seq DESC) for before_seq pagination; UI is oldest→newest.
-    const messages = chronologicalMessages(payload.messages).map((message) => ({
-      ...message,
-      reactions: message.reactions ?? [],
-    }));
-    set((s) => ({
-      directMessageIdByAgentId: { ...s.directMessageIdByAgentId, [agentId]: payload.target.directMessageId },
-      directMessagesByAgentId: { ...s.directMessagesByAgentId, [agentId]: messages },
-    }));
-  },
-
-  toggleDirectMessageReaction: async (agentId, messageId, emoji) => {
-    const current = get().directMessagesByAgentId[agentId] ?? [];
-    const message = current.find((entry) => entry.id === messageId);
-    if (!message) return;
-    const active = !message.reactions.some((reaction) => reaction.emoji === emoji && reaction.reacted);
-    try {
-      const payload = await setDirectMessageReaction(agentId, messageId, emoji, active);
-      set((s) => ({
-        directMessagesByAgentId: {
-          ...s.directMessagesByAgentId,
-          [agentId]: (s.directMessagesByAgentId[agentId] ?? []).map((entry) => (
-            entry.id === messageId ? { ...entry, ...payload.message, reactions: payload.message.reactions ?? [] } : entry
-          )),
-        },
-      }));
-    } catch (error) {
-      console.error('Direct Message reaction failed:', error);
     }
   },
 

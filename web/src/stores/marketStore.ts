@@ -6,7 +6,7 @@ import {
   fetchInstrumentCatalog,
   fetchState,
 } from '../api';
-import { orderedGroups } from '../utils';
+import { orderedGroups } from '../utils/marketDisplay';
 
 const SOCKET_RECONNECT_DELAY_MS = 1500;
 const SOCKET_TEARDOWN_GRACE_MS = 250;

@@ -14,7 +14,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { defaultCacheDir } from "../../../db.js";
 import { toPiProviderId } from "./models/constants.js";
-import { DEFAULT_AGENT_ID } from "../../agent_store.js";
+import { DEFAULT_AGENT_ID } from "../../agent-store.js";
 
 const PI_SESSIONS_SUBDIR = "pi_sessions";
 export const AGENT_SNAPSHOT_ENTRY = "tradex_agent_snapshot";

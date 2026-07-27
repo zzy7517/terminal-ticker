@@ -16,7 +16,7 @@
  */
 
 import { Hono } from "hono";
-import { updateOptionsConfigInWatchlist } from "../../config/watchlist_store.js";
+import { updateOptionsConfigInWatchlist } from "../../config/watchlist-store.js";
 import type { OptionsConfig } from "../../options/domain.js";
 import type { AppRuntime } from "../runtime.js";
 import { requireConfigPath, reloadAndState } from "../helpers.js";

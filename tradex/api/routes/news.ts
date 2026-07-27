@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { updateNewsConfigInWatchlist } from "../../config/watchlist_store.js";
+import { updateNewsConfigInWatchlist } from "../../config/watchlist-store.js";
 import { newsItemToPayload } from "../../news/types.js";
 import type { AppRuntime } from "../runtime.js";
 import { requireConfigPath, reloadAndState, mergeNewsConfig } from "../helpers.js";

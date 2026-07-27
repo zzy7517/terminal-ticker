@@ -1,9 +1,9 @@
 import { TradingConfig } from "../../config/index.js";
-import { ExchangeRouter } from "../../trading/exchange_router.js";
+import { ExchangeRouter } from "../../trading/exchange-router.js";
 import { FillKind, TradeDirection, TradeStatus, tradeToPayload, snapshotToPayload } from "../../trading/models.js";
 import type { Fill } from "../../trading/models.js";
 import { TradeStore } from "../../trading/store.js";
-import { orderToPayload, positionToPayload, syncResultToPayload } from "../../trading/exchange_models.js";
+import { orderToPayload, positionToPayload, syncResultToPayload } from "../../trading/exchange-models.js";
 import { ToolRegistry, jsonOutput } from "./registry.js";
 
 export function buildTradingTools(input: {

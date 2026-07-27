@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { AppRoute } from '../constants';
 import { isAvatarStyle, type AvatarStyle } from '../avatar/avatar';
-import { readRouteFromHash, navigateToRoute } from '../utils';
+import { readRouteFromHash, navigateToRoute } from '../utils/routeHash';
 
 export type WorkspaceViewId =
   | 'agent'

@@ -4,7 +4,7 @@ import { CURSOR_CLI_INSTRUCTIONS, currentTimeInstruction, MAIN_AGENT_PROMPT } fr
 import { detectCursorCli } from "../agent/runtime/cursor/discovery.js";
 import { CursorCliRuntime, exposeCursorReadTools } from "../agent/runtime/cursor/runtime.js";
 import type { ExternalSessionStorePort } from "../agent/runtime/external-session-store.js";
-import { buildTradexToolRegistry } from "./agent_tools.js";
+import { buildTradexToolRegistry } from "./agent-tools.js";
 import {
   createExternalCliTurn,
   tradexCliUrl,

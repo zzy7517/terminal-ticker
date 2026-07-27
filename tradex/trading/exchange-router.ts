@@ -1,6 +1,6 @@
 import { ExchangeTradingMode, TradingConfig } from "../config/index.js";
 import * as bitget from "./bitget.js";
-import { ExchangeOrder, ExchangePosition, OrderResult, TradeSyncResult, orderResult } from "./exchange_models.js";
+import { ExchangeOrder, ExchangePosition, OrderResult, TradeSyncResult, orderResult } from "./exchange-models.js";
 import * as hyperliquid from "./hyperliquid.js";
 import { FillKind, Trade, TradeStatus } from "./models.js";
 

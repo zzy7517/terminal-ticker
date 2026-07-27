@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AgentStore } from "../agent/agent_store.js";
+import { AgentStore } from "../agent/agent-store.js";
 import { ChannelStore } from "../channel/store.js";
 import type { AppRuntime } from "../api/runtime.js";
 import { createMessageToolRegistry } from "./message-tools.js";

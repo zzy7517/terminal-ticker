@@ -25,7 +25,7 @@ import type {
 } from '../types';
 import { transitionOriginConfig } from '../chat/originCatalog';
 import type { OriginToolActivity } from '../chat/originTimeline';
-import { limitOriginImages } from '../chat/originImages';
+import { limitOriginImages } from '../utils/originImages';
 import { HttpResponseError } from '../api/http';
 import { canonicalizeAvailableOriginConfig } from './origin/catalog';
 import {

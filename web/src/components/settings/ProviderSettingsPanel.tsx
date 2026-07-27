@@ -5,7 +5,7 @@ import './ProviderSettingsPanel.css';
 import { useMarketStore } from '../../stores/marketStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { fetchProviderModels, saveProviderProfile } from '../../api';
-import { formatContextWindow } from '../../utils';
+import { formatContextWindow } from '../../utils/marketDisplay';
 
 export function ProviderSettingsPanel({ embedded = false }: { embedded?: boolean }) {
   const state = useMarketStore((s) => s.state);

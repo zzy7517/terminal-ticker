@@ -6,7 +6,7 @@ import {
   appendHyperliquidSymbolToWatchlist,
   removeSymbolFromWatchlist,
   reorderSymbolsInWatchlist,
-} from "../../config/watchlist_store.js";
+} from "../../config/watchlist-store.js";
 import type { AppRuntime } from "../runtime.js";
 import { catalogItem, requireConfigPath, reloadAndState } from "../helpers.js";
 

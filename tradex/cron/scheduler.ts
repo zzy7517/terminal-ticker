@@ -15,7 +15,7 @@ import { Cron } from "croner";
 import type { CronJobConfig } from "../config/index.js";
 import { executeCronJob, type CronRunResult } from "./runner.js";
 import { listJobRuns, listAllRuns, type CronRunRecord } from "./store.js";
-import type { CronJobStore } from "./job_store.js";
+import type { CronJobStore } from "./job-store.js";
 import type { AppRuntime } from "../api/runtime.js";
 
 export interface CronJobStatus {

@@ -29,7 +29,7 @@ import {
   piProviderName,
   readAgentSnapshot,
 } from "../agent/runtime/pi/sessions.js";
-import { buildTradexToolRegistry } from "../api/agent_tools.js";
+import { buildTradexToolRegistry } from "../api/agent-tools.js";
 import { ensurePrivateWorkspace } from "../agent/private-workspace.js";
 import { memoryApplyRetention } from "../agent/memory.js";
 
