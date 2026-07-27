@@ -175,7 +175,7 @@ function JobsList(props: {
         <span className="cron-count">{jobs.filter((j) => j.enabled).length} active</span>
       </div>
       {jobs.map((job) => (
-        <div key={job.name} className={`cron-job-card ui-card ${job.enabled ? '' : 'disabled'}`}>
+        <div key={job.name} className={`cron-job-card bezel-ring ui-card ${job.enabled ? '' : 'disabled'}`}>
           <div className="cron-job-top">
             <div className="cron-job-identity">
               <div className="cron-job-indicator">

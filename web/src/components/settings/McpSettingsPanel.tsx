@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  ArrowUpRight,
   ChevronDown,
   ChevronRight,
   Database,
@@ -363,6 +364,9 @@ export function McpSettingsPanel() {
             <button className="shell-button primary" type="button" onClick={() => handleConnect(activeServer.name)} disabled={connecting}>
               {connecting ? <Loader2 className="spin" size={14} /> : <Plug size={14} />}
               Connect
+              <span className="shell-button__well" aria-hidden="true">
+                <ArrowUpRight />
+              </span>
             </button>
           ) : (
             <button className="shell-button muted" type="button" onClick={() => handleDisconnect(activeServer.name)} disabled={connecting}>

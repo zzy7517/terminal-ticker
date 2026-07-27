@@ -37,7 +37,7 @@ body::before {
   inset: 0;
   pointer-events: none;
   position: fixed;
-  z-index: -1;
+  z-index: var(--z-behind);
 }
 
 :root[data-theme="light"] body::before {
@@ -54,7 +54,7 @@ body::after {
   opacity: 0.025;
   pointer-events: none;
   position: fixed;
-  z-index: 400;
+  z-index: var(--z-grain);
 }
 
 /* ── Application frame — window resting in the void ──────────────── */
@@ -293,6 +293,45 @@ svg.lucide {
 
 .blink {
   animation: blink 1s step-end infinite;
+}
+
+/* ── Scroll reveal — content arrives with weight ──────────────────────
+   Paired with useReveal() in utils/reveal.ts, which flips [data-revealed]
+   once and then stops observing. Only transform / opacity / filter move,
+   so the whole effect composites on the GPU. */
+[data-reveal] {
+  filter: blur(6px);
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity var(--dur-3) var(--ease-out),
+    transform var(--dur-3) var(--ease-out),
+    filter var(--dur-3) var(--ease-out);
+  transition-delay: calc(var(--reveal-index, 0) * 55ms);
+  will-change: transform, opacity;
+}
+
+/* `none` rather than `blur(0)`: both render identically, but `none` drops the
+   filter entirely instead of leaving a stacking context and GPU layer behind
+   on every revealed block — several of which are scroll containers. The
+   transition still animates, since a filter list interpolating to `none`
+   resolves against the identity function. */
+[data-reveal][data-revealed] {
+  filter: none;
+  opacity: 1;
+  transform: translateY(0);
+  will-change: auto;
+}
+
+/* Motion-sensitive users get the content, not the choreography. The global
+   reduced-motion block below collapses durations, but an element whose
+   reveal never fires must still never be left invisible. */
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    filter: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ── Skeleton — layout-matched loading placeholder ────────────────── */

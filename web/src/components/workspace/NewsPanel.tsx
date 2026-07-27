@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Reveal } from '../Reveal';
 import './NewsPanel.css';
 import type { NewsItem } from '../../types';
 import { triggerNewsRefresh, refreshJin10Flash } from '../../api';
@@ -107,7 +108,7 @@ export function NewsPanel({
   const showSourceTabs = jin10Available || hasJin10Items;
 
   return (
-    <div className="news-panel ui-surface">
+    <Reveal className="news-panel bezel-ring">
       <div className="news-panel__head">
         <span className="news-panel__title">News</span>
         <button
@@ -179,6 +180,6 @@ export function NewsPanel({
           </a>
         ))}
       </div>
-    </div>
+    </Reveal>
   );
 }

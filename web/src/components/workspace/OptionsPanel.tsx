@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMarketStore } from '../../stores/marketStore';
+import { Reveal } from '../Reveal';
 import './OptionsPanel.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -235,7 +236,7 @@ export function OptionsPanel() {
 
       {/* Unusual Activity */}
       {unusualActivity.length > 0 && (
-        <div className="options-activity">
+        <Reveal className="options-activity bezel-ring" index={3}>
           <div className="options-activity__title">Unusual Activity</div>
           <div className="options-activity__list">
             {unusualActivity.map((item, i) => (
@@ -249,7 +250,7 @@ export function OptionsPanel() {
               </div>
             ))}
           </div>
-        </div>
+        </Reveal>
       )}
     </div>
   );
@@ -259,7 +260,7 @@ export function OptionsPanel() {
 
 function Stat({ label, value, className, sub }: { label: string; value: string; className?: string; sub?: string }) {
   return (
-    <div className="options-stat">
+    <div className="options-stat bezel-ring">
       <span className="options-stat__label">{label}</span>
       <span className={`options-stat__value${className ? ` ${className}` : ''}`}>{value}</span>
       {sub && <span className="options-stat__sub">{sub}</span>}
@@ -283,7 +284,7 @@ function KeyLevelsBar({ snap }: { snap: OptionsSnapshot }) {
   const range = max - min || 1;
 
   return (
-    <div className="options-levels">
+    <Reveal className="options-levels bezel-ring" index={1}>
       <div className="options-levels__title">Key Levels</div>
       <div className="options-levels__bar">
         <div className="options-levels__track" />
@@ -312,24 +313,24 @@ function KeyLevelsBar({ snap }: { snap: OptionsSnapshot }) {
           </span>
         ))}
       </div>
-    </div>
+    </Reveal>
   );
 }
 
 function GexProfile({ strikes, spotPrice, zgl }: { strikes: StrikeGex[]; spotPrice: number; zgl: number }) {
   if (!strikes || strikes.length === 0) {
     return (
-      <div className="gex-profile">
+      <Reveal className="gex-profile bezel-ring" index={2}>
         <div className="gex-profile__title">GEX Profile</div>
-        <div style={{ color: 'var(--text-muted)', fontSize: 11, padding: '8px 0' }}>Waiting for data...</div>
-      </div>
+        <div className="empty-state sm">Waiting for the first options poll.</div>
+      </Reveal>
     );
   }
 
   const maxGex = Math.max(...strikes.map((s) => Math.max(Math.abs(s.callGex), Math.abs(s.putGex))), 1);
 
   return (
-    <div className="gex-profile">
+    <Reveal className="gex-profile bezel-ring" index={2}>
       <div className="gex-profile__head">
         <span className="gex-profile__title">GEX by Strike</span>
         <div className="gex-profile__legend">
@@ -362,17 +363,23 @@ function GexProfile({ strikes, spotPrice, zgl }: { strikes: StrikeGex[]; spotPri
               <div className="gex-profile__bars">
                 <div className="gex-profile__center" />
                 <div className="gex-profile__bar-left">
-                  <div className="gex-profile__bar-fill put" style={{ width: `${putPct}%` }} />
+                  <div
+                    className="gex-profile__bar-fill put"
+                    style={{ transform: `scaleX(${putPct / 100})` }}
+                  />
                 </div>
                 <div className="gex-profile__bar-right">
-                  <div className="gex-profile__bar-fill call" style={{ width: `${callPct}%` }} />
+                  <div
+                    className="gex-profile__bar-fill call"
+                    style={{ transform: `scaleX(${callPct / 100})` }}
+                  />
                 </div>
               </div>
             </div>
           );
         })}
       </div>
-    </div>
+    </Reveal>
   );
 }
 
@@ -449,7 +456,7 @@ function ImpulseCurve({ impulse, spotPrice }: { impulse: HedgeImpulse; spotPrice
   const spotX = x(Math.max(minP, Math.min(maxP, spotPrice)));
 
   return (
-    <div className="gex-profile">
+    <Reveal className="gex-profile bezel-ring" index={2}>
       <div className="gex-profile__head">
         <span className="gex-profile__title">Hedge Impulse Curve</span>
         <span className="options-panel__tab-meta">+ = pin / attractor · − = accelerate</span>
@@ -463,7 +470,7 @@ function ImpulseCurve({ impulse, spotPrice }: { impulse: HedgeImpulse; spotPrice
         <span className="options-levels__legend-item">{minP.toFixed(0)}</span>
         <span className="options-levels__legend-item" style={{ marginLeft: 'auto' }}>{maxP.toFixed(0)}</span>
       </div>
-    </div>
+    </Reveal>
   );
 }
 
@@ -476,7 +483,7 @@ function PressureCloudView({ cloud, spotPrice }: { cloud: PressureCloud; spotPri
   if (zones.length === 0) return null;
 
   return (
-    <div className="options-activity">
+    <Reveal className="options-activity bezel-ring" index={3}>
       <div className="options-activity__title">Pressure Cloud</div>
       <div className="options-activity__list">
         {zones.map((z, i) => {
@@ -507,6 +514,6 @@ function PressureCloudView({ cloud, spotPrice }: { cloud: PressureCloud; spotPri
           </div>
         )}
       </div>
-    </div>
+    </Reveal>
   );
 }

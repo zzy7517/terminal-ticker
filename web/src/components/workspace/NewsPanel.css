@@ -1,14 +1,11 @@
 /* ── News panel — Bloomberg Terminal ───────────────────────────────── */
 .news-panel {
-  background: var(--canvas);
-  border: 1px solid var(--line-strong);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 8px;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
   min-height: 0;
-  padding: 6px 8px;
-  border-radius: var(--radius-surface);
+  padding: var(--s-3) var(--s-3) var(--s-4);
 }
 
 .news-panel__head {

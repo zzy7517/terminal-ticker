@@ -2,11 +2,11 @@
 .macro-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--s-4);
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 10px;
+  padding: var(--s-4) var(--s-4) var(--s-6);
 }
 
 .macro-panel__empty {
@@ -113,18 +113,15 @@
 /* ── Derived metrics ──────────────────────────────────────────────── */
 .macro-derived {
   display: grid;
-  gap: 6px;
+  gap: var(--s-4);
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .macro-derived__item {
-  background: var(--panel);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
+  gap: var(--s-0);
+  padding: var(--s-3);
 }
 
 .macro-derived__label {
@@ -154,13 +151,10 @@
 
 /* ── Series tables ────────────────────────────────────────────────── */
 .macro-section {
-  background: var(--panel);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-3) var(--s-4);
 }
 
 .macro-section__title {
@@ -198,13 +192,19 @@
 
 .macro-row {
   align-items: center;
-  border-bottom: 1px solid color-mix(in srgb, var(--line-strong) 50%, transparent);
+  border-bottom: 1px solid var(--line-hairline);
   display: grid;
   font-family: var(--mono);
   font-size: 11px;
-  gap: 6px;
+  font-variant-numeric: tabular-nums lining-nums;
+  gap: var(--s-2);
   grid-template-columns: minmax(150px, 2fr) repeat(6, minmax(52px, 1fr));
-  padding: 3px 0;
+  padding: var(--s-1) 0;
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+
+.macro-row:not(.macro-row--head):hover {
+  background: var(--accent-tint);
 }
 
 .macro-row:last-child { border-bottom: none; }

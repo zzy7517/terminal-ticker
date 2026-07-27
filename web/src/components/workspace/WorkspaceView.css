@@ -9,7 +9,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 0 22px 18px;
+  padding: 0 var(--s-6) var(--s-5);
 }
 
 .workspace-page--chat {
@@ -64,19 +64,19 @@
   border-bottom: 1px solid var(--line-soft);
   display: flex;
   flex-shrink: 0;
-  gap: 12px;
+  gap: var(--s-4);
   justify-content: space-between;
-  margin: 0 auto 16px;
+  margin: 0 auto var(--s-5);
   max-width: 1740px;
   min-height: 62px;
-  padding: 12px 0;
+  padding: var(--s-5) 0 var(--s-4);
   width: 100%;
 }
 
 .topbar-left {
   align-items: center;
   display: flex;
-  gap: 12px;
+  gap: var(--s-4);
 }
 
 .workspace-title-icon {

@@ -382,7 +382,7 @@
   padding: 8px 14px;
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-sticky);
 }
 
 .wl-catalog-group-head span {

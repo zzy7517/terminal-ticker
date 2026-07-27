@@ -8,7 +8,7 @@
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-lg);
-  padding: 8px 10px;
+  padding: var(--s-3) var(--s-3) var(--s-4);
 }
 
 /* ── Toolbar / flex header ────────────────────────────────────────── */
@@ -27,24 +27,31 @@
   display: flex;
   flex-direction: column;
   font-size: 14px;
-  gap: 6px;
+  gap: var(--s-2);
   justify-content: center;
-  line-height: 1.4;
+  line-height: 1.5;
   min-height: 60px;
-  padding: 12px;
+  padding: var(--s-5) var(--s-4);
   text-align: center;
+  text-wrap: pretty;
+}
+
+/* The glyph is scenery, not information — it should not compete with the copy */
+.empty-state > svg {
+  color: var(--text-muted);
+  opacity: 0.5;
 }
 
 .empty-state.sm {
   font-size: 13px;
   min-height: 36px;
-  padding: 6px 8px;
+  padding: var(--s-4) var(--s-3);
 }
 
 .empty-state.lg {
   font-size: 15px;
   min-height: 80px;
-  padding: 16px;
+  padding: var(--s-6) var(--s-5);
 }
 
 .empty-state.row {
@@ -156,6 +163,67 @@
 
 .shell-button:active:not(:disabled) {
   transform: translateY(0) scale(0.97);
+}
+
+/* ── Icon well — the button-in-button trailing affordance ─────────────
+   A trailing glyph never sits naked beside the label; it gets its own
+   circular enclosure, seated flush against the button's right inset. On
+   hover the well drifts diagonally and swells slightly while the button
+   itself compresses, which reads as tension inside the control rather
+   than the whole control sliding around. */
+.shell-button:has(.shell-button__well) {
+  padding-right: 4px;
+}
+
+.shell-button.sm:has(.shell-button__well) {
+  padding-right: 3px;
+}
+
+.shell-button__well {
+  align-items: center;
+  background: var(--control-accent-tint-strong);
+  border-radius: 999px;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 22px;
+  justify-content: center;
+  margin-left: 2px;
+  transition:
+    transform var(--dur-2) var(--ease-spring),
+    background-color var(--dur-1) var(--ease-out);
+  width: 22px;
+}
+
+.shell-button.sm .shell-button__well {
+  height: 19px;
+  width: 19px;
+}
+
+.shell-button.lg .shell-button__well {
+  height: 26px;
+  width: 26px;
+}
+
+.shell-button__well > svg {
+  height: 12px;
+  width: 12px;
+}
+
+.shell-button:hover:not(:disabled) .shell-button__well {
+  transform: translate(2px, -1px) scale(1.06);
+}
+
+.shell-button:disabled .shell-button__well {
+  background: var(--accent-tint);
+}
+
+/* On the solid variant the well has to read against ink, not against glass */
+.shell-button.primary .shell-button__well {
+  background: color-mix(in srgb, var(--control-accent-contrast) 16%, transparent);
+}
+
+.shell-button.primary:hover:not(:disabled) .shell-button__well {
+  background: color-mix(in srgb, var(--control-accent-contrast) 24%, transparent);
 }
 
 /* Primary — solid ink island with inner refraction edge */
@@ -390,7 +458,7 @@
   position: absolute;
   top: calc(100% + 6px);
   transform-origin: top left;
-  z-index: 200;
+  z-index: var(--z-dropdown);
 }
 
 /* ── Dropdown search ──────────────────────────────────────────────── */

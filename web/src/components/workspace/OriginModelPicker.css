@@ -100,7 +100,7 @@
   padding: 5px;
   position: absolute;
   width: min(360px, calc(100vw - 48px));
-  z-index: 80;
+  z-index: var(--z-dropdown);
 }
 
 .origin-model-menu-title {

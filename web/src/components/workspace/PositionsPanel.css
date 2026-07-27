@@ -1,0 +1,326 @@
+/* ── Positions Panel — exposure, working orders, and post-trade notes ──
+   Follows the house data-panel idiom (see MacroPanel.css): CSS Grid rows
+   rather than tables, mono numerics, hairline row rules, uppercase
+   micro-labels. Columns are declared once per section and shared by the
+   header and body rows so they cannot drift apart. */
+
+.positions-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--s-4) var(--s-4) var(--s-6);
+}
+
+/* ── Summary tiles ────────────────────────────────────────────────── */
+.positions-summary {
+  display: grid;
+  gap: var(--s-2);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.positions-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-0);
+  padding: var(--s-3) var(--s-3) calc(var(--s-3) + 2px);
+}
+
+.positions-stat__label {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.positions-stat__value {
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.positions-stat__value.up { color: var(--up); }
+.positions-stat__value.down { color: var(--down); }
+.positions-stat__value.muted { color: var(--text-muted); }
+
+.positions-stat__hint {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+/* ── Error bar ────────────────────────────────────────────────────── */
+.positions-error {
+  align-items: center;
+  background: var(--danger-tint);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--down) 26%, transparent);
+  color: var(--down);
+  display: flex;
+  font-size: 13px;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+}
+
+.positions-error svg {
+  flex-shrink: 0;
+}
+
+.positions-error__dismiss {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  margin-left: auto;
+  opacity: 0.7;
+  padding: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+
+.positions-error__dismiss:hover { opacity: 1; }
+
+/* ── Section ──────────────────────────────────────────────────────── */
+.positions-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-3) var(--s-3);
+}
+
+.positions-section__head {
+  align-items: baseline;
+  display: flex;
+  gap: var(--s-2);
+  padding-bottom: var(--s-1);
+}
+
+.positions-section__title {
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.positions-section__count {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin-right: auto;
+}
+
+/* ── Venue grouping ───────────────────────────────────────────────── */
+.positions-venue + .positions-venue {
+  margin-top: var(--s-3);
+}
+
+.positions-venue__label {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  padding-bottom: var(--s-1);
+  text-transform: uppercase;
+}
+
+/* ── Data rows ────────────────────────────────────────────────────────
+   Grid template lives on the shared .positions-row so the header and the
+   body rows are guaranteed to share a column rhythm. Each section sets
+   its own template via a modifier. */
+.positions-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.positions-row {
+  align-items: center;
+  border-bottom: 1px solid var(--line-hairline);
+  display: grid;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums lining-nums;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-1);
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+
+.positions-row:last-child { border-bottom: 0; }
+
+.positions-row:not(.positions-row--head):hover {
+  background: var(--accent-tint);
+}
+
+.positions-row--head {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.positions-row--head:hover { background: transparent; }
+
+.positions-row--position {
+  grid-template-columns:
+    minmax(78px, 1.4fr) 52px repeat(4, minmax(64px, 1fr)) 56px;
+}
+
+.positions-row--order {
+  grid-template-columns:
+    minmax(78px, 1.4fr) 48px 60px repeat(3, minmax(58px, 1fr))
+    minmax(64px, 0.8fr) 72px;
+}
+
+.positions-cell--num {
+  text-align: right;
+}
+
+.positions-cell--sym {
+  color: var(--text-primary);
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.positions-cell--muted {
+  color: var(--text-muted);
+}
+
+.positions-cell--action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Direction tag — reads as a state chip, not coloured text */
+.positions-side {
+  border-radius: var(--radius-sm);
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 1px 6px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.positions-side.long {
+  background: var(--success-tint);
+  color: var(--up);
+}
+
+.positions-side.short {
+  background: var(--danger-tint);
+  color: var(--down);
+}
+
+.positions-pnl.up { color: var(--up); font-weight: 700; }
+.positions-pnl.down { color: var(--down); font-weight: 700; }
+.positions-pnl.flat { color: var(--text-muted); }
+
+.positions-status {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Lessons ──────────────────────────────────────────────────────── */
+.positions-lessons {
+  display: flex;
+  flex-direction: column;
+}
+
+.positions-lesson {
+  border-bottom: 1px solid var(--line-hairline);
+  display: grid;
+  gap: var(--s-1) var(--s-3);
+  grid-template-columns: minmax(90px, 130px) minmax(0, 1fr);
+  padding: var(--s-2) var(--s-1);
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+
+.positions-lesson:last-child { border-bottom: 0; }
+.positions-lesson:hover { background: var(--accent-tint); }
+
+.positions-lesson__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.positions-lesson__instrument {
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.positions-lesson__category {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.positions-lesson__text {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+/* ── Loading skeleton — matches the row rhythm it replaces ────────── */
+.positions-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-1);
+}
+
+.positions-skeleton span {
+  height: 11px;
+}
+
+.positions-skeleton span:nth-child(1) { width: 62%; }
+.positions-skeleton span:nth-child(2) { width: 88%; }
+.positions-skeleton span:nth-child(3) { width: 45%; }
+
+/* ── Responsive — drop to a readable subset rather than a squeezed grid ── */
+@media (max-width: 900px) {
+  .positions-row--position {
+    grid-template-columns: minmax(70px, 1.3fr) 46px repeat(3, minmax(58px, 1fr));
+  }
+
+  .positions-row--order {
+    grid-template-columns: minmax(70px, 1.3fr) 44px repeat(3, minmax(56px, 1fr)) 68px;
+  }
+
+  .positions-cell--optional {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .positions-panel {
+    padding: var(--s-3) var(--s-2) var(--s-5);
+  }
+
+  .positions-lesson {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

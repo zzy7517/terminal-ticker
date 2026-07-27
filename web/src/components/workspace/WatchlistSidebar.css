@@ -4,12 +4,12 @@
   border-right: 1px solid var(--line-strong);
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
   position: sticky;
   top: 0;
-  transition: width 150ms linear;
+  transition: width var(--dur-2) var(--ease-out);
   width: 260px;
-  z-index: 50;
+  z-index: var(--z-sticky);
 }
 
 .watchlist-sidebar.workspace-mode {

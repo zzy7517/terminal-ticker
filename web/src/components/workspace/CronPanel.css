@@ -3,10 +3,10 @@
 .cron-panel {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--s-4);
   height: 100%;
   overflow-y: auto;
-  padding: 8px 10px;
+  padding: var(--s-4) var(--s-4) var(--s-6);
 }
 
 .cron-empty {
@@ -78,7 +78,7 @@
 .cron-jobs-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--s-4);
 }
 
 .cron-list-header {
@@ -106,14 +106,18 @@
 }
 
 .cron-job-card {
-  background: var(--canvas-2);
-  border: 1px solid var(--line-strong);
-  padding: 8px 10px;
-  border-radius: var(--radius-control);
+  padding: var(--s-3);
+  transition: box-shadow var(--dur-1) var(--ease-out);
 }
 
+/* The bezel draws its edge in shadow, not border, so hover brightens the
+   inner ring rather than a border-color that no longer renders. */
 .cron-job-card:hover {
-  border-color: var(--accent);
+  box-shadow:
+    var(--bezel-core-highlight),
+    0 0 0 1px var(--accent-ring),
+    0 0 0 calc(1px + var(--bezel-ring-pad, 4px)) var(--bezel-shell-bg),
+    0 0 0 calc(2px + var(--bezel-ring-pad, 4px)) var(--bezel-shell-ring);
 }
 
 .cron-job-card.disabled {

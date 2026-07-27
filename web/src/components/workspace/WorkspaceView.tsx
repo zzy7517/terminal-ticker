@@ -26,6 +26,17 @@ import { AgentTracePanel } from '../chat/AgentTracePanel';
 import { useAgentStore } from '../../stores/agentStore';
 import '../../styles/chat/index.css';
 
+/**每个工作区的标题与副标题。副标题写这个页面实际显示什么，而不是泛泛的一句场景词。 */
+const WORKSPACE_COPY: Record<string, { title: string; subtitle: string }> = {
+  market: { title: 'Market', subtitle: '自选列表与实时行情总览' },
+  news: { title: 'News', subtitle: '按时间排序的市场快讯与来源状态' },
+  calendar: { title: 'Calendar', subtitle: '金十财经日历，含前值、预期与实际值' },
+  positions: { title: 'Positions', subtitle: '交易所持仓、活跃订单与交易复盘' },
+  options: { title: 'Options', subtitle: 'GEX 分布、关键价位与异动期权流' },
+  macro: { title: 'Macro', subtitle: '利率、通胀、美元与波动率的横截面' },
+  cron: { title: 'Cron', subtitle: '定时任务的排期与最近执行结果' },
+};
+
 export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);
   const activeTab = useUiStore((s) => s.activeWorkspace);
@@ -36,6 +47,10 @@ export function WorkspaceView() {
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
 
   const showTopbar = activeTab !== 'agent';
+  const copy = WORKSPACE_COPY[activeTab] ?? {
+    title: activeTab.charAt(0).toUpperCase() + activeTab.slice(1),
+    subtitle: '',
+  };
 
   return (
     <main className={`workspace-page${activeTab === 'agent' ? ' workspace-page--chat' : ''}`}>
@@ -51,10 +66,8 @@ export function WorkspaceView() {
                 : <WalletCards size={17} />}
             </span>
             <div>
-              <h1>{activeTab === 'market' ? 'Market' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
-              <p className="workspace-subtitle">
-                {activeTab === 'market' ? 'Watchlist and live market overview' : 'Tradex workspace'}
-              </p>
+              <h1>{copy.title}</h1>
+              {copy.subtitle ? <p className="workspace-subtitle">{copy.subtitle}</p> : null}
             </div>
           </div>
         </header>

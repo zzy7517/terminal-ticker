@@ -12,6 +12,7 @@ import {
   type MacroSnapshot,
   type MacroStatus,
 } from '../../api';
+import { Reveal } from '../Reveal';
 import './MacroPanel.css';
 
 const CATEGORY_LABELS: Record<MacroCategory, string> = {
@@ -204,8 +205,8 @@ export function MacroPanel() {
         <Derived label="加密波动率溢价" value={snapshot.derived.cryptoVolPremium} unit="vol" hint="BTC DVOL − VIX" />
       </div>
 
-      {byCategory.map((group) => (
-        <div className="macro-section" key={group.category}>
+      {byCategory.map((group, index) => (
+        <Reveal className="macro-section bezel-ring" index={index} key={group.category}>
           <div className="macro-section__title">{CATEGORY_LABELS[group.category]}</div>
           <div className="macro-table">
             <div className="macro-row macro-row--head">
@@ -221,10 +222,10 @@ export function MacroPanel() {
               <SeriesRow key={row.seriesId} row={row} />
             ))}
           </div>
-        </div>
+        </Reveal>
       ))}
 
-      <div className="macro-section">
+      <Reveal className="macro-section bezel-ring" index={byCategory.length}>
         <div className="macro-section__title">
           财经日历
           <span className={'macro-badge' + (status.calendar.fresh ? ' ok' : ' warn')}>
@@ -251,10 +252,10 @@ export function MacroPanel() {
             ))}
           </div>
         )}
-      </div>
+      </Reveal>
 
       {errored.length > 0 && (
-        <div className="macro-section">
+        <Reveal className="macro-section bezel-ring" index={byCategory.length + 1}>
           <div className="macro-section__title">采集错误</div>
           <div className="macro-errors">
             {errored.map((s) => (
@@ -264,7 +265,7 @@ export function MacroPanel() {
               </div>
             ))}
           </div>
-        </div>
+        </Reveal>
       )}
     </div>
   );
@@ -306,7 +307,7 @@ function Derived({
   hint: string;
 }) {
   return (
-    <div className="macro-derived__item">
+    <div className="macro-derived__item bezel-ring">
       <span className="macro-derived__label">{label}</span>
       <span className={'macro-derived__value' + (value === null ? ' missing' : value < 0 ? ' negative' : '')}>
         {value === null ? '--' : `${value >= 0 ? '+' : ''}${value.toFixed(2)} ${unit}`}

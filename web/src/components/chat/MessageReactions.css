@@ -19,7 +19,7 @@
   top: 0;
   transform: translateY(-50%);
   transition: opacity var(--dur-1) var(--ease-out);
-  z-index: 2;
+  z-index: var(--z-base);
 }
 
 .session-message:hover .message-react-toolbar,

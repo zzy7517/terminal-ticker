@@ -77,8 +77,44 @@
     0 1px 2px rgba(16, 16, 19, 0.04),
     0 16px 40px -18px rgba(16, 16, 19, 0.12);
 
+  /* ── Double-bezel — machined enclosure, concentric by construction ──
+     A card is a glass plate sitting in a milled tray: an outer shell
+     holding an inner core. The inner radius is derived, never guessed,
+     so the two curves stay concentric at any scale. */
+  --bezel-pad: 5px;
+  --bezel-radius-outer: var(--radius-xl);
+  --bezel-radius-inner: calc(var(--bezel-radius-outer) - var(--bezel-pad));
+  --bezel-shell-bg: rgba(9, 9, 11, 0.035);
+  --bezel-shell-ring: rgba(9, 9, 11, 0.06);
+  --bezel-core-bg: var(--panel-raised);
+  --bezel-core-ring: rgba(9, 9, 11, 0.05);
+  --bezel-core-highlight: inset 0 1px 1px rgba(255, 255, 255, 0.75);
+
   --scrollbar: rgba(9, 9, 11, 0.16);
   --scrollbar-hover: rgba(9, 9, 11, 0.30);
+
+  /* ── Spacing — one scale, one dial ──────────────────────────────────
+     Every gap and pad in the app derives from these. --density is the
+     single knob for the whole interface's breathing room: raise it to
+     open the layout up, lower it to pack more rows on screen. */
+  --density: 1.15;
+  --s-0: calc(2px * var(--density));
+  --s-1: calc(4px * var(--density));
+  --s-2: calc(6px * var(--density));
+  --s-3: calc(10px * var(--density));
+  --s-4: calc(14px * var(--density));
+  --s-5: calc(20px * var(--density));
+  --s-6: calc(28px * var(--density));
+  --s-7: calc(40px * var(--density));
+
+  /* ── Layering — systemic strata, never arbitrary ────────────────── */
+  --z-behind: -1;
+  --z-base: 1;
+  --z-sticky: 20;
+  --z-dropdown: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-grain: 500;
 
   /* ── Shape — machined squircles, concentric nesting ─────────────── */
   --radius-sm: 8px;
@@ -188,6 +224,13 @@
   --shadow-bezel:
     inset 0 1px 1px rgba(255, 255, 255, 0.06),
     0 20px 50px -20px rgba(0, 0, 0, 0.7);
+
+  /* Dark: the shell recedes into the void, the core catches the light */
+  --bezel-shell-bg: rgba(255, 255, 255, 0.028);
+  --bezel-shell-ring: rgba(255, 255, 255, 0.07);
+  --bezel-core-bg: var(--panel-raised);
+  --bezel-core-ring: rgba(255, 255, 255, 0.06);
+  --bezel-core-highlight: inset 0 1px 1px rgba(255, 255, 255, 0.07);
 
   --scrollbar: rgba(255, 255, 255, 0.12);
   --scrollbar-hover: rgba(255, 255, 255, 0.24);

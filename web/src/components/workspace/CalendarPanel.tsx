@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { Reveal } from '../Reveal';
 import './CalendarPanel.css';
 import type { Jin10CalendarEvent } from '../../types';
 import { refreshJin10Calendar } from '../../api';
@@ -64,12 +65,12 @@ export function CalendarPanel({
 
   if (!jin10Available) {
     return (
-      <div className="calendar-panel ui-surface">
+      <Reveal className="calendar-panel bezel-ring">
         <div className="empty-state lg">
           <p>财经日历需要配置 Jin10 数据源。</p>
           <p><small>在 MCP 设置中配置 Jin10 服务器并填入 Token 即可启用。</small></p>
         </div>
-      </div>
+      </Reveal>
     );
   }
 
@@ -89,7 +90,7 @@ export function CalendarPanel({
     });
 
   return (
-    <div className="calendar-panel ui-surface">
+    <Reveal className="calendar-panel bezel-ring">
       <div className="calendar-panel__head">
         <span className="calendar-panel__title">财经日历</span>
         <button
@@ -162,6 +163,6 @@ export function CalendarPanel({
           ))}
         </div>
       )}
-    </div>
+    </Reveal>
   );
 }

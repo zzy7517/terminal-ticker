@@ -6,14 +6,11 @@
 }
 
 .calendar-panel {
-  background: var(--canvas);
-  border: 1px solid var(--line-strong);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--s-3);
   min-height: 0;
-  padding: 8px 10px;
-  border-radius: var(--radius-surface);
+  padding: var(--s-3) var(--s-3) var(--s-4);
 }
 
 .calendar-panel__head {
