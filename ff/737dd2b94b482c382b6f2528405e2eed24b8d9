@@ -1,0 +1,170 @@
+tradex/api/claude-session-stream.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 7
+tradex/options/domain.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 7-9
+tradex/chat/runtime.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 32
+tradex/trading/hyperliquid.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 3
+web/src/api/settings.ts
+  s_59fab119e1cdc7::t_085081ad806b05 3-4,7,13
+  s_59fab119e1cdc7::t_9810ce45089060 14
+web/src/types/macro.ts
+  s_59fab119e1cdc7::t_56fc38a1858c65 1-86
+tradex/api/cursor-session-stream.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 7
+tradex/api/routes/news.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 2
+tradex/config/index.ts
+  s_59fab119e1cdc7::t_90b9b0ea8a6d2d 19-22
+  s_59fab119e1cdc7::t_0e3b77f6f2bad0 17
+web/src/stores/uiStore.ts
+  s_59fab119e1cdc7::t_6b45feb48d1421 4
+tradex/api/runtime.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 5,12,24
+tradex/agent/tools/trading.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 2,6
+tradex/api/session-stream.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 4
+tradex/options/service.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 9,13-15
+tradex/macro/domain.ts
+  s_e0005157ca415b::t_3ed15fea825db9 180-182
+tradex/agent/runtime/pi/sessions.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 17
+web/src/types/config.ts
+  s_59fab119e1cdc7::t_ccaea3184acbd8 109-132
+tradex/macro/service.test.ts
+  s_59fab119e1cdc7::t_121dccf17031a9 7
+tradex/api/pi-session-stream.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 10
+tradex/api/routes/agent.test.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 5
+tradex/macro/providers/crypto.test.ts
+  s_e0005157ca415b::t_332298d7786f87 112,189,195-196
+  s_59fab119e1cdc7::t_6d93c72c2c289e 2-3
+  s_e0005157ca415b::t_b300bac2ef9eaa 133-148
+tradex/chat/coordinator.test.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 5
+tradex/trading/exchange-router.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 1-244
+tradex/agent/tools/market.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 5
+tradex/api/routes/proxy.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 2
+tradex/agent/llm-client.ts
+  s_59fab119e1cdc7::t_836e571ec1bcf7 2
+tradex/agent/agent-store.test.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 1-162
+web/src/stores/originStore.ts
+  s_59fab119e1cdc7::t_75c607895637cd 28
+web/src/components/workspace/WatchlistSidebar.tsx
+  s_59fab119e1cdc7::t_997df0472b8569 7
+tradex/runtime/feed.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 2,4
+tradex/api/routes/jin10.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 2
+web/src/App.tsx
+  s_59fab119e1cdc7::t_8f95a4119fcb57 9-10
+web/src/utils/marketDisplay.ts
+  s_59fab119e1cdc7::t_d1d939d08af8dd 1-42
+web/src/stores/marketStore.ts
+  s_59fab119e1cdc7::t_f6539a8c2f2f91 9
+tradex/api/routes/options.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 19
+tradex/market_data/hyperliquid.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 3
+tradex/cron/scheduler.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 18
+tradex/api/routes/macro.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 19
+tradex/market_data/candle-cache.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 1-222
+web/src/api/macro.ts
+  s_59fab119e1cdc7::t_d59718fec36cd9 3-9,12-20
+tradex/config/secrets.test.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 14
+tradex/agent/runtime/pi/sessions.test.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 5
+tradex/api/serializers.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 4
+tradex/api/routes/market.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 9
+tradex/options/providers/registry.ts
+  s_59fab119e1cdc7::t_d4861512f752a2 1-110
+web/src/utils/routeHash.ts
+  s_59fab119e1cdc7::t_fbdcbd9e7dc31b 1-87
+web/src/stores/agent/directMessages.ts
+  s_59fab119e1cdc7::t_eb3533b176f712 1-56
+tradex/domain/quotes.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 1
+tradex/macro/providers/quotes.ts
+  s_e0005157ca415b::t_eaa31f780de922 28-32,44-45
+  s_e0005157ca415b::t_3720faf5320131 95
+web/src/types/index.ts
+  s_59fab119e1cdc7::t_7983726d670251 5,11
+tradex/trading/bitget.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 3
+web/src/components/workspace/originComposerIntent.ts
+  s_59fab119e1cdc7::t_ed99c399a16fd5 10
+tradex/chat/dispatch.test.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 5
+tradex/domain/indicators.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 1
+tradex/runtime/controller.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 2
+web/src/components/settings/ProviderSettingsPanel.tsx
+  s_59fab119e1cdc7::t_965a705e54d746 8
+tradex/agent/runtime/pi/models/registry.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 14,20
+tradex/macro/service.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 28-30
+tradex/api/routes/agent.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 21-22
+tradex/options/config.ts
+  s_59fab119e1cdc7::t_1834c175304a79 1-52
+web/src/components/settings/WatchlistSettingsPanel.tsx
+  s_59fab119e1cdc7::t_9c92147e57bc77 7
+web/src/stores/agentStore.ts
+  s_59fab119e1cdc7::t_12849df895275d 33
+  s_59fab119e1cdc7::t_04657fa0f5b7a9 61
+  s_59fab119e1cdc7::t_92a6f473492402 133
+tradex/market_data/bitget.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 4
+tradex/options/pressure-cloud.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 1-289
+tradex/options/providers/index.ts
+  s_59fab119e1cdc7::t_9620babde0d198 7
+tradex/agent/tools/market-context.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 1-44
+tradex/chat/message-tools.test.ts
+  s_59fab119e1cdc7::t_6d93c72c2c289e 5
+tradex/config/parsing.ts
+  s_59fab119e1cdc7::t_660ff372bc0da9 1-77
+tradex/macro/config.ts
+  s_59fab119e1cdc7::t_6d105d5d302d09 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "ff737dd2b94b482c382b6f2528405e2eed24b8d9",
+  "prompts": {},
+  "sessions": {
+    "s_59fab119e1cdc7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8ec450d5-384f-46c0-8ede-6ae0a347e9bb",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_e0005157ca415b": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "4bb0b63a-4076-4819-897b-bfc10ff6afe5",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
