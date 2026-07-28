@@ -24,6 +24,12 @@
   padding: 20px 24px 28px;
 }
 
+.agent-tab-layout .session-message:not(.user) {
+  align-self: stretch;
+  max-width: none;
+  width: 100%;
+}
+
 /* ── Loading skeleton — mirrors transcript anatomy ────────────────── */
 .transcript-skeleton {
   display: flex;
@@ -119,6 +125,16 @@
   text-transform: none;
 }
 
+.session-message-author {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.session-message-author > span {
+  color: inherit;
+}
+
 .session-message.user .session-message-head span {
   color: var(--text-primary);
 }
@@ -150,8 +166,24 @@
 
 .session-message.user .session-message-text,
 .session-message.system .session-message-text {
-  font-size: 15px;
+  font-size: 15.5px;
   line-height: 1.55;
+}
+
+.session-message-error {
+  border-left: 2px solid var(--danger);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  padding: 2px 0 2px 9px;
+}
+
+.session-message-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
 
 /* ── Generation divider ───────────────────────────────────────────── */

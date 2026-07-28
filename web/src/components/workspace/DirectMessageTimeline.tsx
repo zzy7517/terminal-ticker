@@ -3,8 +3,6 @@
  * Agent Context 流式输出 / composer 仍在 AgentSessionPanel。
  */
 import type { RefObject, UIEvent } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   Loader2,
   X,
@@ -13,39 +11,41 @@ import type { AgentDirectMessage } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
 import { projectDirectMessageTimeline, type DirectMessageTimelineItem } from '../../chat/directMessageTimeline';
 import { MessageReactions } from '../chat/MessageReactions';
+import { SessionMessageRow } from '../chat/SessionMessageRow';
 
 function DirectMessageRow({
   agentId,
   message,
   source,
+  agentDisplayName,
 }: {
   agentId: string;
   message: DirectMessageTimelineItem;
   source: AgentDirectMessage | undefined;
+  agentDisplayName: string;
 }) {
-  const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'System';
+  const label = message.role === 'user'
+    ? 'You'
+    : message.role === 'assistant'
+      ? agentDisplayName
+      : 'System';
   const content = message.error || message.content || (message.role === 'assistant' ? '' : 'No content.');
   const toggleDirectMessageReaction = useAgentStore((state) => state.toggleDirectMessageReaction);
   const reactions = source?.reactions ?? [];
 
   return (
-    <div className={`session-message ${message.role}`}>
-      <div className="session-message-head">
-        <span>{label}</span>
-        <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
-      </div>
-      {content && (
-        <div className="session-message-text markdown-body">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-        </div>
-      )}
-      {source && !source.deletedAtMs ? (
+    <SessionMessageRow
+      content={content || null}
+      createdAt={message.createdAt}
+      footer={source && !source.deletedAtMs ? (
         <MessageReactions
           reactions={reactions}
           onToggle={(emoji) => void toggleDirectMessageReaction(agentId, source.id, emoji)}
         />
       ) : null}
-    </div>
+      label={label}
+      role={message.role}
+    />
   );
 }
 
@@ -113,25 +113,20 @@ export function DirectMessageTimeline({
         <DirectMessageRow
           key={message.id}
           agentId={agentId}
+          agentDisplayName={agentDisplayName}
           message={message}
           source={byId.get(String(message.id))}
         />
       ))}
       {!sessionLoading && streamingContent !== null && (
-        <div className="session-message assistant streaming">
-          <div className="session-message-head">
-            <span>{agentDisplayName}</span>
-            <Loader2 className="spin" size={12} />
-          </div>
-          {streamingContent && (
-            <div className="session-message-text markdown-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingContent}</ReactMarkdown>
-            </div>
-          )}
-          {!streamingContent && (
-            <span className="streaming-cursor" />
-          )}
-        </div>
+        <SessionMessageRow
+          className="streaming"
+          content={streamingContent || null}
+          headAccessory={<Loader2 className="spin" size={12} />}
+          label={agentDisplayName}
+          role="assistant"
+          streaming
+        />
       )}
       {!sessionLoading && queuedFollowUps.length > 0 && (
         <div className="session-follow-up-queue">

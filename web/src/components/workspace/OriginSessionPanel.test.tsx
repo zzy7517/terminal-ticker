@@ -21,7 +21,7 @@ describe('OriginMessageRow', () => {
 
     expect(html).toContain('Partial answer from Cursor.');
     expect(html).toContain('WritableIterable is closed');
-    expect(html).toContain('origin-message-error');
+    expect(html).toContain('session-message-error');
   });
 
   it('still renders an error when no partial content was received', () => {
@@ -40,6 +40,6 @@ describe('OriginMessageRow', () => {
     );
 
     expect(html).toContain('Cursor CLI exited with code 1');
-    expect(html).toContain('origin-message-error');
+    expect(html).toContain('session-message-error');
   });
 });

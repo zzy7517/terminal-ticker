@@ -1,7 +1,5 @@
 /** OriginSessionPanel renders an in-memory draft or a persisted identity-free Runtime Session. */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { Loader2, Trash2 } from 'lucide-react';
 import { OriginAvatar } from '../../avatar';
 import { deleteOriginEntry } from '../../chat/originWorkspace';
@@ -14,8 +12,9 @@ import type {
   OriginSession,
   OriginSessionSummary,
 } from '../../types';
+import { SessionMessageRow } from '../chat/SessionMessageRow';
+import { ToolCallGroup, ToolCallRow } from '../chat/ToolCallRow';
 import { OriginComposer } from './OriginComposer';
-import { OriginToolCallRow } from './OriginToolCallRow';
 import './OriginSessionPanel.css';
 
 const EMPTY_ACTIVITY: OriginToolActivity[] = [];
@@ -227,19 +226,19 @@ function OriginTimeline({
       {items.map((item) => (item.kind === 'message' ? (
         <OriginMessageRow key={item.key} message={item.message} onPreviewImage={onPreviewImage} />
       ) : (
-        <div className="origin-tool-group" key={item.key}>
-          {item.calls.map(({ key, ...call }) => <OriginToolCallRow call={call} key={key} />)}
-        </div>
+        <ToolCallGroup key={item.key}>
+          {item.calls.map(({ key, ...call }) => <ToolCallRow call={call} key={key} />)}
+        </ToolCallGroup>
       )))}
       {streaming !== undefined ? (
-        <div className="session-message assistant streaming">
-          <div className="session-message-head"><span>Origin</span><Loader2 className="spin" size={12} /></div>
-          {streaming ? (
-            <div className="session-message-text markdown-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{streaming}</ReactMarkdown>
-            </div>
-          ) : <span className="streaming-cursor" />}
-        </div>
+        <SessionMessageRow
+          className="streaming"
+          content={streaming || null}
+          headAccessory={<Loader2 className="spin" size={12} />}
+          label="Origin"
+          role="assistant"
+          streaming
+        />
       ) : null}
     </div>
   );
@@ -253,39 +252,20 @@ export function OriginMessageRow({
   onPreviewImage(image: ImageAttachment): void;
 }) {
   const label = message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Origin' : 'Tool';
-  const content = message.content;
   const images = messageImages(message);
-  if (!content && !message.error && images.length === 0 && message.role === 'toolResult') return null;
+  if (!message.content && !message.error && images.length === 0 && message.role === 'toolResult') {
+    return null;
+  }
   return (
-    <div className={`session-message ${message.role}`}>
-      <div className="session-message-head">
-        <span>{label}</span>
-        <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
-      </div>
-      {content ? (
-        <div className="session-message-text markdown-body">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-        </div>
-      ) : null}
-      {message.error ? (
-        <div className="origin-message-error" role="note">{message.error}</div>
-      ) : null}
-      {images.length > 0 ? (
-        <div className="session-message-images">
-          {images.map((image, index) => (
-            <button
-              aria-label={`Preview attachment ${index + 1}`}
-              className="message-image-thumb"
-              key={`${image.mimeType}:${index}`}
-              onClick={() => onPreviewImage(image)}
-              type="button"
-            >
-              <img alt={`Message attachment ${index + 1}`} src={`data:${image.mimeType};base64,${image.data}`} />
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <SessionMessageRow
+      content={message.content || null}
+      createdAt={message.createdAt}
+      error={message.error}
+      images={images}
+      label={label}
+      onPreviewImage={onPreviewImage}
+      role={message.role}
+    />
   );
 }
 
