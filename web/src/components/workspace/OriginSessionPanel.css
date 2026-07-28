@@ -227,14 +227,15 @@
   padding: 20px 24px 28px;
 }
 
-.origin-session-timeline .session-message,
-.origin-session-timeline .origin-tool-group {
+.origin-session-timeline .session-message:not(.user),
+.origin-session-timeline .session-tool-group {
   align-self: stretch;
   max-width: none;
   width: 100%;
 }
 
 .origin-session-timeline .session-message.user {
+  align-self: flex-end;
   max-width: min(76%, 640px);
   width: auto;
 }
