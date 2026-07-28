@@ -1,0 +1,22 @@
+web/src/components/workspace/MacroPanel.css
+  s_6766bbd0300c7c::t_744926ab2828d1 7,10-11,36-37,40,42,49,55-130
+web/src/components/workspace/MacroPanel.tsx
+  s_6766bbd0300c7c::t_306562110c44e9 1,20,24,37-38,85,126-137,168-177,181-185,191-216,218-246,262,264,267-269,272-279,281-282,292-293,298-358
+  s_6766bbd0300c7c::t_4a0435aec9081e 359
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "c66b5b32a2f0929ebe542b4e3fcfddcf82fe1d5c",
+  "prompts": {},
+  "sessions": {
+    "s_6766bbd0300c7c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "242544eb-73f0-4a61-915c-403d85d8577f",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
