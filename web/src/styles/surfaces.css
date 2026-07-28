@@ -1,12 +1,14 @@
-/* Shared visual roles. Pages own layout; this module owns material and shape. */
+/* Shared visual roles. Pages own layout; this module owns material and shape.
+   Robinhood product: flat surfaces + hairlines. No machined double-bezel. */
+
 .ui-surface {
-  background: var(--panel);
+  background: var(--panel-raised);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-surface);
 }
 
 .ui-card {
-  background: var(--canvas-2);
+  background: var(--panel-raised);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-control);
 }
@@ -19,61 +21,39 @@
   border-radius: var(--radius-chip);
 }
 
-/* ── Double bezel — a plate seated in a milled tray ───────────────────
-   Two nested enclosures rather than one flat box. The shell is the tray:
-   recessed, hairline-ringed, barely tinted. The core is the plate that
-   sits in it, carrying its own surface and a light-catching top edge.
-
-   Both radii come from the same token pair, so the curves stay
-   concentric — the inner radius is derived from the outer minus the
-   shell's padding rather than eyeballed.
-
-   Usage:
-     <div class="bezel"><div class="bezel__core"> … </div></div>          */
+/* Flat compat shims — leftover bezel markup renders as a simple surface */
 .bezel {
-  background: var(--bezel-shell-bg);
-  border-radius: var(--bezel-radius-outer);
-  box-shadow: inset 0 0 0 1px var(--bezel-shell-ring);
-  padding: var(--bezel-pad);
+  background: transparent;
+  border-radius: var(--radius-surface);
+  box-shadow: none;
+  padding: 0;
 }
 
 .bezel__core {
-  background: var(--bezel-core-bg);
-  border-radius: var(--bezel-radius-inner);
-  box-shadow:
-    inset 0 0 0 1px var(--bezel-core-ring),
-    var(--bezel-core-highlight);
+  background: var(--panel-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-surface);
+  box-shadow: none;
   height: 100%;
   min-width: 0;
 }
 
-/* Retrofit variant — the same nested read, drawn entirely in shadow.
-   Concentric rings are painted outside the border box, so an existing flat
-   card becomes a seated plate without gaining a wrapper element. Use where
-   the markup can't take a second box; prefer .bezel when it can.
-
-   The rings extend ~6px beyond the box, so the parent's gap must be at
-   least var(--s-4) or neighbouring cards will bleed into each other. */
 .bezel-ring {
-  --bezel-ring-pad: 4px;
-  background: var(--bezel-core-bg);
-  border: 0;
-  border-radius: var(--radius-lg);
-  box-shadow:
-    var(--bezel-core-highlight),
-    0 0 0 1px var(--bezel-core-ring),
-    0 0 0 calc(1px + var(--bezel-ring-pad)) var(--bezel-shell-bg),
-    0 0 0 calc(2px + var(--bezel-ring-pad)) var(--bezel-shell-ring);
+  background: var(--panel-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-surface);
+  box-shadow: none;
 }
 
-/* Tighter variant for small stat tiles, where the full pad reads as slack */
+.bezel.bezel--tight .bezel__core,
 .bezel.bezel--tight {
-  --bezel-pad: 3px;
-  --bezel-radius-outer: var(--radius-lg);
+  border-radius: var(--radius-lg);
 }
 
-/* Flush variant — shell shape without the tray tint, for nesting inside
-   an already-tinted container where a second tint would muddy the value. */
 .bezel.bezel--flush {
   background: transparent;
+}
+
+.bezel.bezel--flush .bezel__core {
+  background: var(--panel-raised);
 }

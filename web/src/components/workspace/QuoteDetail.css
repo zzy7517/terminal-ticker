@@ -1,0 +1,180 @@
+/* Quote detail — RH product detail grammar from live Quote snapshot only */
+
+.quote-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-height: 0;
+  padding: 8px 8px 32px;
+}
+
+.quote-detail--empty {
+  justify-content: center;
+  max-width: 420px;
+  min-height: 280px;
+  padding: 40px 24px;
+}
+
+.quote-detail__empty-title {
+  color: var(--text-bright);
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  margin: 0 0 8px;
+}
+
+.quote-detail__empty-body {
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.quote-detail__head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.quote-detail__name {
+  color: var(--text-bright);
+  font-family: var(--display);
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.quote-detail__symbol {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin: 6px 0 0;
+}
+
+.quote-detail__stale {
+  background: var(--warning-tint);
+  border-radius: 999px;
+  color: var(--warning);
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+}
+
+.quote-detail__price-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quote-detail__price {
+  color: var(--text-bright);
+  font-family: var(--display);
+  font-size: clamp(36px, 5vw, 48px);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+.quote-detail__change {
+  display: flex;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 500;
+  gap: 10px;
+}
+
+.quote-detail__change.up { color: var(--up); }
+.quote-detail__change.down { color: var(--down); }
+.quote-detail__change.neutral { color: var(--text-muted); }
+
+.quote-detail__age {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.quote-detail__range {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quote-detail__range-labels {
+  color: var(--text-secondary);
+  display: flex;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  justify-content: space-between;
+}
+
+.quote-detail__range-track {
+  background: var(--panel-elevated);
+  border-radius: 999px;
+  height: 4px;
+  position: relative;
+}
+
+.quote-detail__range-marker {
+  background: var(--text-bright);
+  border-radius: 50%;
+  height: 12px;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+}
+
+.quote-detail__range-marker.up { background: var(--up); }
+.quote-detail__range-marker.down { background: var(--down); }
+
+.quote-detail__range-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.quote-detail__stats {
+  border-top: 1px solid var(--line-hairline);
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.quote-detail__stat {
+  border-bottom: 1px solid var(--line-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 8px;
+}
+
+.quote-detail__stat:nth-child(odd) {
+  padding-right: 16px;
+}
+
+.quote-detail__stat:nth-child(even) {
+  padding-left: 16px;
+}
+
+.quote-detail__stat-label {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.quote-detail__stat-value {
+  color: var(--text-bright);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.quote-detail__error {
+  color: var(--down);
+  font-size: 13px;
+  margin: 0;
+}

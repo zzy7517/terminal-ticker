@@ -7,6 +7,7 @@ import { GROUP_LABELS } from '../../constants';
 import { changeClass } from '../../utils/marketDisplay';
 import { saveJin10Config, fetchJin10AvailableCodes, reorderWatchlist, removeWatchlistInstrument } from '../../api';
 import type { Instrument, Quote } from '../../types';
+import { ChangeSpark } from '../ChangeSpark';
 
 function SidebarRow({
   instrument,
@@ -74,6 +75,9 @@ function SidebarRow({
         <span className="sb-row-label">{instrument.label}</span>
         <span className="sb-row-code">{instrument.symbol}</span>
       </div>
+      <div className="sb-row-spark">
+        <ChangeSpark changePercent={quote?.changePercent} />
+      </div>
       <div className="sb-row-right">
         <span className="sb-row-price">{quote?.priceLabel ?? '\u2014'}</span>
         <span className={`sb-row-change ${changeClass(quote)}`}>
@@ -88,7 +92,7 @@ function SidebarRow({
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
           title="\u79fb\u9664"
         >
-          <X size={11} />
+          <X size={12} />
         </span>
       )}
     </div>

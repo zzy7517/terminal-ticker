@@ -7,6 +7,7 @@ import type { ChannelMessage } from '../../types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useChatStore } from '../../stores/chatStore';
 import { MessageReactions } from './MessageReactions';
+import { SessionMessageRow } from './SessionMessageRow';
 
 /** 渲染一条 Channel 共享消息及其 reaction 操作。 */
 export function ChannelMessageItem({
@@ -26,27 +27,24 @@ export function ChannelMessageItem({
     : (agent?.name ?? message.authorId);
 
   return (
-    <article className={`session-message channel-message${isHuman ? ' user' : ' agent'}${deleted ? ' deleted' : ''}`}>
-      {!isHuman ? (
+    <SessionMessageRow
+      as="article"
+      className={`channel-message${deleted ? ' deleted' : ''}`}
+      content={deleted ? 'Message deleted' : message.content}
+      createdAt={message.createdAtMs}
+      footer={!deleted ? (
+        <MessageReactions
+          reactions={message.reactions}
+          onToggle={(emoji) => void toggleReaction(message, emoji)}
+        />
+      ) : null}
+      label={authorLabel}
+      leading={!isHuman ? (
         <span className="channel-message-avatar" aria-hidden="true">
           <AgentAvatar agent={avatarSeedSource(message.authorId, agent)} size="md" />
         </span>
       ) : null}
-      <div className="channel-message-body">
-        <div className="session-message-head">
-          <span>{authorLabel}</span>
-          <time>{new Date(message.createdAtMs).toLocaleTimeString()}</time>
-        </div>
-        <div className="session-message-text">
-          <p>{deleted ? 'Message deleted' : message.content}</p>
-        </div>
-        {!deleted ? (
-          <MessageReactions
-            reactions={message.reactions}
-            onToggle={(emoji) => void toggleReaction(message, emoji)}
-          />
-        ) : null}
-      </div>
-    </article>
+      role={isHuman ? 'user' : 'agent'}
+    />
   );
 }

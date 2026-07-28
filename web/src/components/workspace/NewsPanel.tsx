@@ -108,7 +108,7 @@ export function NewsPanel({
   const showSourceTabs = jin10Available || hasJin10Items;
 
   return (
-    <Reveal className="news-panel bezel-ring">
+    <Reveal className="news-panel ui-surface">
       <div className="news-panel__head">
         <span className="news-panel__title">News</span>
         <button
@@ -145,7 +145,7 @@ export function NewsPanel({
           <div className="empty-state sm">
             {source === 'jin10'
               ? '暂无 Jin10 快讯。确认已配置 Token 并启用快讯。'
-              : '暂无新闻，点击"立即刷新"拉取。'}
+              : '还没有新闻。点右上角「立即刷新」拉取最新快讯。'}
           </div>
         )}
         {filteredItems.map((item) => (

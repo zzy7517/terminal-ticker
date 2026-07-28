@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { OriginToolCallRow } from './OriginToolCallRow';
+import { ToolCallRow } from './ToolCallRow';
 
 const CURSOR_SHELL_RESULT = JSON.stringify({
   command: 'pwd',
@@ -14,10 +14,10 @@ const CURSOR_SHELL_RESULT = JSON.stringify({
   localExecutionTimeMs: 491,
 });
 
-describe('OriginToolCallRow', () => {
+describe('ToolCallRow', () => {
   it('collapses a raw result payload into a headline', () => {
     const html = renderToStaticMarkup(
-      <OriginToolCallRow call={{ name: 'shell', output: CURSOR_SHELL_RESULT }} />,
+      <ToolCallRow call={{ name: 'shell', output: CURSOR_SHELL_RESULT }} />,
     );
 
     expect(html).toContain('Shell');
@@ -29,16 +29,16 @@ describe('OriginToolCallRow', () => {
 
   it('marks a failed call and keeps its message', () => {
     const html = renderToStaticMarkup(
-      <OriginToolCallRow call={{ name: 'read', output: '{"errorMessage":"File not found"}' }} />,
+      <ToolCallRow call={{ name: 'read', output: '{"errorMessage":"File not found"}' }} />,
     );
 
-    expect(html).toContain('origin-tool-row--error');
+    expect(html).toContain('session-tool-row--error');
   });
 
   it('leaves a call with no input or output unexpandable', () => {
-    const html = renderToStaticMarkup(<OriginToolCallRow call={{ name: 'shell', output: '' }} />);
+    const html = renderToStaticMarkup(<ToolCallRow call={{ name: 'shell', output: '' }} />);
 
     expect(html).toContain('disabled');
-    expect(html).not.toContain('origin-tool-chevron');
+    expect(html).not.toContain('session-tool-chevron');
   });
 });

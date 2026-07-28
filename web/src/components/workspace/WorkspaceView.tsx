@@ -1,16 +1,9 @@
-import {
-  CalendarDays,
-  Clock,
-  Globe,
-  LineChart,
-  Newspaper,
-  WalletCards,
-} from 'lucide-react';
 import './WorkspaceView.css';
 import { useMarketStore } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
 
 import { WatchlistSidebar } from './WatchlistSidebar';
+import { QuoteDetail } from './QuoteDetail';
 import { AgentDirectMessageList } from './AgentDirectMessageList';
 import { AgentSessionPanel } from './AgentSessionPanel';
 import { OriginSessionPanel } from './OriginSessionPanel';
@@ -28,7 +21,7 @@ import '../../styles/chat/index.css';
 
 /**每个工作区的标题与副标题。副标题写这个页面实际显示什么，而不是泛泛的一句场景词。 */
 const WORKSPACE_COPY: Record<string, { title: string; subtitle: string }> = {
-  market: { title: 'Market', subtitle: '自选列表与实时行情总览' },
+  market: { title: 'Market', subtitle: '自选列表与标的详情' },
   news: { title: 'News', subtitle: '按时间排序的市场快讯与来源状态' },
   calendar: { title: 'Calendar', subtitle: '金十财经日历，含前值、预期与实际值' },
   positions: { title: 'Positions', subtitle: '交易所持仓、活跃订单与交易复盘' },
@@ -40,11 +33,16 @@ const WORKSPACE_COPY: Record<string, { title: string; subtitle: string }> = {
 export function WorkspaceView() {
   const state = useMarketStore((s) => s.state);
   const activeTab = useUiStore((s) => s.activeWorkspace);
+  const selectedKey = useUiStore((s) => s.selectedKey);
   const activeTarget = useChatStore((s) => s.activeTarget);
   const agentProfileOpen = useChatStore((s) => s.agentProfileOpen);
   const selectedAgentId = useAgentStore((s) => s.selectedAgentId);
 
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
+  const selectedInstrument =
+    state && selectedKey
+      ? state.instruments.find((item) => item.key === selectedKey) ?? null
+      : null;
 
   const showTopbar = activeTab !== 'agent';
   const copy = WORKSPACE_COPY[activeTab] ?? {
@@ -57,18 +55,8 @@ export function WorkspaceView() {
       {showTopbar ? (
         <header className="topbar">
           <div className="topbar-left">
-            <span className="workspace-title-icon" aria-hidden="true">
-              {activeTab === 'market' ? <LineChart size={17} />
-                : activeTab === 'news' ? <Newspaper size={17} />
-                : activeTab === 'calendar' ? <CalendarDays size={17} />
-                : activeTab === 'cron' ? <Clock size={17} />
-                : activeTab === 'macro' ? <Globe size={17} />
-                : <WalletCards size={17} />}
-            </span>
-            <div>
-              <h1>{copy.title}</h1>
-              {copy.subtitle ? <p className="workspace-subtitle">{copy.subtitle}</p> : null}
-            </div>
+            <h1>{copy.title}</h1>
+            {copy.subtitle ? <p className="workspace-subtitle">{copy.subtitle}</p> : null}
           </div>
         </header>
       ) : null}
@@ -78,6 +66,10 @@ export function WorkspaceView() {
           {activeTab === 'market' && (
             <div className="market-workspace">
               <WatchlistSidebar mode="workspace" />
+              <QuoteDetail
+                instrument={selectedInstrument}
+                quote={selectedKey && state ? state.quotes[selectedKey] : undefined}
+              />
             </div>
           )}
           {activeTab === 'agent' && (

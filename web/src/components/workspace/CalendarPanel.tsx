@@ -65,7 +65,7 @@ export function CalendarPanel({
 
   if (!jin10Available) {
     return (
-      <Reveal className="calendar-panel bezel-ring">
+      <Reveal className="calendar-panel ui-surface">
         <div className="empty-state lg">
           <p>财经日历需要配置 Jin10 数据源。</p>
           <p><small>在 MCP 设置中配置 Jin10 服务器并填入 Token 即可启用。</small></p>
@@ -90,7 +90,7 @@ export function CalendarPanel({
     });
 
   return (
-    <Reveal className="calendar-panel bezel-ring">
+    <Reveal className="calendar-panel ui-surface">
       <div className="calendar-panel__head">
         <span className="calendar-panel__title">财经日历</span>
         <button

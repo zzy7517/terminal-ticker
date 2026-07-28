@@ -66,14 +66,14 @@
   align-items: center;
   color: var(--text-muted);
   display: flex;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 650;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 500;
   gap: 6px;
   justify-content: space-between;
-  letter-spacing: 0.09em;
-  padding: 10px 8px 6px;
-  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  padding: 14px 8px 8px;
+  text-transform: none;
 }
 
 .direct-message-list > header:not(:first-child) {
@@ -146,8 +146,9 @@
 }
 
 .direct-message-row {
-  gap: 9px;
-  min-height: 40px;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 10px;
 }
 
 .channel-sidebar-row:hover,
@@ -233,13 +234,14 @@
 }
 
 .direct-message-copy strong {
-  font-size: 13.5px;
-  font-weight: 570;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
 }
 
 .direct-message-copy small {
-  font-size: 11px;
-  opacity: 0.68;
+  font-size: 12px;
+  opacity: 0.72;
 }
 
 .direct-message-presence {

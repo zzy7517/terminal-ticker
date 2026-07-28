@@ -5,7 +5,11 @@
 
 .session-message-text.markdown-body {
   color: var(--text-primary);
+  font-family: var(--ui);
+  font-size: 15.5px;
+  line-height: 1.65;
   max-width: 100%;
+  width: 100%;
   white-space: normal;
 }
 
@@ -24,6 +28,12 @@
 .markdown-body pre,
 .markdown-body blockquote {
   margin: 0 0 12px;
+}
+
+.markdown-body p,
+.markdown-body li {
+  font-size: 15.5px;
+  line-height: 1.65;
 }
 
 .markdown-body h2,
@@ -86,11 +96,11 @@
   border-collapse: collapse;
   display: block;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 13.5px;
   line-height: 1.5;
   max-width: 100%;
   overflow-x: auto;
-  width: max-content;
+  width: 100%;
 }
 
 .markdown-body th,
@@ -134,10 +144,11 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.55;
   overflow: auto;
   padding: 10px 12px;
+  width: 100%;
 }
 
 .markdown-body a {

@@ -1,14 +1,15 @@
-/* ── App sidebar — dock resting in the void, left of the glass window ── */
+/* ── App sidebar — flat product nav ──────────────────────────────── */
 .app-sidebar {
-  align-self: start;
-  background: transparent;
+  align-self: stretch;
+  background: var(--canvas);
+  border-right: 1px solid var(--line-soft);
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - 16px);
-  padding: 18px 12px 12px;
+  height: 100dvh;
+  padding: 20px 12px 14px;
   position: sticky;
-  top: 8px;
-  width: 216px;
+  top: 0;
+  width: 200px;
 }
 
 .app-sidebar-brand {
@@ -16,44 +17,46 @@
   color: var(--text-bright);
   display: flex;
   gap: 10px;
-  min-height: 42px;
-  padding: 0 8px 12px;
+  min-height: 40px;
+  padding: 0 8px 14px;
 }
 
 .app-sidebar-brand-mark {
   align-items: center;
   background: var(--control-accent);
-  border-radius: 8px;
-  box-shadow: var(--shadow-inner-edge), var(--shadow-soft);
+  border-radius: 6px;
   color: var(--control-accent-contrast);
   display: inline-flex;
   flex-shrink: 0;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  height: 25px;
+  height: 24px;
   justify-content: center;
   letter-spacing: 0;
-  width: 25px;
+  width: 24px;
 }
 
 .app-sidebar-brand-name {
   font-family: var(--display);
   font-size: 15px;
-  font-weight: 640;
-  letter-spacing: -0.012em;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 .app-sidebar-nav {
   display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.app-sidebar-group {
+  display: grid;
   gap: 2px;
-  padding-top: 12px;
 }
 
 .app-sidebar-item {
   align-items: center;
-  animation: rise-in var(--dur-3) var(--ease-out) both;
-  animation-delay: calc(var(--nav-index, 0) * 45ms);
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
@@ -61,10 +64,10 @@
   cursor: pointer;
   display: flex;
   font-family: var(--ui);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
   gap: 10px;
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 10px;
   position: relative;
   text-align: left;
@@ -74,34 +77,31 @@
 
 .app-sidebar-item svg {
   color: var(--text-muted);
-  transition: color var(--dur-1) var(--ease-out), transform var(--dur-2) var(--ease-spring);
+  transition: color var(--dur-1) var(--ease-out);
 }
 
 .app-sidebar-item:hover:not(.active) {
-  background: var(--accent-tint);
+  background: var(--canvas-2);
   color: var(--text-primary);
 }
 
 .app-sidebar-item:hover:not(.active) svg {
   color: var(--text-secondary);
-  transform: translateX(1px);
 }
 
 .app-sidebar-item:active {
   transform: scale(0.98);
 }
 
-/* Active — glass card lifted out of the dock */
 .app-sidebar-item.active {
-  background: var(--panel-raised);
-  border-color: var(--line-soft);
-  box-shadow: var(--shadow-inner-edge), var(--shadow-soft);
+  background: var(--accent-tint);
+  border-color: transparent;
   color: var(--text-bright);
   font-weight: 600;
 }
 
 .app-sidebar-item.active svg {
-  color: var(--text-bright);
+  color: var(--accent);
 }
 
 .app-sidebar-footer {
@@ -116,13 +116,13 @@
   align-items: center;
   color: var(--text-muted);
   display: flex;
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--ui);
+  font-size: 11px;
   gap: 7px;
-  letter-spacing: 0.1em;
+  letter-spacing: -0.01em;
   min-height: 30px;
   padding: 0 10px;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .app-sidebar-status svg {
@@ -150,7 +150,7 @@
 
 @media (max-width: 1199px) {
   .app-sidebar {
-    width: 184px;
+    width: 176px;
   }
 }
 

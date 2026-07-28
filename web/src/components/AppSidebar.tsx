@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import {
   Activity,
   CalendarDays,
@@ -31,20 +32,42 @@ export function AppSidebar() {
   const optionsState = (state as any)?.options?.snapshots;
   const optionsAvailable = Boolean(optionsState && Object.keys(optionsState).length > 0);
   const macroAvailable = Boolean((state as any)?.config?.macro?.enabled);
-  const items: NavItem[] = [
-    { id: 'agent', label: 'Chat', icon: MessageSquare },
-    { id: 'market', label: 'Market', icon: LineChart },
-    { id: 'news', label: 'News', icon: Newspaper },
-    { id: 'calendar', label: 'Calendar', icon: CalendarDays, available: jin10Available },
-    { id: 'positions', label: 'Positions', icon: WalletCards },
-    { id: 'options', label: 'Options', icon: Activity, available: optionsAvailable },
-    { id: 'macro', label: 'Macro', icon: Globe, available: macroAvailable },
-    { id: 'cron', label: 'Cron', icon: Clock },
-  ];
+
+  const items: NavItem[] = useMemo(
+    () => [
+      { id: 'agent', label: 'Chat', icon: MessageSquare },
+      { id: 'market', label: 'Market', icon: LineChart },
+      { id: 'positions', label: 'Positions', icon: WalletCards },
+      { id: 'news', label: 'News', icon: Newspaper },
+      { id: 'calendar', label: 'Calendar', icon: CalendarDays, available: jin10Available },
+      { id: 'options', label: 'Options', icon: Activity, available: optionsAvailable },
+      { id: 'macro', label: 'Macro', icon: Globe, available: macroAvailable },
+      { id: 'cron', label: 'Cron', icon: Clock },
+    ],
+    [jin10Available, optionsAvailable, macroAvailable],
+  );
+
+  const available = items.filter((item) => item.available !== false);
 
   const openWorkspace = (view: WorkspaceViewId) => {
     useUiStore.getState().setActiveWorkspace(view);
     useUiStore.getState().openWorkspace();
+  };
+
+  const renderItem = (item: NavItem) => {
+    const Icon = item.icon;
+    const active = route.view === 'workspace' && activeWorkspace === item.id;
+    return (
+      <button
+        className={'app-sidebar-item' + (active ? ' active' : '')}
+        key={item.id}
+        onClick={() => openWorkspace(item.id)}
+        type="button"
+      >
+        <Icon size={17} />
+        <span>{item.label}</span>
+      </button>
+    );
   };
 
   return (
@@ -55,22 +78,7 @@ export function AppSidebar() {
       </div>
 
       <nav className="app-sidebar-nav" aria-label="Workspace navigation">
-        {items.filter((item) => item.available !== false).map((item, index) => {
-          const Icon = item.icon;
-          const active = route.view === 'workspace' && activeWorkspace === item.id;
-          return (
-            <button
-              className={'app-sidebar-item' + (active ? ' active' : '')}
-              key={item.id}
-              onClick={() => openWorkspace(item.id)}
-              style={{ '--nav-index': index } as React.CSSProperties}
-              type="button"
-            >
-              <Icon size={17} />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
+        <div className="app-sidebar-group">{available.map((item) => renderItem(item))}</div>
       </nav>
 
       <div className="app-sidebar-footer">

@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════
    TRADEX — Shared Controls
-   Hairline glass · island pills · monochrome ink interactions
+   Flat product chrome · green voltage CTAs · hairline islands
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Panel container ──────────────────────────────────────────────── */
@@ -26,12 +26,13 @@
   color: var(--text-muted);
   display: flex;
   flex-direction: column;
-  font-size: 14px;
+  font-family: var(--ui);
+  font-size: 15px;
   gap: var(--s-2);
   justify-content: center;
-  line-height: 1.5;
-  min-height: 60px;
-  padding: var(--s-5) var(--s-4);
+  line-height: 1.55;
+  min-height: 72px;
+  padding: var(--s-6) var(--s-4);
   text-align: center;
   text-wrap: pretty;
 }
@@ -39,19 +40,21 @@
 /* The glyph is scenery, not information — it should not compete with the copy */
 .empty-state > svg {
   color: var(--text-muted);
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
 .empty-state.sm {
-  font-size: 13px;
-  min-height: 36px;
-  padding: var(--s-4) var(--s-3);
+  font-size: 14px;
+  min-height: 48px;
+  padding: var(--s-5) var(--s-3);
 }
 
 .empty-state.lg {
-  font-size: 15px;
-  min-height: 80px;
-  padding: var(--s-6) var(--s-5);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  min-height: 120px;
+  padding: var(--s-7) var(--s-5);
 }
 
 .empty-state.row {
@@ -230,7 +233,7 @@
 .shell-button.primary {
   background: var(--control-accent);
   border-color: transparent;
-  box-shadow: var(--shadow-inner-edge), var(--shadow-soft);
+  box-shadow: none;
   color: var(--control-accent-contrast);
   font-weight: 650;
 }

@@ -1,103 +1,74 @@
 /* ═══════════════════════════════════════════════════════════════════
    TRADEX — Design Tokens
-   Ethereal glass · OLED void · monochrome chrome
-   The interface is achromatic; market data is the only color on screen.
+   Robinhood product language: flat surfaces · singular green voltage
+   Market green/red carry P&L emotion; UI chrome stays quiet.
    ═══════════════════════════════════════════════════════════════════ */
 
 :root {
   color-scheme: light;
 
-  /* ── Surfaces — soft structural silver ──────────────────────────── */
-  --void: #ebebed;
-  --canvas: #f4f4f5;
-  --canvas-2: #ececee;
-  --panel: #fafafa;
+  /* ── Surfaces — clean light ladder ──────────────────────────────── */
+  --canvas: #ffffff;
+  --canvas-2: #f7f7f7;
+  --panel: #ffffff;
   --panel-raised: #ffffff;
-  --panel-elevated: #ffffff;
+  --panel-elevated: #f0f0f0;
   --surface: var(--panel-raised);
-  --bezel: rgba(9, 9, 11, 0.03);
 
   /* ── Hairlines ──────────────────────────────────────────────────── */
-  --line-soft: rgba(9, 9, 11, 0.07);
-  --line-strong: rgba(9, 9, 11, 0.13);
-  --line-hairline: rgba(9, 9, 11, 0.05);
-  --modal-backdrop: rgba(5, 5, 5, 0.88);
+  --line-soft: rgba(0, 0, 0, 0.08);
+  --line-strong: rgba(0, 0, 0, 0.14);
+  --line-hairline: rgba(0, 0, 0, 0.06);
+  --modal-backdrop: rgba(14, 14, 14, 0.55);
   --line-on-dark-soft: rgba(255, 255, 255, 0.10);
 
-  /* ── Text — cool ink hierarchy, never pure black ────────────────── */
-  --text-primary: #1c1c1f;
-  --text-secondary: #55555e;
-  --text-muted: #8b8b94;
+  /* ── Text ──────────────────────────────────────────────────────── */
+  --text-primary: #1a1a1a;
+  --text-secondary: #5c5c5c;
+  --text-muted: #8a8a8a;
   --text-tertiary: var(--text-muted);
-  --text-bright: #101013;
+  --text-bright: #0e0e0e;
 
-  /* ── Semantic — the only voiced colors in the interface ─────────── */
-  --up: #177950;
-  --down: #c13d33;
-  --success: #177950;
-  --danger: #c13d33;
-  --warning: #93651c;
+  /* ── Semantic — P&L voice ───────────────────────────────────────── */
+  --up: #00c805;
+  --down: #ff5000;
+  --success: #00c805;
+  --danger: #ff5000;
+  --warning: #c99200;
 
-  /* ── Structural accent — monochrome ink ─────────────────────────── */
-  --accent: #3f3f46;
-  --accent-contrast: #fafafa;
-  --accent-tint: rgba(9, 9, 11, 0.05);
-  --accent-tint-strong: rgba(9, 9, 11, 0.09);
-  --accent-ring: rgba(9, 9, 11, 0.22);
+  /* ── Brand voltage — Robinhood product green ────────────────────── */
+  --accent: #00c805;
+  --accent-contrast: #0e0e0e;
+  --accent-tint: rgba(0, 200, 5, 0.08);
+  --accent-tint-strong: rgba(0, 200, 5, 0.14);
+  --accent-ring: rgba(0, 200, 5, 0.35);
 
-  /* ── Interactive accent — same ink, voiced through weight ───────── */
-  --control-accent: #18181b;
-  --control-accent-hover: #303036;
-  --control-accent-contrast: #fafafa;
-  --control-accent-tint: rgba(9, 9, 11, 0.06);
-  --control-accent-tint-strong: rgba(9, 9, 11, 0.10);
-  --control-accent-ring: rgba(9, 9, 11, 0.25);
+  --control-accent: #00c805;
+  --control-accent-hover: #00b004;
+  --control-accent-contrast: #0e0e0e;
+  --control-accent-tint: rgba(0, 200, 5, 0.08);
+  --control-accent-tint-strong: rgba(0, 200, 5, 0.16);
+  --control-accent-ring: rgba(0, 200, 5, 0.4);
 
   /* ── Semantic tints ─────────────────────────────────────────────── */
-  --danger-tint: rgba(193, 61, 51, 0.07);
-  --danger-tint-strong: rgba(193, 61, 51, 0.14);
-  --warning-tint: rgba(147, 101, 28, 0.08);
-  --warning-tint-strong: rgba(147, 101, 28, 0.16);
-  --success-tint: rgba(23, 121, 80, 0.07);
-  --success-tint-strong: rgba(23, 121, 80, 0.14);
+  --danger-tint: rgba(255, 80, 0, 0.08);
+  --danger-tint-strong: rgba(255, 80, 0, 0.14);
+  --warning-tint: rgba(201, 146, 0, 0.1);
+  --warning-tint-strong: rgba(201, 146, 0, 0.18);
+  --success-tint: rgba(0, 200, 5, 0.08);
+  --success-tint-strong: rgba(0, 200, 5, 0.14);
 
-  /* ── Elevation — diffused ambience, never harsh ─────────────────── */
-  --shadow-soft:
-    0 1px 1px rgba(16, 16, 19, 0.03),
-    0 4px 14px -6px rgba(16, 16, 19, 0.07);
-  --shadow-md:
-    0 1px 2px rgba(16, 16, 19, 0.04),
-    0 12px 32px -12px rgba(16, 16, 19, 0.14);
-  --shadow-pop:
-    0 2px 6px rgba(16, 16, 19, 0.05),
-    0 24px 60px -16px rgba(16, 16, 19, 0.22);
-  --shadow-inner-edge: inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  --shadow-bezel:
-    inset 0 1px 1px rgba(255, 255, 255, 0.7),
-    0 1px 2px rgba(16, 16, 19, 0.04),
-    0 16px 40px -18px rgba(16, 16, 19, 0.12);
+  /* ── Elevation — near-flat; soft single-layer only when needed ──── */
+  --shadow-soft: 0 1px 2px rgba(14, 14, 14, 0.04);
+  --shadow-md: 0 4px 16px rgba(14, 14, 14, 0.08);
+  --shadow-pop: 0 12px 32px rgba(14, 14, 14, 0.12);
+  --shadow-inner-edge: none;
 
-  /* ── Double-bezel — machined enclosure, concentric by construction ──
-     A card is a glass plate sitting in a milled tray: an outer shell
-     holding an inner core. The inner radius is derived, never guessed,
-     so the two curves stay concentric at any scale. */
-  --bezel-pad: 5px;
-  --bezel-radius-outer: var(--radius-xl);
-  --bezel-radius-inner: calc(var(--bezel-radius-outer) - var(--bezel-pad));
-  --bezel-shell-bg: rgba(9, 9, 11, 0.035);
-  --bezel-shell-ring: rgba(9, 9, 11, 0.06);
-  --bezel-core-bg: var(--panel-raised);
-  --bezel-core-ring: rgba(9, 9, 11, 0.05);
-  --bezel-core-highlight: inset 0 1px 1px rgba(255, 255, 255, 0.75);
+  --scrollbar: rgba(0, 0, 0, 0.18);
+  --scrollbar-hover: rgba(0, 0, 0, 0.32);
 
-  --scrollbar: rgba(9, 9, 11, 0.16);
-  --scrollbar-hover: rgba(9, 9, 11, 0.30);
-
-  /* ── Spacing — one scale, one dial ──────────────────────────────────
-     Every gap and pad in the app derives from these. --density is the
-     single knob for the whole interface's breathing room: raise it to
-     open the layout up, lower it to pack more rows on screen. */
-  --density: 1.15;
+  /* ── Spacing — denser product chrome ────────────────────────────── */
+  --density: 1;
   --s-0: calc(2px * var(--density));
   --s-1: calc(4px * var(--density));
   --s-2: calc(6px * var(--density));
@@ -107,45 +78,42 @@
   --s-6: calc(28px * var(--density));
   --s-7: calc(40px * var(--density));
 
-  /* ── Layering — systemic strata, never arbitrary ────────────────── */
-  --z-behind: -1;
+  /* ── Layering ───────────────────────────────────────────────────── */
   --z-base: 1;
   --z-sticky: 20;
   --z-dropdown: 200;
   --z-overlay: 300;
   --z-modal: 400;
-  --z-grain: 500;
 
-  /* ── Shape — machined squircles, concentric nesting ─────────────── */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 22px;
-  --radius-frame: 18px;
+  /* ── Shape — tight product radii ────────────────────────────────── */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
   --radius-chip: var(--radius-sm);
   --radius-control: var(--radius-md);
   --radius-surface: var(--radius-lg);
 
-  /* ── Typography — Geist voice · Geist Mono data ─────────────────── */
+  /* ── Typography ─────────────────────────────────────────────────── */
   --mono: "Geist Mono", "JetBrains Mono", "SF Mono", "Cascadia Mono", monospace;
   --display: "Geist", "SF Pro Display", "PingFang SC", system-ui, -apple-system, sans-serif;
   --ui: "Geist", "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   --reading: "Geist", "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
 
-  /* ── Motion — weighted mass, custom cubic-beziers only ──────────── */
+  /* ── Motion — feedback only ─────────────────────────────────────── */
   --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-spring: cubic-bezier(0.34, 1.36, 0.44, 1);
-  --dur-1: 140ms;
-  --dur-2: 300ms;
-  --dur-3: 560ms;
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 280ms;
 
-  /* ── Control tokens — terminal-grade density ────────────────────── */
+  /* ── Control tokens ─────────────────────────────────────────────── */
   --ctl-h-sm: 28px;
   --ctl-h-md: 32px;
-  --ctl-h-lg: 38px;
+  --ctl-h-lg: 36px;
   --ctl-px-sm: 10px;
-  --ctl-px-md: 13px;
-  --ctl-px-lg: 17px;
+  --ctl-px-md: 12px;
+  --ctl-px-lg: 16px;
   --ctl-radius: var(--radius-md);
   --ctl-radius-sm: var(--radius-sm);
   --ctl-font: 14px;
@@ -164,74 +132,56 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* ── Surfaces — OLED void with glass strata ─────────────────────── */
-  --void: #050505;
-  --canvas: #0a0a0c;
-  --canvas-2: #070708;
-  --panel: #0e0e11;
-  --panel-raised: #141418;
-  --panel-elevated: #1a1a20;
+  /* ── Surfaces — RH true black canvas ────────────────────────────── */
+  --canvas: #000000;
+  --canvas-2: #0f0f0f;
+  --panel: #000000;
+  --panel-raised: #1a1a1a;
+  --panel-elevated: #1f1f1f;
   --surface: var(--panel-raised);
-  --bezel: rgba(255, 255, 255, 0.03);
 
-  --line-soft: rgba(255, 255, 255, 0.07);
-  --line-strong: rgba(255, 255, 255, 0.13);
-  --line-hairline: rgba(255, 255, 255, 0.05);
+  --line-soft: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --line-hairline: rgba(255, 255, 255, 0.08);
+  --modal-backdrop: rgba(0, 0, 0, 0.72);
 
-  --text-primary: #ededef;
-  --text-secondary: #a0a0a8;
-  --text-muted: #6e6e78;
+  --text-primary: #ffffff;
+  --text-secondary: #b0b0b0;
+  --text-muted: #6a6a6a;
   --text-tertiary: var(--text-muted);
-  --text-bright: #fcfcfd;
+  --text-bright: #ffffff;
 
-  --up: #4cc38a;
-  --down: #e5716a;
-  --success: #4cc38a;
-  --danger: #e5716a;
-  --warning: #d3b05f;
+  --up: #00c805;
+  --down: #ff5000;
+  --success: #00c805;
+  --danger: #ff5000;
+  --warning: #f0b429;
 
-  --accent: #d6d6db;
-  --accent-contrast: #0a0a0c;
-  --accent-tint: rgba(255, 255, 255, 0.05);
-  --accent-tint-strong: rgba(255, 255, 255, 0.09);
-  --accent-ring: rgba(255, 255, 255, 0.24);
+  --accent: #00c805;
+  --accent-contrast: #0e0e0e;
+  --accent-tint: rgba(0, 200, 5, 0.1);
+  --accent-tint-strong: rgba(0, 200, 5, 0.18);
+  --accent-ring: rgba(0, 200, 5, 0.45);
 
-  --control-accent: #f4f4f5;
-  --control-accent-hover: #ffffff;
-  --control-accent-contrast: #0b0b0d;
-  --control-accent-tint: rgba(255, 255, 255, 0.06);
-  --control-accent-tint-strong: rgba(255, 255, 255, 0.11);
-  --control-accent-ring: rgba(255, 255, 255, 0.28);
+  --control-accent: #00c805;
+  --control-accent-hover: #1ae01e;
+  --control-accent-contrast: #0e0e0e;
+  --control-accent-tint: rgba(0, 200, 5, 0.1);
+  --control-accent-tint-strong: rgba(0, 200, 5, 0.2);
+  --control-accent-ring: rgba(0, 200, 5, 0.5);
 
-  --danger-tint: rgba(229, 113, 106, 0.09);
-  --danger-tint-strong: rgba(229, 113, 106, 0.17);
-  --warning-tint: rgba(211, 176, 95, 0.09);
-  --warning-tint-strong: rgba(211, 176, 95, 0.17);
-  --success-tint: rgba(76, 195, 138, 0.09);
-  --success-tint-strong: rgba(76, 195, 138, 0.17);
+  --danger-tint: rgba(255, 80, 0, 0.12);
+  --danger-tint-strong: rgba(255, 80, 0, 0.2);
+  --warning-tint: rgba(240, 180, 41, 0.12);
+  --warning-tint-strong: rgba(240, 180, 41, 0.2);
+  --success-tint: rgba(0, 200, 5, 0.12);
+  --success-tint-strong: rgba(0, 200, 5, 0.2);
 
-  /* ── Elevation — depth via darkness and inner light ─────────────── */
-  --shadow-soft:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 12px 32px -10px rgba(0, 0, 0, 0.55);
-  --shadow-pop:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 24px 70px -14px rgba(0, 0, 0, 0.8);
-  --shadow-inner-edge: inset 0 1px 0 rgba(255, 255, 255, 0.09);
-  --shadow-bezel:
-    inset 0 1px 1px rgba(255, 255, 255, 0.06),
-    0 20px 50px -20px rgba(0, 0, 0, 0.7);
+  --shadow-soft: none;
+  --shadow-md: none;
+  --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.45);
+  --shadow-inner-edge: none;
 
-  /* Dark: the shell recedes into the void, the core catches the light */
-  --bezel-shell-bg: rgba(255, 255, 255, 0.028);
-  --bezel-shell-ring: rgba(255, 255, 255, 0.07);
-  --bezel-core-bg: var(--panel-raised);
-  --bezel-core-ring: rgba(255, 255, 255, 0.06);
-  --bezel-core-highlight: inset 0 1px 1px rgba(255, 255, 255, 0.07);
-
-  --scrollbar: rgba(255, 255, 255, 0.12);
-  --scrollbar-hover: rgba(255, 255, 255, 0.24);
+  --scrollbar: rgba(255, 255, 255, 0.14);
+  --scrollbar-hover: rgba(255, 255, 255, 0.28);
 }

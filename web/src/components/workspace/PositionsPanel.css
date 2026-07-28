@@ -1,50 +1,53 @@
-/* ── Positions Panel — exposure, working orders, and post-trade notes ──
-   Follows the house data-panel idiom (see MacroPanel.css): CSS Grid rows
-   rather than tables, mono numerics, hairline row rules, uppercase
-   micro-labels. Columns are declared once per section and shared by the
-   header and body rows so they cannot drift apart. */
+/* ── Positions — Robinhood holdings grammar ───────────────────────── */
 
 .positions-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--s-4);
+  gap: 28px;
   height: 100%;
+  max-width: 920px;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--s-4) var(--s-4) var(--s-6);
+  padding: 8px 8px 48px;
 }
 
-/* ── Summary tiles ────────────────────────────────────────────────── */
 .positions-summary {
   display: grid;
-  gap: var(--s-2);
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 800px) {
+  .positions-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .positions-stat {
   display: flex;
   flex-direction: column;
-  gap: var(--s-0);
-  padding: var(--s-3) var(--s-3) calc(var(--s-3) + 2px);
+  gap: 8px;
+  min-height: 132px;
+  padding: 20px 20px 18px;
 }
 
 .positions-stat__label {
-  color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 .positions-stat__value {
-  color: var(--text-primary);
-  font-family: var(--mono);
-  font-size: 20px;
-  font-weight: 700;
+  color: var(--text-bright);
+  font-family: var(--display);
+  font-size: clamp(28px, 3.4vw, 36px);
+  font-weight: 500;
   font-variant-numeric: tabular-nums lining-nums;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  margin-top: auto;
 }
 
 .positions-stat__value.up { color: var(--up); }
@@ -53,26 +56,24 @@
 
 .positions-stat__hint {
   color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--ui);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
-/* ── Error bar ────────────────────────────────────────────────────── */
 .positions-error {
   align-items: center;
   background: var(--danger-tint);
-  border-radius: var(--radius-md);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--down) 26%, transparent);
+  border: 1px solid color-mix(in srgb, var(--down) 28%, transparent);
+  border-radius: var(--radius-lg);
   color: var(--down);
   display: flex;
-  font-size: 13px;
-  gap: var(--s-2);
-  padding: var(--s-2) var(--s-3);
+  font-size: 14px;
+  gap: 10px;
+  padding: 12px 14px;
 }
 
-.positions-error svg {
-  flex-shrink: 0;
-}
+.positions-error svg { flex-shrink: 0; }
 
 .positions-error__dismiss {
   background: transparent;
@@ -82,62 +83,59 @@
   margin-left: auto;
   opacity: 0.7;
   padding: 0;
-  transition: opacity var(--dur-1) var(--ease-out);
 }
 
 .positions-error__dismiss:hover { opacity: 1; }
 
-/* ── Section ──────────────────────────────────────────────────────── */
 .positions-section {
   display: flex;
   flex-direction: column;
-  gap: var(--s-2);
-  padding: var(--s-3) var(--s-3) var(--s-3);
+  gap: 8px;
+  padding: 8px 4px 12px;
+}
+
+.positions-section.ui-surface {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 4px 0 8px;
 }
 
 .positions-section__head {
   align-items: baseline;
   display: flex;
-  gap: var(--s-2);
-  padding-bottom: var(--s-1);
+  gap: 10px;
+  padding: 8px 8px 12px;
 }
 
 .positions-section__title {
-  color: var(--text-primary);
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  color: var(--text-bright);
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
 }
 
 .positions-section__count {
   color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--ui);
+  font-size: 14px;
   margin-right: auto;
 }
 
-/* ── Venue grouping ───────────────────────────────────────────────── */
 .positions-venue + .positions-venue {
-  margin-top: var(--s-3);
+  margin-top: 8px;
 }
 
 .positions-venue__label {
   color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  padding-bottom: var(--s-1);
-  text-transform: uppercase;
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 8px 4px;
 }
 
-/* ── Data rows ────────────────────────────────────────────────────────
-   Grid template lives on the shared .positions-row so the header and the
-   body rows are guaranteed to share a column rhythm. Each section sets
-   its own template via a modifier. */
+/* Holding rows — RH list, not dense table */
 .positions-table {
   display: flex;
   flex-direction: column;
@@ -147,39 +145,41 @@
   align-items: center;
   border-bottom: 1px solid var(--line-hairline);
   display: grid;
-  font-family: var(--mono);
-  font-size: 11.5px;
+  font-family: var(--ui);
+  font-size: 14px;
   font-variant-numeric: tabular-nums lining-nums;
-  gap: var(--s-2);
-  padding: var(--s-2) var(--s-1);
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 8px;
   transition: background-color var(--dur-1) var(--ease-out);
 }
 
 .positions-row:last-child { border-bottom: 0; }
 
 .positions-row:not(.positions-row--head):hover {
-  background: var(--accent-tint);
+  background: var(--canvas-2);
 }
 
 .positions-row--head {
   color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  min-height: 36px;
+  padding-bottom: 4px;
+  text-transform: none;
 }
 
 .positions-row--head:hover { background: transparent; }
 
 .positions-row--position {
   grid-template-columns:
-    minmax(78px, 1.4fr) 52px repeat(4, minmax(64px, 1fr)) 56px;
+    minmax(88px, 1.3fr) 52px repeat(3, minmax(72px, 1fr)) minmax(88px, 1fr);
 }
 
 .positions-row--order {
   grid-template-columns:
-    minmax(78px, 1.4fr) 48px 60px repeat(3, minmax(58px, 1fr))
-    minmax(64px, 0.8fr) 72px;
+    minmax(88px, 1.2fr) 56px repeat(3, minmax(64px, 1fr)) 88px;
 }
 
 .positions-cell--num {
@@ -187,8 +187,10 @@
 }
 
 .positions-cell--sym {
-  color: var(--text-primary);
-  font-weight: 650;
+  color: var(--text-bright);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -203,16 +205,14 @@
   justify-content: flex-end;
 }
 
-/* Direction tag — reads as a state chip, not coloured text */
 .positions-side {
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   display: inline-block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 1px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 3px 8px;
   text-align: center;
-  text-transform: uppercase;
 }
 
 .positions-side.long {
@@ -225,18 +225,16 @@
   color: var(--down);
 }
 
-.positions-pnl.up { color: var(--up); font-weight: 700; }
-.positions-pnl.down { color: var(--down); font-weight: 700; }
-.positions-pnl.flat { color: var(--text-muted); }
-
-.positions-status {
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.positions-pnl {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
 }
 
-/* ── Lessons ──────────────────────────────────────────────────────── */
+.positions-pnl.up { color: var(--up); }
+.positions-pnl.down { color: var(--down); }
+.positions-pnl.flat { color: var(--text-muted); }
+
 .positions-lessons {
   display: flex;
   flex-direction: column;
@@ -245,25 +243,26 @@
 .positions-lesson {
   border-bottom: 1px solid var(--line-hairline);
   display: grid;
-  gap: var(--s-1) var(--s-3);
-  grid-template-columns: minmax(90px, 130px) minmax(0, 1fr);
-  padding: var(--s-2) var(--s-1);
+  gap: 8px 20px;
+  grid-template-columns: minmax(100px, 140px) minmax(0, 1fr);
+  padding: 16px 8px;
   transition: background-color var(--dur-1) var(--ease-out);
 }
 
 .positions-lesson:last-child { border-bottom: 0; }
-.positions-lesson:hover { background: var(--accent-tint); }
+.positions-lesson:hover { background: var(--canvas-2); }
 
 .positions-lesson__meta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .positions-lesson__instrument {
-  color: var(--text-secondary);
-  font-family: var(--mono);
-  font-size: 11px;
+  color: var(--text-bright);
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -271,56 +270,56 @@
 
 .positions-lesson__category {
   color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-family: var(--ui);
+  font-size: 12px;
 }
 
 .positions-lesson__text {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.55;
   text-wrap: pretty;
 }
 
-/* ── Loading skeleton — matches the row rhythm it replaces ────────── */
 .positions-skeleton {
   display: flex;
   flex-direction: column;
-  gap: var(--s-2);
-  padding: var(--s-2) var(--s-1);
+  gap: 10px;
+  padding: 12px 8px;
 }
 
 .positions-skeleton span {
-  height: 11px;
+  height: 14px;
 }
 
 .positions-skeleton span:nth-child(1) { width: 62%; }
 .positions-skeleton span:nth-child(2) { width: 88%; }
 .positions-skeleton span:nth-child(3) { width: 45%; }
 
-/* ── Responsive — drop to a readable subset rather than a squeezed grid ── */
 @media (max-width: 900px) {
   .positions-row--position {
-    grid-template-columns: minmax(70px, 1.3fr) 46px repeat(3, minmax(58px, 1fr));
+    grid-template-columns: minmax(70px, 1.2fr) 48px repeat(3, minmax(64px, 1fr)) minmax(80px, 1fr);
   }
 
   .positions-row--order {
-    grid-template-columns: minmax(70px, 1.3fr) 44px repeat(3, minmax(56px, 1fr)) 68px;
-  }
-
-  .positions-cell--optional {
-    display: none;
+    grid-template-columns: minmax(70px, 1.2fr) 48px repeat(3, minmax(56px, 1fr)) 80px;
   }
 }
 
 @media (max-width: 640px) {
   .positions-panel {
-    padding: var(--s-3) var(--s-2) var(--s-5);
+    padding: 4px 0 36px;
+  }
+
+  .positions-summary {
+    grid-template-columns: 1fr;
   }
 
   .positions-lesson {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .positions-section__title {
+    font-size: 22px;
   }
 }
