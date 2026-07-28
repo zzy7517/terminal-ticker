@@ -73,13 +73,6 @@ function fmtEventTime(ms: number): string {
   return `${d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })} ${time}`;
 }
 
-function percentileClass(percentile: number | null): string {
-  if (percentile === null) return '';
-  if (percentile >= 90) return 'extreme-high';
-  if (percentile <= 10) return 'extreme-low';
-  return '';
-}
-
 export function MacroPanel() {
   const [snapshot, setSnapshot] = useState<MacroSnapshot | null>(null);
   const [status, setStatus] = useState<MacroStatus | null>(null);
