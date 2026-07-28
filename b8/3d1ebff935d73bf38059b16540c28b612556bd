@@ -1,0 +1,29 @@
+web/src/components/AppSidebar.css
+  s_21194055d0923d::t_5340bb656337b5 178
+web/src/components/chat/SessionMessageRow.test.tsx
+  s_21194055d0923d::t_3abae4f90103fe 1-78
+web/src/components/AppSidebar.tsx
+  s_21194055d0923d::t_6b0d9f63481501 57
+  s_21194055d0923d::t_62919679babc7d 1
+  s_21194055d0923d::t_6fd4c3b3994227 81
+web/src/components/chat/ToolCallRow.test.tsx
+  s_21194055d0923d::t_0405f34a00dca9 1-44
+web/src/components/workspace/PositionsPanel.css
+  s_21194055d0923d::t_1b980e98d85a4e 301,305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "b83d1ebff935d73bf38059b16540c28b612556bd",
+  "prompts": {},
+  "sessions": {
+    "s_21194055d0923d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1aa90012-4f61-429f-843c-0da8b0cfd266",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
