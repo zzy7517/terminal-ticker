@@ -1,11 +1,3 @@
-import {
-  CalendarDays,
-  Clock,
-  Globe,
-  LineChart,
-  Newspaper,
-  WalletCards,
-} from 'lucide-react';
 import './WorkspaceView.css';
 import { useMarketStore } from '../../stores/marketStore';
 import { useUiStore } from '../../stores/uiStore';
