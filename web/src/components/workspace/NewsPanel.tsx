@@ -108,7 +108,7 @@ export function NewsPanel({
   const showSourceTabs = jin10Available || hasJin10Items;
 
   return (
-    <Reveal className="news-panel bezel-ring">
+    <Reveal className="news-panel ui-surface">
       <div className="news-panel__head">
         <span className="news-panel__title">News</span>
         <button

@@ -107,17 +107,14 @@
 
 .cron-job-card {
   padding: var(--s-3);
-  transition: box-shadow var(--dur-1) var(--ease-out);
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out);
 }
 
-/* The bezel draws its edge in shadow, not border, so hover brightens the
-   inner ring rather than a border-color that no longer renders. */
 .cron-job-card:hover {
-  box-shadow:
-    var(--bezel-core-highlight),
-    0 0 0 1px var(--accent-ring),
-    0 0 0 calc(1px + var(--bezel-ring-pad, 4px)) var(--bezel-shell-bg),
-    0 0 0 calc(2px + var(--bezel-ring-pad, 4px)) var(--bezel-shell-ring);
+  border-color: var(--accent-ring);
+  background: var(--panel-elevated);
 }
 
 .cron-job-card.disabled {

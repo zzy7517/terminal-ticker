@@ -206,7 +206,7 @@ export function MacroPanel() {
       </div>
 
       {byCategory.map((group, index) => (
-        <Reveal className="macro-section bezel-ring" index={index} key={group.category}>
+        <Reveal className="macro-section ui-surface" index={index} key={group.category}>
           <div className="macro-section__title">{CATEGORY_LABELS[group.category]}</div>
           <div className="macro-table">
             <div className="macro-row macro-row--head">
@@ -225,7 +225,7 @@ export function MacroPanel() {
         </Reveal>
       ))}
 
-      <Reveal className="macro-section bezel-ring" index={byCategory.length}>
+      <Reveal className="macro-section ui-surface" index={byCategory.length}>
         <div className="macro-section__title">
           财经日历
           <span className={'macro-badge' + (status.calendar.fresh ? ' ok' : ' warn')}>
@@ -255,7 +255,7 @@ export function MacroPanel() {
       </Reveal>
 
       {errored.length > 0 && (
-        <Reveal className="macro-section bezel-ring" index={byCategory.length + 1}>
+        <Reveal className="macro-section ui-surface" index={byCategory.length + 1}>
           <div className="macro-section__title">采集错误</div>
           <div className="macro-errors">
             {errored.map((s) => (
@@ -307,7 +307,7 @@ function Derived({
   hint: string;
 }) {
   return (
-    <div className="macro-derived__item bezel-ring">
+    <div className="macro-derived__item ui-surface">
       <span className="macro-derived__label">{label}</span>
       <span className={'macro-derived__value' + (value === null ? ' missing' : value < 0 ? ' negative' : '')}>
         {value === null ? '--' : `${value >= 0 ? '+' : ''}${value.toFixed(2)} ${unit}`}

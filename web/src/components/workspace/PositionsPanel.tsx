@@ -144,12 +144,10 @@ function Stat({
 }) {
   const ref = useReveal<HTMLDivElement>(index);
   return (
-    <div className="bezel bezel--tight" data-reveal ref={ref}>
-      <div className="bezel__core positions-stat">
-        <span className="positions-stat__label">{label}</span>
-        <span className={`positions-stat__value${tone ? ` ${tone}` : ''}`}>{value}</span>
-        <span className="positions-stat__hint">{hint}</span>
-      </div>
+    <div className="ui-surface positions-stat" data-reveal ref={ref}>
+      <span className="positions-stat__label">{label}</span>
+      <span className={`positions-stat__value${tone ? ` ${tone}` : ''}`}>{value}</span>
+      <span className="positions-stat__hint">{hint}</span>
     </div>
   );
 }
@@ -167,14 +165,12 @@ function Section({
 }) {
   const ref = useReveal<HTMLElement>(index);
   return (
-    <section className="bezel" data-reveal ref={ref}>
-      <div className="bezel__core positions-section">
-        <header className="positions-section__head">
-          <h2 className="positions-section__title">{title}</h2>
-          {count ? <span className="positions-section__count">{count}</span> : null}
-        </header>
-        {children}
-      </div>
+    <section className="ui-surface positions-section" data-reveal ref={ref}>
+      <header className="positions-section__head">
+        <h2 className="positions-section__title">{title}</h2>
+        {count ? <span className="positions-section__count">{count}</span> : null}
+      </header>
+      {children}
     </section>
   );
 }

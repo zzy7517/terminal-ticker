@@ -70,11 +70,11 @@
 }
 
 .sb-title {
-  color: var(--accent);
+  color: var(--text-bright);
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -99,7 +99,7 @@
 }
 
 .sb-icon-btn:hover {
-  color: var(--accent);
+  color: var(--text-bright);
 }
 
 .sb-icon-btn span {
@@ -138,8 +138,8 @@
 }
 
 .sb-group-btn.active {
-  background: var(--accent);
-  color: var(--accent-contrast);
+  background: var(--control-accent);
+  color: var(--control-accent-contrast);
   font-weight: 700;
 }
 
@@ -181,11 +181,11 @@
 }
 
 .sb-row:hover {
-  background: var(--accent-tint);
+  background: var(--canvas-2);
 }
 
 .sb-row.selected {
-  background: var(--accent-tint-strong);
+  background: var(--accent-tint);
   border-left: 2px solid var(--accent);
   padding-left: 6px;
 }
@@ -196,12 +196,12 @@
 }
 
 .sb-row-label {
-  color: var(--accent);
+  color: var(--text-bright);
   display: block;
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -228,16 +228,18 @@
 .sb-row-price {
   color: var(--text-bright);
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 15px;
   font-variant-numeric: tabular-nums lining-nums;
-  font-weight: 600;
-  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .sb-row-change {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 600;
   line-height: 1.2;
 }
 
@@ -288,11 +290,11 @@
 }
 
 .sb-row--collapsed:hover {
-  background: var(--accent-tint);
+  background: var(--canvas-2);
 }
 
 .sb-row--collapsed.selected {
-  background: var(--accent-tint-strong);
+  background: var(--accent-tint);
 }
 
 .sb-dot {
@@ -305,7 +307,7 @@
 .sb-dot.neutral { background: var(--text-muted); }
 
 .sb-row-sym {
-  color: var(--accent);
+  color: var(--text-bright);
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 700;
@@ -365,8 +367,8 @@
 }
 
 .sb-jin10-chip:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--control-accent);
+  color: var(--text-bright);
 }
 
 .sb-add-btn {

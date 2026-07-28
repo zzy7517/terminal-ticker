@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════
    TRADEX — Shared Controls
-   Hairline glass · island pills · monochrome ink interactions
+   Flat product chrome · green voltage CTAs · hairline islands
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Panel container ──────────────────────────────────────────────── */
@@ -230,7 +230,7 @@
 .shell-button.primary {
   background: var(--control-accent);
   border-color: transparent;
-  box-shadow: var(--shadow-inner-edge), var(--shadow-soft);
+  box-shadow: none;
   color: var(--control-accent-contrast);
   font-weight: 650;
 }

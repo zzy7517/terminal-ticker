@@ -17,11 +17,11 @@
 }
 
 .news-panel__title {
-  color: var(--accent);
+  color: var(--text-bright);
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 

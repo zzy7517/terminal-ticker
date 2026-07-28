@@ -135,7 +135,7 @@
 }
 
 .settings-nav-item:hover:not(.active) {
-  background: var(--accent-tint);
+  background: var(--canvas-2);
   color: var(--text-primary);
 }
 
@@ -172,11 +172,12 @@
 
 .settings-stage {
   background: var(--canvas);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-frame);
-  box-shadow: var(--shadow-bezel);
-  height: calc(100dvh - 16px);
-  margin: 8px 8px 8px 0;
+  border: 0;
+  border-left: 1px solid var(--line-soft);
+  border-radius: 0;
+  box-shadow: none;
+  height: 100dvh;
+  margin: 0;
   min-width: 0;
   overflow-y: auto;
   padding: var(--s-7) clamp(var(--s-6), 5vw, 72px) calc(var(--s-7) * 1.6);
