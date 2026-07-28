@@ -1,0 +1,61 @@
+web/src/components/workspace/OriginSessionPanel.test.tsx
+  s_6766bbd0300c7c::t_a2f3bff21d0516 24,43
+web/src/components/workspace/OriginSessionPanel.tsx
+  s_6766bbd0300c7c::t_50a3d963d9aa93 229-231,234-235,237-239,241
+  s_6766bbd0300c7c::t_31fce1d902360f 15-16
+  s_6766bbd0300c7c::t_03ed434b0710a8 236,240
+  s_6766bbd0300c7c::t_6087fa9f9b64de 256-258,260-268
+web/src/components/chat/ChannelMessageItem.tsx
+  s_6766bbd0300c7c::t_476a10eea28ab7 10,30-42,47-48
+web/src/components/chat/ChannelPanel.css
+  s_6766bbd0300c7c::t_facab2ee07fa30 290,294
+  s_6766bbd0300c7c::t_c629a6a1ed0304 357
+web/src/components/chat/ToolCallRow.css
+  s_6766bbd0300c7c::t_9eabb1cbc51b32 1-144
+web/src/components/workspace/DirectMessageTimeline.tsx
+  s_6766bbd0300c7c::t_77d5016c757691 128
+  s_6766bbd0300c7c::t_29fe42ab10b009 14,20,25,27-31,37-40,46-48,116,122-127,129
+web/src/components/workspace/OriginToolCallRow.test.tsx
+  s_6766bbd0300c7c::t_1bb34c6f543d1e 3,18,21,33,36,40,43-50
+web/src/components/chat/ToolCallRow.tsx
+  s_6766bbd0300c7c::t_a86d61552b9728 1-88
+web/src/components/workspace/OriginSessionPanel.css
+  s_6766bbd0300c7c::t_326d5343af8d6d 267-268
+  s_6766bbd0300c7c::t_40cfe70a413e6b 299
+  s_6766bbd0300c7c::t_8cf9e1b619956c 266
+  s_6766bbd0300c7c::t_7c2cc0cd620e4d 242-243
+  s_6766bbd0300c7c::t_1649da037aabd5 223,227,230-234
+web/src/styles/chat/chat-transcript.css
+  s_6766bbd0300c7c::t_be2bb14fc2f936 173-188
+  s_6766bbd0300c7c::t_6f79db75803b01 27-32
+  s_6766bbd0300c7c::t_84825144dfc6bc 169
+  s_6766bbd0300c7c::t_eb0ce0a30372eb 128-137
+web/src/styles/chat/chat-markdown.css
+  s_6766bbd0300c7c::t_facbd1205b4f56 99,103
+  s_6766bbd0300c7c::t_424d29f39f1485 147,151
+  s_6766bbd0300c7c::t_5db337e099e07e 8-10,12,33-36
+  s_6766bbd0300c7c::t_b933d91f3b1b19 37-38
+web/src/components/chat/SessionMessageRow.tsx
+  s_6766bbd0300c7c::t_572f29192e8496 23,37
+  s_6766bbd0300c7c::t_9569b5a844ece0 1-22,24-36,38-42,47-52,55-99
+  s_6766bbd0300c7c::t_eb0ce0a30372eb 43-46
+  s_6766bbd0300c7c::t_cbbb26a85ad0bf 53-54
+web/src/components/workspace/OriginToolCallRow.tsx
+  s_6766bbd0300c7c::t_0343457c94b25e 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "c3bd2468ed8424d7ee9e59389973234d68154a02",
+  "prompts": {},
+  "sessions": {
+    "s_6766bbd0300c7c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "242544eb-73f0-4a61-915c-403d85d8577f",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
