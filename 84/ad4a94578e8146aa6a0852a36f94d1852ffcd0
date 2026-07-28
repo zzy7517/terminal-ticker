@@ -1,0 +1,41 @@
+web/src/components/workspace/WatchlistSidebar.tsx
+  s_6766bbd0300c7c::t_1603d358005f14 10,78-80,95
+web/index.html
+  s_6766bbd0300c7c::t_922fae8ce9211f 11
+web/src/components/ChangeSpark.tsx
+  s_6766bbd0300c7c::t_ad203afcd3a674 1-37
+web/src/components/workspace/WorkspaceView.css
+  s_6766bbd0300c7c::t_a0fcb799ecf9e3 45,50-52
+  s_6766bbd0300c7c::t_5357a5150e5a59 53,66,68-69,74-77,82,84-85,89-98,104-105
+  s_6766bbd0300c7c::t_f21ae01f7b51e9 12
+  s_6766bbd0300c7c::t_ab8faa4a3fd8de 54
+web/src/components/AppSidebar.css
+  s_6766bbd0300c7c::t_3dd3e21b966229 5,9
+web/src/components/workspace/PositionsPanel.tsx
+  s_6766bbd0300c7c::t_37654a2e5ff8a3 201-203
+  s_6766bbd0300c7c::t_e7016f6baa898f 268
+web/src/styles/tokens.css
+  s_6766bbd0300c7c::t_217e5b84ec6995 151-157,161-163,166-168
+web/src/components/workspace/WorkspaceView.tsx
+  s_6766bbd0300c7c::t_bf48752b461fbf 60-61
+web/src/components/workspace/PositionsPanel.css
+  s_6766bbd0300c7c::t_a5bdf336e695a7 1,6,8,11,16-23,29-31,35-39,44-46,48-50,59-61,67-68,71-73,76,93-101,107-108,112-116,121-122,127,132-135,138,148-149,151-153,160,165-170,177,182,190-193,209,211-214,228-235,253-255,260,265,269-272,280-281,286,294-295,299,308,312,322-326,332-335
+web/src/components/workspace/WatchlistSidebar.css
+  s_6766bbd0300c7c::t_44f7753574c4ca 1-3,5-6,13,18,20-21,28-35,39-40,42,46-51,54-55,59,62,66,68-69,74-77,83,90,94-95,97-99,103,108-110,113,117,119,124-126,128-132,134,138-139,144,146,156-157,160,165,168-173,202-205,214-216,219-233,239-240,245,248,250,254-255,257,267-268,272,275,278,285-288,293,298,303,305-306,324,326,331-332,344-345,351,356-358,364-366,371-373,376-378,388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "84ad4a94578e8146aa6a0852a36f94d1852ffcd0",
+  "prompts": {},
+  "sessions": {
+    "s_6766bbd0300c7c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "242544eb-73f0-4a61-915c-403d85d8577f",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
