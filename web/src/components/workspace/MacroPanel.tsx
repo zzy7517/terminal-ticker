@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   fetchMacroEventWindow,
   fetchMacroEvents,
@@ -12,17 +12,16 @@ import {
   type MacroSnapshot,
   type MacroStatus,
 } from '../../api';
-import { Reveal } from '../Reveal';
 import './MacroPanel.css';
 
 const CATEGORY_LABELS: Record<MacroCategory, string> = {
   rates: '利率',
   inflation: '通胀',
-  dollar: '美元与汇率',
+  dollar: '美元',
   employment: '就业',
   energy: '能源',
   metals: '贵金属',
-  risk: '风险与波动率',
+  risk: '风险',
 };
 
 const CATEGORY_ORDER: MacroCategory[] = [
@@ -34,6 +33,8 @@ const CATEGORY_ORDER: MacroCategory[] = [
   'metals',
   'employment',
 ];
+
+type MacroTab = 'overview' | MacroCategory | 'calendar';
 
 const REFRESH_INTERVAL_MS = 60_000;
 const WINDOW_DAYS = 90;
@@ -81,6 +82,7 @@ export function MacroPanel() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [tab, setTab] = useState<MacroTab>('overview');
 
   const load = useCallback(async () => {
     try {
@@ -121,6 +123,18 @@ export function MacroPanel() {
     }
   }, [refreshing, load]);
 
+  const availableCategories = useMemo(() => {
+    if (!snapshot) return [] as MacroCategory[];
+    return CATEGORY_ORDER.filter((category) =>
+      snapshot.series.some((s) => s.category === category),
+    );
+  }, [snapshot]);
+
+  useEffect(() => {
+    if (tab === 'overview' || tab === 'calendar') return;
+    if (!availableCategories.includes(tab)) setTab('overview');
+  }, [tab, availableCategories]);
+
   if (error) {
     return (
       <div className="macro-panel__empty">
@@ -149,32 +163,87 @@ export function MacroPanel() {
     );
   }
 
-  const byCategory = CATEGORY_ORDER.map((category) => ({
-    category,
-    rows: snapshot.series.filter((s) => s.category === category),
-  })).filter((group) => group.rows.length > 0);
-
   const withData = snapshot.series.filter((s) => s.latest !== null).length;
   const errored = status.series.filter((s) => s.lastError);
+  const activeRows =
+    tab !== 'overview' && tab !== 'calendar'
+      ? snapshot.series.filter((s) => s.category === tab)
+      : [];
+
+  const tabs: { id: MacroTab; label: string }[] = [
+    { id: 'overview', label: '概览' },
+    ...availableCategories.map((id) => ({ id, label: CATEGORY_LABELS[id] })),
+    { id: 'calendar', label: '日历' },
+  ];
 
   return (
     <div className="macro-panel">
-      <div className="macro-panel__head">
-        <div className="macro-panel__title-block">
-          <h1 className="macro-panel__title">宏观环境</h1>
-          <p className="macro-panel__meta">
-            {withData}/{snapshot.series.length} 个序列有数据 · {WINDOW_DAYS} 日窗口
-            {!status.fredConfigured && ' · FRED 未配置'}
-          </p>
-        </div>
+      <div className="macro-panel__toolbar">
+        <p className="macro-panel__meta">
+          {withData}/{snapshot.series.length} 个序列有数据 · {WINDOW_DAYS} 日窗口
+          {!status.fredConfigured && ' · FRED 未配置'}
+        </p>
         <button className="shell-button sm" type="button" onClick={handleRefresh} disabled={refreshing}>
           {refreshing ? '刷新中…' : '强制刷新'}
         </button>
       </div>
 
-      {feedback && <div className="macro-panel__feedback">{feedback}</div>}
+      <div className="macro-tabs" role="tablist" aria-label="宏观分区">
+        {tabs.map((item) => (
+          <button
+            aria-selected={tab === item.id}
+            className={'macro-tab' + (tab === item.id ? ' active' : '')}
+            key={item.id}
+            onClick={() => setTab(item.id)}
+            role="tab"
+            type="button"
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
 
-      {eventWindow && (
+      {feedback ? <div className="macro-panel__feedback">{feedback}</div> : null}
+
+      <div className="macro-panel__body" role="tabpanel">
+        {tab === 'overview' ? (
+          <OverviewTab
+            derived={snapshot.derived}
+            errored={errored}
+            eventWindow={eventWindow}
+            onOpenCalendar={() => setTab('calendar')}
+          />
+        ) : null}
+
+        {tab !== 'overview' && tab !== 'calendar' ? (
+          <CategoryTab category={tab} rows={activeRows} />
+        ) : null}
+
+        {tab === 'calendar' ? (
+          <CalendarTab
+            events={events}
+            fresh={status.calendar.fresh}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function OverviewTab({
+  derived,
+  eventWindow,
+  errored,
+  onOpenCalendar,
+}: {
+  derived: MacroSnapshot['derived'];
+  eventWindow: MacroEventWindow | null;
+  errored: MacroStatus['series'];
+  onOpenCalendar: () => void;
+}) {
+  return (
+    <div className="macro-overview">
+      {eventWindow ? (
         <div
           className={
             'macro-window' +
@@ -190,58 +259,27 @@ export function MacroPanel() {
                 ? '处于数据发布窗口内。'
                 : '当前不处于高影响数据发布窗口，开仓不受限制。')}
           </span>
-          {eventWindow.blocked && <span className="macro-window__flag">开仓已拦截</span>}
+          {eventWindow.blocked ? <span className="macro-window__flag">开仓已拦截</span> : null}
         </div>
-      )}
+      ) : null}
 
       <div className="macro-derived">
-        <Derived label="2s10s 曲线" value={snapshot.derived.curveSteepness} unit="pp" hint="负值为倒挂" />
-        <Derived label="10Y 实际利率" value={snapshot.derived.realYield10y} unit="pp" hint="名义 − 盈亏平衡通胀" />
-        <Derived label="加密波动率溢价" value={snapshot.derived.cryptoVolPremium} unit="vol" hint="BTC DVOL − VIX" />
+        <Derived label="2s10s 曲线" value={derived.curveSteepness} unit="pp" hint="负值为倒挂" />
+        <Derived label="10Y 实际利率" value={derived.realYield10y} unit="pp" hint="名义 − 盈亏平衡通胀" />
+        <Derived label="加密波动率溢价" value={derived.cryptoVolPremium} unit="vol" hint="BTC DVOL − VIX" />
       </div>
 
-      {byCategory.map((group, index) => (
-        <Reveal className="macro-section ui-surface" index={index} key={group.category}>
-          <h2 className="macro-section__title">{CATEGORY_LABELS[group.category]}</h2>
-          <div className="macro-tile-grid">
-            {group.rows.map((row) => (
-              <SeriesTile key={row.seriesId} row={row} />
-            ))}
-          </div>
-        </Reveal>
-      ))}
+      <div className="macro-overview__hints">
+        <button className="macro-overview__link" type="button" onClick={onOpenCalendar}>
+          查看财经日历
+        </button>
+        {errored.length > 0 ? (
+          <span className="macro-overview__errors">{errored.length} 个序列采集失败</span>
+        ) : null}
+      </div>
 
-      <Reveal className="macro-section ui-surface" index={byCategory.length}>
-        <h2 className="macro-section__title">
-          财经日历
-          <span className={'macro-badge' + (status.calendar.fresh ? ' ok' : ' warn')}>
-            {status.calendar.fresh ? '数据新鲜' : '数据陈旧'}
-          </span>
-        </h2>
-        {events.length === 0 ? (
-          <div className="macro-empty-row">
-            {status.calendar.fresh ? '未来 72 小时内无已知事件。' : '日历副本已陈旧，「无事件」不可信。'}
-          </div>
-        ) : (
-          <div className="macro-events">
-            {events.map((event) => (
-              <div className={`macro-event impact-${event.impact}`} key={event.key}>
-                <span className="macro-event__time">{fmtEventTime(event.pubTimeMs)}</span>
-                <span className="macro-event__title">
-                  {event.title}
-                  {event.star ? <span className="macro-event__stars">{'★'.repeat(Math.min(event.star, 5))}</span> : null}
-                </span>
-                <span className="macro-event__values">
-                  前 {event.previous || '--'} / 预 {event.consensus || '--'} / 实 {event.actual || '--'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Reveal>
-
-      {errored.length > 0 && (
-        <Reveal className="macro-section ui-surface" index={byCategory.length + 1}>
+      {errored.length > 0 ? (
+        <section className="macro-section">
           <h2 className="macro-section__title">采集错误</h2>
           <div className="macro-errors">
             {errored.map((s) => (
@@ -251,9 +289,71 @@ export function MacroPanel() {
               </div>
             ))}
           </div>
-        </Reveal>
-      )}
+        </section>
+      ) : null}
     </div>
+  );
+}
+
+function CategoryTab({
+  category,
+  rows,
+}: {
+  category: MacroCategory;
+  rows: MacroSeriesStats[];
+}) {
+  return (
+    <section className="macro-section">
+      <h2 className="macro-section__title">{CATEGORY_LABELS[category]}</h2>
+      {rows.length === 0 ? (
+        <div className="macro-empty-row">这个分类暂时没有序列。</div>
+      ) : (
+        <div className="macro-tile-grid">
+          {rows.map((row) => (
+            <SeriesTile key={row.seriesId} row={row} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CalendarTab({
+  events,
+  fresh,
+}: {
+  events: MacroEvent[];
+  fresh: boolean;
+}) {
+  return (
+    <section className="macro-section">
+      <h2 className="macro-section__title">
+        财经日历
+        <span className={'macro-badge' + (fresh ? ' ok' : ' warn')}>
+          {fresh ? '数据新鲜' : '数据陈旧'}
+        </span>
+      </h2>
+      {events.length === 0 ? (
+        <div className="macro-empty-row">
+          {fresh ? '未来 72 小时内无已知事件。' : '日历副本已陈旧，「无事件」不可信。'}
+        </div>
+      ) : (
+        <div className="macro-events">
+          {events.map((event) => (
+            <div className={`macro-event impact-${event.impact}`} key={event.key}>
+              <span className="macro-event__time">{fmtEventTime(event.pubTimeMs)}</span>
+              <span className="macro-event__title">
+                {event.title}
+                {event.star ? <span className="macro-event__stars">{'★'.repeat(Math.min(event.star, 5))}</span> : null}
+              </span>
+              <span className="macro-event__values">
+                前 {event.previous || '--'} / 预 {event.consensus || '--'} / 实 {event.actual || '--'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
