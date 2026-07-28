@@ -1,0 +1,19 @@
+web/src/components/workspace/OriginSessionPanel.css
+  s_6766bbd0300c7c::t_73b1ecc005c8c3 230-231,238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "63c2152d5b4ba5a46cefd436942a7c62f1d8925d",
+  "prompts": {},
+  "sessions": {
+    "s_6766bbd0300c7c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "242544eb-73f0-4a61-915c-403d85d8577f",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
