@@ -8,14 +8,12 @@
   color-scheme: light;
 
   /* ── Surfaces — clean light ladder ──────────────────────────────── */
-  --void: #f5f5f5;
   --canvas: #ffffff;
   --canvas-2: #f7f7f7;
   --panel: #ffffff;
   --panel-raised: #ffffff;
   --panel-elevated: #f0f0f0;
   --surface: var(--panel-raised);
-  --bezel: transparent;
 
   /* ── Hairlines ──────────────────────────────────────────────────── */
   --line-soft: rgba(0, 0, 0, 0.08);
@@ -65,17 +63,6 @@
   --shadow-md: 0 4px 16px rgba(14, 14, 14, 0.08);
   --shadow-pop: 0 12px 32px rgba(14, 14, 14, 0.12);
   --shadow-inner-edge: none;
-  --shadow-bezel: none;
-
-  /* Legacy bezel tokens — flattened so leftover markup stays quiet */
-  --bezel-pad: 0px;
-  --bezel-radius-outer: var(--radius-lg);
-  --bezel-radius-inner: var(--radius-lg);
-  --bezel-shell-bg: transparent;
-  --bezel-shell-ring: transparent;
-  --bezel-core-bg: var(--panel-raised);
-  --bezel-core-ring: var(--line-soft);
-  --bezel-core-highlight: none;
 
   --scrollbar: rgba(0, 0, 0, 0.18);
   --scrollbar-hover: rgba(0, 0, 0, 0.32);
@@ -92,20 +79,17 @@
   --s-7: calc(40px * var(--density));
 
   /* ── Layering ───────────────────────────────────────────────────── */
-  --z-behind: -1;
   --z-base: 1;
   --z-sticky: 20;
   --z-dropdown: 200;
   --z-overlay: 300;
   --z-modal: 400;
-  --z-grain: 500;
 
   /* ── Shape — tight product radii ────────────────────────────────── */
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
   --radius-xl: 12px;
-  --radius-frame: 0px;
   --radius-chip: var(--radius-sm);
   --radius-control: var(--radius-md);
   --radius-surface: var(--radius-lg);
@@ -149,14 +133,12 @@
   color-scheme: dark;
 
   /* ── Surfaces — RH true black canvas ────────────────────────────── */
-  --void: #000000;
   --canvas: #000000;
   --canvas-2: #0f0f0f;
   --panel: #000000;
   --panel-raised: #1a1a1a;
   --panel-elevated: #1f1f1f;
   --surface: var(--panel-raised);
-  --bezel: transparent;
 
   --line-soft: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.16);
@@ -199,13 +181,6 @@
   --shadow-md: none;
   --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.45);
   --shadow-inner-edge: none;
-  --shadow-bezel: none;
-
-  --bezel-shell-bg: transparent;
-  --bezel-shell-ring: transparent;
-  --bezel-core-bg: var(--panel-raised);
-  --bezel-core-ring: var(--line-soft);
-  --bezel-core-highlight: none;
 
   --scrollbar: rgba(255, 255, 255, 0.14);
   --scrollbar-hover: rgba(255, 255, 255, 0.28);

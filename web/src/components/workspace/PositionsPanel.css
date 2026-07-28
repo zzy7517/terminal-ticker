@@ -235,13 +235,6 @@
 .positions-pnl.down { color: var(--down); }
 .positions-pnl.flat { color: var(--text-muted); }
 
-.positions-status {
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .positions-lessons {
   display: flex;
   flex-direction: column;
@@ -305,15 +298,11 @@
 
 @media (max-width: 900px) {
   .positions-row--position {
-    grid-template-columns: minmax(70px, 1.2fr) 48px repeat(2, minmax(64px, 1fr)) minmax(80px, 1fr);
+    grid-template-columns: minmax(70px, 1.2fr) 48px repeat(3, minmax(64px, 1fr)) minmax(80px, 1fr);
   }
 
   .positions-row--order {
-    grid-template-columns: minmax(70px, 1.2fr) 48px repeat(2, minmax(56px, 1fr)) 80px;
-  }
-
-  .positions-cell--optional {
-    display: none;
+    grid-template-columns: minmax(70px, 1.2fr) 48px repeat(3, minmax(56px, 1fr)) 80px;
   }
 }
 

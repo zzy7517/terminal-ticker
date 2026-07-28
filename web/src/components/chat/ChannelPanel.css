@@ -354,9 +354,3 @@
   overflow: hidden;
 }
 
-.session-message-body,
-.channel-message-body {
-  display: grid;
-  gap: 7px;
-  min-width: 0;
-}

@@ -453,10 +453,6 @@
 }
 
 @media (max-width: 640px) {
-  .macro-panel__title {
-    font-size: 24px;
-  }
-
   .macro-tile__value {
     font-size: 24px;
   }

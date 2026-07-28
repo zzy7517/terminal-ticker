@@ -55,48 +55,6 @@
   gap: 2px;
 }
 
-.app-sidebar-more {
-  display: grid;
-  gap: 2px;
-}
-
-.app-sidebar-more-toggle {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-md);
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex;
-  font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 500;
-  gap: 6px;
-  justify-content: space-between;
-  min-height: 28px;
-  padding: 0 10px;
-  text-align: left;
-  transition: var(--ctl-transition);
-  width: 100%;
-}
-
-.app-sidebar-more-toggle:hover,
-.app-sidebar-more-toggle.has-active {
-  color: var(--text-secondary);
-}
-
-.app-sidebar-more-chevron {
-  transition: transform var(--dur-2) var(--ease-out);
-}
-
-.app-sidebar-more-chevron.open {
-  transform: rotate(180deg);
-}
-
-.app-sidebar-group--more {
-  padding-left: 2px;
-}
-
 .app-sidebar-item {
   align-items: center;
   background: transparent;
@@ -217,15 +175,8 @@
   }
 
   .app-sidebar-item span,
-  .app-sidebar-status span,
-  .app-sidebar-more-toggle span {
+  .app-sidebar-status span {
     display: none;
-  }
-
-  .app-sidebar-more-toggle {
-    justify-content: center;
-    padding: 0;
-    width: 44px;
   }
 
   .app-sidebar-item {

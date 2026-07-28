@@ -227,7 +227,6 @@
   padding: 20px 24px 28px;
 }
 
-.origin-session-timeline .session-message:not(.user),
 .origin-session-timeline .session-tool-group {
   align-self: stretch;
   max-width: none;

@@ -1,7 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { ToolCallRow } from '../chat/ToolCallRow';
-import { OriginToolCallRow } from './OriginToolCallRow';
+import { ToolCallRow } from './ToolCallRow';
 
 const CURSOR_SHELL_RESULT = JSON.stringify({
   command: 'pwd',
@@ -41,12 +40,5 @@ describe('ToolCallRow', () => {
 
     expect(html).toContain('disabled');
     expect(html).not.toContain('session-tool-chevron');
-  });
-
-  it('keeps the OriginToolCallRow alias working', () => {
-    const html = renderToStaticMarkup(
-      <OriginToolCallRow call={{ name: 'shell', output: CURSOR_SHELL_RESULT }} />,
-    );
-    expect(html).toContain('Shell');
   });
 });

@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Activity,
   CalendarDays,
-  ChevronDown,
   Clock,
   Globe,
   LineChart,
@@ -24,13 +23,10 @@ type NavItem = {
   available?: boolean;
 };
 
-const PRIMARY_IDS: WorkspaceViewId[] = ['agent', 'market', 'positions'];
-
 export function AppSidebar() {
   const route = useUiStore((s) => s.route);
   const activeWorkspace = useUiStore((s) => s.activeWorkspace);
   const state = useMarketStore((s) => s.state);
-  const [moreOpen, setMoreOpen] = useState(false);
 
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
   const optionsState = (state as any)?.options?.snapshots;
@@ -52,17 +48,13 @@ export function AppSidebar() {
   );
 
   const available = items.filter((item) => item.available !== false);
-  const primary = available.filter((item) => PRIMARY_IDS.includes(item.id));
-  const more = available.filter((item) => !PRIMARY_IDS.includes(item.id));
-  const moreActive = more.some((item) => route.view === 'workspace' && activeWorkspace === item.id);
-  const showMore = moreOpen || moreActive;
 
   const openWorkspace = (view: WorkspaceViewId) => {
     useUiStore.getState().setActiveWorkspace(view);
     useUiStore.getState().openWorkspace();
   };
 
-  const renderItem = (item: NavItem, index: number) => {
+  const renderItem = (item: NavItem) => {
     const Icon = item.icon;
     const active = route.view === 'workspace' && activeWorkspace === item.id;
     return (
@@ -70,7 +62,6 @@ export function AppSidebar() {
         className={'app-sidebar-item' + (active ? ' active' : '')}
         key={item.id}
         onClick={() => openWorkspace(item.id)}
-        style={{ '--nav-index': index } as React.CSSProperties}
         type="button"
       >
         <Icon size={17} />
@@ -87,29 +78,7 @@ export function AppSidebar() {
       </div>
 
       <nav className="app-sidebar-nav" aria-label="Workspace navigation">
-        <div className="app-sidebar-group">{primary.map((item, index) => renderItem(item, index))}</div>
-
-        {more.length > 0 ? (
-          <div className="app-sidebar-more">
-            <button
-              aria-expanded={showMore}
-              className={'app-sidebar-more-toggle' + (moreActive ? ' has-active' : '')}
-              onClick={() => setMoreOpen((open) => !open)}
-              type="button"
-            >
-              <span>更多</span>
-              <ChevronDown
-                className={'app-sidebar-more-chevron' + (showMore ? ' open' : '')}
-                size={14}
-              />
-            </button>
-            {showMore ? (
-              <div className="app-sidebar-group app-sidebar-group--more">
-                {more.map((item, index) => renderItem(item, primary.length + index))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+        <div className="app-sidebar-group">{available.map((item) => renderItem(item))}</div>
       </nav>
 
       <div className="app-sidebar-footer">
