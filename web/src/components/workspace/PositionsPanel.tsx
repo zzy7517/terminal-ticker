@@ -198,12 +198,9 @@ function PositionsSection({ positions }: { positions: ExchangePosition[] }) {
                 <span role="columnheader">标的</span>
                 <span role="columnheader">方向</span>
                 <span className="positions-cell--num" role="columnheader">数量</span>
-                <span className="positions-cell--num" role="columnheader">开仓均价</span>
-                <span className="positions-cell--num" role="columnheader">标记价</span>
-                <span className="positions-cell--num" role="columnheader">未实现</span>
-                <span className="positions-cell--num positions-cell--optional" role="columnheader">
-                  杠杆
-                </span>
+                <span className="positions-cell--num" role="columnheader">开仓</span>
+                <span className="positions-cell--num" role="columnheader">标记</span>
+                <span className="positions-cell--num" role="columnheader">盈亏</span>
               </div>
               {rows.map((p) => (
                 <div
@@ -225,12 +222,6 @@ function PositionsSection({ positions }: { positions: ExchangePosition[] }) {
                     role="cell"
                   >
                     {signed(p.unrealizedPnl)}
-                  </span>
-                  <span
-                    className="positions-cell--num positions-cell--muted positions-cell--optional"
-                    role="cell"
-                  >
-                    {p.leverage != null ? `${p.leverage}x` : '—'}
                   </span>
                 </div>
               ))}
@@ -272,11 +263,9 @@ function OrdersSection({
               <div className="positions-row positions-row--order positions-row--head" role="row">
                 <span role="columnheader">标的</span>
                 <span role="columnheader">方向</span>
-                <span className="positions-cell--optional" role="columnheader">类型</span>
                 <span className="positions-cell--num" role="columnheader">数量</span>
                 <span className="positions-cell--num" role="columnheader">价格</span>
-                <span className="positions-cell--num" role="columnheader">已成交</span>
-                <span className="positions-cell--optional" role="columnheader">状态</span>
+                <span className="positions-cell--num" role="columnheader">已成</span>
                 <span className="positions-cell--action" role="columnheader">操作</span>
               </div>
               {rows.map((o) => (
@@ -291,17 +280,11 @@ function OrdersSection({
                       {o.side}
                     </span>
                   </span>
-                  <span className="positions-cell--muted positions-cell--optional" role="cell">
-                    {o.orderType}
-                  </span>
                   <span className="positions-cell--num" role="cell">{o.size}</span>
                   <span className="positions-cell--num" role="cell">
                     {o.price?.toFixed(2) ?? '市价'}
                   </span>
                   <span className="positions-cell--num" role="cell">{o.filledSize}</span>
-                  <span className="positions-status positions-cell--optional" role="cell">
-                    {o.status}
-                  </span>
                   <span className="positions-cell--action" role="cell">
                     <button
                       className="shell-button danger sm"

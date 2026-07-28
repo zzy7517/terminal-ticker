@@ -39,7 +39,6 @@ body {
 .application-content {
   background: var(--canvas);
   border: 0;
-  border-left: 1px solid var(--line-soft);
   border-radius: 0;
   box-shadow: none;
   height: 100dvh;

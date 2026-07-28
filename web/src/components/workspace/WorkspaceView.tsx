@@ -57,18 +57,8 @@ export function WorkspaceView() {
       {showTopbar ? (
         <header className="topbar">
           <div className="topbar-left">
-            <span className="workspace-title-icon" aria-hidden="true">
-              {activeTab === 'market' ? <LineChart size={17} />
-                : activeTab === 'news' ? <Newspaper size={17} />
-                : activeTab === 'calendar' ? <CalendarDays size={17} />
-                : activeTab === 'cron' ? <Clock size={17} />
-                : activeTab === 'macro' ? <Globe size={17} />
-                : <WalletCards size={17} />}
-            </span>
-            <div>
-              <h1>{copy.title}</h1>
-              {copy.subtitle ? <p className="workspace-subtitle">{copy.subtitle}</p> : null}
-            </div>
+            <h1>{copy.title}</h1>
+            {copy.subtitle ? <p className="workspace-subtitle">{copy.subtitle}</p> : null}
           </div>
         </header>
       ) : null}

@@ -148,24 +148,24 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* ── Surfaces — RH near-black ladder ────────────────────────────── */
-  --void: #0e0e0e;
-  --canvas: #0e0e0e;
-  --canvas-2: #141414;
-  --panel: #141414;
-  --panel-raised: #1b1b1b;
-  --panel-elevated: #242424;
+  /* ── Surfaces — RH true black canvas ────────────────────────────── */
+  --void: #000000;
+  --canvas: #000000;
+  --canvas-2: #0f0f0f;
+  --panel: #000000;
+  --panel-raised: #1a1a1a;
+  --panel-elevated: #1f1f1f;
   --surface: var(--panel-raised);
   --bezel: transparent;
 
-  --line-soft: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.14);
-  --line-hairline: rgba(255, 255, 255, 0.06);
+  --line-soft: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --line-hairline: rgba(255, 255, 255, 0.08);
   --modal-backdrop: rgba(0, 0, 0, 0.72);
 
-  --text-primary: #f5f5f5;
-  --text-secondary: #a3a3a3;
-  --text-muted: #737373;
+  --text-primary: #ffffff;
+  --text-secondary: #b0b0b0;
+  --text-muted: #6a6a6a;
   --text-tertiary: var(--text-muted);
   --text-bright: #ffffff;
 

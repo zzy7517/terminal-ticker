@@ -2,10 +2,11 @@
 .app-sidebar {
   align-self: stretch;
   background: var(--canvas);
+  border-right: 1px solid var(--line-soft);
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  padding: 16px 10px 12px;
+  padding: 20px 12px 14px;
   position: sticky;
   top: 0;
   width: 200px;
