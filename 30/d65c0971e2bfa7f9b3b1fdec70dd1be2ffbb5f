@@ -1,0 +1,56 @@
+tradex/agent/tools/jin10.ts
+  s_fac9d31b890bab::t_96949702055fef 36
+tradex/trading/exchange-router.ts
+  s_fac9d31b890bab::t_eeb8c8f083e4af 69
+  s_fac9d31b890bab::t_70ad9a068f51e1 92
+  s_fac9d31b890bab::t_0ac0f6dea3f554 17,25-29,34-38
+  s_fac9d31b890bab::t_66f56658327e86 131
+README.md
+  s_fac9d31b890bab::t_0ba5b6d7881e52 3,5,9,13,18
+tradex/runtime/feed.ts
+  s_fac9d31b890bab::t_268c0351badb1c 88,128
+tradex/agent/tools/trading.ts
+  s_fac9d31b890bab::t_d2c2293ae30a36 31
+  s_fac9d31b890bab::t_dc45dbebbc1805 81
+web/src/utils/marketDisplay.ts
+  s_fac9d31b890bab::t_2f24678a415ce8 6,10,31
+tradex/api/routes/market.ts
+  s_fac9d31b890bab::t_a72ef657f5dd3a 26-27
+tradex/api/serializers.ts
+  s_fac9d31b890bab::t_94f6982bcce60c 250,263
+web/src/components/settings/WatchlistSettingsPanel.tsx
+  s_fac9d31b890bab::t_59c9a3d71290cd 23,76-77,94,120,128,243,263,272,349
+tradex/config/watchlist-store.ts
+  s_fac9d31b890bab::t_3fea203db91740 258
+  s_fac9d31b890bab::t_f2881518e18f03 66-69
+tradex/market_data/router.ts
+  s_fac9d31b890bab::t_bb371d6b277cfb 1,4
+tradex/config/index.ts
+  s_fac9d31b890bab::t_056b57cdc0c393 1
+  s_fac9d31b890bab::t_f5af00ec1fc953 25
+  s_fac9d31b890bab::t_d38438acce9817 417-426
+  s_fac9d31b890bab::t_0379d21563d8bb 694-696
+  s_fac9d31b890bab::t_8e3740fde29766 372
+  s_fac9d31b890bab::t_a224039c110dcf 836-844,850-880
+  s_fac9d31b890bab::t_5c93fa0be96e64 685-686
+  s_fac9d31b890bab::t_973177c59e6395 330
+  s_fac9d31b890bab::t_2e88c747d7fb74 881-882
+package-lock.json
+  s_fac9d31b890bab::t_a3def4c1d6e370 8932
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "30d65c0971e2bfa7f9b3b1fdec70dd1be2ffbb5f",
+  "prompts": {},
+  "sessions": {
+    "s_fac9d31b890bab": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "753d3c8e-85b8-4078-a32d-fd9a17261352",
+        "model": "cursor-grok-4.5-high"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
