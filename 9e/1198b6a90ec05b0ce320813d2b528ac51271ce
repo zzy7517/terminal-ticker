@@ -1,0 +1,57 @@
+web/src/components/AppSidebar.tsx
+  s_6766bbd0300c7c::t_b8725224230592 1,5,27-28,33,39-58,65-81,90-93,95-97,100-104,106-112
+web/src/components/workspace/WorkspaceView.tsx
+  s_6766bbd0300c7c::t_841002784a3046 36,42-45
+  s_6766bbd0300c7c::t_1ba80e260092a2 24
+  s_6766bbd0300c7c::t_dac2d69a6f2970 6
+  s_6766bbd0300c7c::t_a016ac77fc7050 69-72
+web/src/components/workspace/NewsPanel.css
+  s_6766bbd0300c7c::t_0050c64faf0606 1,5-6,8,15,17,22-25,30,33,41,50-51,56-57,60,69-70,77,79-82,90-91,93,107-110,132-136,138-140,143,145-146,152,155-160,168-169,173,177,179-180,182-187,192-193,198-199,206-207,210-221
+web/src/components/AppSidebar.css
+  s_6766bbd0300c7c::t_4bd611ef131a72 220-221,225-228
+  s_6766bbd0300c7c::t_572c483cccb6ed 161-162,164,167
+  s_6766bbd0300c7c::t_3678d529112fa3 49,53-98
+  s_6766bbd0300c7c::t_af1f0199754fd3 99
+  s_6766bbd0300c7c::t_18217fa7e658ba 229-230
+web/src/styles/chat/chat-shell.css
+  s_6766bbd0300c7c::t_6400a19bc2b883 237-239,243-244
+  s_6766bbd0300c7c::t_2a838bc41f7325 69-71,74-76
+  s_6766bbd0300c7c::t_7136a60f7bb37b 149-151
+web/src/components/workspace/QuoteDetail.css
+  s_6766bbd0300c7c::t_2534d12b12d7a4 1-180
+web/src/components/workspace/NewsPanel.tsx
+  s_6766bbd0300c7c::t_87a07d7c518e14 148
+web/src/components/workspace/WatchlistSidebar.css
+  s_6766bbd0300c7c::t_1eee24b5b79561 19,21-22,29-30,34,36,43,51-52,56-65
+web/src/styles/chat/chat-transcript.css
+  s_6766bbd0300c7c::t_13b8cade15f231 145-147,153-154
+  s_6766bbd0300c7c::t_c1612fb47939eb 20,24
+  s_6766bbd0300c7c::t_2fddeeae0e5b23 114-119
+  s_6766bbd0300c7c::t_26ede24bec608b 128-129
+  s_6766bbd0300c7c::t_083d7b39208451 90-93,95-96
+  s_6766bbd0300c7c::t_f8108c303ea700 74-75
+web/src/components/workspace/QuoteDetail.tsx
+  s_6766bbd0300c7c::t_d1763f5362645a 1-103
+web/src/styles/controls.css
+  s_6766bbd0300c7c::t_a089e35c5510c1 29-30,33-35,43,47-49,53-57
+web/src/components/workspace/WorkspaceView.css
+  s_6766bbd0300c7c::t_edcfa6f2e85836 52
+  s_6766bbd0300c7c::t_ac028da720daec 161-163,169-174
+  s_6766bbd0300c7c::t_637a8ea31250f1 175-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "9e1198b6a90ec05b0ce320813d2b528ac51271ce",
+  "prompts": {},
+  "sessions": {
+    "s_6766bbd0300c7c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "242544eb-73f0-4a61-915c-403d85d8577f",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
