@@ -167,11 +167,13 @@ export function MacroPanel() {
   return (
     <div className="macro-panel">
       <div className="macro-panel__head">
-        <span className="macro-panel__title">宏观环境</span>
-        <span className="macro-panel__meta">
-          {withData}/{snapshot.series.length} 序列有数据 · {WINDOW_DAYS} 日窗口
-          {!status.fredConfigured && ' · FRED 未配 key'}
-        </span>
+        <div className="macro-panel__title-block">
+          <h1 className="macro-panel__title">宏观环境</h1>
+          <p className="macro-panel__meta">
+            {withData}/{snapshot.series.length} 个序列有数据 · {WINDOW_DAYS} 日窗口
+            {!status.fredConfigured && ' · FRED 未配置'}
+          </p>
+        </div>
         <button className="shell-button sm" type="button" onClick={handleRefresh} disabled={refreshing}>
           {refreshing ? '刷新中…' : '强制刷新'}
         </button>
@@ -207,31 +209,22 @@ export function MacroPanel() {
 
       {byCategory.map((group, index) => (
         <Reveal className="macro-section ui-surface" index={index} key={group.category}>
-          <div className="macro-section__title">{CATEGORY_LABELS[group.category]}</div>
-          <div className="macro-table">
-            <div className="macro-row macro-row--head">
-              <span>指标</span>
-              <span>最新</span>
-              <span>变化</span>
-              <span>窗口变化</span>
-              <span>Z</span>
-              <span>分位</span>
-              <span>数据年龄</span>
-            </div>
+          <h2 className="macro-section__title">{CATEGORY_LABELS[group.category]}</h2>
+          <div className="macro-tile-grid">
             {group.rows.map((row) => (
-              <SeriesRow key={row.seriesId} row={row} />
+              <SeriesTile key={row.seriesId} row={row} />
             ))}
           </div>
         </Reveal>
       ))}
 
       <Reveal className="macro-section ui-surface" index={byCategory.length}>
-        <div className="macro-section__title">
+        <h2 className="macro-section__title">
           财经日历
           <span className={'macro-badge' + (status.calendar.fresh ? ' ok' : ' warn')}>
             {status.calendar.fresh ? '数据新鲜' : '数据陈旧'}
           </span>
-        </div>
+        </h2>
         {events.length === 0 ? (
           <div className="macro-empty-row">
             {status.calendar.fresh ? '未来 72 小时内无已知事件。' : '日历副本已陈旧，「无事件」不可信。'}
@@ -256,7 +249,7 @@ export function MacroPanel() {
 
       {errored.length > 0 && (
         <Reveal className="macro-section ui-surface" index={byCategory.length + 1}>
-          <div className="macro-section__title">采集错误</div>
+          <h2 className="macro-section__title">采集错误</h2>
           <div className="macro-errors">
             {errored.map((s) => (
               <div className="macro-error" key={s.seriesId}>
@@ -271,27 +264,32 @@ export function MacroPanel() {
   );
 }
 
-function SeriesRow({ row }: { row: MacroSeriesStats }) {
+function SeriesTile({ row }: { row: MacroSeriesStats }) {
   const missing = row.latest === null;
+  const changeTone =
+    row.changeAbs === null || row.changeAbs === 0 ? 'flat' : row.changeAbs > 0 ? 'up' : 'down';
+  const hot =
+    row.percentile !== null && (row.percentile >= 90 || row.percentile <= 10);
+
   return (
-    <div className={'macro-row' + (missing ? ' macro-row--missing' : '')}>
-      <span className="macro-row__label">
-        {row.label}
-        <code>{row.seriesId}</code>
-      </span>
-      <span className="macro-row__value">{fmtValue(row.latest, row.unit)}</span>
-      <span className={'macro-row__num' + (row.changeAbs !== null && row.changeAbs !== 0 ? (row.changeAbs > 0 ? ' up' : ' down') : '')}>
+    <article className={'macro-tile' + (missing ? ' macro-tile--missing' : '')}>
+      <div>
+        <div className="macro-tile__label">{row.label}</div>
+        <div className="macro-tile__id">{row.seriesId}</div>
+      </div>
+      <div className="macro-tile__value">{fmtValue(row.latest, row.unit)}</div>
+      <div className={`macro-tile__change ${changeTone}`}>
         {fmtSigned(row.changeAbs)}
-      </span>
-      <span className={'macro-row__num' + (row.windowChangeAbs !== null && row.windowChangeAbs !== 0 ? (row.windowChangeAbs > 0 ? ' up' : ' down') : '')}>
-        {fmtSigned(row.windowChangeAbs)}
-      </span>
-      <span className="macro-row__num">{row.zScore === null ? '--' : row.zScore.toFixed(2)}</span>
-      <span className={`macro-row__num ${percentileClass(row.percentile)}`}>
-        {row.percentile === null ? '--' : `${row.percentile.toFixed(0)}%`}
-      </span>
-      <span className="macro-row__age">{missing ? '无数据' : fmtAge(row.ageMs)}</span>
-    </div>
+        {row.windowChangeAbs !== null ? ` · 窗 ${fmtSigned(row.windowChangeAbs)}` : ''}
+      </div>
+      <div className="macro-tile__meta">
+        <span>Z {row.zScore === null ? '--' : row.zScore.toFixed(2)}</span>
+        <span className={hot ? 'hot' : undefined}>
+          分位 {row.percentile === null ? '--' : `${row.percentile.toFixed(0)}%`}
+        </span>
+        <span>{missing ? '无数据' : fmtAge(row.ageMs)}</span>
+      </div>
+    </article>
   );
 }
 
@@ -310,7 +308,8 @@ function Derived({
     <div className="macro-derived__item ui-surface">
       <span className="macro-derived__label">{label}</span>
       <span className={'macro-derived__value' + (value === null ? ' missing' : value < 0 ? ' negative' : '')}>
-        {value === null ? '--' : `${value >= 0 ? '+' : ''}${value.toFixed(2)} ${unit}`}
+        {value === null ? '--' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}`}
+        {value !== null ? <span className="macro-derived__unit">{unit}</span> : null}
       </span>
       <span className="macro-derived__hint">{hint}</span>
     </div>
