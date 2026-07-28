@@ -1,9 +1,7 @@
 import { Hono } from "hono";
 import { loadInstrumentCatalog as loadBitgetInstrumentCatalog } from "../../market_data/bitget.js";
-import { loadInstrumentCatalog as loadHyperliquidInstrumentCatalog } from "../../market_data/hyperliquid.js";
 import {
   appendBitgetSymbolToWatchlist,
-  appendHyperliquidSymbolToWatchlist,
   removeSymbolFromWatchlist,
   reorderSymbolsInWatchlist,
 } from "../../config/watchlist-store.js";
@@ -25,8 +23,8 @@ export function marketRoutes(runtime: AppRuntime): Hono {
   // Serializes the full in-memory market snapshot for the frontend.
   app.get("/api/state", async (c) => c.json(await runtime.state()));
 
-  // Merges the Bitget and Hyperliquid instrument catalogs, falling back to
-  // runtime instruments if a provider fetch fails.
+  // Loads the Bitget instrument catalog, falling back to runtime instruments
+  // if the provider fetch fails.
   app.get("/api/instruments/catalog", async (c) => {
     const activeKeys = new Set(runtime.instruments.map((instrument) => instrument.key));
     const errors: Record<string, string> = {};
@@ -38,16 +36,6 @@ export function marketRoutes(runtime: AppRuntime): Hono {
     } catch (error) {
       errors.bitget = error instanceof Error ? error.message : String(error);
       for (const instrument of runtime.instruments.filter((instrument) => instrument.source === "bitget")) {
-        items.push(catalogItem(instrument, activeKeys));
-      }
-    }
-    try {
-      for (const instrument of (await loadHyperliquidInstrumentCatalog()).values()) {
-        items.push(catalogItem(instrument, activeKeys));
-      }
-    } catch (error) {
-      errors.hyperliquid = error instanceof Error ? error.message : String(error);
-      for (const instrument of runtime.instruments.filter((instrument) => instrument.source === "hyperliquid")) {
         items.push(catalogItem(instrument, activeKeys));
       }
     }
@@ -65,19 +53,6 @@ export function marketRoutes(runtime: AppRuntime): Hono {
     await appendBitgetSymbolToWatchlist(watchlistPath, {
       symbol: String(body.symbol || ""),
       instType: String(body.instType || body.inst_type || ""),
-      label: typeof body.label === "string" ? body.label : null,
-      group: typeof body.group === "string" ? body.group : "crypto",
-      showCollapsed: typeof body.showCollapsed === "boolean" ? body.showCollapsed : true,
-    });
-    return c.json({ state: await reloadAndState(runtime, watchlistPath) });
-  });
-
-  // Appends a Hyperliquid instrument to the watchlist TOML and reloads config.
-  app.post("/api/watchlist/hyperliquid", async (c) => {
-    const body = (await c.req.json()) as Record<string, unknown>;
-    const watchlistPath = requireConfigPath(runtime);
-    await appendHyperliquidSymbolToWatchlist(watchlistPath, {
-      symbol: String(body.symbol || ""),
       label: typeof body.label === "string" ? body.label : null,
       group: typeof body.group === "string" ? body.group : "crypto",
       showCollapsed: typeof body.showCollapsed === "boolean" ? body.showCollapsed : true,

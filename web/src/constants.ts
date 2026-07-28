@@ -1,6 +1,5 @@
 export const GROUP_LABELS: Record<string, string> = {
   bitget: 'Bitget',
-  hyperliquid: 'Hyperliquid',
   jin10: 'Jin10',
   crypto: 'Crypto',
   stocks: 'Stocks',
@@ -24,7 +23,6 @@ export const PROXY_HASH = '#/settings/proxy';
 export const APPEARANCE_HASH = '#/settings/appearance';
 
 export type SettingsSection = 'providers' | 'agents' | 'agent-context' | 'appearance' | 'watchlist' | 'news' | 'jin10' | 'cron' | 'mcp' | 'browser' | 'options' | 'proxy';
-export type SearchSource = 'bitget' | 'hyperliquid';
 export type AppRoute =
   | { view: 'workspace' }
   | { view: 'settings'; section: SettingsSection };

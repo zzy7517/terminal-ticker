@@ -247,7 +247,7 @@ function formatJin10Price(price: number): string {
  * support agent analysis (candles, multi-timeframe context).
  *
  * Policy:
- * - Sources with candle data (bitget, hyperliquid) default to true
+ * - Sources with candle data (bitget) default to true
  * - Quote-only sources (jin10) default to false
  * - Each source's config can override via `agent_analysis` field
  */
@@ -260,7 +260,7 @@ function resolveSourceAnalysable(config: AppConfig): (source: string) => boolean
 
   return (source: string): boolean => {
     if (source in overrides) return overrides[source];
-    // Bitget, Hyperliquid, and any future candle-capable sources default to true
+    // Bitget and any future candle-capable sources default to true
     return true;
   };
 }

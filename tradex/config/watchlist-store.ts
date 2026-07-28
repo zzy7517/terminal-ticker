@@ -6,7 +6,6 @@ import {
   AnalysisConfig,
   BITGET_SOURCE,
   GROUP_ALIASES,
-  HYPERLIQUID_SOURCE,
   Jin10Config,
   NewsConfig,
   ProxyConfig,
@@ -63,22 +62,11 @@ function normalizeBitgetSymbol(symbol: string): string {
   return normalized;
 }
 
-function normalizeHyperliquidSymbol(symbol: string): string {
-  const value = symbol.trim();
-  const normalized = value.includes(":")
-    ? (() => {
-        const [dex, coin] = value.split(":", 2);
-        return `${dex.trim().toLowerCase()}:${coin.trim().toUpperCase()}`;
-      })()
-    : value.toUpperCase();
-  if (!normalized) throw new Error("symbol entries cannot be blank");
-  return normalized;
-}
-
 function normalizeSymbolForSourceStrict(source: string, symbol: string): string {
-  return source.trim().toLowerCase() === HYPERLIQUID_SOURCE
-    ? normalizeHyperliquidSymbol(symbol)
-    : normalizeBitgetSymbol(symbol);
+  if (source.trim().toLowerCase() !== BITGET_SOURCE) {
+    throw new Error(`unsupported source: ${source}`);
+  }
+  return normalizeBitgetSymbol(symbol);
 }
 
 function normalizeBitgetInstType(instType: string | null | undefined): string {
@@ -105,16 +93,6 @@ function formatBitgetEntry(input: {
 }): string {
   const label = input.label || input.symbol;
   return `  { symbol = ${tomlString(input.symbol)}, source = "bitget", inst_type = ${tomlString(input.instType)}, label = ${tomlString(label)}, group = ${tomlString(input.group)}, show_collapsed = ${input.showCollapsed ? "true" : "false"} },`;
-}
-
-function formatHyperliquidEntry(input: {
-  symbol: string;
-  label?: string | null;
-  group: string;
-  showCollapsed: boolean;
-}): string {
-  const label = input.label || `${input.symbol} Perp`;
-  return `  { symbol = ${tomlString(input.symbol)}, source = ${tomlString(HYPERLIQUID_SOURCE)}, label = ${tomlString(label)}, group = ${tomlString(input.group)}, show_collapsed = ${input.showCollapsed ? "true" : "false"} },`;
 }
 
 function parseInlineSymbolEntry(line: string): Record<string, unknown> | null {
@@ -188,29 +166,6 @@ export async function appendBitgetSymbolToWatchlist(
     formatBitgetEntry({
       symbol,
       instType,
-      label: input.label,
-      group,
-      showCollapsed: input.showCollapsed ?? true,
-    }),
-  );
-  return true;
-}
-
-export async function appendHyperliquidSymbolToWatchlist(
-  watchlistPath: string,
-  input: { symbol: string; label?: string | null; group?: string; showCollapsed?: boolean },
-): Promise<boolean> {
-  const sourcePath = path.resolve(expandUserPath(watchlistPath));
-  const symbol = normalizeHyperliquidSymbol(input.symbol);
-  const group = normalizeGroup(input.group ?? "crypto");
-  const config = await loadConfig(sourcePath);
-  if (config.instruments.some((instrument) => instrument.source === HYPERLIQUID_SOURCE && instrument.symbol === symbol)) {
-    return false;
-  }
-  await appendEntryToSymbolsArray(
-    sourcePath,
-    formatHyperliquidEntry({
-      symbol,
       label: input.label,
       group,
       showCollapsed: input.showCollapsed ?? true,
@@ -300,13 +255,7 @@ async function reorderSymbolsUnlocked(
       }
       const instType = entryInstType(entry);
       // Build key matching the MarketInstrument.key format
-      let key: string;
-      if (source === "hyperliquid") {
-        key = `hyperliquid:${normalizedSymbol}`;
-      } else {
-        // Bitget key format: "INST_TYPE:SYMBOL"
-        key = instType ? `${instType}:${normalizedSymbol}` : normalizedSymbol;
-      }
+      const key = instType ? `${instType}:${normalizedSymbol}` : normalizedSymbol;
       entryLines.push({ line: lines[i], key });
     } else if (lines[i].trim()) {
       // Non-entry lines (comments etc.) — keep at end
@@ -461,7 +410,6 @@ export async function updateNewsConfigInWatchlist(watchlistPath: string, config:
 export async function updateTradingConfigInWatchlist(watchlistPath: string, config: TradingConfig): Promise<boolean> {
   return replaceTable(watchlistPath, "trading", [
     "[trading]",
-    `hyperliquid_mode = "${config.hyperliquidMode}"`,
     `bitget_mode = "${config.bitgetMode}"`,
   ]);
 }

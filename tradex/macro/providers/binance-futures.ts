@@ -3,8 +3,6 @@
  *
  * Free, no auth. Binance holds the dominant share of crypto perp volume, so its
  * OI and long/short skew serve as a proxy for market-wide positioning.
- * Hyperliquid's own funding/OI is already covered by `market_data/hyperliquid.ts`;
- * the two cross-validate each other.
  *
  * Docs: https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data
  * Verified response shapes (2026-07-26):

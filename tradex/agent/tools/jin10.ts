@@ -33,7 +33,7 @@ export function buildJin10Tools(jin10Service: Jin10Service | null): ToolRegistry
       "(e.g. XAUUSD for gold, USOIL for oil, EURUSD for EUR/USD). " +
       "Returns current price, today's OHLC, change, and change%. " +
       "NOTE: This is a point-in-time snapshot only — no historical kline/candle data is available from this source. " +
-      "Use get_candles for multi-timeframe analysis on Bitget/Hyperliquid instruments instead.",
+      "Use get_candles for multi-timeframe analysis on Bitget instruments instead.",
     parameters: {
       type: "object",
       properties: {

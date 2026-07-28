@@ -7,13 +7,6 @@ symbols = [
   { symbol = "SPYUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "SPY", group = "stocks", show_collapsed = false },
   { symbol = "MSFTUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "MSFT", group = "stocks", show_collapsed = true },
   { symbol = "CLUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "CLUSDT", group = "crypto", show_collapsed = true },
-  { symbol = "vntl:ANTHROPIC", source = "hyperliquid", label = "ANTHROPIC Perp (vntl)", group = "preipo", show_collapsed = true },
-  { symbol = "vntl:OPENAI", source = "hyperliquid", label = "OPENAI Perp (vntl)", group = "preipo", show_collapsed = true },
-  { symbol = "vntl:SPACEX", source = "hyperliquid", label = "SPACEX Perp (vntl)", group = "preipo", show_collapsed = true },
-  { symbol = "xyz:VIX", source = "hyperliquid", label = "VIX Perp (xyz)", group = "indices", show_collapsed = true },
-  { symbol = "xyz:SP500", source = "hyperliquid", label = "SP500 Perp (xyz)", group = "indices", show_collapsed = true },
-  { symbol = "xyz:XYZ100", source = "hyperliquid", label = "XYZ100 Perp (xyz)", group = "indices", show_collapsed = true },
-  { symbol = "xyz:MSTR", source = "hyperliquid", label = "MSTR Perp (xyz)", group = "stocks", show_collapsed = true },
   { symbol = "BNBUSDT", source = "bitget", inst_type = "USDT-FUTURES", label = "BNBUSDT", group = "crypto", show_collapsed = true },
 ]
 
@@ -74,7 +67,6 @@ retention_days = 30
 recent_limit = 50
 
 [trading]
-hyperliquid_mode = "off"   # "off" | "demo" | "live"
 bitget_mode = "demo"          # "off" | "demo" | "live"
 
 [channels]

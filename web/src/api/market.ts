@@ -44,25 +44,6 @@ export async function addBitgetSymbol(result: InstrumentSearchResult): Promise<M
   return payload.state;
 }
 
-// Persists a Hyperliquid instrument to the watchlist and returns the reloaded state.
-export async function addHyperliquidSymbol(result: InstrumentSearchResult): Promise<MarketState> {
-  const response = await fetch('/api/watchlist/hyperliquid', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      symbol: result.symbol,
-      label: result.label,
-      group: result.group,
-      category: result.category,
-    }),
-  });
-  if (!response.ok) {
-    throw await responseError(response, 'add failed');
-  }
-  const payload = await response.json();
-  return payload.state;
-}
-
 // Removes any watchlist instrument by its stable provider key.
 export async function removeWatchlistInstrument(key: string): Promise<MarketState> {
   const response = await fetch(`/api/watchlist/instruments/${encodeURIComponent(key)}`, {

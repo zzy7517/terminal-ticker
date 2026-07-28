@@ -152,7 +152,6 @@ export interface MarketState {
       retentionDays: number;
     };
     trading: {
-      hyperliquidMode: "off" | "demo" | "live";
       bitgetMode: "off" | "demo" | "live";
     };
     mcp: {
@@ -266,8 +265,6 @@ export interface InstrumentSearchResult {
   label: string;
   instType: string | null;
   group?: string | null;
-  category?: string | null;
-  dex?: string | null;
   key: string;
   displayText: string;
   exists: boolean;

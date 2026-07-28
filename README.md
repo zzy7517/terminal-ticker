@@ -1,21 +1,21 @@
 # tradex
 
-tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bitget、Hyperliquid 主网行情、LLM Agent、Reuters 新闻、本地 SQLite 交易记录和定时任务放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证，同时，tradex还集成了chrome的brower use。
+tradex 是一个本地优先的行情监控和交易研究工作台。它把 Bitget 行情、LLM Agent、Reuters 新闻、本地 SQLite 交易记录和定时任务放在同一个进程里，适合做盘中观察、交易想法复盘和策略原型验证，同时，tradex还集成了chrome的brower use。
 
-它不是生产级交易终端。显式配置凭证并在 `watchlist.toml` 打开交易权限后，可以向 Hyperliquid 主网或 Bitget 提交订单；Bitget 支持 demo/live 两种模式，Hyperliquid 只支持主网 live。外部订单号会写回本地 SQLite。
+它不是生产级交易终端。显式配置凭证并在 `watchlist.toml` 打开交易权限后，可以向 Bitget 提交订单；Bitget 支持 demo/live 两种模式。外部订单号会写回本地 SQLite。
 
 ## 现在它能做什么
 
-- **行情监控**：订阅 Bitget futures，拉取 Hyperliquid 主网快照、K 线与 extended stats。
+- **行情监控**：订阅 Bitget futures，拉取快照与 K 线。
 - **Jin10 数据**：集成金十数据，实时行情报价（黄金、原油、汇率、指数等）、快讯 Flash、经济日历。通过 MCP 桥接调用 jin10 server。
 - **期权 / GEX 分析**：对美股/ETF（SPY、QQQ、AAPL、NVDA、GLD、IBIT 等）和加密（BTC/ETH）计算 Gamma Exposure、做市商定位与隐藏对冲流。Black-Scholes Greeks 引擎，输出 net GEX、gamma regime（正/负）、Zero Gamma Level、Call/Put Wall、Max Gamma Strike，以及 charm/vanna 隐藏流、对冲脉冲与压力云。数据源 MarketData.app 为主、Yahoo Finance 免费兜底，按需懒刷新（默认 12h 新鲜度）。前端有 Options 面板做可视化。
 - **行情工作区**：前端展示 watchlist、实时价格摘要、Agent、新闻、经济日历和持仓面板。
-- **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget / Hyperliquid 主网标的，也可以直接编辑 `watchlist.toml`。金十数据标的可在 mcp配置里直接添加。
+- **Watchlist 管理**：可以在 Web 设置里搜索并添加 Bitget 标的，也可以直接编辑 `watchlist.toml`。金十数据标的可在 mcp配置里直接添加。
 - **Agent 分析**：支持 Codex Responses provider、Anthropic Messages provider，以及 OpenAI Chat Completions provider（可指向任意 OpenAI 兼容端点）。Agent 可以读取行情、裸 K / 带指标 K 线、路透社新闻、金十快讯、期权 GEX / 做市商定位、本地记忆和交易记录。Pi / Claude / Cursor 等 Runtime 通过同一条 session-scoped `tradex` CLI 调用业务工具；也支持 skills 与外部数据源集成。
 - **Origin 会话**：无需创建固定 Agent 身份，消息直接发送给 Pi、Claude Code 或 Cursor Runtime。New Origin 在第一次发送消息前只保留为浏览器草稿；首次发送时才创建持久化会话及随机工作目录，并固定本次会话使用的 provider、model 和 reasoning 配置。
 - **外部 MCP 数据源**：通过 `.mcp.json` 配置上游 MCP server（如 jin10）。Tradex 作为客户端连接后，把可用工具并入业务 `ToolRegistry`，再经 `tradex` CLI 暴露给 Agent。前端 Settings 可视化管理这些外部连接。Tradex 自身不再作为 Agent 侧 MCP server。
 - **会话持久化**：Agent session 会写成本地 JSONL，并用 SQLite 建索引；前端可以恢复、重置或删除历史会话。
-- **交易执行**：配置层允许时，Agent 可以向 Hyperliquid 主网或 Bitget 提交订单；关闭时 Agent 只会给出开单建议。
+- **交易执行**：配置层允许时，Agent 可以向 Bitget 提交订单；关闭时 Agent 只会给出开单建议。
 - **定时看盘**：Cron 面板可以配置周期任务，按固定时间触发 Agent 分析，结果保存为本地 session。
 - **Browser Use**：Agent 可以通过 Open Browser Use 控制 Chrome 浏览器，比如去 TradingView 画趋势线、截图、读取页面内容。
 

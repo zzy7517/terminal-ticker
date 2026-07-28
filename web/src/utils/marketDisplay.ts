@@ -3,14 +3,11 @@ import type {
   MarketState,
   Quote,
 } from '../types';
-import {
-  addBitgetSymbol,
-  addHyperliquidSymbol,
-} from '../api';
+import { addBitgetSymbol } from '../api';
 
 export function orderedGroups(state: MarketState | null) {
   if (!state) return [];
-  const preferred = ['bitget', 'hyperliquid'];
+  const preferred = ['bitget'];
   const present = Object.keys(state.groups);
   return [
     ...preferred.filter((group) => present.includes(group)),
@@ -26,13 +23,12 @@ export function changeClass(quote: Quote | undefined) {
 }
 
 export function sourceName(source: string) {
-  if (source === 'hyperliquid') return 'Hyperliquid';
   return source.toUpperCase();
 }
 
 export function addInstrumentBySource(result: InstrumentSearchResult) {
   if (result.source === 'bitget') return addBitgetSymbol(result);
-  return addHyperliquidSymbol(result);
+  throw new Error(`unsupported instrument source: ${result.source}`);
 }
 
 export function formatContextWindow(size: number | null) {

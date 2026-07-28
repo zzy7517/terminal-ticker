@@ -28,7 +28,7 @@ export function buildTradingTools(input: {
   // enables at least one platform. A missing config means "off" — the router
   // always exists, so falling back to Boolean(router) would silently expose
   // order entry even with both [trading] modes set to "off".
-  const tradingEnabled = config != null && (config.hyperliquidMode !== "off" || config.bitgetMode !== "off");
+  const tradingEnabled = config != null && config.bitgetMode !== "off";
 
   const positivePrice = (value: unknown, name: string): { price: number | null; error: string | null } => {
     if (value == null) return { price: null, error: null };
@@ -78,7 +78,7 @@ export function buildTradingTools(input: {
       parameters: {
         type: "object",
         properties: {
-          instrument_key: { type: "string", description: "标的唯一标识，如 hyperliquid:BTC 或 USDT-FUTURES:BTCUSDT" },
+          instrument_key: { type: "string", description: "标的唯一标识，如 USDT-FUTURES:BTCUSDT" },
           direction: { type: "string", enum: ["long", "short"] },
           size: { type: "number", description: "合约数量，必须 > 0" },
           reasoning: { type: "string", description: "开仓理由，写入本地 trade 记录" },

@@ -130,8 +130,6 @@ export function catalogItem(instrument: { key: string; source: string; symbol: s
     label: instrument.label,
     instType: "instType" in instrument ? instrument.instType : null,
     group: instrument.group,
-    category: "category" in instrument ? instrument.category : null,
-    dex: "dex" in instrument ? instrument.dex : null,
     key: instrument.key,
     displayText: `${instrument.label} (${instrument.key})`,
     exists: activeKeys.has(instrument.key),

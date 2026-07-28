@@ -1,18 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Loader2, Plus, Search, Sparkles, X } from 'lucide-react';
 import type { Instrument, InstrumentCatalogItem, InstrumentSearchResult } from '../../types';
-import type { SearchSource } from '../../constants';
 import { useMarketStore } from '../../stores/marketStore';
 import { removeWatchlistInstrument } from '../../api';
 import { addInstrumentBySource, sourceName } from '../../utils/marketDisplay';
 import './WatchlistSettingsPanel.css';
-
-const SOURCE_LABEL: Record<SearchSource, string> = {
-  bitget: 'Bitget Futures',
-  hyperliquid: 'Hyperliquid',
-};
-
-const SOURCE_ORDER: SearchSource[] = ['bitget', 'hyperliquid'];
 
 const QUOTE_FILTERS = [
   { id: 'all', label: 'All' },
@@ -22,35 +14,18 @@ const QUOTE_FILTERS = [
 ] as const;
 type QuoteFilter = (typeof QUOTE_FILTERS)[number]['id'];
 
-const HYPERLIQUID_GROUP_FILTERS = [
-  { id: 'tradefi', label: 'TradeFi' },
-  { id: 'all', label: 'All' },
-  { id: 'stocks', label: 'Stocks' },
-  { id: 'indices', label: 'Indices' },
-  { id: 'commodities', label: 'Commodities' },
-  { id: 'fx', label: 'FX' },
-  { id: 'preipo', label: 'Pre-IPO' },
-  { id: 'crypto', label: 'Crypto' },
-] as const;
-type HyperliquidGroupFilter = (typeof HYPERLIQUID_GROUP_FILTERS)[number]['id'];
-const TRADEFI_GROUPS = new Set(['stocks', 'indices', 'commodities', 'fx', 'preipo']);
-
 function bucketOf(symbol: string): string {
   const ch = symbol.charAt(0).toUpperCase();
   return ch >= 'A' && ch <= 'Z' ? ch : '#';
 }
 
 function inferQuote(item: InstrumentCatalogItem): string {
-  // Bitget futures symbols look like BTCUSDT / ETHUSDC. Hyperliquid coins (BTC) have no quote suffix.
+  // Bitget futures symbols look like BTCUSDT / ETHUSDC.
   const upper = item.symbol.toUpperCase();
   for (const q of ['USDT', 'USDC', 'USD']) {
     if (upper.endsWith(q)) return q;
   }
   return '';
-}
-
-function inferHyperliquidGroup(item: InstrumentCatalogItem): string {
-  return (item.group ?? item.category ?? 'crypto').toLowerCase();
 }
 
 function matchesQuery(item: InstrumentCatalogItem, query: string): boolean {
@@ -83,10 +58,8 @@ export function WatchlistSettingsPanel() {
   const catalogErrors = useMarketStore((s) => s.catalogErrors);
   const catalogStatus = useMarketStore((s) => s.catalogStatus);
 
-  const [searchSource, setSearchSource] = useState<SearchSource>('bitget');
   const [query, setQuery] = useState('');
   const [quote, setQuote] = useState<QuoteFilter>('all');
-  const [hyperliquidGroup, setHyperliquidGroup] = useState<HyperliquidGroupFilter>('tradefi');
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -100,8 +73,8 @@ export function WatchlistSettingsPanel() {
   );
 
   const sourceCatalog = useMemo(
-    () => catalog.filter((item) => item.source === searchSource),
-    [catalog, searchSource],
+    () => catalog.filter((item) => item.source === 'bitget'),
+    [catalog],
   );
 
   const availableQuotes = useMemo(() => {
@@ -118,17 +91,7 @@ export function WatchlistSettingsPanel() {
   const groups = useMemo<CatalogGroup[]>(() => {
     const filtered = sourceCatalog.filter((item) => {
       if (!matchesQuery(item, normalizedQuery)) return false;
-      if (quote !== 'all') {
-        if (inferQuote(item) !== quote) return false;
-      }
-      if (searchSource === 'hyperliquid' && hyperliquidGroup !== 'all') {
-        const group = inferHyperliquidGroup(item);
-        if (hyperliquidGroup === 'tradefi') {
-          if (!TRADEFI_GROUPS.has(group)) return false;
-        } else if (group !== hyperliquidGroup) {
-          return false;
-        }
-      }
+      if (quote !== 'all' && inferQuote(item) !== quote) return false;
       return true;
     });
 
@@ -154,19 +117,15 @@ export function WatchlistSettingsPanel() {
       if (b.letter === '#') return -1;
       return a.letter.localeCompare(b.letter);
     });
-  }, [sourceCatalog, normalizedQuery, quote, hyperliquidGroup, searchSource, activeKeys]);
+  }, [sourceCatalog, normalizedQuery, quote, activeKeys]);
 
   const visibleLetters = useMemo(() => new Set(groups.map((g) => g.letter)), [groups]);
   const totalShown = useMemo(() => groups.reduce((acc, g) => acc + g.items.length, 0), [groups]);
   const catalogErrorItems = Object.entries(catalogErrors);
 
-  // Reset query/quote on source switch so user doesn't get stuck on an empty list.
   useEffect(() => {
-    setQuery('');
-    setQuote('all');
-    setHyperliquidGroup(searchSource === 'hyperliquid' ? 'tradefi' : 'all');
     if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
-  }, [searchSource]);
+  }, [quote, normalizedQuery]);
 
   function jumpToLetter(letter: string) {
     const scroller = scrollerRef.current;
@@ -276,35 +235,12 @@ export function WatchlistSettingsPanel() {
         </div>
 
         <div className="wl-browse-toolbar">
-          <div className="wl-source-tabs" role="tablist" aria-label="Catalog source">
-            {SOURCE_ORDER.map((src) => {
-              const count = catalog.filter((c) => c.source === src).length;
-              return (
-                <button
-                  key={src}
-                  type="button"
-                  role="tab"
-                  aria-selected={searchSource === src}
-                  className={`wl-source-tab ${searchSource === src ? 'active' : ''}`}
-                  onClick={() => setSearchSource(src)}
-                >
-                  <span>{SOURCE_LABEL[src]}</span>
-                  <span className="wl-source-tab-count">{count.toLocaleString()}</span>
-                </button>
-              );
-            })}
-          </div>
-
           <div className="wl-search">
             <Search size={16} aria-hidden />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={
-                searchSource === 'bitget'
-                  ? 'Search Bitget futures (e.g. BTCUSDT)'
-                  : 'Search Hyperliquid TradeFi (e.g. NVDA, AAPL, GOLD)'
-              }
+              placeholder="Search Bitget futures (e.g. BTCUSDT)"
               aria-label="Filter catalog"
             />
             {query && (
@@ -324,7 +260,7 @@ export function WatchlistSettingsPanel() {
           <span>
             {catalogStatus === 'loading'
               ? 'Loading catalog…'
-              : `${totalShown.toLocaleString()} of ${sourceCatalog.length.toLocaleString()} ${SOURCE_LABEL[searchSource]} symbols`}
+              : `${totalShown.toLocaleString()} of ${sourceCatalog.length.toLocaleString()} Bitget Futures symbols`}
           </span>
           {catalogLoadedAt && (
             <span className="wl-browse-meta-loaded">
@@ -333,7 +269,7 @@ export function WatchlistSettingsPanel() {
           )}
         </div>
 
-        {searchSource === 'bitget' && availableQuotes.size > 0 && (
+        {availableQuotes.size > 0 && (
           <div className="wl-quote-filter" role="group" aria-label="Quote currency">
             {QUOTE_FILTERS.map((q) => {
               const enabled = q.id === 'all' || availableQuotes.has(q.id);
@@ -349,21 +285,6 @@ export function WatchlistSettingsPanel() {
                 </button>
               );
             })}
-          </div>
-        )}
-
-        {searchSource === 'hyperliquid' && (
-          <div className="wl-quote-filter" role="group" aria-label="Hyperliquid category">
-            {HYPERLIQUID_GROUP_FILTERS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`wl-quote-pill ${hyperliquidGroup === item.id ? 'active' : ''}`}
-                onClick={() => setHyperliquidGroup(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
           </div>
         )}
 
@@ -425,7 +346,7 @@ export function WatchlistSettingsPanel() {
                             )}
                           </div>
                           <span className="wl-catalog-venue">
-                            {item.displayText || item.instType || SOURCE_LABEL[searchSource]}
+                            {item.displayText || item.instType || 'Bitget Futures'}
                           </span>
                           <button
                             type="button"

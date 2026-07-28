@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
@@ -22,8 +22,7 @@ import { asRecord, coerceFloat, coerceInt, coerceMinInt, expandEnvRefs, normaliz
 import { secretsFilePath } from "./secrets.js";
 
 export const BITGET_SOURCE = "bitget";
-export const HYPERLIQUID_SOURCE = "hyperliquid";
-export const SUPPORTED_SOURCES = new Set([BITGET_SOURCE, HYPERLIQUID_SOURCE]);
+export const SUPPORTED_SOURCES = new Set([BITGET_SOURCE]);
 export const SUPPORTED_INST_TYPES = new Set(["USDT-FUTURES", "USDC-FUTURES", "COIN-FUTURES"]);
 export const DEFAULT_REUTERS_URL = "https://www.reuters.com/arc/outboundfeeds/news-sitemap/?outputType=xml";
 const DEPRECATED_REUTERS_URLS = new Set([
@@ -147,7 +146,6 @@ export interface NewsConfig {
 export type ExchangeTradingMode = "off" | "demo" | "live";
 
 export interface TradingConfig {
-  hyperliquidMode: ExchangeTradingMode;
   bitgetMode: ExchangeTradingMode;
 }
 
@@ -329,7 +327,7 @@ function normalizeLabel(rawValue: unknown): string | null {
 }
 
 function defaultGroup(source: string): string {
-  return source === BITGET_SOURCE || source === HYPERLIQUID_SOURCE ? "crypto" : DEFAULT_GROUP;
+  return source === BITGET_SOURCE ? "crypto" : DEFAULT_GROUP;
 }
 
 function normalizeGroup(rawValue: unknown, source: string): string {
@@ -371,15 +369,9 @@ function normalizeOptionalAnalysisInterval(rawValue: unknown): string | null {
   return normalizeAnalysisInterval(rawValue);
 }
 
-export function normalizeSymbolForSource(symbol: string, source: string): string {
+export function normalizeSymbolForSource(symbol: string, _source: string): string {
   const value = symbol.trim();
   if (!value) return "";
-  if (source === HYPERLIQUID_SOURCE && value.includes(":")) {
-    const [dex, coin] = value.split(":", 2);
-    const normalizedDex = dex.trim().toLowerCase();
-    const normalizedCoin = coin.trim().toUpperCase();
-    return normalizedDex && normalizedCoin ? `${normalizedDex}:${normalizedCoin}` : "";
-  }
   return value.toUpperCase();
 }
 
@@ -422,6 +414,16 @@ function normalizeInstruments(symbols: unknown[]): InstrumentConfig[] {
       instrument = parseSymbolString(rawSymbol);
     } else if (rawSymbol && typeof rawSymbol === "object" && !Array.isArray(rawSymbol)) {
       const entry = rawSymbol as Record<string, unknown>;
+      const rawSource =
+        entry.source === null || entry.source === undefined
+          ? BITGET_SOURCE
+          : String(entry.source).trim().toLowerCase() || BITGET_SOURCE;
+      if (!SUPPORTED_SOURCES.has(rawSource)) {
+        console.warn(
+          `[config] skipping unsupported watchlist source "${rawSource}" for symbol ${String(entry.symbol ?? "")}`,
+        );
+        continue;
+      }
       const source = normalizeSource(entry.source);
       if (entry.symbol === null || entry.symbol === undefined) throw new Error("symbol entries cannot be blank");
       const parsed = parseSymbolString(String(entry.symbol), source);
@@ -680,8 +682,8 @@ function parseExchangeMode(raw: Record<string, unknown>, key: string, defaultMod
   if (value === undefined || value === null) return defaultMode;
   const str = String(value).toLowerCase().trim();
   if (VALID_TRADING_MODES.includes(str as ExchangeTradingMode)) return str as ExchangeTradingMode;
-  // Legacy boolean compat: true → "live" for hyperliquid, "demo" for bitget; false → "off"
-  if (str === "true") return key.includes("bitget") ? "demo" : "live";
+  // Legacy boolean compat: true → "demo" for bitget; false → "off"
+  if (str === "true") return "demo";
   if (str === "false") return "off";
   console.warn(`[config] invalid trading mode "${value}" for ${key}, using "${defaultMode}"`);
   return defaultMode;
@@ -689,8 +691,10 @@ function parseExchangeMode(raw: Record<string, unknown>, key: string, defaultMod
 
 export function parseTradingConfig(rawTradingValue: unknown): TradingConfig {
   const raw = asRecord(rawTradingValue, "trading");
+  if (raw.hyperliquid_mode !== undefined) {
+    console.warn('[config] trading.hyperliquid_mode is no longer supported and will be ignored');
+  }
   return {
-    hyperliquidMode: parseExchangeMode(raw, "hyperliquid_mode", "off"),
     bitgetMode: parseExchangeMode(raw, "bitget_mode", "off"),
   };
 }
@@ -829,10 +833,51 @@ export function parseConfig(data: Record<string, unknown>, sourcePath: string | 
 
 export async function loadConfig(configPath: string): Promise<AppConfig> {
   const sourcePath = path.resolve(expandUserPath(configPath));
-  const text = await readFile(sourcePath, "utf8");
+  let text = await readFile(sourcePath, "utf8");
+  const stripped = stripUnsupportedWatchlistEntries(text);
+  if (stripped.text !== text) {
+    await writeFile(sourcePath, stripped.text);
+    for (const note of stripped.removed) {
+      console.warn(`[config] removed unsupported watchlist entry ${note} from ${sourcePath}`);
+    }
+    text = stripped.text;
+  }
   const config = parseConfig(parseToml(text) as Record<string, unknown>, sourcePath);
   warnPlaintextSecrets(config, sourcePath);
   return config;
+}
+
+/** Drop inline symbol rows whose source is no longer supported (e.g. legacy hyperliquid). */
+function stripUnsupportedWatchlistEntries(text: string): { text: string; removed: string[] } {
+  const lines = text.split(/\r?\n/);
+  const startIndex = lines.findIndex((line) => line.trim().startsWith("symbols") && line.includes("["));
+  if (startIndex < 0) return { text, removed: [] };
+  const endIndex = lines.findIndex((line, index) => index > startIndex && line.trim() === "]");
+  if (endIndex < 0) return { text, removed: [] };
+
+  const removed: string[] = [];
+  const next = [...lines];
+  for (let index = endIndex - 1; index > startIndex; index -= 1) {
+    const stripped = next[index].trim();
+    if (!stripped.startsWith("{")) continue;
+    const candidate = stripped.replace(/,\s*$/, "");
+    try {
+      const parsed = parseToml(`symbols = [${candidate}]\n`) as { symbols?: unknown };
+      const entry =
+        Array.isArray(parsed.symbols) && parsed.symbols.length === 1 && typeof parsed.symbols[0] === "object"
+          ? (parsed.symbols[0] as Record<string, unknown>)
+          : null;
+      if (!entry) continue;
+      const source = String(entry.source || BITGET_SOURCE).trim().toLowerCase() || BITGET_SOURCE;
+      if (SUPPORTED_SOURCES.has(source)) continue;
+      removed.push(`${source}:${String(entry.symbol ?? "")}`);
+      next.splice(index, 1);
+    } catch {
+      // Keep unparsable lines; normalizeInstruments will still skip bad sources.
+    }
+  }
+  if (removed.length === 0) return { text, removed };
+  return { text: `${next.join("\n").replace(/\n*$/, "")}\n`, removed };
 }
 
 /**

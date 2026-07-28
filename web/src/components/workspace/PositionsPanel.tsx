@@ -7,7 +7,6 @@ import { useReveal } from '../../utils/reveal';
 import './PositionsPanel.css';
 
 const EXCHANGE_LABELS: Record<string, string> = {
-  hyperliquid: 'Hyperliquid',
   'bitget-demo': 'Bitget Demo',
 };
 
