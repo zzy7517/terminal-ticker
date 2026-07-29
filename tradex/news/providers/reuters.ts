@@ -1,21 +1,13 @@
 import { fetch as browserFetch } from "wreq-js";
 import { NewsItem } from "../types.js";
+import type { FetchResult, NewsProvider } from "./types.js";
 
 export const REUTERS_SOURCE = "reuters";
 export const DEFAULT_SITEMAP_URL = "https://www.reuters.com/arc/outboundfeeds/news-sitemap/?outputType=xml";
 
-export type FetchStatus = "ok" | "not_modified" | "rate_limited" | "error";
+export type { FetchResult, FetchStatus } from "./types.js";
 
-export interface FetchResult {
-  status: FetchStatus;
-  items: NewsItem[];
-  etag: string | null;
-  lastModified: string | null;
-  error: string | null;
-  httpStatus: number | null;
-}
-
-export class ReutersSitemapProvider {
+export class ReutersSitemapProvider implements NewsProvider {
   readonly url: string;
   readonly timeoutSeconds: number;
   readonly sourceName = REUTERS_SOURCE;

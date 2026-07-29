@@ -161,6 +161,7 @@ export function serializeConfig(config: AppConfig): Record<string, unknown> {
       fredKeyConfigured: Boolean(config.macro.fredApiKey),
       twelveDataKeyConfigured: Boolean(config.macro.twelveDataApiKey),
       calendarEnabled: config.macro.calendarEnabled,
+      forexfactoryCalendarEnabled: config.macro.forexfactoryCalendarEnabled,
       cryptoEnabled: config.macro.cryptoEnabled,
       quotesEnabled: config.macro.quotesEnabled,
       eventWindow: config.macro.eventWindow,

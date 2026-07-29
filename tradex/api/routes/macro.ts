@@ -151,6 +151,10 @@ export function macroRoutes(runtime: AppRuntime): Hono {
         quotesPollIntervalSeconds: int(body.quotes_poll_interval_seconds, current.quotesPollIntervalSeconds, 600),
         calendarEnabled: bool(body.calendar_enabled, current.calendarEnabled),
         calendarPollIntervalSeconds: int(body.calendar_poll_interval_seconds, current.calendarPollIntervalSeconds, 60),
+        forexfactoryCalendarEnabled: bool(
+          body.forexfactory_calendar_enabled,
+          current.forexfactoryCalendarEnabled,
+        ),
         eventWindow: {
           minImpact: parseImpact(typeof window.min_impact === "string" ? window.min_impact : undefined)
             ?? current.eventWindow.minImpact,

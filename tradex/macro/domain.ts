@@ -193,6 +193,8 @@ export interface MacroConfig {
   /** Persist the Jin10/other calendar to SQLite and serve event windows. */
   calendarEnabled: boolean;
   calendarPollIntervalSeconds: number;
+  /** Pull Forex Factory's weekly JSON calendar alongside Jin10. Keyless. */
+  forexfactoryCalendarEnabled: boolean;
   eventWindow: EventWindowConfig;
 }
 

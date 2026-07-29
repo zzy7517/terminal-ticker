@@ -313,6 +313,8 @@ export function mergeNewsConfig(config: NewsConfig, body: Record<string, unknown
     pollIntervalSeconds: minNumberField(body.pollIntervalSeconds, config.pollIntervalSeconds, 5),
     maxIntervalSeconds: minNumberField(body.maxIntervalSeconds, config.maxIntervalSeconds, 30),
     reutersUrl: typeof body.reutersUrl === "string" && body.reutersUrl.trim() ? body.reutersUrl.trim() : config.reutersUrl,
+    forexfactoryEnabled:
+      typeof body.forexfactoryEnabled === "boolean" ? body.forexfactoryEnabled : config.forexfactoryEnabled,
     requestTimeoutSeconds: minNumberField(body.requestTimeoutSeconds, config.requestTimeoutSeconds, 0.1),
     retentionDays: minNumberField(body.retentionDays, config.retentionDays, 1),
     recentLimit: minNumberField(body.recentLimit, config.recentLimit, 1),

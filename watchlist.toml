@@ -62,6 +62,7 @@ enabled = true
 poll_interval_seconds = 30
 max_interval_seconds = 600
 reuters_url = "https://www.reuters.com/arc/outboundfeeds/news-sitemap/?outputType=xml"
+forexfactory_enabled = true
 request_timeout_seconds = 10
 retention_days = 30
 recent_limit = 50
@@ -94,6 +95,7 @@ backfill_years = 2
 fred_poll_interval_seconds = 21600   # 6h; FRED updates daily at most
 calendar_enabled = true
 calendar_poll_interval_seconds = 300
+forexfactory_calendar_enabled = true
 
 # Deribit DVOL + Binance 持仓结构。两者都免费无需鉴权。
 crypto_enabled = true

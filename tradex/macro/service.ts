@@ -26,9 +26,11 @@ import {
 } from "./registry.js";
 import { FredProvider } from "./providers/fred.js";
 import { Jin10CalendarProvider } from "./providers/jin10-calendar.js";
+import { ForexFactoryCalendarProvider } from "./providers/forexfactory-calendar.js";
 import { DeribitDvolProvider } from "./providers/deribit-dvol.js";
 import { BinanceFuturesProvider } from "./providers/binance-futures.js";
 import { IndexQuotesProvider, QUOTE_SERIES } from "./providers/quotes.js";
+import type { MacroCalendarProvider } from "./domain.js";
 import { computeDerived, computeSeriesStats, type MacroSnapshot } from "./snapshot.js";
 import { MacroStore } from "./store.js";
 
@@ -48,7 +50,7 @@ export class MacroService {
   private readonly dvol: DeribitDvolProvider;
   private readonly binance: BinanceFuturesProvider;
   private readonly quotes: IndexQuotesProvider;
-  private readonly calendarProviders: Jin10CalendarProvider[];
+  private readonly calendarProviders: MacroCalendarProvider[];
 
   private fredTimer: NodeJS.Timeout | null = null;
   private calendarTimer: NodeJS.Timeout | null = null;
@@ -72,6 +74,8 @@ export class MacroService {
     config: MacroConfig;
     jin10Service: Jin10Service | null;
     store?: MacroStore;
+    /** Test seam — production builds the Jin10 + Forex Factory union. */
+    calendarProviders?: MacroCalendarProvider[];
   }) {
     this.config = input.config;
     this.store = input.store ?? new MacroStore();
@@ -79,9 +83,7 @@ export class MacroService {
     this.dvol = new DeribitDvolProvider();
     this.binance = new BinanceFuturesProvider();
     this.quotes = new IndexQuotesProvider(input.config.twelveDataApiKey);
-    this.calendarProviders = input.jin10Service
-      ? [new Jin10CalendarProvider(input.jin10Service)]
-      : [];
+    this.calendarProviders = input.calendarProviders ?? buildCalendarProviders(input);
   }
 
   get available(): boolean {
@@ -430,4 +432,18 @@ export class MacroService {
       },
     };
   }
+}
+
+function buildCalendarProviders(input: {
+  config: MacroConfig;
+  jin10Service: Jin10Service | null;
+}): MacroCalendarProvider[] {
+  const providers: MacroCalendarProvider[] = [];
+  if (input.jin10Service) {
+    providers.push(new Jin10CalendarProvider(input.jin10Service));
+  }
+  if (input.config.forexfactoryCalendarEnabled) {
+    providers.push(new ForexFactoryCalendarProvider({ enabled: true }));
+  }
+  return providers;
 }

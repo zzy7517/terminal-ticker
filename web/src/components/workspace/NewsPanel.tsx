@@ -4,7 +4,7 @@ import './NewsPanel.css';
 import type { NewsItem } from '../../types';
 import { triggerNewsRefresh, refreshJin10Flash } from '../../api';
 
-type NewsSource = 'all' | 'reuters' | 'jin10';
+type NewsSource = 'all' | 'reuters' | 'jin10' | 'forexfactory';
 
 function formatRelativeTime(iso: string): string {
   const publishedAt = new Date(iso).getTime();
@@ -17,6 +17,13 @@ function formatRelativeTime(iso: string): string {
   if (diffHr < 24) return `${diffHr}h ago`;
   const diffDay = Math.floor(diffHr / 24);
   return `${diffDay}d ago`;
+}
+
+function sourceLabel(source: string): string {
+  if (source === 'jin10') return '金十';
+  if (source === 'forexfactory') return 'FF';
+  if (source === 'reuters') return 'Reuters';
+  return source;
 }
 
 type LocalNewsItems = {
@@ -46,15 +53,17 @@ export function NewsPanel({
   const upstreamSignature = useMemo(() => newsItemsSignature(items), [items]);
   const displayItems = localItems?.items ?? items;
 
-  // Filter items by source
   const filteredItems = useMemo(() => {
     if (source === 'all') return displayItems;
     return displayItems.filter((item) => item.source === source);
   }, [displayItems, source]);
 
-  // Check if we have jin10 items
   const hasJin10Items = useMemo(
     () => displayItems.some((item) => item.source === 'jin10'),
+    [displayItems],
+  );
+  const hasForexFactoryItems = useMemo(
+    () => displayItems.some((item) => item.source === 'forexfactory'),
     [displayItems],
   );
 
@@ -69,28 +78,40 @@ export function NewsPanel({
     setLoading(true);
     setFeedback(null);
     try {
-      // Refresh both Reuters and Jin10
-      const [reutersResult, jin10Result] = await Promise.allSettled([
+      const [newsResult, jin10Result] = await Promise.allSettled([
         triggerNewsRefresh(),
         jin10Available ? refreshJin10Flash() : Promise.resolve(null),
       ]);
 
-      const reuters = reutersResult.status === 'fulfilled' ? reutersResult.value : null;
+      const news = newsResult.status === 'fulfilled' ? newsResult.value : null;
       const jin10 = jin10Result.status === 'fulfilled' ? jin10Result.value : null;
 
-      if (reuters?.news) {
+      if (news?.news) {
         setLocalItems({
-          items: reuters.news,
+          items: news.news,
           upstreamSignature,
         });
       }
 
       const parts: string[] = [];
-      if (reuters) {
-        if (reuters.error) parts.push(`Reuters: ${reuters.error}`);
-        else if (reuters.inserted > 0) parts.push(`Reuters +${reuters.inserted}`);
-        else parts.push('Reuters: no new items');
+      const sources =
+        news && typeof news === 'object' && news.sources && typeof news.sources === 'object'
+          ? (news.sources as Record<string, { status: string; inserted: number; error: string | null }>)
+          : null;
+
+      if (sources) {
+        for (const [name, outcome] of Object.entries(sources)) {
+          const label = sourceLabel(name);
+          if (outcome.error) parts.push(`${label}: ${outcome.error}`);
+          else if (outcome.inserted > 0) parts.push(`${label} +${outcome.inserted}`);
+          else parts.push(`${label}: no new items`);
+        }
+      } else if (news) {
+        if (news.error) parts.push(`News: ${news.error}`);
+        else if (news.inserted > 0) parts.push(`News +${news.inserted}`);
+        else parts.push('News: no new items');
       }
+
       if (jin10 && typeof jin10 === 'object' && 'inserted' in jin10) {
         if (jin10.error) parts.push(`Jin10: ${jin10.error}`);
         else if (jin10.inserted > 0) parts.push(`Jin10 +${jin10.inserted}`);
@@ -104,8 +125,10 @@ export function NewsPanel({
     }
   }, [loading, upstreamSignature, jin10Available]);
 
-  // Determine which source tabs to show
-  const showSourceTabs = jin10Available || hasJin10Items;
+  const showSourceTabs = jin10Available || hasJin10Items || hasForexFactoryItems;
+  const tabs: NewsSource[] = ['all', 'reuters'];
+  if (hasForexFactoryItems) tabs.push('forexfactory');
+  if (jin10Available || hasJin10Items) tabs.push('jin10');
 
   return (
     <Reveal className="news-panel ui-surface">
@@ -123,14 +146,20 @@ export function NewsPanel({
 
       {showSourceTabs && (
         <div className="news-panel__sources ui-control">
-          {(['all', 'reuters', 'jin10'] as const).map((s) => (
+          {tabs.map((s) => (
             <button
               key={s}
               type="button"
               className={`news-source-tab${source === s ? ' active' : ''}`}
               onClick={() => setSource(s)}
             >
-              {s === 'all' ? 'All' : s === 'reuters' ? 'Reuters' : 'Jin10 快讯'}
+              {s === 'all'
+                ? 'All'
+                : s === 'reuters'
+                  ? 'Reuters'
+                  : s === 'forexfactory'
+                    ? 'Forex Factory'
+                    : 'Jin10 快讯'}
             </button>
           ))}
         </div>
@@ -145,7 +174,9 @@ export function NewsPanel({
           <div className="empty-state sm">
             {source === 'jin10'
               ? '暂无 Jin10 快讯。确认已配置 Token 并启用快讯。'
-              : '还没有新闻。点右上角「立即刷新」拉取最新快讯。'}
+              : source === 'forexfactory'
+                ? '暂无 Forex Factory 头条。点右上角「立即刷新」拉取。'
+                : '还没有新闻。点右上角「立即刷新」拉取最新快讯。'}
           </div>
         )}
         {filteredItems.map((item) => (
@@ -163,19 +194,21 @@ export function NewsPanel({
               )}
               {source === 'all' && (
                 <span className={`news-item__badge ui-chip source ${item.source}`}>
-                  {item.source === 'jin10' ? '金十' : 'Reuters'}
+                  {sourceLabel(item.source)}
                 </span>
               )}
               {item.title}
             </div>
-            {item.summary && item.source !== 'jin10' && (
+            {item.summary && item.source !== 'jin10' && item.source !== 'forexfactory' && (
               <div className="news-item__summary">{item.summary}</div>
             )}
             <div className="news-item__meta">
               <span>{formatRelativeTime(item.publishedAt)}</span>
-              {item.keywords.length > 0 && !item.keywords.includes('important') && (
-                <span className="news-item__keywords">· {item.keywords.slice(0, 3).join(' · ')}</span>
-              )}
+              {item.keywords.length > 0 &&
+                !item.keywords.includes('important') &&
+                item.source !== 'forexfactory' && (
+                  <span className="news-item__keywords">· {item.keywords.slice(0, 3).join(' · ')}</span>
+                )}
             </div>
           </a>
         ))}

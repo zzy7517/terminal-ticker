@@ -137,6 +137,8 @@ export interface NewsConfig {
   pollIntervalSeconds: number;
   maxIntervalSeconds: number;
   reutersUrl: string;
+  /** Pull Forex Factory headlines alongside Reuters. Keyless HTML poller. */
+  forexfactoryEnabled: boolean;
   requestTimeoutSeconds: number;
   retentionDays: number;
   recentLimit: number;
@@ -669,6 +671,7 @@ export function parseNewsConfig(rawNewsValue: unknown): NewsConfig {
     pollIntervalSeconds: coerceMinInt(raw.poll_interval_seconds, "news.poll_interval_seconds", 30, 5),
     maxIntervalSeconds: coerceMinInt(raw.max_interval_seconds, "news.max_interval_seconds", 600, 30),
     reutersUrl,
+    forexfactoryEnabled: normalizeBool(raw.forexfactory_enabled, "news.forexfactory_enabled", true),
     requestTimeoutSeconds: coerceFloat(raw.request_timeout_seconds, "news.request_timeout_seconds", 10),
     retentionDays: coerceMinInt(raw.retention_days, "news.retention_days", 30, 1),
     recentLimit: coerceMinInt(raw.recent_limit, "news.recent_limit", 50, 1),

@@ -20,6 +20,8 @@ function service(store: MacroStore, overrides: Record<string, unknown> = {}) {
     config: parseMacroConfig({ enabled: true, fred_api_key: "", ...overrides }),
     jin10Service: null,
     store,
+    // Keep unit tests offline — production wires Jin10 + Forex Factory.
+    calendarProviders: [],
   });
 }
 

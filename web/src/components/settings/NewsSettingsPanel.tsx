@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Newspaper, Plus } from 'lucide-react';
+import { Newspaper } from 'lucide-react';
 import './NewsSettingsPanel.css';
 import type { NewsConfigUpdate } from '../../types';
 import { useMarketStore } from '../../stores/marketStore';
@@ -59,7 +59,7 @@ export function NewsSettingsPanel() {
         <section className="provider-catalog">
           <div className="provider-section-head">
             <strong>Sources</strong>
-            <span className="badge">1 active</span>
+            <span className="badge">{config.enabled ? (config.forexfactoryEnabled ? '2 active' : '1 active') : '0 active'}</span>
           </div>
           <div className="provider-list">
             <button className="provider-item selected" type="button" disabled>
@@ -74,15 +74,18 @@ export function NewsSettingsPanel() {
                 {config.enabled ? 'On' : 'Off'}
               </span>
             </button>
-            <div className="provider-item" aria-disabled>
+            <button className="provider-item" type="button" disabled>
               <div className="provider-item-icon">
-                <Plus size={16} />
+                <Newspaper size={18} />
               </div>
               <div className="provider-item-body">
-                <strong>Add source</strong>
-                <small>More providers coming soon.</small>
+                <strong>Forex Factory</strong>
+                <small>Headline poller — forexfactory.com/news</small>
               </div>
-            </div>
+              <span className={`badge${config.enabled && config.forexfactoryEnabled ? ' success' : ''}`}>
+                {config.enabled && config.forexfactoryEnabled ? 'On' : 'Off'}
+              </span>
+            </button>
           </div>
         </section>
 

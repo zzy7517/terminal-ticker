@@ -73,6 +73,7 @@ export interface NewsConfigUpdate {
   pollIntervalSeconds?: number;
   maxIntervalSeconds?: number;
   reutersUrl?: string;
+  forexfactoryEnabled?: boolean;
   requestTimeoutSeconds?: number;
   retentionDays?: number;
   recentLimit?: number;

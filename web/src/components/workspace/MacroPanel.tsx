@@ -345,6 +345,9 @@ function CalendarTab({
               <span className="macro-event__title">
                 {event.title}
                 {event.star ? <span className="macro-event__stars">{'★'.repeat(Math.min(event.star, 5))}</span> : null}
+                {event.provider ? (
+                  <span className="macro-event__provider">{event.provider === 'forexfactory' ? 'FF' : event.provider}</span>
+                ) : null}
               </span>
               <span className="macro-event__values">
                 前 {event.previous || '--'} / 预 {event.consensus || '--'} / 实 {event.actual || '--'}

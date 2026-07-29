@@ -121,6 +121,7 @@ export interface NewsRefreshResponse {
   stale: boolean;
   error: string | null;
   news: NewsItem[];
+  sources?: Record<string, { status: string; inserted: number; error: string | null }>;
 }
 
 // Triggers a synchronous news refresh; falls back to cache on timeout.

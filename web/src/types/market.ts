@@ -148,6 +148,7 @@ export interface MarketState {
       maxIntervalSeconds: number;
       recentLimit: number;
       reutersUrl: string;
+      forexfactoryEnabled: boolean;
       requestTimeoutSeconds: number;
       retentionDays: number;
     };

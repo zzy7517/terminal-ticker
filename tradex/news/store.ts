@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import { BaseStore, defaultCacheDir, jsonDumps, jsonLoads } from "../db.js";
+import { FOREXFACTORY_SOURCE } from "./providers/forexfactory.js";
 import { NewsItem } from "./types.js";
 
 export const DEFAULT_NEWS_FILENAME = "news.sqlite3";
@@ -49,7 +50,16 @@ export class NewsStore extends BaseStore {
         source = excluded.source,
         title = excluded.title,
         summary = excluded.summary,
-        published_at_ms = excluded.published_at_ms,
+        -- First-seen wins, but only for Forex Factory: it has no publish
+        -- timestamp and would otherwise rewrite published_at_ms to "now" on
+        -- every poll, pinning those rows to the top of recent() and
+        -- defeating retention prune. Other sources (Reuters) carry a real
+        -- publication date and must keep taking the latest value, e.g. if a
+        -- story's timestamp is corrected after first being seen.
+        published_at_ms = CASE WHEN excluded.source = '${FOREXFACTORY_SOURCE}'
+          THEN MIN(news_items.published_at_ms, excluded.published_at_ms)
+          ELSE excluded.published_at_ms
+        END,
         fetched_at_ms = excluded.fetched_at_ms,
         keywords_json = excluded.keywords_json
     `);

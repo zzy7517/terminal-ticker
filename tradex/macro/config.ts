@@ -28,6 +28,11 @@ export function parseMacroConfig(rawMacroValue: unknown): MacroConfig {
       300,
       60,
     ),
+    forexfactoryCalendarEnabled: normalizeBool(
+      raw.forexfactory_calendar_enabled,
+      "macro.forexfactory_calendar_enabled",
+      true,
+    ),
     cryptoEnabled: normalizeBool(raw.crypto_enabled, "macro.crypto_enabled", true),
     cryptoPollIntervalSeconds: coerceMinInt(
       raw.crypto_poll_interval_seconds,

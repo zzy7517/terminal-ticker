@@ -208,6 +208,12 @@
   color: var(--warning);
 }
 
+.news-item__badge.source.forexfactory {
+  background: color-mix(in srgb, #2f6fed 14%, transparent);
+  border-color: transparent;
+  color: #2f6fed;
+}
+
 .news-panel .empty-state {
   align-items: flex-start;
   min-height: 180px;
