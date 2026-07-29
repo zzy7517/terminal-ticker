@@ -1,0 +1,101 @@
+tradex/news/store.test.ts
+  s_283b67079768d4::t_95cfbac9c98e5e 51-82
+  s_32da674ed0da49::t_095a21c57d8632 1-50,83
+web/src/types/market.ts
+  s_32da674ed0da49::t_75cda2dfe66532 151
+tradex/news/store.ts
+  s_283b67079768d4::t_74cac5e0c0b197 53-58,60-62
+  s_283b67079768d4::t_dd8fcc1e4511e6 59
+  s_283b67079768d4::t_817c1c77ecb98d 4
+tradex/news/providers/forexfactory.ts
+  s_32da674ed0da49::t_bf61cd45dfd58f 64-74
+  s_32da674ed0da49::t_97d60b8491e5b9 1-63,75-138,144-155
+  s_32da674ed0da49::t_211cefc3c9c0fa 141-143
+  s_32da674ed0da49::t_4ff16079b0b797 139-140
+web/src/components/workspace/MacroPanel.tsx
+  s_32da674ed0da49::t_abdf222213a302 348-350
+tradex/macro/providers/forexfactory-calendar.test.ts
+  s_32da674ed0da49::t_195bde48b91cba 1-39,41-47,49-51
+  s_283b67079768d4::t_a21d721cc9f4b4 40,48
+tradex/api/serializers.ts
+  s_32da674ed0da49::t_e85a40a71d0df5 164
+watchlist.toml
+  s_32da674ed0da49::t_0e769e03ba0b6f 65
+  s_32da674ed0da49::t_37227f462486de 98
+web/src/components/workspace/NewsPanel.css
+  s_32da674ed0da49::t_78b2946808765a 211-216
+tradex/macro/service.test.ts
+  s_32da674ed0da49::t_e34f75074ab66d 23-24
+tradex/api/helpers.ts
+  s_32da674ed0da49::t_5c1ceeb790410f 316-317
+tradex/config/watchlist-store.ts
+  s_32da674ed0da49::t_b1b3d945ea0d82 404
+  s_32da674ed0da49::t_b2982eedd1748a 449
+tradex/macro/domain.ts
+  s_32da674ed0da49::t_b55f19db4cc71d 196-197
+tradex/news/providers/forexfactory.test.ts
+  s_32da674ed0da49::t_0d8cb362a152f9 1,3-28,37
+  s_32da674ed0da49::t_c42b8f3fb18ebf 30,36
+  s_32da674ed0da49::t_c7b957ec8fae96 2,29,31-35
+tradex/api/routes/macro.ts
+  s_32da674ed0da49::t_e11cff75eeefc6 154-157
+web/src/components/workspace/MacroPanel.css
+  s_32da674ed0da49::t_0889878cad1318 396-404
+web/src/components/settings/NewsSettingsPanel.tsx
+  s_32da674ed0da49::t_8eab53eaf1d9aa 2
+  s_32da674ed0da49::t_07e362f372838a 62,77,79,82-83,85-88
+tradex/news/providers/reuters.ts
+  s_32da674ed0da49::t_80ea1a595dd571 3,8,10
+web/src/components/workspace/NewsPanel.tsx
+  s_32da674ed0da49::t_a5fa9767be4a6f 7,22-28,65-68,81,86,89,91,97-112,114,128-131,149,156-162,177-179,197,202,207-211
+tradex/news/providers/types.ts
+  s_32da674ed0da49::t_a274cbc35861a8 1-18
+tradex/macro/service.ts
+  s_32da674ed0da49::t_300c7b4387a3b6 77-78,86
+  s_32da674ed0da49::t_fb2db8d843c1dd 53
+  s_32da674ed0da49::t_b641189a0a0e01 436-449
+  s_32da674ed0da49::t_7b725c8c536db1 29,33
+web/src/types/config.ts
+  s_32da674ed0da49::t_077887c262e162 76
+tradex/macro/config.ts
+  s_32da674ed0da49::t_584ea733550ec7 31-35
+web/src/api/market.ts
+  s_32da674ed0da49::t_eee2783b90b8f5 124
+tradex/news/service.ts
+  s_283b67079768d4::t_5579c4fc2a53d1 58,62-70,84,91-95,99,108
+  s_283b67079768d4::t_746e58d4ed2b36 122,124-127
+  s_32da674ed0da49::t_be8141c1d47315 2,12-13,18,25-29,47-57,59-61,71-83,85-90,101-107,109-110,121,123,128-136
+  s_283b67079768d4::t_5e1f2fd9904959 4
+  s_283b67079768d4::t_4457e8ea203b84 32
+  s_32da674ed0da49::t_7b5810f628d140 137
+tradex/macro/providers/forexfactory-calendar.ts
+  s_283b67079768d4::t_c339b4e5de28bb 91-95
+  s_32da674ed0da49::t_d32f829825c6c9 1-90,96-114
+tradex/config/index.ts
+  s_32da674ed0da49::t_54752424ad3912 674
+  s_32da674ed0da49::t_9701b2ee8fda23 140-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "f6d280a453120e78bcb6b8594b9366fa09baaa7a",
+  "prompts": {},
+  "sessions": {
+    "s_283b67079768d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "860a9b78-e445-41b4-8227-80523dba2ed9",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_32da674ed0da49": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1963d008-f57e-440a-8b98-fd1a03ac4091",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
