@@ -29,8 +29,8 @@ export function AppSidebar() {
   const state = useMarketStore((s) => s.state);
 
   const jin10Available = Boolean(state?.jin10?.status?.available && state?.config?.jin10?.enabled);
-  const optionsState = (state as any)?.options?.snapshots;
-  const optionsAvailable = Boolean(optionsState && Object.keys(optionsState).length > 0);
+  const optionsSnapshots = state?.options?.snapshots;
+  const optionsAvailable = Boolean(optionsSnapshots && Object.keys(optionsSnapshots).length > 0);
   const macroAvailable = Boolean((state as any)?.config?.macro?.enabled);
 
   const items: NavItem[] = useMemo(
