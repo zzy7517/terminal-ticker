@@ -25,7 +25,7 @@ const WORKSPACE_COPY: Record<string, { title: string; subtitle: string }> = {
   news: { title: 'News', subtitle: '按时间排序的市场快讯与来源状态' },
   calendar: { title: 'Calendar', subtitle: '金十财经日历，含前值、预期与实际值' },
   positions: { title: 'Positions', subtitle: '交易所持仓、活跃订单与交易复盘' },
-  options: { title: 'Options', subtitle: 'GEX 分布、关键价位与异动期权流' },
+  options: { title: 'Options', subtitle: 'GEX 剖面、关键价位与对冲压力' },
   macro: { title: 'Macro', subtitle: '利率、通胀、美元与波动率的横截面' },
   cron: { title: 'Cron', subtitle: '定时任务的排期与最近执行结果' },
 };

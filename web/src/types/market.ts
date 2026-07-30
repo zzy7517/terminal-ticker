@@ -122,6 +122,98 @@ export interface Jin10ConfigPayload {
   quotesCodes: string[];
 }
 
+// ── Options / GEX wire payload (from AppRuntime state.options) ────────────────
+
+export interface OptionsStrikeGex {
+  strike: number;
+  callGex: number;
+  putGex: number;
+  netGex: number;
+  callOi: number;
+  putOi: number;
+}
+
+export interface OptionsRegimeParams {
+  atmIV: number;
+  regime: 'calm' | 'normal' | 'stressed' | 'crisis';
+  impliedSpotVolCorr: number;
+  impliedVolOfVol: number;
+  expectedDailySpotMove: number;
+}
+
+export interface OptionsHedgeImpulse {
+  regime: 'pinned' | 'expansion' | 'squeeze-up' | 'squeeze-down' | 'neutral';
+  impulseAtSpot: number;
+  nearestAttractorAbove: number | null;
+  nearestAttractorBelow: number | null;
+  asymmetry: {
+    upside: number;
+    downside: number;
+    bias: 'up' | 'down' | 'neutral';
+    asymmetryRatio: number;
+  };
+  curve: Array<{ price: number; impulse: number }>;
+}
+
+export interface OptionsPressureZone {
+  center: number;
+  lower: number;
+  upper: number;
+  strength: number;
+  side: 'above-spot' | 'below-spot';
+  tradeType: 'long' | 'short';
+  hedgeType: 'passive' | 'aggressive';
+}
+
+export interface OptionsPressureCloud {
+  stabilityZones: OptionsPressureZone[];
+  accelerationZones: OptionsPressureZone[];
+  regimeEdges: Array<{ price: number; transitionType: string }>;
+}
+
+export interface OptionsIvSurface {
+  expiration: string;
+  strikes: number[];
+  smoothedIVs: number[];
+}
+
+export interface OptionsExposureRow {
+  expiration: string;
+  tte: number;
+  totalGammaExposure: number;
+  totalDeltaExposure: number;
+  totalVannaExposure: number;
+  totalCharmExposure: number;
+}
+
+/** Flattened GEX snapshot as broadcast on the market websocket state. */
+export interface OptionsSnapshot {
+  symbol: string;
+  spotPrice: number;
+  netGexBillions: number;
+  regime: 'long_gamma' | 'short_gamma' | 'neutral';
+  regimeDescription: string;
+  zeroGammaLevel: number;
+  callWall: number;
+  putWall: number;
+  maxGammaStrike: number;
+  dominantStrike: number;
+  charmFlow: number | null;
+  vannaFlow: number | null;
+  gexByStrike: OptionsStrikeGex[];
+  provider: string;
+  timestamp: number;
+  regimeParams: OptionsRegimeParams | null;
+  ivSurface: OptionsIvSurface | null;
+  hedgeImpulse: OptionsHedgeImpulse | null;
+  pressureCloud: OptionsPressureCloud | null;
+  exposure: OptionsExposureRow[] | null;
+}
+
+export interface OptionsStatePayload {
+  snapshots: Record<string, OptionsSnapshot>;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface MarketState {
@@ -195,6 +287,8 @@ export interface MarketState {
   recentNews: NewsItem[];
   newsStatus: NewsStatus;
   jin10: Jin10StatePayload | null;
+  /** Null when the options service is disabled. */
+  options: OptionsStatePayload | null;
 }
 
 export type TradeDirection = 'long' | 'short';
