@@ -1,0 +1,237 @@
+tradex/news/types.ts
+  s_e886c5f099ddc3::t_760b780fef325d 1-2,13-15
+tradex/channel/store.test.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 6
+web/src/types/market.ts
+  s_e886c5f099ddc3::t_20362b5059e6a5 40-41
+  s_e886c5f099ddc3::t_07aa706a6934d7 42
+tradex/chat/coordinator.test.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 9
+  s_e886c5f099ddc3::t_ee28b1e7dc8bea 6,47
+tradex/agent/memory.test.ts
+  s_e886c5f099ddc3::t_d9302c93640c93 4,15,18-21,23-26,29-31,70-73
+  s_e886c5f099ddc3::t_2cf91b96cf92a3 74
+tradex/chat/dm-attachments.test.ts
+  s_e886c5f099ddc3::t_2cc35243678973 15,19-25,33
+tradex/chat/lifecycle-reset.test.ts
+  s_e886c5f099ddc3::t_4377878538f246 12
+tradex/chat/target.ts
+  s_e886c5f099ddc3::t_5fae225f7cb8ab 1-8,12-60
+  s_e886c5f099ddc3::t_760b780fef325d 9-11
+tradex/contracts.ts
+  s_e886c5f099ddc3::t_be1641e269adc5 1-158
+tradex/mcp/types.ts
+  s_e886c5f099ddc3::t_760b780fef325d 6-8
+web/src/types/mcp.ts
+  s_e886c5f099ddc3::t_07aa706a6934d7 3-5
+tradex/api/origin-session-runtime.ts
+  s_e886c5f099ddc3::t_0e3cd6e27d9eee 12,138-139,141-143
+tradex/chat/events.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 14
+tradex/channel/parity.test.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 9
+tradex/channel/domain.ts
+  s_e886c5f099ddc3::t_760b780fef325d 2-3,5-13
+tradex/agent/runtime/cursor/runtime.ts
+  s_e886c5f099ddc3::t_bc6730a99533ef 411
+tradex/jin10/service.ts
+  s_e886c5f099ddc3::t_595c14c4328b2b 168
+  s_e886c5f099ddc3::t_cd2cbedca027af 12
+web/src/types/cron.ts
+  s_e886c5f099ddc3::t_07aa706a6934d7 5
+  s_e886c5f099ddc3::t_20362b5059e6a5 3-4
+web/src/components/workspace/PositionsPanel.css
+  s_4f132e52b23bc9::t_3cc1eca326b5d3 311
+web/src/components/workspace/CalendarPanel.css
+  s_4f132e52b23bc9::t_cacd55fa77886d 13
+tradex/channel/reminders.ts
+  s_e886c5f099ddc3::t_582f0b5844155a 108
+  s_e886c5f099ddc3::t_6e774682fc9521 46
+  s_e886c5f099ddc3::t_800715aff8476b 8,10,22
+  s_e886c5f099ddc3::t_deed31e38e517a 37,55
+tradex/api/routes/chat.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 7
+tradex/chat/dispatch.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 10-11
+tradex/api/external-cli-turn.test.ts
+  s_e886c5f099ddc3::t_cd93c16a1e529e 12,199
+tradex/agent/runtime/types.ts
+  s_e886c5f099ddc3::t_760b780fef325d 2-4
+web/src/components/workspace/WatchlistSidebar.css
+  s_4f132e52b23bc9::t_4af1cf0c88ab67 30
+  s_4f132e52b23bc9::t_78f796dab982a6 52
+tradex/api/routes/channel.test.ts
+  s_e886c5f099ddc3::t_ee28b1e7dc8bea 12,28
+  s_e886c5f099ddc3::t_eceaa831da087b 6
+  s_e886c5f099ddc3::t_4377878538f246 34
+tradex/chat/message-fabric.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 8
+web/src/components/workspace/OptionsPanel.css
+  s_4f132e52b23bc9::t_ac1a6f7cd10943 84
+tradex/agent/chat-index.ts
+  s_e886c5f099ddc3::t_4377878538f246 50
+tradex/api/helpers.ts
+  s_e886c5f099ddc3::t_4377878538f246 94,106
+tradex/news/store.ts
+  s_e886c5f099ddc3::t_76b90bd47c7c2f 96-100
+web/src/types/agent.ts
+  s_e886c5f099ddc3::t_20362b5059e6a5 64-66
+web/src/stores/agent/directMessages.ts
+  s_d236fbc096d464::t_f0f769011abd17 52
+  s_d236fbc096d464::t_2cad3361f1b8da 18-28,34
+  s_d236fbc096d464::t_db6f798a13e153 4
+tradex/api/image-input.test.ts
+  s_e886c5f099ddc3::t_cd93c16a1e529e 3,8
+web/src/stores/agentStore.test.ts
+  s_d236fbc096d464::t_614465e4d1ebbd 310-311
+  s_d236fbc096d464::t_7f54030667ce94 115-116
+  s_d236fbc096d464::t_4ce21b0956848e 270,272-278
+  s_d236fbc096d464::t_e27411a147d5f5 1-23,29-30,32-114,117-269,271,279-309,312-481
+  s_d236fbc096d464::t_1883d094937035 24-28,31
+tradex/chat/runtime.ts
+  s_e886c5f099ddc3::t_0fa6be42e291ed 287-288,293,302,318-329
+  s_e886c5f099ddc3::t_ed8933755a0ed5 29-32
+  s_e886c5f099ddc3::t_4377878538f246 54,59,230,238,245,253,300,312
+  s_e886c5f099ddc3::t_708b91742b9b76 109-112,114,123,126-127,132,136,138,142,149
+  s_e886c5f099ddc3::t_df3e7594dbba83 4
+  s_e886c5f099ddc3::t_2ddc305ee7565b 14-19
+  s_e886c5f099ddc3::t_808ef74acd029a 330
+tradex/options/service.ts
+  s_e886c5f099ddc3::t_bc6730a99533ef 8
+web/src/stores/agent/streamProjection.test.ts
+  s_d236fbc096d464::t_a6304303226a23 1-232
+tradex/agent/runtime/claude-code/session-store.ts
+  s_e886c5f099ddc3::t_1e1b546f2469cc 3
+  s_e886c5f099ddc3::t_95fcbda5a3a15e 15
+tradex/channel/membership.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 7-8
+web/src/types/chat.ts
+  s_e886c5f099ddc3::t_07aa706a6934d7 4-10
+  s_e886c5f099ddc3::t_20362b5059e6a5 2
+  s_e886c5f099ddc3::t_e3ea089fd8c74f 3
+tradex/channel/held-drafts.ts
+  s_e886c5f099ddc3::t_bfd6e9e07f193b 10-15,17
+  s_e886c5f099ddc3::t_79111a3bb242d2 9
+  s_e886c5f099ddc3::t_5b60a70ddd089a 161
+  s_e886c5f099ddc3::t_5b89156769e1b4 202
+  s_e886c5f099ddc3::t_deed31e38e517a 51,103,132,233
+tradex/agent/runtime/cursor/session-store.ts
+  s_e886c5f099ddc3::t_ac5236c4d37829 15
+  s_e886c5f099ddc3::t_d23238c6d9b872 3
+tradex/chat/migrate-legacy-targets.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 7
+tradex/agent/agent-store.ts
+  s_e886c5f099ddc3::t_760b780fef325d 5,7,9
+tradex/cron/scheduler.ts
+  s_e886c5f099ddc3::t_56babfe30b73fd 41,58,116,134,144,170
+  s_e886c5f099ddc3::t_760b780fef325d 21-23
+tradex/api/routes/agent.test.ts
+  s_e886c5f099ddc3::t_4377878538f246 222,259,280,426
+  s_e886c5f099ddc3::t_ee28b1e7dc8bea 7,41
+web/src/components/chat/ChannelPanel.tsx
+  s_10467f988c715e::t_3db99479c05c70 5,17,24-26,39,44-45,64-94,99,132-136,138
+tradex/api/routes/agent.ts
+  s_e886c5f099ddc3::t_4377878538f246 63,99,245,282,315,323,334,348,391,425,572
+  s_e886c5f099ddc3::t_0e3cd6e27d9eee 32,440-441,449-450
+tradex/chat/inbox-store.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 15-16
+tradex/chat/message-store.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 14
+web/src/stores/agent/streamProjection.ts
+  s_d236fbc096d464::t_d590ec14a45894 109
+  s_e886c5f099ddc3::t_4aa094beb408ae 42-43,46-47,52-53,68-69
+  s_e886c5f099ddc3::t_7f294086d38505 1-41,44-45,48-51,54-67,70-108,110-243
+tradex/agent/context-store.test.ts
+  s_e886c5f099ddc3::t_d48de3e21e10d9 1-67
+tradex/api/external-cli-session-stream.ts
+  s_e886c5f099ddc3::t_fdab547a5c14ee 1-161
+tradex/api/runtime.ts
+  s_e886c5f099ddc3::t_4377878538f246 181
+  s_e886c5f099ddc3::t_b382b1c5947adf 57
+  s_e886c5f099ddc3::t_f60ab9856b33fa 25
+  s_e886c5f099ddc3::t_92dd2c3217feb6 87
+tradex/agent/runtime/external-cli-registry.ts
+  s_e886c5f099ddc3::t_702febe98420cf 19
+  s_e886c5f099ddc3::t_723c05f45cf90e 55
+  s_e886c5f099ddc3::t_f9baeb1b3835ce 10
+  s_e886c5f099ddc3::t_51c6229d82e0d6 56-59
+  s_e886c5f099ddc3::t_85a005e43482f8 96-98
+  s_e886c5f099ddc3::t_8416f7741e95f4 11
+  s_e886c5f099ddc3::t_3795fdd6e7147b 72-74
+  s_e886c5f099ddc3::t_147598913c36a3 1-9,12-18,20-54,60-71,75-95,99-121
+tradex/agent/runtime/claude-code/runtime.ts
+  s_e886c5f099ddc3::t_bc6730a99533ef 415
+tradex/chat/unread-store.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 12-13
+web/src/components/workspace/NewsPanel.css
+  s_4f132e52b23bc9::t_83631b4623cb4c 8
+tradex/chat/message-target.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 7
+web/src/stores/agentStore.ts
+  s_d236fbc096d464::t_1700790323dc28 196
+  s_d236fbc096d464::t_d66dcc81074735 26
+  s_e886c5f099ddc3::t_ff74a13385e83e 12,57,131-145,147-159,161-170,172-191,193,195,197-235,237-241,243-287,290,292-308,310-317,319-354,356-405,407-439,442,444-449,453-455,457-502,505-511,513-517,519-523,525-526,528-530,532-534,536-538,541-551,553,555,557-561,563,565-570,572-576,578-579,583-584,586-590,593-752,754-757,767,773,776-777,783,785-888,890
+  s_d236fbc096d464::t_ee3bff04212d20 758,760,769-771,774-775,779
+  s_d236fbc096d464::t_58ccfa587075a5 552,554,556
+  s_d236fbc096d464::t_2f3e54530d8238 531,535,539-540
+  s_d236fbc096d464::t_de62a69700e140 146
+  s_d236fbc096d464::t_341aef1174abbd 564
+  s_d236fbc096d464::t_d7f2d0e31bdc48 778,780,782
+  s_d236fbc096d464::t_43ac72b668595f 171
+  s_d236fbc096d464::t_ca8e8cd04776ca 762,768
+  s_d236fbc096d464::t_5abdd45c3200ef 761
+  s_d236fbc096d464::t_b1324fd49cb1dd 781
+tradex/channel/reactions.ts
+  s_e886c5f099ddc3::t_eceaa831da087b 7-8
+tradex/chat/coordinator.ts
+  s_e886c5f099ddc3::t_4377878538f246 109,132,145,152,162,194,233,248,256
+  s_e886c5f099ddc3::t_eceaa831da087b 11
+  s_e886c5f099ddc3::t_7fbbfebd150456 174,178-185
+  s_e886c5f099ddc3::t_049297e378d202 186-187
+web/src/cronHuman.test.ts
+  s_e886c5f099ddc3::t_c009206ef89380 1-127
+tradex/api/routes/origin.test.ts
+  s_e886c5f099ddc3::t_4377878538f246 41
+tradex/channel/store.ts
+  s_e886c5f099ddc3::t_61d84ca71085ac 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "ed50a3fc1558988437d65c2ff758f77770ac2c80",
+  "prompts": {},
+  "sessions": {
+    "s_10467f988c715e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "879e14e6-68bf-49a2-8926-5162ddfb95ee",
+        "model": "grok-4.5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_4f132e52b23bc9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8236826f-677b-493d-a587-041e481e8991",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_d236fbc096d464": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "033ceb78-cf7e-42b0-9b9a-88dc25ba2b59",
+        "model": "claude-opus-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    },
+    "s_e886c5f099ddc3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce2be8b6-6aef-419f-a9f5-1000f4acdf49",
+        "model": "claude-fable-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
