@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatEventStore } from "../chat/events.js";
-import { channelTarget } from "./domain.js";
+import { channelTarget } from "../chat/target.js";
 import { ChannelStore } from "./store.js";
 
 describe("ChannelStore", () => {

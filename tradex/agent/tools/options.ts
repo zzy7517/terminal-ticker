@@ -143,45 +143,6 @@ export function registerOptionsTools(registry: ToolRegistry, runtime: AppRuntime
   });
 
   registry.register({
-    name: "get_options_flow",
-    description: "Get unusual options activity — large OI changes, high volume/OI ratio trades, or big premium prints. Shows what institutional players are doing RIGHT NOW.",
-    parameters: {
-      type: "object",
-      properties: {
-        symbol: { type: "string", description: "Filter by symbol (optional, shows all if omitted)" },
-        limit: { type: "number", description: "Max results (default: 20)" },
-      },
-    },
-    execute: async (args: Record<string, unknown>) => {
-      if (!svc) return JSON.stringify({ error: "Options service not enabled." });
-
-      const symbol = typeof args.symbol === "string" ? args.symbol.toUpperCase() : undefined;
-      const limit = typeof args.limit === "number" ? args.limit : 20;
-      const items = svc.getUnusualActivity(symbol, limit);
-
-      if (items.length === 0) {
-        return JSON.stringify({ message: "No unusual activity detected recently." });
-      }
-
-      return JSON.stringify({
-        count: items.length,
-        items: items.map(item => ({
-          symbol: item.symbol,
-          strike: item.strike,
-          type: item.type,
-          expiration: item.expiration,
-          oiChange: item.oiChange,
-          volume: item.volume,
-          volumeOiRatio: Math.round(item.volumeOiRatio * 10) / 10,
-          premiumEstimate: `$${Math.round(item.premiumEstimate).toLocaleString()}`,
-          signal: item.signal,
-          time: new Date(item.timestampMs).toISOString(),
-        })),
-      });
-    },
-  });
-
-  registry.register({
     name: "get_gamma_regime",
     description: "Determine if market is in positive gamma (volatility-suppressing) or negative gamma (volatility-amplifying) regime. Includes implication for trading.",
     parameters: {

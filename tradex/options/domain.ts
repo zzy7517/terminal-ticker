@@ -107,27 +107,6 @@ export interface GexSnapshot {
 }
 
 // ============================================================================
-// Unusual Activity Detection
-// ============================================================================
-
-export type ActivitySignal = "opening" | "closing" | "sweep" | "block" | "unknown";
-
-export interface UnusualActivity {
-  symbol: string;
-  strike: number;
-  type: "call" | "put";
-  expiration: string;
-  timestampMs: number;
-  oiChange: number;
-  volume: number;
-  volumeOiRatio: number;    // volume / OI
-  premiumEstimate: number;  // $ estimate
-  signal: ActivitySignal;
-}
-
-
-
-// ============================================================================
 // Configuration
 // ============================================================================
 

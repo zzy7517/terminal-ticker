@@ -9,7 +9,7 @@ describe("applyAgentLifecycleReset", () => {
     const runtime = {
       agentStore: { get: () => ({ id: "alpha", runtime: "pi" }) },
       agentCoordinator: { stopCurrentRun, notify },
-      agentContextManager: {
+      agentContexts: {
         get: () => ({ activeSessionId: "session-keep" }),
         updateStatus: vi.fn(),
       },

@@ -93,6 +93,11 @@ export class NewsStore extends BaseStore {
   pruneOlderThan(cutoffMs: number): number {
     return this.getConn().prepare("DELETE FROM news_items WHERE published_at_ms < ?").run(cutoffMs).changes;
   }
+
+  countBySource(source: string): number {
+    const row = this.getConn().prepare("SELECT COUNT(*) AS n FROM news_items WHERE source = ?").get(source) as { n: number };
+    return row.n;
+  }
 }
 
 interface NewsRow {

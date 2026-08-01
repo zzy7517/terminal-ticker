@@ -8,7 +8,7 @@
  * 多条 pending inbox 合并为一次 activation（短 wake），失败只走指数退避，不再 finally 立刻重唤醒。
  */
 import type { AppRuntime } from "../api/runtime.js";
-import { channelTarget, chatTargetRef, type ChatTarget } from "../channel/domain.js";
+import { channelTarget, chatTargetRef, type ChatTarget } from "./target.js";
 import type { InboxItem, InboxStatus } from "./inbox-store.js";
 import { startMessageActivation } from "./runtime.js";
 
@@ -106,7 +106,7 @@ export class AgentCoordinator {
    */
   notify(agentId: string): void {
     if (!this.started || !agentId.trim()) return;
-    const context = this.runtime.agentContextManager.ensure(agentId);
+    const context = this.runtime.agentContexts.ensure(agentId);
     if (context.paused) return;
     // 自动重试耗尽后，新的外部 notify（Human 消息等）重新给满预算。
     if ((this.retries.get(agentId) ?? 0) >= MAX_ACTIVATION_RETRIES) {
@@ -129,7 +129,7 @@ export class AgentCoordinator {
     lastActivationAtMs: number | null;
     lastError: string | null;
   } {
-    const context = this.runtime.agentContextManager.get(agentId);
+    const context = this.runtime.agentContexts.get(agentId);
     return {
       status: context?.status ?? "offline",
       paused: Boolean(context?.paused),
@@ -142,14 +142,14 @@ export class AgentCoordinator {
   /** 持久化 paused=true，并停掉该 Agent 当前 Runtime run。 */
   async pause(agentId: string): Promise<void> {
     this.haltCurrentRun(agentId);
-    this.runtime.agentContextManager.updateStatus(agentId, { paused: true, status: "paused" });
+    this.runtime.agentContexts.updateStatus(agentId, { paused: true, status: "paused" });
   }
 
   /** 清除 pause；若仍有 pending inbox 则重新 notify。 */
   async resume(agentId: string): Promise<void> {
     this.retries.delete(agentId);
     this.clearRetry(agentId);
-    this.runtime.agentContextManager.updateStatus(agentId, { paused: false, status: "idle", lastError: null });
+    this.runtime.agentContexts.updateStatus(agentId, { paused: false, status: "idle", lastError: null });
     this.notify(agentId);
   }
 
@@ -159,7 +159,7 @@ export class AgentCoordinator {
    */
   async stopCurrentRun(agentId: string): Promise<void> {
     this.haltCurrentRun(agentId);
-    this.runtime.agentContextManager.updateStatus(agentId, { status: "idle" });
+    this.runtime.agentContexts.updateStatus(agentId, { status: "idle" });
   }
 
   /** 清调度、杀当前 Runtime run、释放 running 位。 */
@@ -171,8 +171,18 @@ export class AgentCoordinator {
       clearTimeout(debounce);
       this.timers.delete(agentId);
     }
-    this.runtime.agentContextManager.abortActiveRun(agentId, this.runtime.activeAgents);
+    this.abortActiveRun(agentId);
     this.running.delete(agentId);
+  }
+
+  /**
+   * 按可信 agentId abort 当前 Runtime run。
+   * activeAgents（sessionId → run）由 AppRuntime 持有；Agent Context 只提供身份绑定。
+   */
+  private abortActiveRun(agentId: string): void {
+    const sessionId = this.runtime.agentContexts.get(agentId)?.activeSessionId ?? null;
+    if (!sessionId) return;
+    this.runtime.activeAgents.get(sessionId)?.abort();
   }
 
   /**
@@ -181,7 +191,7 @@ export class AgentCoordinator {
    */
   private async pump(agentId: string): Promise<void> {
     if (!this.started || this.running.has(agentId)) return;
-    const context = this.runtime.agentContextManager.ensure(agentId);
+    const context = this.runtime.agentContexts.ensure(agentId);
     if (context.paused) {
       this.pending.delete(agentId);
       return;
@@ -220,7 +230,7 @@ export class AgentCoordinator {
 
     this.pending.delete(agentId);
     this.running.add(agentId);
-    this.runtime.agentContextManager.updateStatus(agentId, {
+    this.runtime.agentContexts.updateStatus(agentId, {
       status: "active",
       lastActivationAtMs: Date.now(),
       lastError: null,
@@ -235,7 +245,7 @@ export class AgentCoordinator {
         tryMarkInbox(this.runtime, agentId, item.id, "read", "auto-ack after activation");
       }
       this.retries.delete(agentId);
-      this.runtime.agentContextManager.updateStatus(agentId, { status: "idle" });
+      this.runtime.agentContexts.updateStatus(agentId, { status: "idle" });
     } catch (error) {
       failed = true;
       // 失败重试不应消耗因果链预算。
@@ -243,7 +253,7 @@ export class AgentCoordinator {
       const attempt = (this.retries.get(agentId) ?? 0) + 1;
       this.retries.set(agentId, attempt);
       const detail = error instanceof Error ? error.message : String(error);
-      this.runtime.agentContextManager.updateStatus(agentId, {
+      this.runtime.agentContexts.updateStatus(agentId, {
         status: "error",
         lastError: detail,
       });

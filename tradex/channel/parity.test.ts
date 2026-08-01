@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ChannelStore } from "./store.js";
 import { InboxStore } from "../chat/inbox-store.js";
 import { MessageStore } from "../chat/message-store.js";
-import { channelTarget } from "./domain.js";
+import { channelTarget } from "../chat/target.js";
 
 describe("Raft-style channel parity", () => {
   const roots: string[] = [];

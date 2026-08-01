@@ -18,24 +18,9 @@ import { listJobRuns, listAllRuns, type CronRunRecord } from "./store.js";
 import type { CronJobStore } from "./job-store.js";
 import type { AppRuntime } from "../api/runtime.js";
 
-export interface CronJobStatus {
-  name: string;
-  cron: string;
-  enabled: boolean;
-  running: boolean;
-  nextRun: string | null;
-  lastRunAt: string | null;
-  lastStatus: "ok" | "error" | null;
-  lastError: string | null;
-  systemPrompt: string;
-  useMainPrompt: boolean;
-  model: string | null;
-  userMessage: string;
-  maxIterations: number | null;
-  maxCandles: number | null;
-  tradingEnabled: boolean;
-  timezone: string | null;
-}
+import type { CronJobStatus } from "../contracts.js";
+
+export type { CronJobStatus } from "../contracts.js";
 
 export class CronScheduler {
   private runtime: AppRuntime;
@@ -53,7 +38,7 @@ export class CronScheduler {
     this.store = store;
   }
 
-  /** Starts all enabled cron jobs from the SQLite store. */
+  /** Starts all enabled cron jobs from the job store. */
   start(): void {
     if (this.started) return;
     this.started = true;
@@ -70,7 +55,7 @@ export class CronScheduler {
     this.configs.clear();
   }
 
-  /** Tears down and recreates all cron timers from the SQLite store. */
+  /** Tears down and recreates all cron timers from the job store. */
   reload(): void {
     for (const [, cron] of this.jobs) {
       cron.stop();
@@ -128,7 +113,7 @@ export class CronScheduler {
     return this.executeJob(config);
   }
 
-  /** Enables or disables a job — persists to SQLite and updates timers. */
+  /** Enables or disables a job — persists to the JSON job store and updates timers. */
   setEnabled(jobName: string, enabled: boolean): void {
     this.store.setEnabled(jobName, enabled);
 
@@ -146,7 +131,7 @@ export class CronScheduler {
     }
   }
 
-  /** Adds a new job — persists to SQLite and schedules if enabled. */
+  /** Adds a new job — persists to the JSON job store and schedules if enabled. */
   addJob(job: CronJobConfig): void {
     if (this.configs.has(job.name)) throw new Error(`Job "${job.name}" already exists`);
     this.store.upsert(job);
@@ -156,7 +141,7 @@ export class CronScheduler {
     }
   }
 
-  /** Updates an existing job — persists to SQLite and reschedules. */
+  /** Updates an existing job — persists to the JSON job store and reschedules. */
   updateJob(oldName: string, job: CronJobConfig): void {
     const existing = this.configs.get(oldName);
     if (!existing) throw new Error(`Job "${oldName}" not found`);
@@ -182,7 +167,7 @@ export class CronScheduler {
     }
   }
 
-  /** Removes a job — persists to SQLite and stops its timer. */
+  /** Removes a job — persists to the JSON job store and stops its timer. */
   removeJob(jobName: string): void {
     const removed = this.store.remove(jobName);
     if (!removed) throw new Error(`Job "${jobName}" not found`);

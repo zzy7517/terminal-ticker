@@ -412,7 +412,7 @@ const CLAUDE_READ_TOOLS = new Set([
   "check_trade_status", "get_candles", "get_dealer_levels", "get_economic_calendar",
   "get_exchange_fills", "get_exchange_orders", "get_exchange_positions", "get_exposure_breakdown",
   "get_gamma_regime", "get_gex_by_strike", "get_gex_snapshot", "get_hedge_impulse", "get_jin10_quote",
-  "get_options_flow", "get_pressure_cloud", "get_quote", "get_recent_news",
+  "get_pressure_cloud", "get_quote", "get_recent_news",
   "get_trade_history", "get_trade_review_context", "list_instruments", "list_open_trades",
   "refresh_news", "web_fetch", "web_search",
 ]);

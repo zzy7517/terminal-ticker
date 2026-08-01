@@ -3,10 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentStore } from "../agent/agent-store.js";
-import { AgentContextManager } from "../agent/context-manager.js";
+
 import { AgentContextStore } from "../agent/context-store.js";
 import { ChannelStore } from "../channel/store.js";
-import { channelTarget } from "../channel/domain.js";
+import { channelTarget } from "./target.js";
 import type { AppRuntime } from "../api/runtime.js";
 import { InboxStore } from "./inbox-store.js";
 import { MessageStore } from "./message-store.js";
@@ -44,7 +44,7 @@ function harness(maxActivationHops = 2) {
   const messageStore = new MessageStore(dbPath);
   const runtime = {
     agentStore,
-    agentContextManager: new AgentContextManager(new AgentContextStore(dbPath)),
+    agentContexts: new AgentContextStore(dbPath),
     channelStore,
     inboxStore,
     messageStore,

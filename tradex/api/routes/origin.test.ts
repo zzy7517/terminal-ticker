@@ -38,7 +38,7 @@ function runtime(): AppRuntime & { ensureDm: ReturnType<typeof vi.fn>; ensureCon
         },
       },
     },
-    agentContextManager: { ensure: ensureContext },
+    agentContexts: { ensure: ensureContext },
     messageStore: { ensureHumanAgentDm: ensureDm },
     skillCatalog: { resolve: () => ({ instructions: "", warnings: [] }) },
     listenOrigin: "http://127.0.0.1:8765",

@@ -4,7 +4,7 @@
  * 示例：`#btc-research`、`#btc-research:<messageId>`、`dm:@owner`、`dm:@alpha`。
  * 只在工具边界用 resolver 查真实 Channel/DM id；Agent 不能单靠伪造 UUID 造 ChatTarget。
  */
-import { channelTarget, directMessageTarget, type ChatTarget } from "../channel/domain.js";
+import { channelTarget, directMessageTarget, type ChatTarget } from "./target.js";
 
 /** 解析时的调用方身份（Human 或 Agent）。 */
 export type MessageActor =

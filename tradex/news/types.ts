@@ -1,3 +1,5 @@
+import type { NewsItemPayload } from "../contracts.js";
+
 export interface NewsItem {
   url: string;
   source: string;
@@ -8,7 +10,9 @@ export interface NewsItem {
   keywords: string[];
 }
 
-export function newsItemToPayload(item: NewsItem): Record<string, unknown> {
+export type { NewsItemPayload } from "../contracts.js";
+
+export function newsItemToPayload(item: NewsItem): NewsItemPayload {
   return {
     url: item.url,
     source: item.source,

@@ -10,7 +10,7 @@
   flex-direction: column;
   gap: 16px;
   min-height: 0;
-  padding: 4px 0 24px;
+  padding: 4px 8px 24px;
 }
 
 .calendar-panel__head {

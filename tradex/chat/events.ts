@@ -11,7 +11,7 @@ import {
   chatTargetFromRow,
   chatTargetRef,
   type ChatTarget,
-} from "../channel/domain.js";
+} from "./target.js";
 
 /** 一条可订阅的 Chat 变更事件。 */
 export interface ChatEvent {

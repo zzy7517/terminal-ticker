@@ -4,7 +4,7 @@
  */
 import { Hono } from "hono";
 import type { AppRuntime } from "../runtime.js";
-import { channelTarget, directMessageTarget, parseChatTarget } from "../../channel/domain.js";
+import { channelTarget, directMessageTarget, parseChatTarget } from "../../chat/target.js";
 
 const EVENT_POLL_MS = 750;
 

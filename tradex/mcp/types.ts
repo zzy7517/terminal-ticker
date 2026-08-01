@@ -3,30 +3,14 @@
  */
 import type { ReadResourceResult, Resource, ResourceTemplate } from "@modelcontextprotocol/sdk/types.js";
 
-/** Server entry in .mcp.json config */
-export interface McpServerEntry {
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-  url?: string;
-  headers?: Record<string, string>;
-  /** Idle timeout in minutes before disconnecting (default: 10, 0 to disable) */
-  idleTimeout?: number;
-}
+import type { McpServerEntry, McpSettings } from "../contracts.js";
+
+export type { McpServerEntry, McpSettings, McpServerStatus } from "../contracts.js";
 
 /** Root MCP config shape (.mcp.json) */
 export interface McpConfig {
   mcpServers: Record<string, McpServerEntry>;
   settings?: McpSettings;
-}
-
-/** Global MCP settings */
-export interface McpSettings {
-  /** Tool name prefix mode: "server" (default) | "none" | "short" */
-  toolPrefix?: "server" | "none" | "short";
-  /** Idle timeout in minutes (default: 10, 0 to disable) */
-  idleTimeout?: number;
 }
 
 /** Parsed MCP config for AppConfig */
@@ -79,4 +63,3 @@ export interface McpAllResourceTemplatesResult {
 }
 
 /** Connection status for a server */
-export type McpServerStatus = "idle" | "connecting" | "connected" | "failed";

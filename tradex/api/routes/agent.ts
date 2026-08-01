@@ -29,8 +29,7 @@ import { purgeClaudeProject } from "../../agent/runtime/claude-code/runtime.js";
 import { detectCursorCli } from "../../agent/runtime/cursor/discovery.js";
 import { cursorModelCatalogFallback, fetchCursorModelCatalog } from "../../agent/runtime/cursor/model-catalog.js";
 import type { AppRuntime } from "../runtime.js";
-import { streamClaudeSession } from "../claude-session-stream.js";
-import { streamCursorSession } from "../cursor-session-stream.js";
+import { streamExternalCliSession } from "../external-cli-session-stream.js";
 import { validateImageInput } from "../image-input.js";
 import { streamPiSession } from "../pi-session-stream.js";
 import {
@@ -61,7 +60,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
   app.get("/api/chat/agents/:agentId/messages", (c) => {
     const agentId = c.req.param("agentId");
     if (!runtime.agentStore.get(agentId)) return c.json({ detail: "Agent not found" }, 404);
-    runtime.agentContextManager.ensure(agentId);
+    runtime.agentContexts.ensure(agentId);
     const dm = runtime.messageStore.requireHumanAgentDm(agentId);
     const beforeSeq = Number(c.req.query("before_seq"));
     const limit = Number(c.req.query("limit"));
@@ -97,7 +96,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       const skillNames = Array.isArray(body.skillNames)
         ? body.skillNames.filter((name): name is string => typeof name === "string")
         : [];
-      runtime.agentContextManager.ensure(agentId);
+      runtime.agentContexts.ensure(agentId);
       const { appendHumanDmAndNotify } = await import("../../chat/dispatch.js");
       const { message, directMessageId } = appendHumanDmAndNotify(runtime, {
         agentId,
@@ -243,7 +242,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     try {
       const body = await c.req.json() as AgentFileInput;
       const agent = runtime.agentStore.create(body);
-      runtime.agentContextManager.ensure(agent.id);
+      runtime.agentContexts.ensure(agent.id);
       runtime.messageStore.ensureHumanAgentDm(agent.id);
       return c.json({ agent, agents: runtime.agentStore.list() }, 201);
     } catch (error) {
@@ -280,7 +279,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     const agentId = c.req.param("id");
     try {
       runtime.agentStore.remove(agentId, (candidateId) => (
-        runtime.agentContextManager.hasSessionsForAgent(candidateId)
+        runtime.agentContexts.hasSessionsForAgent(candidateId)
         ||
         runtime.claudeSessions.hasPersistedSessionForAgent(candidateId)
         || runtime.cursorSessions.hasPersistedSessionForAgent(candidateId)
@@ -313,7 +312,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     if (agentHasLockedSession(runtime, agentId)) {
       return c.json({ detail: "cannot create a Session while Agent is running" }, 409);
     }
-    runtime.agentContextManager.ensure(agentId);
+    runtime.agentContexts.ensure(agentId);
     runtime.messageStore.ensureHumanAgentDm(agentId);
     const snapshot = snapshotForAgent(selectedAgent, runtime);
     if (snapshot.runtime === "claude-code") {
@@ -321,7 +320,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         title: String(body.title || "New Agent Session"),
         snapshot,
       });
-      runtime.agentContextManager.attachSession(agentId, { sessionId: metadata.id, runtime: "claude-code" });
+      runtime.agentContexts.attachSession(agentId, { sessionId: metadata.id, runtime: "claude-code" });
       return c.json({
         ...await sessionResponse(runtime, metadata.id),
         history: await sessionHistory(runtime),
@@ -332,7 +331,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         title: String(body.title || "New Agent Session"),
         snapshot,
       });
-      runtime.agentContextManager.attachSession(agentId, { sessionId: metadata.id, runtime: "cursor" });
+      runtime.agentContexts.attachSession(agentId, { sessionId: metadata.id, runtime: "cursor" });
       return c.json({
         ...await sessionResponse(runtime, metadata.id),
         history: await sessionHistory(runtime),
@@ -346,7 +345,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     mgr.appendThinkingLevelChange(snapshot.reasoningEffort);
     runtime.pendingSessionManagers.set(mgr.getSessionId(), mgr);
     runtime.pendingAgentSnapshots.set(mgr.getSessionId(), snapshot);
-    runtime.agentContextManager.attachSession(agentId, { sessionId: mgr.getSessionId(), runtime: "pi" });
+    runtime.agentContexts.attachSession(agentId, { sessionId: mgr.getSessionId(), runtime: "pi" });
     const payload = piSessionPayload(mgr);
     payload.session = {
       ...(payload.session as Record<string, unknown>),
@@ -389,7 +388,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         runtime.pendingAgentSnapshots.delete(sessionId);
         await deletePiSession(sessionId);
       }
-      runtime.agentContextManager.removeSession(sessionId);
+      runtime.agentContexts.removeSession(sessionId);
       return c.json({ session: { session: null, messages: [] }, history: await sessionHistory(runtime), state: await runtime.state() });
     } catch (error) {
       return c.json({ detail: error instanceof Error ? error.message : String(error) }, 502);
@@ -423,7 +422,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
     if (imageError) return c.json({ detail: imageError }, 400);
 
     // 已知 Agent Context 时，纯文本优先写入 Shared Message Fabric。
-    const context = runtime.agentContextManager.contextForSession(sessionId);
+    const context = runtime.agentContexts.contextForSession(sessionId);
     if (context && message && requestImages.length === 0) {
       const { appendHumanDmAndNotify } = await import("../../chat/dispatch.js");
       const { message: shared, directMessageId } = appendHumanDmAndNotify(runtime, {
@@ -438,9 +437,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
       });
     }
 
-    const claudeMetadata = runtime.claudeSessions.getMetadata(sessionId);
-    if (claudeMetadata) {
-      return streamClaudeSession({
+    if (runtime.claudeSessions.getMetadata(sessionId)) {
+      return streamExternalCliSession("claude-code", {
         runtime,
         requestUrl: c.req.url,
         sessionId,
@@ -448,9 +446,8 @@ export function agentRoutes(runtime: AppRuntime): Hono {
         requestImages,
       });
     }
-    const cursorMetadata = runtime.cursorSessions.getMetadata(sessionId);
-    if (cursorMetadata) {
-      return streamCursorSession({
+    if (runtime.cursorSessions.getMetadata(sessionId)) {
+      return streamExternalCliSession("cursor", {
         runtime,
         requestUrl: c.req.url,
         sessionId,
@@ -572,7 +569,7 @@ export function agentRoutes(runtime: AppRuntime): Hono {
 
 function agentHasLockedSession(runtime: AppRuntime, agentId: string): boolean {
   return [...runtime.lockedAgentSessions].some((sessionId) => (
-    runtime.agentContextManager.contextForSession(sessionId)?.agentId === agentId
+    runtime.agentContexts.contextForSession(sessionId)?.agentId === agentId
     || runtime.pendingAgentSnapshots.get(sessionId)?.agentId === agentId
     || runtime.claudeSessions.getMetadata(sessionId)?.snapshot.agentId === agentId
     || runtime.cursorSessions.getMetadata(sessionId)?.snapshot.agentId === agentId

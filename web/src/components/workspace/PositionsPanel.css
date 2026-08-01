@@ -308,7 +308,7 @@
 
 @media (max-width: 640px) {
   .positions-panel {
-    padding: 4px 0 36px;
+    padding: 4px 8px 36px;
   }
 
   .positions-summary {

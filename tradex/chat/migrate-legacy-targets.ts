@@ -4,7 +4,7 @@
  * 同时丢弃已退役的 `chat_saved` / `chat_pins` 表。
  */
 import type Database from "better-sqlite3";
-import { chatTargetRef, directMessageTarget } from "../channel/domain.js";
+import { chatTargetRef, directMessageTarget } from "./target.js";
 
 const TABLES: Array<{ table: string }> = [
   { table: "agent_inbox" },

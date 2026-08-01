@@ -5,16 +5,9 @@
 import type Database from "better-sqlite3";
 import crypto from "node:crypto";
 import { nowMs } from "../db.js";
+import type { ChannelReminder, ReminderStatus } from "./domain.js";
 
-/** Channel 一次性提醒（SQLite 行）。 */
-export type ChannelReminder = {
-  id: string;
-  agentId: string;
-  channelId: string;
-  dueAtMs: number;
-  note: string;
-  status: string;
-};
+export type { ChannelReminder } from "./domain.js";
 
 /** 创建 scheduled 提醒；Channel 必须存在。 */
 export function createReminder(
@@ -26,7 +19,7 @@ export function createReminder(
     note: string;
   },
   channelExists: boolean,
-): Omit<ChannelReminder, "status"> & { status: string } {
+): ChannelReminder {
   if (!Number.isFinite(input.dueAtMs)) throw new Error("dueAtMs is required");
   if (!channelExists) throw new Error("Channel not found");
   return conn.transaction(() => {
@@ -41,7 +34,7 @@ export function createReminder(
       channelId: input.channelId,
       dueAtMs: Math.floor(input.dueAtMs),
       note: input.note.trim(),
-      status: "scheduled",
+      status: "scheduled" as const,
     };
   })();
 }
@@ -50,7 +43,7 @@ export function createReminder(
 export function cancelReminder(
   conn: Database.Database,
   input: { agentId: string; reminderId: string },
-): { id: string; status: string } {
+): { id: string; status: ReminderStatus } {
   return conn.transaction(() => {
     const row = conn.prepare("SELECT * FROM channel_reminders WHERE id = ?").get(input.reminderId) as {
       id: string;
@@ -59,7 +52,7 @@ export function cancelReminder(
     } | undefined;
     if (!row || row.agent_id !== input.agentId) throw new Error("Reminder not found");
     conn.prepare("UPDATE channel_reminders SET status = 'cancelled' WHERE id = ?").run(input.reminderId);
-    return { id: row.id, status: "cancelled" };
+    return { id: row.id, status: "cancelled" as const };
   })();
 }
 
@@ -112,6 +105,6 @@ export function getReminder(conn: Database.Database, reminderId: string): Channe
     channelId: row.channel_id,
     note: row.note,
     dueAtMs: row.due_at_ms,
-    status: row.status,
+    status: row.status as ReminderStatus,
   };
 }

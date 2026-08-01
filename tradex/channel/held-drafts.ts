@@ -6,18 +6,15 @@ import type Database from "better-sqlite3";
 import crypto from "node:crypto";
 import { appendChatEvent } from "../chat/events.js";
 import { nowMs } from "../db.js";
-import { channelTarget, type Channel, type ChannelMessage } from "./domain.js";
+import { channelTarget } from "../chat/target.js";
+import {
+  type Channel,
+  type ChannelMessage,
+  type HeldDraft,
+  type HeldDraftStatus,
+} from "./domain.js";
 
-/** SQLite 行映射：Held Draft 暂存回复。 */
-export type HeldDraft = {
-  id: string;
-  agentId: string;
-  channelId: string;
-  observedVersion: number;
-  content: string;
-  status: string;
-  createdAtMs: number;
-};
+export type { HeldDraft } from "./domain.js";
 
 /** 当 Agent 的 observedVersion 落后于 channel.version 时暂存回复。 */
 export function createHeldDraft(
@@ -51,7 +48,7 @@ export function createHeldDraft(
       channelId: input.channelId,
       observedVersion: input.observedVersion,
       content: input.content,
-      status: "held",
+      status: "held" as const,
       createdAtMs,
     };
   })();
@@ -103,7 +100,7 @@ export function resolveHeldDraft(
           channelId: row.channel_id,
           observedVersion: row.observed_version,
           content: row.content,
-          status: "discarded",
+          status: "discarded" as const,
         },
         publishedMessage: null,
       };
@@ -132,7 +129,7 @@ export function resolveHeldDraft(
         channelId: row.channel_id,
         observedVersion: row.observed_version,
         content,
-        status: "published",
+        status: "published" as const,
       },
       publishedMessage,
     };
@@ -161,7 +158,7 @@ export function listHeldDrafts(conn: Database.Database, channelId: string): Held
     channelId: row.channel_id,
     observedVersion: row.observed_version,
     content: row.content,
-    status: row.status,
+    status: row.status as HeldDraftStatus,
     createdAtMs: row.created_at_ms,
   }));
 }
@@ -202,7 +199,7 @@ export function humanDiscardHeldDraft(
     graceMs?: number;
     now?: number;
   },
-): { id: string; agentId: string; channelId: string; status: string; createdAtMs: number } {
+): { id: string; agentId: string; channelId: string; status: HeldDraftStatus; createdAtMs: number } {
   const graceMs = input.graceMs ?? 5 * 60_000;
   const now = input.now ?? nowMs();
   return conn.transaction(() => {
@@ -233,7 +230,7 @@ export function humanDiscardHeldDraft(
       id: row.id,
       agentId: row.agent_id,
       channelId: row.channel_id,
-      status: "discarded",
+      status: "discarded" as const,
       createdAtMs: row.created_at_ms,
     };
   })();

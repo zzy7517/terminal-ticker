@@ -2,7 +2,7 @@
  * ChannelPanel — Channel 主聊天面板（对应 Raft Channel 视图）。
  * 含消息列表、composer 与成员面板入口。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type UIEvent } from 'react';
 import { Hash, Loader2, Users } from 'lucide-react';
 import { fetchChannelMembers } from '../../api';
 import { useChatStore } from '../../stores/chatStore';
@@ -14,12 +14,16 @@ import '../../styles/chat/index.css';
 import './ChannelPanel.css';
 
 const EMPTY_CHANNEL_MESSAGES: ChannelMessage[] = [];
+const FOLLOW_BOTTOM_THRESHOLD_PX = 48;
 
 /** Channel 主面板：时间线 + composer + 成员。 */
 export function ChannelPanel() {
   const [draft, setDraft] = useState('');
   const [membersOpen, setMembersOpen] = useState(false);
   const [memberCount, setMemberCount] = useState(0);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const shouldFollowTranscriptRef = useRef(true);
+  const pendingOlderScrollHeightRef = useRef<number | null>(null);
   const activeTarget = useChatStore((state) => state.activeTarget);
   const activeChannelId = activeTarget?.kind === 'channel' ? activeTarget.channelId : null;
   const channel = useChatStore((state) => state.channels.find((entry) => entry.id === activeChannelId) ?? null);
@@ -32,10 +36,13 @@ export function ChannelPanel() {
   const sendMessage = useChatStore((state) => state.sendMessage);
   const nextBeforeSeq = useChatStore((state) => activeChannelId ? state.nextBeforeSeqByChannelId[activeChannelId] ?? null : null);
   const loadOlderMessages = useChatStore((state) => state.loadOlderMessages);
+  const lastMessage = messages[messages.length - 1] ?? null;
 
   useEffect(() => {
     setMembersOpen(false);
     setMemberCount(0);
+    shouldFollowTranscriptRef.current = true;
+    pendingOlderScrollHeightRef.current = null;
     if (!activeChannelId) return;
     let cancelled = false;
     async function refreshCount() {
@@ -54,10 +61,42 @@ export function ChannelPanel() {
     };
   }, [activeChannelId]);
 
+  // Open / channel switch / initial load: pin to latest message.
+  useLayoutEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript || !activeChannelId || loading) return;
+    if (pendingOlderScrollHeightRef.current !== null) return;
+    if (!shouldFollowTranscriptRef.current) return;
+    transcript.scrollTop = transcript.scrollHeight;
+  }, [activeChannelId, loading, messages.length, lastMessage?.id]);
+
+  // After prepending older messages, keep the same viewport relative to prior content.
+  useLayoutEffect(() => {
+    const transcript = transcriptRef.current;
+    const previousHeight = pendingOlderScrollHeightRef.current;
+    if (!transcript || previousHeight === null) return;
+    transcript.scrollTop = transcript.scrollHeight - previousHeight;
+    pendingOlderScrollHeightRef.current = null;
+  }, [messages.length]);
+
+  function handleTranscriptScroll(event: UIEvent<HTMLDivElement>) {
+    const transcript = event.currentTarget;
+    shouldFollowTranscriptRef.current =
+      transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop <= FOLLOW_BOTTOM_THRESHOLD_PX;
+  }
+
+  async function handleLoadOlder() {
+    const transcript = transcriptRef.current;
+    if (transcript) pendingOlderScrollHeightRef.current = transcript.scrollHeight;
+    shouldFollowTranscriptRef.current = false;
+    await loadOlderMessages();
+  }
+
   async function submit() {
     const content = draft.trim();
     if (!content) return;
     setDraft('');
+    shouldFollowTranscriptRef.current = true;
     await sendMessage(content);
   }
 
@@ -90,9 +129,13 @@ export function ChannelPanel() {
           </div>
         </header>
 
-        <div className="session-transcript channel-timeline">
+        <div
+          className="session-transcript channel-timeline"
+          onScroll={handleTranscriptScroll}
+          ref={transcriptRef}
+        >
           {nextBeforeSeq ? (
-            <button className="channel-load-older" disabled={loading} onClick={() => void loadOlderMessages()} type="button">
+            <button className="channel-load-older" disabled={loading} onClick={() => void handleLoadOlder()} type="button">
               {loading ? <Loader2 className="spin" size={13} /> : null} Load earlier messages
             </button>
           ) : null}

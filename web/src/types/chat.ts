@@ -1,4 +1,13 @@
 /** Shared Message Fabric DTO：Direct Message、Channel、Chat 事件与在线状态。 */
+import type { Channel, ChannelMessage, ChatTarget } from '../../../tradex/contracts';
+
+export type {
+  Channel,
+  ChannelMessage,
+  ChannelReactionSummary,
+  ChatTarget,
+} from '../../../tradex/contracts';
+import type { ChannelReactionSummary } from '../../../tradex/contracts';
 
 export interface AgentDirectMessage {
   id: string;
@@ -22,42 +31,8 @@ export interface AgentDirectMessageResponse {
   nextBeforeSeq: number | null;
 }
 
-export interface Channel {
-  id: string;
-  name: string;
-  topic: string;
-  visibility: 'public' | 'private';
-  version: number;
-  createdAtMs: number;
-  archivedAtMs: number | null;
-}
-
-export type ChatTarget =
-  | { kind: 'direct-message'; directMessageId: string }
-  | { kind: 'channel'; channelId: string };
-
 /** Frontend navigation target; Origin deliberately stays outside ChatTarget. */
 export type ChatSurfaceTarget = ChatTarget | { kind: 'origin' };
-
-export interface ChannelReactionSummary {
-  emoji: string;
-  count: number;
-  reacted: boolean;
-}
-
-export interface ChannelMessage {
-  id: string;
-  channelId: string;
-  channelSeq: number;
-  authorType: 'human' | 'agent' | 'system';
-  authorId: string;
-  kind: string;
-  content: string;
-  createdAtMs: number;
-  editedAtMs: number | null;
-  deletedAtMs: number | null;
-  reactions: ChannelReactionSummary[];
-}
 
 export interface ChannelMessagesResponse {
   messages: ChannelMessage[];

@@ -2,23 +2,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isClaudeThinkingLevel } from "./runtime/claude-code/model-manifest.js";
-import type { AgentRuntimeId } from "./runtime/types.js";
+import type { AgentDefinition } from "../contracts.js";
+
+export type { AgentDefinition } from "../contracts.js";
 
 export const DEFAULT_AGENT_ID = "default";
-
-export interface AgentDefinition {
-  id: string;
-  name: string;
-  description: string;
-  /** When set, overrides `id` as the avatar generator seed. */
-  avatarSeed: string | null;
-  systemPrompt: string | null;
-  runtime: AgentRuntimeId;
-  provider: string | null;
-  model: string | null;
-  reasoningEffort: string | null;
-  builtIn: boolean;
-}
 
 export type AgentFileInput = Omit<AgentDefinition, "builtIn" | "avatarSeed"> & {
   avatarSeed?: string | null;

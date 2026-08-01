@@ -1,7 +1,7 @@
 /**
  * runtime — 在现有 Pi / Claude / Cursor seam 上启动一次 Message Fabric activation。
  *
- * 复用 AgentContextManager 的活跃 Runtime Session（或懒创建）。
+ * 复用 Agent Context 的活跃 Runtime Session（或懒创建）。
  * 不另建第三套 Agent loop。Message Tools 按 agentId 绑定到 Pi（进程内）
  * 与外接 Runtime（经 session-scoped CLI grant）。
  */
@@ -10,17 +10,13 @@ import type { InboxItem } from "./inbox-store.js";
 import { buildSkillAwareWakePrompt, MESSAGE_OPERATING_INSTRUCTIONS } from "./prompts.js";
 import { createMessageToolRegistry } from "./message-tools.js";
 import { PiSdkRuntime } from "../agent/runtime/pi/runtime.js";
-import { ClaudeCodeRuntime, exposeClaudeReadTools } from "../agent/runtime/claude-code/runtime.js";
-import { detectClaudeCode } from "../agent/runtime/claude-code/discovery.js";
-import { CursorCliRuntime, exposeCursorReadTools } from "../agent/runtime/cursor/runtime.js";
-import { detectCursorCli } from "../agent/runtime/cursor/discovery.js";
-import { tradexCliUrl } from "../api/external-cli-turn.js";
 import {
-  CLAUDE_CLI_INSTRUCTIONS,
-  CURSOR_CLI_INSTRUCTIONS,
-  currentTimeInstruction,
-  MAIN_AGENT_PROMPT,
-} from "../agent/prompts.js";
+  EXTERNAL_CLI_RUNTIMES,
+  isExternalCliRuntime,
+  type ExternalCliRuntimeId,
+} from "../agent/runtime/external-cli-registry.js";
+import { tradexCliUrl } from "../api/external-cli-turn.js";
+import { currentTimeInstruction, MAIN_AGENT_PROMPT } from "../agent/prompts.js";
 import { agentConfigFromSnapshot, openSessionManager } from "../api/helpers.js";
 import {
   AGENT_SNAPSHOT_ENTRY,
@@ -30,6 +26,10 @@ import {
   readAgentSnapshot,
 } from "../agent/runtime/pi/sessions.js";
 import { buildTradexToolRegistry } from "../api/agent-tools.js";
+import {
+  ExternalSessionStore,
+  type ExternalAgentSnapshot,
+} from "../agent/runtime/external-session-store.js";
 import { ensurePrivateWorkspace } from "../agent/private-workspace.js";
 import { memoryApplyRetention } from "../agent/memory.js";
 
@@ -51,12 +51,12 @@ export async function startMessageActivation(
   } catch {
     // retention failure must not block Shared Message activation
   }
-  runtime.agentContextManager.updateStatus(agentId, {
+  runtime.agentContexts.updateStatus(agentId, {
     workspacePath: workspace.workspacePath,
     memoryScope: workspace.memoryPath,
   });
 
-  const context = runtime.agentContextManager.ensure(agentId);
+  const context = runtime.agentContexts.ensure(agentId);
   let sessionId = context.activeSessionId;
   if (!sessionId) {
     sessionId = await ensureActivationSession(runtime, agentId);
@@ -106,10 +106,12 @@ async function runActivationOnce(
   messageTools: ReturnType<typeof createMessageToolRegistry>,
 ): Promise<void> {
   try {
-    if (agent.runtime === "claude-code") {
-      const availability = await detectClaudeCode();
+    if (isExternalCliRuntime(agent.runtime)) {
+      const descriptor = EXTERNAL_CLI_RUNTIMES[agent.runtime];
+      const store = externalSessionStoreFor(runtime, agent.runtime);
+      const availability = await descriptor.detect();
       if (!availability.available || !availability.executablePath) {
-        throw new Error(availability.error || "Claude Code runtime unavailable");
+        throw new Error(availability.error || `${descriptor.label} runtime unavailable`);
       }
       const tools = await buildTradexToolRegistry(runtime, {
         sessionId,
@@ -118,73 +120,33 @@ async function runActivationOnce(
         includeFilesystem: true,
         additionalRegistries: [messageTools],
         agentId,
-      }).then((result) => exposeClaudeReadTools(result.tools));
+      }).then((result) => descriptor.exposeReadTools(result.tools));
       const instructions = [
         agent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || MAIN_AGENT_PROMPT,
-        CLAUDE_CLI_INSTRUCTIONS,
-        currentTimeInstruction("Bash"),
+        descriptor.cliInstructions,
+        currentTimeInstruction(descriptor.timeToolName),
         MESSAGE_OPERATING_INSTRUCTIONS,
         `Private workspace: ${workspace.workspacePath}`,
         `Private memory: ${workspace.memoryPath}`,
       ].filter(Boolean).join("\n\n");
-      const run = await new ClaudeCodeRuntime({
+      const run = await descriptor.start({
         executablePath: availability.executablePath,
         cliUrl: tradexCliUrl(runtime.listenOrigin),
         grants: runtime.cliRunGrants,
-      }).start({
+      }, {
         tradexSessionId: sessionId,
-        cwd: runtime.claudeSessions.sessionDir(sessionId),
+        cwd: store.sessionDir(sessionId),
         prompt,
         instructions,
         registry: tools,
-        nativeSessionId: runtime.claudeSessions.getMetadata(sessionId)?.nativeSessionId ?? undefined,
+        nativeSessionId: store.getMetadata(sessionId)?.nativeSessionId ?? undefined,
         model: agent.model,
         effort: agent.reasoningEffort,
       });
       runtime.activeAgents.set(sessionId, run);
       const result = await run.result;
-      if (result.error) throw new Error(result.error);
-      return;
-    }
-
-    if (agent.runtime === "cursor") {
-      const availability = await detectCursorCli();
-      if (!availability.available || !availability.executablePath) {
-        throw new Error(availability.error || "Cursor CLI runtime unavailable");
-      }
-      const tools = await buildTradexToolRegistry(runtime, {
-        sessionId,
-        config: runtime.config.agent,
-        includeExternalMcp: true,
-        includeFilesystem: true,
-        additionalRegistries: [messageTools],
-        agentId,
-      }).then((result) => exposeCursorReadTools(result.tools));
-      const instructions = [
-        agent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || MAIN_AGENT_PROMPT,
-        CURSOR_CLI_INSTRUCTIONS,
-        currentTimeInstruction("shell"),
-        MESSAGE_OPERATING_INSTRUCTIONS,
-        `Private workspace: ${workspace.workspacePath}`,
-        `Private memory: ${workspace.memoryPath}`,
-      ].filter(Boolean).join("\n\n");
-      const run = await new CursorCliRuntime({
-        executablePath: availability.executablePath,
-        cliUrl: tradexCliUrl(runtime.listenOrigin),
-        grants: runtime.cliRunGrants,
-      }).start({
-        tradexSessionId: sessionId,
-        cwd: runtime.cursorSessions.sessionDir(sessionId),
-        prompt,
-        instructions,
-        registry: tools,
-        nativeSessionId: runtime.cursorSessions.getMetadata(sessionId)?.nativeSessionId ?? undefined,
-        model: agent.model,
-      });
-      runtime.activeAgents.set(sessionId, run);
-      const result = await run.result;
       if (result.nativeSessionId) {
-        runtime.cursorSessions.setNativeSessionId(sessionId, result.nativeSessionId);
+        store.setNativeSessionId(sessionId, result.nativeSessionId);
       }
       if (result.error) throw new Error(result.error);
       return;
@@ -265,7 +227,7 @@ export async function applyAgentLifecycleReset(
   await runtime.agentCoordinator?.stopCurrentRun(agentId);
 
   if (mode === "restart") {
-    runtime.agentContextManager.updateStatus(agentId, {
+    runtime.agentContexts.updateStatus(agentId, {
       paused: false,
       status: "idle",
       lastError: null,
@@ -273,14 +235,14 @@ export async function applyAgentLifecycleReset(
     runtime.agentCoordinator?.notify(agentId);
     return {
       mode,
-      sessionId: runtime.agentContextManager.get(agentId)?.activeSessionId ?? null,
+      sessionId: runtime.agentContexts.get(agentId)?.activeSessionId ?? null,
     };
   }
 
   if (mode === "full-reset") {
     const { wipePrivateWorkspace } = await import("../agent/private-workspace.js");
     const workspace = wipePrivateWorkspace(agentId);
-    runtime.agentContextManager.updateStatus(agentId, {
+    runtime.agentContexts.updateStatus(agentId, {
       workspacePath: workspace.workspacePath,
       memoryScope: workspace.memoryPath,
       paused: false,
@@ -288,7 +250,7 @@ export async function applyAgentLifecycleReset(
       lastError: null,
     });
   } else {
-    runtime.agentContextManager.updateStatus(agentId, {
+    runtime.agentContexts.updateStatus(agentId, {
       paused: false,
       status: "idle",
       lastError: null,
@@ -322,41 +284,22 @@ async function createRotatedSession(
 ): Promise<string> {
   const agent = runtime.agentStore.get(agentId);
   if (!agent) throw new Error(`Agent not found: ${agentId}`);
-  if (agent.runtime === "claude-code") {
-    const metadata = runtime.claudeSessions.create({
+  if (isExternalCliRuntime(agent.runtime)) {
+    const metadata = externalSessionStoreFor(runtime, agent.runtime).create({
       title: `Activation ${agentId}`,
       snapshot: {
         agentId: agent.id,
         agentName: agent.name,
-        runtime: "claude-code",
+        runtime: agent.runtime,
         systemPrompt: agent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || "",
         provider: null,
         model: agent.model,
         reasoningEffort: agent.reasoningEffort,
       },
     });
-    runtime.agentContextManager.attachSession(agentId, {
+    runtime.agentContexts.attachSession(agentId, {
       sessionId: metadata.id,
-      runtime: "claude-code",
-    });
-    return metadata.id;
-  }
-  if (agent.runtime === "cursor") {
-    const metadata = runtime.cursorSessions.create({
-      title: `Activation ${agentId}`,
-      snapshot: {
-        agentId: agent.id,
-        agentName: agent.name,
-        runtime: "cursor",
-        systemPrompt: agent.systemPrompt?.trim() || runtime.config.agent.systemPrompt.trim() || "",
-        provider: null,
-        model: agent.model,
-        reasoningEffort: agent.reasoningEffort,
-      },
-    });
-    runtime.agentContextManager.attachSession(agentId, {
-      sessionId: metadata.id,
-      runtime: "cursor",
+      runtime: agent.runtime,
     });
     return metadata.id;
   }
@@ -366,9 +309,22 @@ async function createRotatedSession(
   mgr.appendModelChange(piProviderName(provider), model);
   mgr.appendThinkingLevelChange(agent.reasoningEffort || runtime.config.agent.reasoningEffort);
   runtime.pendingSessionManagers.set(mgr.getSessionId(), mgr);
-  runtime.agentContextManager.attachSession(agentId, {
+  runtime.agentContexts.attachSession(agentId, {
     sessionId: mgr.getSessionId(),
     runtime: "pi",
   });
   return mgr.getSessionId();
+}
+
+/**
+ * 外接 CLI Runtime 对应的 Session store。
+ * 两个 store 共享 ExternalSessionStore 基类；snapshot 的 runtime 字面量放宽为
+ * ExternalCliRuntimeId，调用方由 attachSession/agent.runtime 保证一致性。
+ */
+function externalSessionStoreFor(
+  runtime: AppRuntime,
+  id: ExternalCliRuntimeId,
+): ExternalSessionStore<ExternalCliRuntimeId, ExternalAgentSnapshot<ExternalCliRuntimeId>> {
+  const store = id === "claude-code" ? runtime.claudeSessions : runtime.cursorSessions;
+  return store as unknown as ExternalSessionStore<ExternalCliRuntimeId, ExternalAgentSnapshot<ExternalCliRuntimeId>>;
 }

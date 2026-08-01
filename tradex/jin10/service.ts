@@ -9,7 +9,7 @@ import type { NewsStore } from "../news/store.js";
 import type { McpResourceReadResult } from "../mcp/types.js";
 import type { Jin10CalendarEvent, Jin10Config, Jin10Quote, Jin10Status } from "./types.js";
 import { Jin10Client } from "./client.js";
-import { parseFlashResponse, flashToNewsItems } from "./flash.js";
+import { parseFlashResponse, flashToNewsItems, JIN10_SOURCE } from "./flash.js";
 import { parseCalendarResponse } from "./calendar.js";
 import { parseQuoteResponse } from "./quotes.js";
 
@@ -165,7 +165,7 @@ export class Jin10Service {
         enabled: this.config.flashEnabled,
         lastFetchedAtMs: this.flashLastFetchedAtMs,
         lastError: this.flashLastError,
-        itemCount: this.newsStore ? 0 : 0, // count from store if needed
+        itemCount: this.newsStore ? this.newsStore.countBySource(JIN10_SOURCE) : 0,
       },
       calendar: {
         enabled: this.config.calendarEnabled,

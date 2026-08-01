@@ -4,7 +4,8 @@
 import type Database from "better-sqlite3";
 import { appendChatEvent } from "../chat/events.js";
 import { nowMs } from "../db.js";
-import { channelTarget, type Channel } from "./domain.js";
+import { channelTarget } from "../chat/target.js";
+import type { Channel } from "./domain.js";
 
 export type ChannelMember = {
   subjectType: string;

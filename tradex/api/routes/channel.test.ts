@@ -3,13 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatEventStore } from "../../chat/events.js";
-import { channelTarget } from "../../channel/domain.js";
+import { channelTarget } from "../../chat/target.js";
 import { ChannelStore } from "../../channel/store.js";
 import { MessageStore } from "../../chat/message-store.js";
 import { InboxStore } from "../../chat/inbox-store.js";
 import { UnreadStore } from "../../chat/unread-store.js";
 import { AgentContextStore } from "../../agent/context-store.js";
-import { AgentContextManager } from "../../agent/context-manager.js";
+
 import { chatEventRoutes } from "./chat.js";
 import { channelRoutes } from "./channel.js";
 import type { AppRuntime } from "../runtime.js";
@@ -25,13 +25,13 @@ describe("Channel HTTP API", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tradex-channel-api-"));
     roots.push(root);
     const dbPath = path.join(root, "chat.sqlite3");
-    const agentContextManager = new AgentContextManager(new AgentContextStore(dbPath));
+    const agentContexts = new AgentContextStore(dbPath);
     const channelStore = new ChannelStore(dbPath);
     const messageStore = new MessageStore(dbPath);
     const inboxStore = new InboxStore(dbPath);
     const unreadStore = new UnreadStore(dbPath);
     return {
-      agentContextManager,
+      agentContexts,
       channelStore,
       messageStore,
       inboxStore,

@@ -1,23 +1,8 @@
 /** Cron Job 调度与运行记录 DTO。 */
 
-export interface CronJobStatus {
-  name: string;
-  cron: string;
-  enabled: boolean;
-  running: boolean;
-  nextRun: string | null;
-  lastRunAt: string | null;
-  lastStatus: 'ok' | 'error' | null;
-  lastError: string | null;
-  systemPrompt: string;
-  useMainPrompt: boolean;
-  model: string | null;
-  userMessage: string;
-  maxIterations: number | null;
-  maxCandles: number | null;
-  tradingEnabled: boolean;
-  timezone: string | null;
-}
+import type { CronJobStatus } from '../../../tradex/contracts';
+
+export type { CronJobStatus } from '../../../tradex/contracts';
 
 export interface CronRunRecord {
   jobName: string;

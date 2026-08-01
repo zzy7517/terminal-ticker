@@ -1,7 +1,7 @@
 /** Agent 私信（Direct Message）与 reaction 的 zustand slice。 */
 import type { StoreApi } from 'zustand';
 import { chronologicalMessages } from '../../chat/timeline';
-import { fetchAgentDirectMessages, setDirectMessageReaction } from '../../api';
+import type { fetchAgentDirectMessages, setDirectMessageReaction } from '../../api';
 import type { AgentDirectMessage } from '../../types';
 import type { AgentState } from '../agentStore';
 
@@ -15,13 +15,23 @@ export interface DirectMessagesSlice {
   toggleDirectMessageReaction: (agentId: string, messageId: string, emoji: string) => Promise<void>;
 }
 
-export function createDirectMessagesSlice(set: StoreSet, get: StoreGet): DirectMessagesSlice {
+/** slice 的外部依赖，由 agentStore 从 AgentStoreDependencies 透传。 */
+export interface DirectMessagesDependencies {
+  fetchAgentDirectMessages: typeof fetchAgentDirectMessages;
+  setDirectMessageReaction: typeof setDirectMessageReaction;
+}
+
+export function createDirectMessagesSlice(
+  set: StoreSet,
+  get: StoreGet,
+  deps: DirectMessagesDependencies,
+): DirectMessagesSlice {
   return {
     directMessageIdByAgentId: {},
     directMessagesByAgentId: {},
 
     refreshAgentDirectMessages: async (agentId) => {
-      const payload = await fetchAgentDirectMessages(agentId);
+      const payload = await deps.fetchAgentDirectMessages(agentId);
       // API returns newest-first (dm_seq DESC) for before_seq pagination; UI is oldest→newest.
       const messages = chronologicalMessages(payload.messages).map((message) => ({
         ...message,
@@ -39,7 +49,7 @@ export function createDirectMessagesSlice(set: StoreSet, get: StoreGet): DirectM
       if (!message) return;
       const active = !message.reactions.some((reaction) => reaction.emoji === emoji && reaction.reacted);
       try {
-        const payload = await setDirectMessageReaction(agentId, messageId, emoji, active);
+        const payload = await deps.setDirectMessageReaction(agentId, messageId, emoji, active);
         set((s) => ({
           directMessagesByAgentId: {
             ...s.directMessagesByAgentId,

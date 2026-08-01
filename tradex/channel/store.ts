@@ -10,8 +10,8 @@ import path from "node:path";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
 import { appendChatEvent, initChatEventSchema } from "../chat/events.js";
 import { nullOutLegacyColumn } from "../chat/legacy-schema.js";
+import { channelTarget } from "../chat/target.js";
 import {
-  channelTarget,
   type Channel,
   type ChannelMessage,
   type ChannelReactionSummary,

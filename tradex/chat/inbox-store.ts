@@ -12,8 +12,8 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
 import { initChatEventSchema } from "./events.js";
-import type { ChatTarget } from "../channel/domain.js";
-import { chatTargetFromRow, chatTargetRef } from "../channel/domain.js";
+import type { ChatTarget } from "./target.js";
+import { chatTargetFromRow, chatTargetRef } from "./target.js";
 
 /** 唤醒 Agent 的原因（对应 Raft inbox 信号类型）。 */
 export type InboxReason =

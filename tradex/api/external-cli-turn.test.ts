@@ -9,7 +9,7 @@ import {
   type ExternalSessionSnapshot,
 } from "../agent/runtime/external-session-store.js";
 import type { ActiveRuntimeRun } from "../agent/runtime/types.js";
-import { streamClaudeSession } from "./claude-session-stream.js";
+import { streamExternalCliSession } from "./external-cli-session-stream.js";
 import { createExternalCliTurn } from "./external-cli-turn.js";
 import type { AppRuntime } from "./runtime.js";
 import { SessionRunError, streamSessionRun } from "./session-stream.js";
@@ -196,7 +196,7 @@ describe("External CLI turn", () => {
       activeAgents: new Map(),
     } as unknown as AppRuntime;
 
-    const response = await streamClaudeSession({
+    const response = await streamExternalCliSession("claude-code", {
       runtime,
       requestUrl: "http://127.0.0.1:8765/api/agent/sessions/id/messages/stream",
       sessionId: metadata.id,

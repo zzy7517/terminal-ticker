@@ -61,7 +61,9 @@ export interface AgentMessageMetadata {
   [key: string]: unknown;
 }
 
-export type AgentRuntimeId = 'pi' | 'claude-code' | 'cursor';
+import type { AgentDefinition, AgentRuntimeId } from '../../../tradex/contracts';
+
+export type { AgentDefinition, AgentRuntimeId } from '../../../tradex/contracts';
 
 export interface RuntimeSession {
   id: string;
@@ -140,20 +142,6 @@ export interface OriginSessionResponse {
 
 export interface OriginSessionHistoryResponse {
   sessions: OriginSessionSummary[];
-}
-
-export interface AgentDefinition {
-  id: string;
-  name: string;
-  description: string;
-  /** When set, overrides `id` as the avatar generator seed. */
-  avatarSeed: string | null;
-  systemPrompt: string | null;
-  runtime: 'pi' | 'claude-code' | 'cursor';
-  provider: string | null;
-  model: string | null;
-  reasoningEffort: string | null;
-  builtIn: boolean;
 }
 
 export interface AgentSkillSummary {

@@ -1,6 +1,8 @@
 /** MCP 服务器、工具与资源 DTO。 */
 
-export type McpServerStatus = 'idle' | 'connecting' | 'connected' | 'failed';
+import type { McpServerStatus, McpSettings } from '../../../tradex/contracts';
+
+export type { McpServerEntry, McpServerStatus, McpSettings } from '../../../tradex/contracts';
 
 export interface McpServerInfo {
   name: string;
@@ -13,11 +15,6 @@ export interface McpServerInfo {
   env: string[];
   cwd: string | null;
   idleTimeout: number | null;
-}
-
-export interface McpSettings {
-  toolPrefix?: 'server' | 'none' | 'short';
-  idleTimeout?: number;
 }
 
 export interface McpStatusResponse {
@@ -91,12 +88,3 @@ export interface McpReadResourceResponse {
   contents: McpResourceContent[];
 }
 
-export interface McpServerEntry {
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-  url?: string;
-  headers?: Record<string, string>;
-  idleTimeout?: number;
-}

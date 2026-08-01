@@ -11,7 +11,7 @@ import path from "node:path";
 import { BaseStore, defaultCacheDir, nowMs } from "../db.js";
 import { appendChatEvent, initChatEventSchema } from "./events.js";
 import { nullOutLegacyColumn } from "./legacy-schema.js";
-import { directMessageTarget } from "../channel/domain.js";
+import { directMessageTarget } from "./target.js";
 import { migrateLegacyDirectChatTargets as rewriteLegacyDirectChatTargets } from "./migrate-legacy-targets.js";
 
 /** Human–Agent DM 中稳定的 Human Owner 参与者 ID。 */

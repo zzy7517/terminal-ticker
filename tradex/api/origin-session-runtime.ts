@@ -9,8 +9,7 @@ import type { AgentSkillCatalog } from "../agent/skills.js";
 import { purgeClaudeProject } from "../agent/runtime/claude-code/runtime.js";
 import { fromPiProviderId } from "../agent/runtime/pi/models/constants.js";
 import { agentConfigFromSnapshot } from "./helpers.js";
-import { streamClaudeSession } from "./claude-session-stream.js";
-import { streamCursorSession } from "./cursor-session-stream.js";
+import { streamExternalCliSession } from "./external-cli-session-stream.js";
 import { streamPiSession } from "./pi-session-stream.js";
 import { validateImageInput } from "./image-input.js";
 import type { AppRuntime } from "./runtime.js";
@@ -136,25 +135,16 @@ export async function streamOriginSession(input: {
     session: await runtime.originSessions.response(sessionId),
     history: await runtime.originSessions.history(runtime.lockedAgentSessions),
   });
-  if (snapshot.runtime === "claude-code") {
-    return streamClaudeSession({
+  if (snapshot.runtime === "claude-code" || snapshot.runtime === "cursor") {
+    return streamExternalCliSession(snapshot.runtime, {
       runtime, requestUrl: input.requestUrl, sessionId, message, requestImages: input.images,
-      sessionStore: runtime.originSessions.claudeSessions,
+      sessionStore: snapshot.runtime === "claude-code"
+        ? runtime.originSessions.claudeSessions
+        : runtime.originSessions.cursorSessions,
       workspace: metadata.workspace,
       baseSystemPrompt: configuredSystemPrompt,
       appendSystemPrompt: additionalSystemPrompt,
       preserveNativeSystemPrompt: !configuredSystemPrompt,
-      persistFailedTurn: true,
-      projectSessionUpdate,
-    });
-  }
-  if (snapshot.runtime === "cursor") {
-    return streamCursorSession({
-      runtime, requestUrl: input.requestUrl, sessionId, message, requestImages: input.images,
-      sessionStore: runtime.originSessions.cursorSessions,
-      workspace: metadata.workspace,
-      baseSystemPrompt: configuredSystemPrompt,
-      appendSystemPrompt: additionalSystemPrompt,
       persistFailedTurn: true,
       projectSessionUpdate,
     });

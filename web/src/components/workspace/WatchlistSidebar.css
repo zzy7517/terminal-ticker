@@ -27,7 +27,7 @@
 
 .watchlist-sidebar.workspace-mode .sb-head {
   min-height: 48px;
-  padding: 4px 8px 4px 0;
+  padding: 4px 8px;
 }
 
 .watchlist-sidebar.workspace-mode .sb-title {
@@ -49,7 +49,7 @@
   border-radius: 0;
   margin: 0;
   min-height: 60px;
-  padding: 0 8px 0 0;
+  padding: 0 8px;
 }
 
 .watchlist-sidebar.workspace-mode .sb-row:hover {

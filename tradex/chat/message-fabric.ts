@@ -5,7 +5,7 @@
  * 避免在业务层重复 kind 分支。消息正文权威在 Store，不进入 Runtime Session。
  */
 import type { AppRuntime } from "../api/runtime.js";
-import { channelTarget, directMessageTarget, type ChatTarget } from "../channel/domain.js";
+import { channelTarget, directMessageTarget, type ChatTarget } from "./target.js";
 import { appendTargetMessageAndNotify, dispatchSharedMessage } from "./dispatch.js";
 import { HUMAN_OWNER_ID } from "./message-store.js";
 

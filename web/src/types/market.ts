@@ -37,16 +37,9 @@ export interface Instrument {
   analysable: boolean;
 }
 
-export interface NewsItem {
-  url: string;
-  source: string;
-  title: string;
-  summary: string;
-  publishedAt: string;
-  publishedAtMs: number;
-  fetchedAtMs: number;
-  keywords: string[];
-}
+import type { NewsItemPayload as NewsItem } from '../../../tradex/contracts';
+
+export type { NewsItemPayload as NewsItem } from '../../../tradex/contracts';
 
 export interface NewsStatus {
   enabled: boolean;

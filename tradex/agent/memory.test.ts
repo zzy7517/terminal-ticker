@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   memoryApplyRetention,
   memoryCompact,
@@ -12,18 +12,23 @@ import {
 import { ensurePrivateWorkspace } from "./private-workspace.js";
 
 describe("per-Agent memory hardening", () => {
-  let previousCache: string | undefined;
+  let previousHome: string | undefined;
   let root: string;
 
-  beforeEach(() => {
-    previousCache = process.env.XDG_CACHE_HOME;
+  // defaultCacheDir() memoizes its result, so TRADEX_HOME must point at the
+  // sandbox before the first store path resolves — one root for the whole file.
+  beforeAll(() => {
+    previousHome = process.env.TRADEX_HOME;
     root = fs.mkdtempSync(path.join(os.tmpdir(), "tradex-memory-"));
-    process.env.XDG_CACHE_HOME = root;
+    // Pre-create data/ so the legacy XDG migration branch can never run
+    // against the developer's real ~/.cache/tradex.
+    fs.mkdirSync(path.join(root, "data"), { recursive: true });
+    process.env.TRADEX_HOME = root;
   });
 
-  afterEach(() => {
-    if (previousCache === undefined) delete process.env.XDG_CACHE_HOME;
-    else process.env.XDG_CACHE_HOME = previousCache;
+  afterAll(() => {
+    if (previousHome === undefined) delete process.env.TRADEX_HOME;
+    else process.env.TRADEX_HOME = previousHome;
     fs.rmSync(root, { recursive: true, force: true });
   });
 
@@ -61,5 +66,10 @@ describe("per-Agent memory hardening", () => {
     expect(result.archivedNotes).toBe(1);
     expect(fs.existsSync(notePath)).toBe(false);
     expect(memoryRead("alpha")).toContain("keep me");
+  });
+
+  it("keeps every write inside the TRADEX_HOME sandbox", () => {
+    const workspace = ensurePrivateWorkspace("alpha");
+    expect(workspace.root.startsWith(root)).toBe(true);
   });
 });

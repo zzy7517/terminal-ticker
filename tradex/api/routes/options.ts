@@ -5,8 +5,6 @@
  *   GET /api/options/gex/current?symbol=SPY    — Current GEX snapshot
  *   GET /api/options/gex/strikes?symbol=SPY    — Per-strike GEX breakdown
  *   GET /api/options/levels?symbol=SPY         — Key levels (ZGL, Walls)
- *   GET /api/options/unusual?symbol=SPY        — Unusual activity
- *   GET /api/options/history?symbol=SPY&limit= — Historical GEX
  *   GET /api/options/iv-surface?symbol=SPY     — IV surface + regime params
  *   GET /api/options/impulse?symbol=SPY        — Hedge impulse curve
  *   GET /api/options/pressure?symbol=SPY       — Pressure cloud (zones/edges)
@@ -84,30 +82,6 @@ export function optionsRoutes(runtime: AppRuntime): Hono {
       charmFlow: snapshot.charmVanna?.charmFlow ?? null,
       vannaFlow: snapshot.charmVanna?.vannaFlow ?? null,
     });
-  });
-
-  // GET /api/options/unusual
-  app.get("/api/options/unusual", (c) => {
-    const svc = runtime.optionsService;
-    if (!svc) return c.json({ error: "Options service not enabled" }, 503);
-
-    const symbol = c.req.query("symbol")?.toUpperCase() ?? undefined;
-    const limit = parseInt(c.req.query("limit") ?? "50", 10);
-
-    const items = svc.getUnusualActivity(symbol, limit);
-    return c.json({ items });
-  });
-
-  // GET /api/options/history
-  app.get("/api/options/history", (c) => {
-    const svc = runtime.optionsService;
-    if (!svc) return c.json({ error: "Options service not enabled" }, 503);
-
-    const symbol = (c.req.query("symbol") ?? "SPY").toUpperCase();
-    const limit = parseInt(c.req.query("limit") ?? "100", 10);
-
-    const data = svc.getHistory(symbol, limit);
-    return c.json({ symbol, data, count: data.length });
   });
 
   // GET /api/options/iv-surface

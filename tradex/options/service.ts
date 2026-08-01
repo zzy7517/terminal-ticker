@@ -5,7 +5,7 @@
  * and unusual activity detection.
  */
 
-import type { GexSnapshot, OptionChain, OptionsConfig, UnusualActivity } from "./domain.js";
+import type { GexSnapshot, OptionChain, OptionsConfig } from "./domain.js";
 import { GexCalculator } from "./gex-calculator.js";
 import { DeribitProvider } from "./providers/deribit.js";
 import { createProvider, resolveProviderForSymbol, type OptionsDataProvider } from "./providers/index.js";
@@ -131,17 +131,6 @@ export class OptionsService {
       this.maybeRefresh(key, this.snapshots.get(key) ?? null);
     }
     return new Map(this.snapshots);
-  }
-
-  /** Unusual-activity tracking is disabled (no history is retained). */
-  getUnusualActivity(_symbol?: string, _limit = 50): UnusualActivity[] {
-    return [];
-  }
-
-  /** Historical GEX is not retained; only the latest snapshot is kept. */
-  getHistory(symbol: string, _limit = 100): GexSnapshot[] {
-    const snap = this.snapshots.get(symbol.toUpperCase());
-    return snap ? [snap] : [];
   }
 
   /** Force a refresh for a specific symbol. */

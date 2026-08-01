@@ -1,5 +1,7 @@
 /** Pi、Claude Code 与 Cursor CLI Runtime 共用的事件、能力和运行句柄类型。 */
-export type AgentRuntimeId = "pi" | "claude-code" | "cursor";
+import type { AgentRuntimeId } from "../../contracts.js";
+
+export type { AgentRuntimeId } from "../../contracts.js";
 export type ExternalAgentRuntimeId = Exclude<AgentRuntimeId, "pi">;
 
 export interface RuntimeCapabilities {

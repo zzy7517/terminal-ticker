@@ -22,7 +22,7 @@ import { OptionsService } from "../options/service.js";
 import { MacroService } from "../macro/service.js";
 import { applyProxyConfig } from "../runtime/proxy.js";
 import { AgentStore } from "../agent/agent-store.js";
-import { AgentContextManager } from "../agent/context-manager.js";
+import { AgentContextStore } from "../agent/context-store.js";
 import { indexPersistedAgentSessions, importLegacySessionMessages } from "../agent/chat-index.js";
 import { ChannelStore } from "../channel/store.js";
 import { MessageStore } from "../chat/message-store.js";
@@ -54,7 +54,7 @@ export class AppRuntime {
   readonly pendingSessionManagers = new Map<string, SessionManager>();
   readonly pendingAgentSnapshots = new Map<string, SessionAgentSnapshot>();
   readonly agentStore: AgentStore;
-  readonly agentContextManager: AgentContextManager;
+  readonly agentContexts: AgentContextStore;
   readonly channelStore: ChannelStore;
   readonly messageStore: MessageStore;
   readonly inboxStore: InboxStore;
@@ -84,7 +84,7 @@ export class AppRuntime {
   ) {
     this.config = config;
     this.agentStore = new AgentStore();
-    this.agentContextManager = new AgentContextManager();
+    this.agentContexts = new AgentContextStore();
     this.channelStore = new ChannelStore();
     this.messageStore = new MessageStore();
     this.inboxStore = new InboxStore();
@@ -178,7 +178,7 @@ export class AppRuntime {
     // Rebuild the optional subsystem so toggling it via the config API takes
     // effect without a process restart.
     await this.optionsService?.close();
-    this.agentContextManager.close();
+    this.agentContexts.close();
     this.channelStore.close();
     this.messageStore.close();
     this.inboxStore.close();

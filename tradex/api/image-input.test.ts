@@ -1,12 +1,11 @@
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { validateClaudeImages } from "./claude-session-stream.js";
-import { validateCursorImages } from "./cursor-session-stream.js";
+import { validateExternalCliImages } from "./external-cli-session-stream.js";
 import { validateImageInput } from "./image-input.js";
 
 describe("Runtime image input", () => {
   it("rejects non-canonical base64 through every Runtime validator", () => {
-    for (const validate of [validateImageInput, validateClaudeImages, validateCursorImages]) {
+    for (const validate of [validateImageInput, validateExternalCliImages]) {
       expect(validate([image("A")])).toBe("image data must be valid base64");
     }
   });

@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentStore } from "../../agent/agent-store.js";
 import { AgentContextStore } from "../../agent/context-store.js";
-import { AgentContextManager } from "../../agent/context-manager.js";
+
 import { MessageStore } from "../../chat/message-store.js";
 import { InboxStore } from "../../chat/inbox-store.js";
 import { UnreadStore } from "../../chat/unread-store.js";
@@ -38,7 +38,7 @@ function runtime(): AppRuntime {
   });
   return {
     agentStore,
-    agentContextManager: new AgentContextManager(contextStore),
+    agentContexts: contextStore,
     messageStore: new MessageStore(dbPath),
     inboxStore: new InboxStore(dbPath),
     unreadStore: new UnreadStore(dbPath),
@@ -219,7 +219,7 @@ describe("Agent HTTP API", () => {
     });
     const session = await sessionResponse.json() as { session: { id: string } };
 
-    expect(appRuntime.agentContextManager.get("ict")?.activeSessionId).toBe(session.session.id);
+    expect(appRuntime.agentContexts.get("ict")?.activeSessionId).toBe(session.session.id);
     appRuntime.lockedAgentSessions.add(session.session.id);
     const conflict = await routes.request("/api/agent/sessions", {
       method: "POST",
@@ -256,7 +256,7 @@ describe("Agent HTTP API", () => {
   it("deletes an Agent with only context and no Sessions", async () => {
     const appRuntime = runtime();
     const routes = agentRoutes(appRuntime);
-    appRuntime.agentContextManager.ensure("ict");
+    appRuntime.agentContexts.ensure("ict");
 
     const response = await routes.request("/api/agents/ict", { method: "DELETE" });
 
@@ -277,7 +277,7 @@ describe("Agent HTTP API", () => {
     const response = await routes.request(`/api/agent/sessions/${payload.session.id}`, { method: "DELETE" });
 
     expect(response.status).toBe(200);
-    expect(appRuntime.agentContextManager.get("ict")?.activeSessionId).toBeNull();
+    expect(appRuntime.agentContexts.get("ict")?.activeSessionId).toBeNull();
   });
 
   it("creates a Claude Code Session without adding it to the Pi provider registry", async () => {
@@ -423,7 +423,7 @@ describe("Agent HTTP API", () => {
         reasoningEffort: null,
       },
     });
-    appRuntime.agentContextManager.attachSession("claude-reader", {
+    appRuntime.agentContexts.attachSession("claude-reader", {
       sessionId: metadata.id,
       runtime: "claude-code",
     });

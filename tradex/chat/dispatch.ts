@@ -7,7 +7,8 @@
  */
 import type Database from "better-sqlite3";
 import type { AppRuntime } from "../api/runtime.js";
-import { channelTarget, directMessageTarget, type ChannelMessage, type ChatTarget } from "../channel/domain.js";
+import { channelTarget, directMessageTarget, type ChatTarget } from "./target.js";
+import type { ChannelMessage } from "../channel/domain.js";
 import type { InboxReason } from "./inbox-store.js";
 import type { DirectMessage } from "./message-store.js";
 
