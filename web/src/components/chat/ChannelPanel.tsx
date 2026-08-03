@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type UIEvent } from 'reac
 import { Hash, Loader2, Users } from 'lucide-react';
 import { fetchChannelMembers } from '../../api';
 import { useChatStore } from '../../stores/chatStore';
-import type { ChannelMessage } from '../../types';
+import type { ChannelMember, ChannelMessage } from '../../types';
 import { ChannelMessageItem } from './ChannelMessageItem';
 import { ChannelComposer } from './ChannelComposer';
 import { MemberPanel } from './MemberPanel';
@@ -20,7 +20,8 @@ const FOLLOW_BOTTOM_THRESHOLD_PX = 48;
 export function ChannelPanel() {
   const [draft, setDraft] = useState('');
   const [membersOpen, setMembersOpen] = useState(false);
-  const [memberCount, setMemberCount] = useState(0);
+  const [members, setMembers] = useState<ChannelMember[]>([]);
+  const memberCount = members.length;
   const transcriptRef = useRef<HTMLDivElement>(null);
   const shouldFollowTranscriptRef = useRef(true);
   const pendingOlderScrollHeightRef = useRef<number | null>(null);
@@ -40,21 +41,21 @@ export function ChannelPanel() {
 
   useEffect(() => {
     setMembersOpen(false);
-    setMemberCount(0);
+    setMembers([]);
     shouldFollowTranscriptRef.current = true;
     pendingOlderScrollHeightRef.current = null;
     if (!activeChannelId) return;
     let cancelled = false;
-    async function refreshCount() {
+    async function refreshMembers() {
       try {
         const payload = await fetchChannelMembers(activeChannelId!);
-        if (!cancelled) setMemberCount(payload.members.length);
+        if (!cancelled) setMembers(payload.members);
       } catch {
-        if (!cancelled) setMemberCount(0);
+        if (!cancelled) setMembers([]);
       }
     }
-    void refreshCount();
-    const timer = setInterval(() => void refreshCount(), 8_000);
+    void refreshMembers();
+    const timer = setInterval(() => void refreshMembers(), 8_000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -160,6 +161,7 @@ export function ChannelPanel() {
         <ChannelComposer
           draft={draft}
           label="Send"
+          members={members}
           placeholder={channel ? `Message #${channel.name}` : 'Select a Channel'}
           sending={sending}
           setDraft={setDraft}
@@ -172,7 +174,7 @@ export function ChannelPanel() {
             onClose={() => {
               setMembersOpen(false);
               void fetchChannelMembers(activeChannelId)
-                .then((payload) => setMemberCount(payload.members.length))
+                .then((payload) => setMembers(payload.members))
                 .catch(() => undefined);
             }}
           />

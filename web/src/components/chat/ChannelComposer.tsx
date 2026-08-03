@@ -3,6 +3,7 @@
  */
 import { ArrowUp, AtSign, Loader2 } from 'lucide-react';
 import { useAgentStore } from '../../stores/agentStore';
+import type { ChannelMember } from '../../types';
 
 /** Channel 的消息输入区。 */
 export function ChannelComposer({
@@ -12,6 +13,7 @@ export function ChannelComposer({
   placeholder,
   sending,
   label,
+  members,
 }: {
   draft: string;
   setDraft: (value: string) => void;
@@ -19,13 +21,18 @@ export function ChannelComposer({
   placeholder: string;
   sending: boolean;
   label: string;
+  members: ChannelMember[];
 }) {
   const agents = useAgentStore((state) => state.agents);
+  const memberAgentIds = new Set(
+    members.filter((member) => member.subjectType === 'agent').map((member) => member.subjectId),
+  );
+  const memberAgents = agents.filter((agent) => memberAgentIds.has(agent.id));
   const match = draft.match(/(?:^|\s)@([\w-]*)$/);
   const query = match?.[1]?.toLowerCase() ?? null;
-  const suggestions = query === null ? [] : agents.filter((agent) => (
+  const suggestions = query === null ? [] : memberAgents.filter((agent) => (
     agent.id.toLowerCase().includes(query) || agent.name.toLowerCase().includes(query)
-  )).slice(0, 6);
+  ));
 
   function mention(agentId: string) {
     if (!match || match.index === undefined) return;
