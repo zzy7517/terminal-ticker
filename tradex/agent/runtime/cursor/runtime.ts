@@ -99,6 +99,11 @@ export class CursorCliRuntime {
     let handedOff = false;
     try {
       cli = await prepareTradexCli({ cwd: input.cwd, url: this.cliUrl, token: issued.token });
+      // `--resume` replays this native session's full prior transcript, so instructions
+      // sent on earlier turns are already in context. Re-prepending them on every
+      // continuation turn would just duplicate that same block forever; only the turn
+      // that creates the native chat needs it.
+      const isNewNativeSession = !input.nativeSessionId;
       let nativeSessionId = input.nativeSessionId;
       if (!nativeSessionId) {
         nativeSessionId = await createCursorChat(this.executablePath);
@@ -106,7 +111,7 @@ export class CursorCliRuntime {
 
       const args = buildCursorArgs({
         prompt: input.prompt,
-        instructions: input.instructions,
+        instructions: isNewNativeSession ? input.instructions : "",
         workspace: input.cwd,
         nativeSessionId,
         model: input.model,

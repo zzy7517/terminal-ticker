@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -132,6 +132,37 @@ console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false
 
     expect(deltas).toEqual(["ha", "ha"]);
     expect(result.output).toBe("haha");
+  });
+
+  it("only prepends instructions when creating a new native session, not on continuation turns", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "tradex-cursor-runtime-"));
+    const executable = path.join(cwd, "fake-cursor.mjs");
+    const argvFile = path.join(cwd, "argv.json");
+    await writeFile(executable, `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const session = "11111111-1111-4111-8111-111111111111";
+writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));
+console.log(JSON.stringify({ type: "system", subtype: "init", session_id: session }));
+console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "done", session_id: session }));
+`);
+    await chmod(executable, 0o755);
+    const runtime = new CursorCliRuntime({
+      executablePath: executable,
+      cliUrl: "http://127.0.0.1/cli/tradex",
+      grants: new CliRunGrantStore(),
+    });
+
+    await (await runtime.start({
+      tradexSessionId: "tradex-session",
+      cwd,
+      prompt: "go",
+      instructions: "rules",
+      registry: new ToolRegistry(),
+      nativeSessionId: "11111111-1111-4111-8111-111111111111",
+    })).result;
+
+    const argv = JSON.parse(await readFile(argvFile, "utf8"));
+    expect(argv.at(-1)).toBe("go");
   });
 
   it("completes with partial output when Cursor closes its writable iterable", async () => {
