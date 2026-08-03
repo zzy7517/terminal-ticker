@@ -1,0 +1,22 @@
+tradex/agent/runtime/cursor/runtime.ts
+  s_725360163d9fb2::t_ce598fa806c0d8 102-106,114
+tradex/agent/runtime/cursor/runtime.test.ts
+  s_725360163d9fb2::t_6a8e554a3eef54 137-167
+  s_725360163d9fb2::t_c477d89c05111d 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "a01ab5654acde68ff162edb6199c527b6928d9ee",
+  "prompts": {},
+  "sessions": {
+    "s_725360163d9fb2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bfddc31f-e327-4cbf-9179-0ce9b6b54d94",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
