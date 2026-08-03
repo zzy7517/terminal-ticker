@@ -1,0 +1,24 @@
+web/src/components/chat/ChannelPanel.tsx
+  s_a783388bc3f34f::t_37b38378246f26 23-24
+  s_a783388bc3f34f::t_33a968c27ed5ab 9
+  s_a783388bc3f34f::t_6d5d137ef3018e 164,177
+  s_a783388bc3f34f::t_73c9b49f7aff0b 44,49,52,54,57-58
+web/src/components/chat/ChannelComposer.tsx
+  s_a783388bc3f34f::t_a4bf8af228a8db 6,16,24,27-30,33,35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "13f7063f3e887cbba2e4e1e951fa717cb16fcffe",
+  "prompts": {},
+  "sessions": {
+    "s_a783388bc3f34f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a32ab9f1-28c2-485c-a554-fb5b5d9438cd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
