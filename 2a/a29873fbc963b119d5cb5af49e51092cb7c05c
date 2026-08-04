@@ -1,0 +1,20 @@
+watchlist.toml
+  s_28ef05c6552957::t_a4e12a2526242f 111
+  s_28ef05c6552957::t_f3d286365cf115 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "2aa29873fbc963b119d5cb5af49e51092cb7c05c",
+  "prompts": {},
+  "sessions": {
+    "s_28ef05c6552957": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "76b21117-59ea-455f-9a48-7aa7b6be8344",
+        "model": "claude-opus-5"
+      },
+      "human_author": "zzy7517 <zz7517@proton.me>"
+    }
+  }
+}
