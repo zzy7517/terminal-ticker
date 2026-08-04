@@ -261,20 +261,28 @@ export class MacroService {
   getSnapshot(options: { atMs?: number; windowDays?: number } = {}): MacroSnapshot {
     const atMs = options.atMs ?? nowMs();
     const windowDays = options.windowDays ?? 90;
-    const fromMs = atMs - windowDays * 24 * 60 * 60 * 1000;
+    const dayMs = 24 * 60 * 60 * 1000;
 
-    const series = MACRO_SERIES.map((meta) =>
-      computeSeriesStats(
+    const series = MACRO_SERIES.map((meta) => {
+      // Level series override the window (monthly data needs years, not days)
+      // and need raw history before it so the transform has a predecessor for
+      // the oldest point inside the window.
+      const windowFromMs = atMs - (meta.stat?.windowDays ?? windowDays) * dayMs;
+      const fetchFromMs = windowFromMs - (meta.stat?.lookbackDays ?? 0) * dayMs;
+
+      return computeSeriesStats(
         {
           seriesId: meta.seriesId,
           label: meta.label,
           category: meta.category,
           unit: meta.unit,
+          stat: meta.stat,
         },
-        this.store.getSeries(meta.seriesId, { asOfMs: atMs, fromMs }),
+        this.store.getSeries(meta.seriesId, { asOfMs: atMs, fromMs: fetchFromMs }),
         atMs,
-      ),
-    );
+        windowFromMs,
+      );
+    });
 
     return { atMs, series, derived: computeDerived(series) };
   }

@@ -29,6 +29,52 @@ export type MacroCategory =
   | "metals"
   | "risk";
 
+/**
+ * How to turn raw observations into the quantity worth doing statistics on.
+ *
+ * Some series are published as **levels** that trend monotonically — a price
+ * index and an employment stock only ever climb. Window statistics on the raw
+ * level are degenerate: the newest value is always the window maximum, so the
+ * percentile pins at 100 and the z-score pins at its ceiling forever. A reader
+ * sees "CPI at the 100th percentile" and infers an inflation extreme, when the
+ * only fact expressed is "the index went up again", which is always true.
+ *
+ * Series carrying one of these convert to a rate of change first. Rates that
+ * are already bounded and mean-reverting (yields, unemployment, VIX, stress
+ * index) carry none and are measured as published.
+ */
+export interface MacroStatSpec {
+  /**
+   * `yoyPercent` — percent change versus `lag` observations back. The standard
+   *   reading for price indices: CPI reported as "+2.7%", not as "320.4".
+   * `periodDiff` — absolute difference versus `lag` observations back. The
+   *   standard reading for employment stock: "+147k jobs", not "159,482k".
+   */
+  transform: "yoyPercent" | "periodDiff";
+  /**
+   * Observations to look back, counted in **non-null observations** rather
+   * than calendar time, so a gap in the series cannot silently shorten the
+   * comparison. Year-over-year on monthly data is 12.
+   */
+  lag: number;
+  /** Replaces {@link MacroSeriesMeta.label} in snapshot output. */
+  label: string;
+  /** Replaces {@link MacroSeriesMeta.unit} in snapshot output. */
+  unit: string | null;
+  /**
+   * Extra raw history to fetch before the window start, so the oldest point
+   * inside the window still has a `lag`-th predecessor to compare against.
+   * Without this the transformed window would be short by `lag` observations.
+   */
+  lookbackDays: number;
+  /**
+   * Overrides the snapshot's trailing window for this series. Monthly data
+   * needs a far longer window than daily: 90 days is three observations, which
+   * is not enough to place a value in any distribution.
+   */
+  windowDays?: number;
+}
+
 export interface MacroSeriesMeta {
   /** Stable internal id, e.g. "us10y". Independent of the provider's naming. */
   seriesId: string;
@@ -49,6 +95,11 @@ export interface MacroSeriesMeta {
    * {@link MacroPoint.vintageTs}.
    */
   vintaged: boolean;
+  /**
+   * Present when the raw value is a level that must be differenced before it
+   * means anything statistically. Absent for series measured as published.
+   */
+  stat?: MacroStatSpec;
 }
 
 export interface MacroPoint {

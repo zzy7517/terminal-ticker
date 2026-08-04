@@ -13,6 +13,29 @@ const HOUR = 60 * 60;
 const FIVE_MIN = 5 * 60;
 
 /**
+ * Stat window for monthly series.
+ *
+ * The daily default (90 days) is three observations for monthly data — too few
+ * to place a value in any distribution. Five years is ~60 prints, enough for a
+ * percentile to mean something. Actual coverage is still capped by
+ * `[macro] backfill_years`, which defaults to 2; `sampleCount` reports what was
+ * really available rather than implying the full window was filled.
+ */
+const FIVE_YEARS_DAYS = 5 * 365;
+
+/**
+ * Year-over-year on monthly data: 12 observations back, plus a lookback margin
+ * wide enough that the oldest point in the window still has a predecessor
+ * (13 months, padded for irregular publication).
+ */
+const MONTHLY_YOY = {
+  transform: "yoyPercent",
+  lag: 12,
+  lookbackDays: 430,
+  windowDays: FIVE_YEARS_DAYS,
+} as const;
+
+/**
  * Phase 1 series — all from FRED.
  *
  * `vintaged: true` marks series that are revised after first publication and
@@ -82,6 +105,8 @@ export const FRED_SERIES: MacroSeriesMeta[] = [
     unit: "index",
     cadenceSeconds: DAY,
     vintaged: true,
+    // Published as an index (1982-84 = 100) that only rises. Reported as YoY.
+    stat: { ...MONTHLY_YOY, label: "CPI 同比", unit: "%" },
   },
   {
     seriesId: "core_pce",
@@ -92,6 +117,7 @@ export const FRED_SERIES: MacroSeriesMeta[] = [
     unit: "index",
     cadenceSeconds: DAY,
     vintaged: true,
+    stat: { ...MONTHLY_YOY, label: "核心 PCE 同比", unit: "%" },
   },
 
   // ── Dollar ──────────────────────────────────────────────────────────────────
@@ -151,6 +177,16 @@ export const FRED_SERIES: MacroSeriesMeta[] = [
     unit: "千人",
     cadenceSeconds: DAY,
     vintaged: true,
+    // PAYEMS is the total stock of nonfarm jobs. The number everyone quotes on
+    // release day is the month-over-month change, so difference by one period.
+    stat: {
+      transform: "periodDiff",
+      lag: 1,
+      label: "非农就业月度新增",
+      unit: "千人",
+      lookbackDays: 70,
+      windowDays: FIVE_YEARS_DAYS,
+    },
   },
   {
     seriesId: "unemployment",

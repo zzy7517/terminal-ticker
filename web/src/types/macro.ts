@@ -14,6 +14,8 @@ export interface MacroSeriesStats {
   label: string;
   category: MacroCategory;
   unit: string | null;
+  /** 非 null 表示该序列是水平值，统计前已转成变化率（CPI 同比、非农月度新增）。 */
+  transform: 'yoyPercent' | 'periodDiff' | null;
   latest: number | null;
   latestTs: number | null;
   changeAbs: number | null;

@@ -44,6 +44,9 @@ function formatStats(stats: SeriesStats): Record<string, unknown> {
     label: stats.label,
     category: stats.category,
     unit: stats.unit,
+    // Without this the model cannot tell a published rate from a level we
+    // differenced: "cpi 2.7" is year-over-year percent, not an index reading.
+    transform: stats.transform,
     latest: round(stats.latest),
     asOf: stats.latestTs ? new Date(stats.latestTs).toISOString() : null,
     change: round(stats.changeAbs),
