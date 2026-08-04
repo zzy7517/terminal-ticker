@@ -90,7 +90,7 @@ quotes_codes = ["XAUUSD", "XAGUSD", "USOIL", "EURUSD", "USDJPY", "USDCNH", "N225
 agent_analysis = false
 [macro]
 enabled = true
-fred_api_key = "76cb1968c035e8c4b181a290932f8927"
+fred_api_key = "${FRED_API_KEY}"
 backfill_years = 2
 fred_poll_interval_seconds = 21600   # 6h; FRED updates daily at most
 calendar_enabled = true
@@ -108,7 +108,7 @@ crypto_poll_interval_seconds = 300
 # （series id: dxy_broad）作日频兜底。
 quotes_enabled = true
 quotes_poll_interval_seconds = 21600
-twelve_data_api_key = "336b82ad42814600b1c3de5135906bbb"
+twelve_data_api_key = "${TWELVE_DATA_API_KEY}"
 
 # Trading silence around high-impact releases (CPI / NFP / FOMC).
 # min_impact: high | medium | low  — Jin10's 4-5 stars map to "high".
