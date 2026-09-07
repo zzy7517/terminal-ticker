@@ -48,7 +48,7 @@ api = "openai-completions"
 display_name = "openai"
 requires_auth = true
 api_key = "${OPENAI_API_KEY}"
-base_url = "https://infra-litellm-api.winktech.net"
+base_url = ""
 models = ["openrouter/anthropic/claude-opus-4.7", "openrouter/anthropic/claude-opus-4.6"]
 model_efforts = {"openrouter/anthropic/claude-opus-4.7" = "medium", "openrouter/anthropic/claude-opus-4.6" = "medium"}
 [analysis]
